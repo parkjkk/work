@@ -329,6 +329,45 @@ textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
   #addBtn{right:calc(50% - 340px + 14px)}
 }
 
+/* 일일 입력 개선 — 화면 전용. 인쇄 치수에는 적용하지 않는다. */
+@media screen{
+  .my-day{border-top:4px solid var(--accent)}
+  .my-day-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .my-day h3{margin:0;font-size:18px}.my-state{color:var(--ink-dim);font-size:13px;margin:7px 0 12px}
+  .my-actions{display:flex;gap:8px;flex-wrap:wrap}.my-actions .btn{min-height:46px;flex:1}
+  .quiet-btn{min-height:44px;padding:6px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface2);font-weight:700}
+  .status-filters{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+  .status-filters button{min-height:42px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--surface2);font-size:13px}
+  .status-filters button.sel{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+  .roster-details summary{cursor:pointer;min-height:44px;padding:10px 0;font-weight:700}
+  .roster-person{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+  .roster-person .quiet-btn{font-size:13px}.roster-person small{display:block;color:var(--ink-dim)}
+  #workerDetails{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
+  #workerDetails>summary{cursor:pointer;min-height:30px;font-size:15px}
+  #quickProducts{margin:18px 0 10px}#quickProducts>h3{font-size:16px;margin:0 0 6px}
+  .quick-hint{font-size:13px;color:var(--ink-dim);margin:4px 0 10px}
+  .quick-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;align-items:center;gap:10px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0}
+  .quick-open{text-align:left;min-width:0;min-height:50px;padding:0}.quick-open b{display:block;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;color:var(--ink-dim);font-size:12px;margin-top:4px}
+  .quick-qty input{width:100%;height:48px;border:1.5px solid var(--line-in);border-radius:10px;text-align:center;background:var(--surface);font-size:20px;font-weight:700}
+  .quick-qty span{display:block;font-size:12px;color:var(--ink-dim);text-align:center;margin-bottom:3px}
+  .pb-toggle{min-height:44px;flex:1;text-align:left;padding:3px 0}.pb-toggle small{display:block;color:var(--ink-dim);font-weight:400;font-size:12px;margin-top:4px}
+  #entryOv [hidden],.pb-body[hidden],#quickProducts[hidden]{display:none!important}
+  .whead{flex-wrap:wrap}.whead .quiet-btn{margin-left:auto;font-size:13px}
+  main.month-wide{max-width:1120px}
+  .product-focus .bar{display:block;max-width:140px;margin-top:4px}
+  .product-focus small{display:block;color:var(--ink-dim);font-size:12px}
+  .product-link{color:var(--accent-ink);text-align:left;font-weight:700;min-height:44px;padding:4px 0}
+  .product-detail{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--surface)}
+  .product-detail header{display:flex;align-items:center;justify-content:space-between;gap:10px}.product-detail h3{margin:0;font-size:16px}
+  .preflight{max-width:900px;margin:10px auto}.preflight summary{cursor:pointer;font-weight:700;padding:10px}.preflight button{display:block;width:100%;text-align:left;min-height:44px;padding:9px 12px;border-top:1px solid var(--line)}
+  @media(max-width:700px){
+    #daysum{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}#daysum .ds{display:flex;gap:6px;align-items:center;padding:7px 10px;box-shadow:none;border:0;background:transparent}#daysum .ds b{font-size:17px}#daysum .ds span{font-size:12px}
+    .product-focus .desktop-col{display:none}.product-focus th,.product-focus td{white-space:normal!important;padding:9px 8px!important;font-size:13px!important}
+    .product-focus th:first-child{width:27%}.product-focus th:nth-child(2){width:31%}
+    .mon-nav{gap:5px}.mon-nav #monCopy{margin-left:auto}
+  }
+}
+@media print{#printChecks{display:none!important}}
 /* ---------- 일보(시트) 화면 ---------- */
 .sheet-toolbar{display:flex; gap:8px; margin-bottom:10px; align-items:center; max-width:680px; margin-left:auto; margin-right:auto}
 .sheet-toolbar .print{
@@ -517,6 +556,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   <section id="view-input">
     <div id="dateWarn" class="warnbar" style="border-radius:12px; margin-bottom:10px" hidden></div>
     <div class="card notice-card" id="noticeCard" hidden></div>
+    <div class="card my-day" id="myDayCard"></div>
     <div class="daysum" id="daysum"></div>
     <div class="card" id="missCard" hidden></div>
     <div class="card">
@@ -535,6 +575,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
     </div>
     <p class="print-tip"><span class="tip-pc">인쇄 창에서 <b>여백: 기본값(또는 없음)</b> · <b>배율: 100%</b> 두 가지만 확인하세요 — A4 가로·배경색·머리글 제거는 자동입니다. (Ctrl+P도 같은 절차)</span><span class="tip-mobile">인쇄는 <b>PC 크롬/엣지</b>에서 하세요 — 폰 인쇄는 여백이 틀어집니다</span><span id="pageInfo"></span><span id="syncInfo"></span></p>
     <div class="warnbar" id="missInfo" style="max-width:680px; margin:0 auto 10px; text-align:center; font-weight:700" hidden></div>
+    <details class="card preflight" id="printChecks"><summary>인쇄 전 확인</summary><div id="printCheckList"></div></details>
     <div class="sheetwrap" id="sheetwrap"><div class="sheetzoom" id="sheetzoom"></div></div>
   </section>
 
@@ -562,9 +603,11 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   <div class="ov-head"><b id="entryTitle" tabindex="-1">기록 추가</b><button class="x" id="entryClose" aria-label="닫기">✕</button></div>
   <div class="ov-body">
     <div id="draftBar" class="warnbar info" hidden>📝 작성하다 만 내용을 불러왔습니다 <button type="button" id="draftClear">비우고 새로 쓰기</button></div>
+    <details id="workerDetails"><summary>작업자 <b id="entryWorkerLabel"></b> · 이름 변경</summary>
     <div class="f-label">작업자 <span class="req">*</span></div>
     <input class="f-input" id="fWorker" placeholder="이름" autocomplete="off">
     <div class="chips" id="fWorkerChips" style="margin-top:7px"></div>
+    </details>
     <div id="recentLoad" hidden></div>
 
     <div class="f-label">작업시간 (hr)</div>
@@ -575,6 +618,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
     </div>
 
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
+    <div id="quickProducts" hidden></div>
     <div id="prodBlocks"></div>
     <button type="button" id="addProdBlock">＋ 제품 추가 (같은 작업자)</button>
     <div id="entryErr" role="alert" hidden></div>
@@ -677,6 +721,7 @@ function toast(msg){
 }
 let undoRow = null;
 function toastUndo(msg, row, date){
+  const epoch = storeEpoch;
   undoRow = row;
   const undoDate = date;   /* 삭제한 그 날짜에 복구 (다른 날짜로 이동해도 안전) */
   const t = $('#toast');
@@ -687,14 +732,16 @@ function toastUndo(msg, row, date){
     t.classList.remove('show','act');
     if(!r) return;
     try{
+      assertContext(epoch);
       const rows = await driver.mutateDay(undoDate, rows => mergeRows(rows, [r]), '복구');
+      assertContext(epoch);
       outboxUnremove(undoDate, r.id);   /* 보관된 삭제 예약이 복구한 행을 다시 지우지 않게 */
       if(undoDate === S.date){ loadSeq++; applyDay(undoDate, rows); }
       toast('복구되었습니다');
     }catch(e){
+      if(epoch !== storeEpoch){ toast(e.message); return; }
       if(driver.mode === 'gh' && e.isNetwork){
         /* 연결 불가: 보관된 삭제 예약을 취소하고 복구 행을 보관 */
-        outboxUnremove(undoDate, r.id);
         if(!outboxPush(undoDate, [r])) return;   /* 보관 실패 시 복구된 척하지 않음 */
         if(undoDate === S.date){ S.rows = mergeRows(S.rows, [r]); renderAll(); }
         toast('연결이 안 돼 복구를 보관했습니다 — 연결되면 자동 반영');
@@ -711,23 +758,43 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now()+'-'+Math
 const numOr = (v, alt='') => { const s=String(v??'').trim(); if(s==='') return alt; const n=Number(s); return isNaN(n) ? alt : n; };
 
 /* ================= 저장 드라이버 ================= */
+const scopeFor = c => c && c.owner && c.repo && c.token ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
+const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|progress$)/.test(k);
+let activeScope = 'local', legacyScope = '', storeEpoch = 0;
+const storageKey = (k, scope=activeScope) => scopedItem(k) ? 'ilbo.store.'+encodeURIComponent(scope)+'.'+k : k;
+function contextError(){ const e = new Error('연결된 저장소가 바뀌었습니다. 현재 연결에서 기록을 다시 열어 주세요.'); e.contextChanged = true; return e; }
+function assertContext(epoch){ if(epoch !== storeEpoch) throw contextError(); }
 const LS = {
-  get(k, alt){ try{ const v=localStorage.getItem(k); return v==null ? alt : JSON.parse(v); }catch(e){ return alt; } },
-  set(k, v){
+  get(k, alt, scope=activeScope){ try{ let v=localStorage.getItem(storageKey(k, scope)); if(v==null && scopedItem(k) && scope===legacyScope) v=localStorage.getItem(k); return v==null ? alt : JSON.parse(v); }catch(e){ return alt; } },
+  set(k, v, scope=activeScope){
     const s = JSON.stringify(v);
-    try{ localStorage.setItem(k, s); return true; }
+    const target = storageKey(k, scope);
+    try{ localStorage.setItem(target, s); return true; }
     catch(e){
       /* 용량 초과: 오래된 날짜 캐시부터 비우고 한 번 더 */
-      try{ pruneCaches(30); localStorage.setItem(k, s); return true; }catch(e2){ return false; }
+      try{ pruneCaches(30); localStorage.setItem(target, s); return true; }catch(e2){ return false; }
     }
+  },
+  remove(k, scope=activeScope){ localStorage.removeItem(storageKey(k,scope)); if(scopedItem(k) && scope===legacyScope) localStorage.removeItem(k); },
+  keys(prefix, scope=activeScope){
+    const keys = new Set(), base = 'ilbo.store.'+encodeURIComponent(scope)+'.';
+    for(let i=0;i<localStorage.length;i++){ const raw=localStorage.key(i); if(!raw) continue; const k=raw.startsWith(base)?raw.slice(base.length):raw; if(k.startsWith(prefix) && (raw.startsWith(base) || !scopedItem(raw) || scope===legacyScope)) keys.add(k); }
+    return [...keys];
   }
 };
+/* 구버전 보관분은 이 버전을 처음 연 연결에만 귀속. 원본을 유지하며 읽기 호환한다. */
+activeScope = scopeFor(LS.get('ilbo.gh',null));
+legacyScope = LS.get('ilbo.legacyScope',null) || activeScope;
+LS.set('ilbo.legacyScope',legacyScope);
+function saveConnection(cfg){
+  if(!LS.set('ilbo.legacyScope',legacyScope) || !LS.set('ilbo.gh',cfg)) throw new Error('연결 정보를 저장할 공간이 부족합니다');
+}
 /* 날짜 캐시(ilbo.cache.YYYY-MM-DD)는 keepDays 이전 것을 정리 — 기기 저장 공간이 무한히 늘지 않게 (원본은 서버) */
 function pruneCaches(keepDays){
   const d = new Date(); d.setDate(d.getDate() - keepDays); const cut = fmtDate(d);
   const del = [];
-  for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); const m = k && k.match(/^ilbo\.cache\.(\d{4}-\d{2}-\d{2})$/); if(m && m[1] < cut) del.push(k); }
-  del.forEach(k => localStorage.removeItem(k));
+  LS.keys('ilbo.cache.').forEach(k => { const m=k.match(/^ilbo\.cache\.(\d{4}-\d{2}-\d{2})$/); if(m && m[1] < cut) del.push(k); });
+  del.forEach(k => LS.remove(k));
   return del.length;
 }
 function ghCfg(){ return LS.get('ilbo.gh', null); }
@@ -741,19 +808,20 @@ function setupFromHash(){
     const j = JSON.parse(b64uD(m[1]));
     if(j && j.o && j.r && j.t){
       const cur = ghCfg();
-      if(!(cur && cur.v && j.v && j.v <= cur.v)){ /* 더 새 설정이 있으면 유지 */
-        LS.set('ilbo.gh', {owner:j.o, repo:j.r, branch:j.b||'main', token:j.t, v:j.v||Date.now(), src:'link'});   /* src: 공유 링크로 연결된 기기 */
+      const sameRepo=cur && cur.owner.toLowerCase()===String(j.o).toLowerCase() && cur.repo.toLowerCase()===String(j.r).toLowerCase() && (cur.branch||'main')===(j.b||'main');
+      if(!(sameRepo && cur.v && j.v && j.v <= cur.v)){ /* 같은 저장소의 더 새 설정만 유지 */
+        saveConnection({owner:j.o, repo:j.r, branch:j.b||'main', token:j.t, exp:j.exp||'', v:j.v||Date.now(), src:'link'});
         setTimeout(()=>toast('공유 저장에 자동 연결되었습니다'), 400);
       }
     }
-  }catch(e){}
+  }catch(e){ setTimeout(()=>toast('공유 연결 정보를 적용하지 못했습니다 — '+e.message),0); }
   /* 해시(#s=)를 주소창에 그대로 유지 — 주소 복사만으로 다른 기기·브라우저에 연결까지 전달됨
      (2026-09-01 사용자 결정: 토큰이 일보 데이터 전용이라 링크 노출 위험을 감수하고 편의 우선) */
 }
 function makeShareLink(){
   const c = ghCfg();
   if(!c || !c.token){ toast('먼저 GitHub 연결 정보를 저장하세요'); return; }
-  const payload = b64u(JSON.stringify({o:c.owner, r:c.repo, b:c.branch, t:c.token, v:c.v||Date.now()}));
+  const payload = b64u(JSON.stringify({o:c.owner, r:c.repo, b:c.branch, t:c.token, exp:c.exp||'', v:c.v||Date.now()}));
   const url = (location.origin && location.origin.startsWith('http'))
     ? location.origin + location.pathname + '#s=' + payload
     : location.href.split('#')[0] + '#s=' + payload;
@@ -848,6 +916,8 @@ async function ghFetch(url, opts={}, ms=15000){
   }finally{ clearTimeout(t); }
 }
 function ghDriver(cfg){
+  const epoch = storeEpoch;
+  const dayReads = new Map();
   const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/`;
   const H = { 'Authorization':'Bearer '+cfg.token, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
   function authCheck(r){
@@ -870,18 +940,23 @@ function ghDriver(cfg){
     }
   }
   async function getFile(path){
+    assertContext(epoch);
     const r = await ghFetch(base+path+'?ref='+encodeURIComponent(cfg.branch)+'&_='+Date.now(), {headers:H, cache:'no-store'}, 8000);   /* 읽기는 8초 — 캐시를 먼저 보여주므로 짧게 */
+    assertContext(epoch);
     authCheck(r);
     if(r.status===404){ S.authError = false; return {json:null, sha:null}; }
     if(!r.ok) throw new Error('GitHub 읽기 실패 ('+r.status+')');
     S.authError = false;
     const j = await r.json();
+    assertContext(epoch);
     return {json: JSON.parse(b64d(j.content||'') || 'null'), sha: j.sha};
   }
   async function putFile(path, obj, sha, msg){
+    assertContext(epoch);
     const body = {message: msg, content: b64e(JSON.stringify(obj, null, 1)), branch: cfg.branch};
     if(sha) body.sha = sha;
     const r = await ghFetch(base+path, {method:'PUT', headers:{...H,'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    assertContext(epoch);
     authCheck(r);
     if(r.status===409) return false;
     if(r.status===422){
@@ -908,14 +983,23 @@ function ghDriver(cfg){
   }
   return {
     mode: 'gh',
-    async loadDay(date){
-      const t0 = Date.now();
-      const {json, sha} = await getFile('data/'+date+'.json');
-      const rows = (json && json.rows) || [];
-      return noteDay(date, rows, sha, t0) ? rows : (dayCache[date] || rows);   /* 늦은 응답이면 더 새 캐시를 돌려줌 */
+    loadDay(date){
+      assertContext(epoch);
+      if(dayReads.has(date)) return dayReads.get(date);
+      const task = (async () => {
+        const t0 = Date.now();
+        const {json, sha} = await getFile('data/'+date+'.json');
+        assertContext(epoch);
+        const rows = (json && json.rows) || [];
+        return noteDay(date, rows, sha, t0) ? rows : (dayCache[date] || rows);
+      })();
+      dayReads.set(date,task);
+      task.finally(()=>{ if(dayReads.get(date)===task) dayReads.delete(date); }).catch(()=>{});
+      return task;
     },
     async mutateDay(date, fn, label){
       const next = await mutateJson('data/'+date+'.json', j => ({rows: fn((j&&j.rows)||[])}), '일보 '+date + (label ? ' · '+label : ''));
+      assertContext(epoch); dayReads.delete(date);
       noteDay(date, next.rows, null);   /* sha 미상 → 다음 월 조회 때 그 날만 한 번 다시 받음 */
       return next.rows;
     },
@@ -942,7 +1026,9 @@ function ghDriver(cfg){
       return next;
     },
     async monthDays(ym){
+      assertContext(epoch);
       const r = await ghFetch(base+'data?ref='+encodeURIComponent(cfg.branch)+'&_='+Date.now(), {headers:H, cache:'no-store'});
+      assertContext(epoch);
       authCheck(r);
       if(r.status===404) return {};
       if(!r.ok) throw new Error('GitHub 목록 실패 ('+r.status+')');
@@ -973,6 +1059,7 @@ function ghDriver(cfg){
         }
       };
       await Promise.all(Array.from({length: Math.min(6, targets.length)}, pump));
+      assertContext(epoch);
       return out;
     }
   };
@@ -1003,13 +1090,19 @@ function isFresh(date, ms){ const m = dayMeta[date]; return !!(m && Date.now() -
 let driverKey = null;
 function initDriver(){
   const cfg = ghCfg();
+  storeEpoch++;
+  activeScope = scopeFor(cfg);
   driver = (cfg && cfg.owner && cfg.repo && cfg.token) ? ghDriver(cfg) : localDriver;
   const key = driver.mode === 'gh' ? `gh:${cfg.owner}/${cfg.repo}/${cfg.branch||'main'}` : 'local';
   if(driverKey && driverKey !== key){   /* 저장소·모드가 바뀌면 옛 기물 진행률은 폐기 */
     S.progress = null; S.progressSpan = null;
-    try{ localStorage.removeItem('ilbo.progress'); }catch(e){}
+    S.rows = []; S.rowsDate = null; S.dayLoaded = false;
+    S.presets = {workers:[],products:[],parts:[],inactive:[]}; S.presetsShown = false;
   }
   driverKey = key;
+  S.progress = LS.get('ilbo.progress',null); progressBusy = false;
+  loadSeq++; monthSeq++; lastDraw = null; monthData = null; monthDataYm = null;
+  clearTimeout(prefetchTimer); S.offline = false; S.lastSync = null;
   [dayCache, dayMeta, monthCache].forEach(o => Object.keys(o).forEach(k => delete o[k]));
   const on = driver.mode==='gh';
   $('#modeBadge').classList.toggle('on', on);
@@ -1068,25 +1161,30 @@ function updateNetBanner(){
 /* ---- 아웃박스: 저장 실패분을 기기에 보관했다가 자동 재전송 ---- */
 function outboxAll(){ return LS.get('ilbo.outbox', []); }
 function outboxPush(date, rows, align, removeIds){
-  const ob = outboxAll();
-  ob.push({date, rows: rows||[], align, removeIds: removeIds||[], t: Date.now()});
+  const ids = new Set([...(rows||[]).map(r=>r.id), ...(removeIds||[])]);
+  const ob = outboxAll().map(i=> i.date!==date ? i : {...i,
+    rows:(i.rows||[]).filter(r=>!ids.has(r.id)), removeIds:(i.removeIds||[]).filter(id=>!ids.has(id))
+  }).filter(i=>(i.rows||[]).length || (i.removeIds||[]).length);
+  ob.push({qid:uid(), date, rows: rows||[], align, removeIds: removeIds||[], t: Date.now()});
   const ok = LS.set('ilbo.outbox', ob);
   if(!ok) toast('⚠ 기기 저장 공간이 부족해 보관하지 못했습니다 — 공간을 비우고 다시 저장해 주세요');
   updateNetBanner();
   return ok;   /* 호출부는 실패 시 폼·임시저장을 지우지 말 것 */
 }
 /* 직접 저장이 성공한 행은 아웃박스에서 걷어냄 — 옛 보관분이 최신 수정을 되돌리지 못하게 */
-function outboxPrune(date, ids){
+function outboxPrune(date, ids, align){
   const idSet = new Set(ids);
-  const ob = outboxAll().map(i => i.date !== date ? i : {...i, rows: (i.rows||[]).filter(r => !idSet.has(r.id))})
+  const ob = outboxAll().map(i => i.date !== date ? i : {...i,
+    rows: (i.rows||[]).filter(r => !idSet.has(r.id)), removeIds:(i.removeIds||[]).filter(id=>!idSet.has(id)),
+    align: align && i.align && i.align.worker===align.worker ? align : i.align})
     .filter(i => (i.rows||[]).length || (i.removeIds||[]).length);
-  LS.set('ilbo.outbox', ob);
+  if(!LS.set('ilbo.outbox', ob)) throw new Error('서버에는 반영했지만 기기 전송대기를 정리하지 못했습니다. 저장공간 확인 후 다시 시도하세요.');
   updateNetBanner();
 }
 /* 보관된 삭제 예약에서 특정 행을 뺌 — 온라인 복구 성공 뒤 자동 전송이 다시 지우지 않게 */
 function outboxUnremove(date, id){
-  LS.set('ilbo.outbox', outboxAll().map(i => i.date !== date ? i : {...i, removeIds:(i.removeIds||[]).filter(x => x !== id)})
-    .filter(i => (i.rows||[]).length || (i.removeIds||[]).length));
+  if(!LS.set('ilbo.outbox', outboxAll().map(i => i.date !== date ? i : {...i, removeIds:(i.removeIds||[]).filter(x => x !== id)})
+    .filter(i => (i.rows||[]).length || (i.removeIds||[]).length))) throw new Error('복구 대기 상태를 저장하지 못했습니다. 저장공간을 확인하세요.');
   updateNetBanner();
 }
 let flushing = false;
@@ -1095,25 +1193,31 @@ async function outboxFlush(){
   const ob = outboxAll();
   if(!ob.length) return;
   flushing = true;
+  const epoch = storeEpoch, drv = driver;
+  const queueKey = i => i.qid || JSON.stringify([i.t,i.date,i.rows,i.removeIds]);
   let sentAny = false;
   try{
     for(const item of ob){
-      if(!outboxAll().some(x => x.t === item.t)) continue;   /* 전송 대기 중 직접 저장돼 이미 걷힌 항목 */
+      assertContext(epoch);
+      const key = queueKey(item);
+      if(!outboxAll().some(x => queueKey(x) === key)) continue;
       let sent = [];
-      await driver.mutateDay(item.date, rows => {
+      await drv.mutateDay(item.date, rows => {
+        assertContext(epoch);
         /* 재시도마다 보관분을 다시 읽음 — 전송 중 사용자가 고치거나 지운 내용이 되돌아가지 않게 */
-        const cur = outboxAll().find(x => x.t === item.t) || {rows:[], removeIds:[]};
+        const cur = outboxAll().find(x => queueKey(x) === key) || {rows:[], removeIds:[]};
         sent = cur.rows || [];
         let out = mergeRows(rows, sent, cur.align);
         const rm = new Set(cur.removeIds || []);
         if(rm.size) out = out.filter(r => !rm.has(r.id));
         return out;
       });
-      LS.set('ilbo.outbox', outboxAll().filter(x => x.t !== item.t));
+      assertContext(epoch);
+      if(!LS.set('ilbo.outbox', outboxAll().filter(x => queueKey(x) !== key))) throw new Error('전송대기 정리 실패');
       if(sent.length){ updatePresetsFrom(sent); sentAny = true; }   /* 항목별로 즉시 반영 — 뒤에서 실패해도 유실되지 않게 */
       else sentAny = true;
     }
-    if(sentAny) toast('보관해 둔 기록을 모두 전송했습니다');
+    if(sentAny) toast(outboxAll().length ? '기록을 전송했습니다 — 남은 기록도 이어서 전송합니다' : '보관해 둔 기록을 모두 전송했습니다');
     refreshDay(true, true);
   }catch(e){ /* 다음 기회에 재시도 */ }
   finally{ flushing = false; updateNetBanner(); }
@@ -1157,6 +1261,12 @@ function pendingApply(date, rows){
   });
   return out;
 }
+function showPendingDay(date){
+  if(date!==S.date) return;
+  const cached=getCachedDay(date);
+  S.rows=pendingApply(date,cached || []);S.rowsDate=S.rows.length || cached ? date : null;
+  S.rowsPartial=!cached;S.dayLoaded=!!cached || !!S.rows.length;renderAll();
+}
 function applyDay(date, raw){
   /* 전송 대기(아웃박스) 행은 화면에서 사라지지 않게 겹쳐 보여줌 — 이중 입력 방지 */
   S.rows = driver.mode === 'gh' ? pendingApply(date, raw) : raw;   /* 전송 대기분·삭제 예약을 순서대로 겹쳐 표시 */
@@ -1169,6 +1279,7 @@ const FRESH_DAY_MS = 60*1000;   /* 오늘이 아닌 날짜: 1분 안에 서버�
 /* 날짜 조회: ① 캐시를 먼저 즉시 그림 → ② 서버와 대조해 달라졌을 때만 다시 그림 → ③ 앞뒤 날짜 미리 받기
    force=true 면(↻·인쇄·복귀) 캐시가 신선해도 반드시 서버 대조 */
 async function refreshDay(quiet, force){
+  const epoch = storeEpoch, drv = driver;
   const reqDate = S.date, my = ++loadSeq;   /* 늦게 도착한 응답이 다른 날짜를 덮지 못하게 */
   const cached = getCachedDay(reqDate);
   const cachedJson = cached ? JSON.stringify(cached) : null;
@@ -1185,8 +1296,9 @@ async function refreshDay(quiet, force){
   if(skip){ prefetchAround(reqDate); return; }
   setBusy(true); refreshing++;
   try{
-    const rows = await driver.loadDay(reqDate);
-    if(my !== loadSeq || reqDate !== S.date) return;
+    const rows = await drv.loadDay(reqDate);
+    assertContext(epoch);
+    if(epoch !== storeEpoch || my !== loadSeq || reqDate !== S.date) return;
     S.offline = false;
     if(driver.mode==='gh') S.lastSync = Date.now();
     if(!S.dayLoaded || JSON.stringify(rows) !== cachedJson) applyDay(reqDate, rows);
@@ -1208,26 +1320,31 @@ async function refreshDay(quiet, force){
 let prefetchTimer = null;
 function prefetchAround(date){
   if(driver.mode !== 'gh') return;
+  const epoch=storeEpoch, drv=driver;
   clearTimeout(prefetchTimer);
   prefetchTimer = setTimeout(async () => {
     const today = todayStr();
     for(const off of [-1, -2, -3, 1, 2]){
+      if(epoch!==storeEpoch) return;
       const d = parseDate(date); d.setDate(d.getDate()+off); const ds = fmtDate(d);
       if(ds > today || ds === S.date || isFresh(ds, 5*60*1000)) continue;
-      try{ await driver.loadDay(ds); }catch(e){ break; }
+      try{ await drv.loadDay(ds); }catch(e){ break; }
     }
   }, 250);
 }
 async function loadPresets(){
+  const epoch = storeEpoch, drv = driver;
   /* 공유 모드: 기기에 보관된 목록을 먼저 보여주고(즉시) 서버 응답으로 갱신 */
   if(driver.mode === 'gh' && !S.presetsShown){
     const c = LS.get('ilbo.cache.presets', null);
     if(c){ S.presets = c; S.presets.workers ||= []; S.presets.products ||= []; S.presets.parts ||= []; S.presets.inactive ||= []; S.presetsShown = true; renderMeChips(); }
   }
   try{
-    S.presets = await driver.loadPresets() || {workers:[],products:[],parts:[]};
+    const loaded = await drv.loadPresets(); assertContext(epoch);
+    S.presets = loaded || {workers:[],products:[],parts:[]};
     if(driver.mode === 'gh') LS.set('ilbo.cache.presets', S.presets);   /* 오프라인 대비 */
   }catch(e){
+    if(epoch !== storeEpoch) return;
     if(driver.mode === 'gh'){
       const c = LS.get('ilbo.cache.presets', null);
       if(c) S.presets = c;   /* 오프라인 아침에도 이름 칩·미작성 카드 유지 */
@@ -1261,9 +1378,11 @@ function mergeRows(rows, newRows, align){
   return out;
 }
 async function upsertRows(newRows, align, label){
+  const epoch = storeEpoch, drv = driver;
   const date = S.date;   /* 저장 중 날짜를 옮겨도 원래 날짜에 기록·반영 */
-  const rows = await driver.mutateDay(date, rows => mergeRows(rows, newRows, align), label);
-  outboxPrune(date, newRows.map(r => r.id));   /* 같은 행의 옛 보관분 제거 */
+  const rows = await drv.mutateDay(date, rows => mergeRows(rows, newRows, align), label);
+  assertContext(epoch);
+  if(drv.mode==='gh') outboxPrune(date, newRows.map(r => r.id), align);
   updatePresetsFrom(newRows);
   if(date !== S.date){ ensureProgress({quick:true}); return rows; }   /* 화면은 다른 날짜 → 캐시만 갱신(noteDay), 화면·loadSeq 불변 */
   loadSeq++;   /* 저장 전에 발사된 재조회 응답 무효화 */
@@ -1275,20 +1394,22 @@ async function upsertRows(newRows, align, label){
   setTimeout(() => { S.flashIds = null; }, 1800);
 }
 async function deleteRow(id){
+  const epoch = storeEpoch, drv = driver;
   const date = S.date;   /* 삭제 중 날짜를 옮겨도 원래 날짜 기준 */
   try{
-    const rows = await driver.mutateDay(date, rows => rows.filter(r => r.id !== id), '삭제');
-    outboxPrune(date, [id]);   /* 보관 중이던 같은 행이 나중에 되살아나지 않게 */
+    const rows = await drv.mutateDay(date, rows => rows.filter(r => r.id !== id), '삭제');
+    assertContext(epoch);
+    if(drv.mode==='gh') outboxPrune(date, [id]);
     if(date !== S.date) return;
     loadSeq++;
     applyDay(date, rows);
     ensureProgress({quick:true});
   }catch(e){
+    if(epoch !== storeEpoch) throw contextError();
     if(driver.mode === 'gh' && e.isNetwork){
       /* 연결 불가: 보관 중인 같은 행은 걷어내고 삭제 예약을 보관, 화면에는 즉시 반영 */
-      outboxPrune(date, [id]);
-      if(!outboxPush(date, [], null, [id])) return;   /* 보관 실패 시 화면에서 지우지 않음 */
-      if(date === S.date){ S.rows = S.rows.filter(r => r.id !== id); renderAll(); }
+      if(!outboxPush(date, [], null, [id])) throw new Error('삭제를 보관하지 못했습니다. 기록은 그대로 있습니다.');
+      showPendingDay(date);
       toast('연결이 안 돼 삭제를 보관했습니다 — 연결되면 자동 반영됩니다');
       return;
     }
@@ -1296,6 +1417,7 @@ async function deleteRow(id){
   }
 }
 function updatePresetsFrom(rowsArr){
+  const epoch=storeEpoch;
   /* 서버에는 "방금 저장한 이름·제품"만 병합 — 전체 목록을 올리면
      다른 기기의 옛 목록이 삭제된 이름을 되살리는 문제가 생김 */
   const delta = {workers:[], products:[], parts:[]};
@@ -1316,7 +1438,7 @@ function updatePresetsFrom(rowsArr){
   if(ch){
     renderMeChips();
     if(driver.mode === 'gh') LS.set('ilbo.cache.presets', S.presets);   /* 오프라인 재시작 때 새 이름이 사라지지 않게 */
-    Promise.resolve(driver.savePresets(delta)).then(ok => { if(!ok) presetsRetryPush(delta); }).catch(() => presetsRetryPush(delta));
+    Promise.resolve(driver.savePresets(delta)).then(ok => { if(!ok && epoch===storeEpoch) presetsRetryPush(delta); }).catch(() => {if(epoch===storeEpoch) presetsRetryPush(delta);});
   }
 }
 /* 명단 반영 실패분은 보관했다가 연결되면 다시 보냄 (다음날 미작성 명단에서 빠지는 일 방지) */
@@ -1329,16 +1451,18 @@ function presetsRetryPush(delta){
 }
 let retryBusy = false;
 async function presetsRetryFlush(){
+  const epoch = storeEpoch;
   const d = LS.get('ilbo.presetsRetry', null);
   if(!d || retryBusy || driver.mode !== 'gh') return;
   retryBusy = true;
   try{
     if(await driver.savePresets(d)){
+      assertContext(epoch);
       /* 전송 중 새로 쌓인 이름은 남김 — 통째로 지우면 그 이름이 영영 반영되지 않음 */
       const cur = LS.get('ilbo.presetsRetry', {}) || {};
       let left = 0;
       ['workers','products','parts'].forEach(k => { cur[k] = (cur[k]||[]).filter(v => !(d[k]||[]).includes(v)); left += cur[k].length; });
-      if(left) LS.set('ilbo.presetsRetry', cur); else localStorage.removeItem('ilbo.presetsRetry');
+      if(left) LS.set('ilbo.presetsRetry', cur); else LS.remove('ilbo.presetsRetry');
       loadPresets();
     }
   }catch(e){}
@@ -1369,13 +1493,32 @@ function setTab(t){
   $('#addBtn').style.display = t==='input' ? '' : 'none';
   $$('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab===t));
   document.querySelector('main').classList.toggle('wide', t==='sheet');
+  document.querySelector('main').classList.toggle('month-wide', t==='month');
   if(t==='sheet'){ renderSheet(); requestAnimationFrame(applyZoom); }
   if(t==='month') renderMonth();
 }
 
 /* ================= 입력 화면 ================= */
+function renderMyDay(){
+  const box = $('#myDayCard'), name = S.me.worker;
+  if(!name){
+    box.innerHTML = '<h3>내 일보</h3><p class="my-state">이름을 한 번 선택하면 다음부터 바로 작성할 수 있습니다.</p><button class="btn pri" id="myChoose">내 이름 선택</button>';
+    $('#myChoose').onclick=()=>{if(!activeWorkers().length){openEntry();return;}S.meEdit=true;renderMeChips();$('#meChips').scrollIntoView({block:'center'});}; return;
+  }
+  const mine=S.rows.filter(r=>r.worker===name), production=mine.filter(r=>!r.off);
+  const pending=driver.mode==='gh' && pendingRowsFor(S.date).some(r=>r.worker===name);
+  const draft=draftsAll()[name];
+  const status=pending?'전송 대기 · 기기에 보관됨':!S.dayLoaded?'기록 확인 중':production.length?`${production.length}개 제품 · 생산 ${r2(production.reduce((s,r)=>s+(Number(r.prod)||0),0))}조`:mine.length?offLabel(mine[0]):'아직 작성하지 않았습니다';
+  const action=production.length?'오늘 기록 한꺼번에 수정':draft?'작성하던 내용 이어쓰기':mine.length?'기록 확인·수정':'내 일보 쓰기';
+  box.innerHTML=`<div class="my-day-head"><h3>${S.date===todayStr()?'오늘':'선택 날짜'} · ${esc(name)}</h3><button class="quiet-btn" id="myChange">이름 변경</button></div><p class="my-state">${esc(status)}${draft&&production.length?' · 새 기록 임시저장 있음':''}</p><div class="my-actions"><button class="btn pri" id="myWrite">${action}</button>${production.length?'<button class="btn sec" id="myExtra">제품 추가</button>':''}</div>`;
+  $('#myChange').onclick=()=>{S.meEdit=true;renderMeChips();$('#meChips').scrollIntoView({block:'center'});};
+  $('#myWrite').onclick=()=>{if(production.length) openWorkerEntry(name); else if(mine[0] && !isRest(mine[0])) openCaseEntry(name,mine[0]); else openEntryFor(name,{auto:!draft});};
+  if($('#myExtra')) $('#myExtra').onclick=()=>openEntryFor(name,{auto:false});
+}
 function renderMeChips(){
+  renderMyDay();
   const box = $('#meChips'), h3 = box.closest('.card').querySelector('h3');
+  box.closest('.card').hidden=!!S.me.worker && !S.meEdit;
   /* 내 이름이 정해졌으면 한 줄로 접어 화면을 아낌 */
   if(S.me.worker && !S.meEdit){
     h3.hidden = true;
@@ -1443,9 +1586,9 @@ function openCaseEntry(name, row){
   $('#entryTitle').innerHTML = $('#entryTitle').innerHTML.replace(row ? '기록 수정' : '기록 추가', row ? '케이스 교체 수정' : '케이스 교체 기록');
   $('#recentLoad').hidden = true; $('#recentLoad').innerHTML = '';
   if(!row){
-    /* 작업시간 기본값: 이 날 그 사람의 기록 → 이 기기의 내 시간 → 10 */
-    const last = [...S.rows].reverse().find(r => r.worker === name && r.hours !== '' && r.hours != null);
-    $('#fHours').value = last ? last.hours : (name === S.me.worker && S.me.hours ? S.me.hours : DEFAULT_HOURS);
+    /* 케이스 교체는 생산 기본시간을 추정하지 않고 실제 시간을 입력받음. */
+    $('#fHours').value = '';
+    $('#fHours').placeholder = '실제 작업시간';
   }
   entrySnap = formSnapshot();
   const h = $('#fHours'); h.focus(); try{ h.select(); }catch(e){}
@@ -1465,21 +1608,26 @@ function renderMissing(){
   const dayWord = isToday ? '오늘' : '이 날';
   const miss = missingWorkers();
   if(miss === null){ card.hidden = true; }
-  else if(!miss.length){
+  else{
     card.hidden = false;
-    card.innerHTML = `<span class="alldone">✅ ${dayWord} 전원 작성 완료</span>`;
-  }else{
-    card.hidden = false;
-    const meMiss = S.me.worker && miss.includes(S.me.worker);
-    card.innerHTML = `${meMiss ? `<button type="button" class="btn pri me-cta" id="meWrite">✎ 내 일보 쓰기 — ${esc(S.me.worker)}</button>` : ''}<h3>${dayWord} 아직 안 쓴 사람 <b>${miss.length}명</b> — 이름을 누르면 바로 입력</h3>
-      <div class="chips">${miss.map(n=>`<span class="miss-wrap"><button class="chip miss" data-n="${esc(n)}">${esc(n)}</button><button class="off-btn" data-n="${esc(n)}" data-k="휴무">휴무</button><button class="off-btn" data-n="${esc(n)}" data-k="케이스 교체">케이스교체</button></span>`).join('')}</div>
-      <div style="font-size:13px; color:var(--ink-dim); margin-top:8px">휴가·결근은 <b>휴무</b> · 케이스 교체로 생산이 없던 사람은 <b>케이스교체</b>(작업시간 입력) · 부서를 떠난 사람은 이름을 <b>길게 누르거나</b> ⚙ 설정 &gt; 부서 명단에서 체크 해제</div>`;
-    card.querySelectorAll('.chip').forEach(b => {
-      b.onclick = () => openEntryFor(b.dataset.n);
-      bindLongPress(b, () => removePreset('workers', b.dataset.n));
+    const waiting = new Set(driver.mode==='gh'?pendingRowsFor(S.date).map(r=>r.worker):[]);
+    const people=activeWorkers().filter(n=>!(S.presets.since?.[n] && S.date<S.presets.since[n])).map(name=>{
+      const rows=S.rows.filter(r=>r.worker===name);
+      const kind=rows.some(r=>!r.off)?'prod':rows.some(r=>r.off&&!isRest(r))?'case':rows.length?'off':'missing';
+      return {name,kind,rows};
     });
-    card.querySelectorAll('.off-btn').forEach(b => b.onclick = () => markDayOff(b.dataset.n, b.dataset.k));
-    const mw = card.querySelector('#meWrite'); if(mw) mw.onclick = () => openEntryFor(S.me.worker, {auto:true});
+    const filters=[['missing','미작성'],['prod','생산 작성'],['case','케이스 교체'],['off','휴무'],['pending','전송 대기']];
+    const filter=S.rosterFilter||'missing';
+    const chosen=people.filter(p=>filter==='pending'?waiting.has(p.name):p.kind===filter);
+    const open=!!LS.get('ilbo.rosterOpen',false);
+    card.innerHTML=`<h3>부서 확인 · ${dayWord} ${miss.length?`미작성 ${miss.length}명`:'전원 확인 완료'}</h3><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?waiting.size:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div><details class="roster-details" ${open?'open':''}><summary>${filters.find(x=>x[0]===filter)[1]} 이름 보기</summary>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${p.kind==='prod'?p.rows.filter(r=>!r.off).length+'개 제품':p.kind==='case'?'시간 확인·수정':'휴무 표시 해제'}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}<p class="quick-hint">부서 이동·파견 종료는 설정의 부서 명단에서 변경합니다.</p></details>`;
+    card.querySelector('details').ontoggle=e=>LS.set('ilbo.rosterOpen',e.target.open);
+    card.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{S.rosterFilter=b.dataset.filter;LS.set('ilbo.rosterOpen',true);renderMissing();});
+    card.querySelectorAll('.person-open').forEach(b=>b.onclick=()=>{
+      const p=people.find(p=>p.name===b.dataset.n);
+      if(p.kind==='prod') openWorkerEntry(p.name); else if(p.kind==='case') openCaseEntry(p.name,p.rows.find(r=>r.off&&!isRest(r))); else if(p.kind==='off'){if(confirm(`${p.name}님 휴무 표시를 해제할까요?`)) deleteRow(p.rows[0].id).catch(e=>toast(e.message));} else openEntryFor(p.name);
+    });
+    card.querySelectorAll('.off-btn').forEach(b=>b.onclick=()=>markDayOff(b.dataset.n,b.dataset.k));
   }
   const mi = $('#missInfo');
   if(mi){
@@ -1494,7 +1642,7 @@ function renderGuide(){
     <div class="card guide-card" id="guideCard">
       <b>처음이세요? 이렇게 쓰면 됩니다</b>
       <ol>
-        <li>위 <b>"아직 안 쓴 사람"</b>에서 <b>내 이름</b>을 누르세요 (이름이 없으면 오른쪽 아래 <b>＋ 기록 추가</b> → 이름 입력)</li>
+        <li><b>내 이름</b>을 한 번 선택한 뒤 <b>내 일보</b>에서 작성하세요. 다른 사람 기록은 <b>부서 작성 현황</b>을 펼쳐 확인할 수 있습니다.</li>
         <li><b>제품명</b> 버튼을 누르고 <b>생산량</b> 숫자만 넣으세요 (검사는 기본 ○ · 불량이 있으면 제품 칸 아래 <b>불량 있음</b>)</li>
         <li>맨 아래 <b>저장</b> — 끝. 제품이 여러 개면 <b>＋ 제품 추가</b></li>
       </ol>
@@ -1526,7 +1674,7 @@ function computeProgress(daysMap){
   });
   return runs;
 }
-const fmtMD = ds => { const d = parseDate(ds); return `${d.getMonth()+1}/${d.getDate()}`; };
+const fmtMD = ds => { if(!ds) return '—'; const d = parseDate(ds); return Number.isNaN(d.getTime())?'—':`${d.getMonth()+1}/${d.getDate()}`; };
 function progOf(product){
   const bp = S.progress && S.progress.byProduct; if(!bp || !product) return null;
   return bp[product] || bp[String(product).toUpperCase()] || null;
@@ -1561,6 +1709,7 @@ function updateProdProg(el){
 let progressBusy = false, lastDraw = null;
 const ymBack = i => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-i); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; };
 async function ensureProgress(opt){
+  const epoch = storeEpoch, drv = driver;
   opt = opt || {};
   const now = Date.now();
   if(!opt.quick && !opt.force && S.progress && now - (S.progress.computedAt||0) < 10*60*1000) return;
@@ -1576,11 +1725,12 @@ async function ensureProgress(opt){
         const mc = monthCache[ym];
         if(mc && (opt.quick || now - mc.t < 10*60*1000)) days = mc.days;
         else if(!opt.quick){
-          days = await driver.monthDays(ym);
+          days = await drv.monthDays(ym); assertContext(epoch);
           if(Object.values(days).some(v => v && !Array.isArray(v))) hadErr = true; else monthCache[ym] = {days, t: Date.now()};
         } else return false;   /* quick: 캐시 없는 달이 하나라도 있으면 불완전 → 계산 건너뜀 */
-      } else days = await driver.monthDays(ym);
-      if(days){ got.add(ym); Object.keys(days).forEach(k => { if(Array.isArray(days[k])) all[k] = days[k]; }); }
+      } else days = await drv.monthDays(ym);
+      assertContext(epoch);
+      if(days){ got.add(ym); const effective = effectiveMonthDays(days,ym); Object.keys(effective).forEach(k => { if(Array.isArray(effective[k])) all[k] = effective[k]; }); }
       return true;
     };
     let span = opt.quick ? (S.progressSpan || 3) : 3;   /* quick은 마지막 전체 계산과 같은 범위를 씀 */
@@ -1595,6 +1745,7 @@ async function ensureProgress(opt){
       if(!(await loadMonth(ymBack(span)))) break;
       span++; inject(); runs = computeProgress(all);
     }
+    assertContext(epoch);
     if(!opt.quick) S.progressSpan = span;
     S.progress = {computedAt: (opt.quick && S.progress) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct: runs};
     if(!hadErr) LS.set('ilbo.progress', S.progress);   /* 불러오기 실패가 섞인 결과는 보관하지 않음(다음에 다시 계산) */
@@ -1602,7 +1753,7 @@ async function ensureProgress(opt){
     if(S.tab === 'month' && lastDraw && `${lastDraw.y}-${pad2(lastDraw.m)}` === S.month) drawMonth(lastDraw.days, lastDraw.y, lastDraw.m);
     if($('#entryOv').classList.contains('open')) $$('#prodBlocks .pb').forEach(updateProdProg);
   }catch(e){}
-  finally{ progressBusy = false; }
+  finally{ if(epoch===storeEpoch) progressBusy = false; }
 }
 function renderNotice(){
   const el = $('#noticeCard'); if(!el) return;
@@ -1636,7 +1787,7 @@ function renderInput(){
   });
   $('#rowList').innerHTML = groups.map(g => `
     <div class="wgroup">
-      <div class="whead"><span class="wname">${esc(g.worker)}</span><span class="whr">${esc(g.hours??'')}${g.hours?'hr':''}</span></div>
+      <div class="whead"><span class="wname">${esc(g.worker)}</span><span class="whr">${esc(g.hours??'')}${g.hours?'hr':''}</span>${g.rows.some(r=>!r.off)?`<button class="quiet-btn edit-worker" data-worker="${esc(g.worker)}">오늘 기록 수정</button>`:''}</div>
       ${g.rows.map(r => {
         if(r.off) return `<div class="rowcard off-card" data-id="${esc(r.id)}" tabindex="0" role="button"><span>${offIcon(offLabel(r))} ${esc(offLabel(r))}${offLabel(r)==='케이스 교체' ? ` <small style="font-weight:400">(생산 없음 · ${esc(r.hours ?? '')}hr — 누르면 시간 수정)</small>` : ''}</span><span class="rc-chev">›</span></div>`;
         const bad = (Number(r.defQty)||0) > 0 || (Number(r.scrapKg)||0) > 0;
@@ -1657,6 +1808,7 @@ function renderInput(){
         </div>`;
       }).join('')}
     </div>`).join('');
+  $$('#rowList .edit-worker').forEach(b=>b.onclick=()=>openWorkerEntry(b.dataset.worker));
   $$('#rowList .rowcard').forEach(el => {
     el.onclick = () => {
       const r = S.rows.find(x => x.id === el.dataset.id);
@@ -1681,15 +1833,17 @@ function partsList(){ return [...new Set([...(S.presets.parts||[]), '상형1','�
 function segBtns(){ return ['○','△','Ⅹ'].map(v=>`<button type="button" data-v="${v}">${v}</button>`).join(''); }
 function blockHTML(){
   return `
-  <div class="pb-head"><b class="pb-title">제품 1</b><button type="button" class="pb-del">✕ 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·검사·불량 상세</small></button><button type="button" class="pb-del">✕ 빼기</button></div>
+  <div class="pb-body">
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
   <div class="chips pb-prodchips" style="margin-top:7px"></div>
   <div class="pb-prog" hidden></div>
   <div class="f-label">계획수량 (조) <span class="hint">이 기물을 처음 시작한 날에만 계획 수량을 적음</span></div>
+  <select class="f-input pb-planmode" aria-label="생산 진행 상태"><option value="continue">계속 생산</option><option value="start">새 계획 시작</option><option value="end">생산 종료</option></select>
   <div class="f-row">
     <input class="f-input pb-plan" inputmode="numeric" placeholder="시작일에만 기록">
-    <button type="button" class="qzero pb-planzero" title="이 기물의 계획 수량을 전부 만들어 더 이상 만들지 않을 때만 누릅니다">생산 종료 (0)</button>
+    <button type="button" class="qzero pb-planzero" hidden title="이 기물의 계획 수량을 전부 만들어 더 이상 만들지 않을 때만 누릅니다">생산 종료 (0)</button>
   </div>
   <div class="f-label">생산량 · 완성품 (조)</div>
   <div class="stepper">
@@ -1727,7 +1881,42 @@ function blockHTML(){
     </div>
   </div>
   <div class="f-label">비고 <span class="hint">△·Ⅹ 체크 시 사유를 꼭 적어주세요</span></div>
-  <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea>`;
+  <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea></div>`;
+}
+function expandProduct(el, open=true){
+  if(!el) return;
+  el.querySelector('.pb-body').hidden=!open;
+  el.querySelector('.pb-toggle').setAttribute('aria-expanded',String(open));
+}
+function syncPlanMode(el){
+  const inp=el.querySelector('.pb-plan'), zero=el.querySelector('.pb-planzero').classList.contains('sel'), mode=el.querySelector('.pb-planmode');
+  mode.value=zero?'end':inp.value.trim()?'start':(mode.value==='start'?'start':'continue');
+  inp.closest('.f-row').hidden=mode.value!=='start';
+}
+function syncQuickProducts(){
+  const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
+  box.hidden=S.entryMode==='case' || !els.length;
+  if(box.hidden) return;
+  const signature=els.map(el=>el.dataset.rid).join('|');
+  if(box.dataset.ids!==signature){
+    box.dataset.ids=signature;
+    box.innerHTML='<h3>제품별 생산량</h3><p class="quick-hint">수량을 모아서 입력하세요. 제품명을 누르면 계획·검사·불량을 확인할 수 있습니다.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><label class="quick-qty"><span>생산량 (조)</span><input inputmode="numeric" aria-label="제품 ${i+1} 생산량"></label></div>`).join('');
+    box.querySelectorAll('.quick-row').forEach(row=>{
+      const el=els.find(el=>el.dataset.rid===row.dataset.rid);
+      row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
+      row.querySelector('input').oninput=e=>{const inp=el.querySelector('.pb-prod');inp.value=e.target.value;inp.dispatchEvent(new Event('input',{bubbles:true}));};
+      row.querySelector('input').addEventListener('focus',e=>e.target.select());
+    });
+  }
+  els.forEach((el,i)=>{
+    const row=box.children[i+2], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input');
+    row.querySelector('b').textContent=p||`제품 ${i+1} 선택`;
+    const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value;
+    row.querySelector('small').textContent=(bad?'△·Ⅹ 있음 · 사유 확인':CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':'검사 ○')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
+    if(document.activeElement!==input) input.value=qty.value;
+    input.placeholder=qty.placeholder;input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
+    el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
+  });
 }
 const segSetB = (el,k,v) => el.querySelectorAll(`.seg[data-k="${k}"] button`).forEach(b=>{ const on = b.dataset.v===v; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); });
 const segGetB = (el,k) => { const b = el.querySelector(`.seg[data-k="${k}"] button.sel`); return b ? b.dataset.v : ''; };
@@ -1743,8 +1932,9 @@ function renumberBlocks(){
   const els = [...$('#prodBlocks').children];
   els.forEach((el,i) => {
     el.querySelector('.pb-title').textContent = '제품 ' + (i+1);
-    el.querySelector('.pb-del').style.display = (els.length>1 && !(S.editId && el.dataset.rid === S.editId)) ? '' : 'none';   /* 수정 중 원본 블록은 빼기 불가(원본 행이 남는 이중 집계 방지) */
+    el.querySelector('.pb-del').style.display = (els.length>1 && !(S.editIds||[]).includes(el.dataset.rid)) ? '' : 'none';
   });
+  syncQuickProducts();
 }
 function bindLongPress(btn, fn){
   let t = null;
@@ -1784,13 +1974,14 @@ function addBlock(row){
   el.dataset.rid = row ? row.id : uid();   /* 재전송 시 중복 등록 방지용 고정 id */
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
+  el.querySelector('.pb-toggle').onclick=()=>expandProduct(el,el.querySelector('.pb-body').hidden);
   /* 칩은 최근 순 14개만 보이고, 제품명을 치면 전체 목록(40개)에서 걸러 보여줌 */
   const prodIn = el.querySelector('.pb-product');
   el.querySelector('.pb-prodchips').innerHTML = prodsListAll().map((p,i)=>`<button type="button" class="chip" data-p="${esc(p)}"${i>=14?' hidden':''}>${esc(p)}</button>`).join('');
   const showChips = q => el.querySelectorAll('.pb-prodchips .chip').forEach((c,j) => { c.hidden = q ? !c.dataset.p.toUpperCase().includes(q) : j >= 14; });
   el.querySelectorAll('.pb-prodchips .chip').forEach(b => {
     b.onclick = () => {
-      prodIn.value = b.dataset.p; showChips(''); updateProdProg(el);
+      prodIn.value = b.dataset.p; showChips(''); updateProdProg(el); syncQuickProducts();
       const q = el.querySelector('.pb-prod'); q.scrollIntoView({block:'center'}); q.focus();   /* 바로 생산량 숫자 키패드 */
     };
     bindLongPress(b, () => { if(removePreset('products', b.dataset.p)) b.remove(); });
@@ -1808,6 +1999,7 @@ function addBlock(row){
   el.querySelector('.pb-gasa').addEventListener('input', ()=>updateBlockNeed(el));
   el.querySelector('.pb-remark').addEventListener('input', ()=>updateBlockNeed(el));
   el.addEventListener('input', e => {
+    syncQuickProducts();
     if(!(e.target && e.target.classList)) return;
     e.target.classList.remove('need');
     const n = (e.target.closest('.stepper,.f-row,.bd-row,.gasa-row') || e.target).nextElementSibling;
@@ -1832,6 +2024,15 @@ function addBlock(row){
     /* '오늘 작업 완료'로 오해해 누르는 일 방지 — 켤 때만 뜻을 확인 */
     if(on && !confirm("'생산 종료'는 오늘 작업을 마쳤다는 뜻이 아닙니다.\n이 제품(기물)의 계획 수량을 전부 다 만들어 더 이상 만들지 않을 때만 누릅니다 (계획수량 0으로 기록 → 현황에 '생산 종료').\n\n[확인] 이 기물 생산 종료 — 0으로 기록\n[취소] 아니요, 아직 생산중")) return;
     applyPz(on);
+    syncPlanMode(el); syncQuickProducts();
+  };
+  el.querySelector('.pb-planmode').onchange=e=>{
+    const desired=e.target.value;
+    if(desired==='end'){
+      if(!pz.classList.contains('sel')) pz.click();
+      if(!pz.classList.contains('sel')) e.target.value=planEl.value?'start':'continue';
+    }else{applyPz(false);if(desired==='continue') planEl.value='';e.target.value=desired;}
+    syncPlanMode(el);saveDraft();
   };
   planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); });
   ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).addEventListener('input', () => updateDefSummary(el)));
@@ -1861,11 +2062,14 @@ function addBlock(row){
   updateDefSummary(el);
   updateBlockNeed(el);
   updateProdProg(el);
+  syncPlanMode(el);
   renumberBlocks();
   return el;
 }
 /* 칸 바로 아래에 빨간 글씨로 이유 표시 — 토스트가 키보드에 가려져도 보이게 */
 function fieldErr(inp, msg){
+  expandProduct(inp.closest('.pb'),true);
+  if(inp.closest('#workerDetails')) $('#workerDetails').open=true;
   inp.classList.add('need');
   const host = inp.closest('.stepper,.f-row,.bd-row,.gasa-row') || inp;
   let e = host.nextElementSibling;
@@ -1899,6 +2103,9 @@ function collectBlock(el, i){
     return null;
   }
   const plan = numField(el, 'pb-plan', '계획수량', i);   if(!plan.ok) return null;
+  if(el.querySelector('.pb-planmode').value==='start' && plan.val===''){
+    fieldErr(el.querySelector('.pb-plan'), `제품 ${i+1}: 생산 시작을 선택했다면 계획수량을 입력하세요`);return null;
+  }
   const pzSel = el.querySelector('.pb-planzero').classList.contains('sel');
   if(!pzSel && plan.val === 0){
     /* 계획수량에 0을 직접 치면 '생산 종료'로 기록됨 — 버튼과 같은 확인을 거침 */
@@ -1930,6 +2137,7 @@ function fillWorkerChips(){
   $$('#fWorkerChips .chip').forEach(b => {
     b.onclick = () => {
       $('#fWorker').value = b.dataset.n;
+      $('#entryWorkerLabel').textContent=b.dataset.n;$('#workerDetails').open=false;
       const last = [...S.rows].reverse().find(r=>r.worker===b.dataset.n);
       if(last && last.hours!=null && last.hours!=='') $('#fHours').value = last.hours;
       updateRecentBtn();
@@ -1978,8 +2186,9 @@ async function updateRecentBtn(auto){
       });
       box.hidden = true; box.innerHTML = '';
       $$('#prodBlocks .pb').forEach(updateProdProg);
-      const f = [...$('#prodBlocks').children].map(el => el.querySelector('.pb-prod')).find(i => !i.value.trim());
-      if(f){ f.closest('.pb').scrollIntoView({block:'center'}); f.focus(); }
+      $$('#prodBlocks .pb').forEach(el=>expandProduct(el,false));syncQuickProducts();
+      const f=[...$('#quickProducts').querySelectorAll('input')].find(i=>!i.value.trim());
+      if(f){ $('#quickProducts').scrollIntoView({block:'start'}); f.focus({preventScroll:true}); }
       toast(auto ? `${worker}님 ${d.getMonth()+1}/${d.getDate()} 제품을 채웠습니다 — 수량만 입력 (다른 제품이면 ✕ 빼기)` : '제품명을 채웠습니다 — 수량만 입력하세요');
       if(auto) entrySnap = formSnapshot();   /* 자동 채움은 사용자 입력이 아님 */
     };
@@ -2006,12 +2215,15 @@ function formSnapshot(){
 }
 let entrySnap = '';
 function openEntry(row, presetName, mode){
+  S.entryScope=activeScope;S.entryDate=S.date;S.draftSaveFailed=false;
   ensureProgress();
   S.entryMode = mode === 'case' ? 'case' : null;
   const isCase = S.entryMode === 'case';
   $('#prodBlocks').hidden = isCase; $('#addProdBlock').hidden = isCase; $('#caseNote').hidden = !isCase;
   S.draftKey = undefined; S.draftOwn = false;
   S.editId = row ? row.id : null;
+  S.caseRowId = row ? row.id : uid();
+  S.editIds = row ? [row.id] : [];
   const dd = parseDate(S.date), isT = S.date === todayStr();
   $('#entryTitle').innerHTML = (row ? '기록 수정' : '기록 추가') +
     ` <span class="ov-date${isT ? '' : ' warn'}">${dd.getMonth()+1}/${dd.getDate()}(${WD[dd.getDay()]})${isT ? '' : ' · 오늘 아님'}</span>`;
@@ -2022,12 +2234,16 @@ function openEntry(row, presetName, mode){
   $('#fWorker').value = row ? row.worker : (presetName || me.worker || '');
   $('#fHours').value = row ? (row.hours ?? '') : (me.hours ?? 10);
   $('#prodBlocks').innerHTML = '';
+  $('#quickProducts').dataset.ids = '';
   addBlock(row || null);
   $('#draftBar').hidden = true;
   if(!row && !isCase){
     const d = pickDraft(presetName);
     if(d){ try{ restoreForm(d.snap); $('#draftBar').hidden = false; S.draftKey = d.w; }catch(e){ $('#prodBlocks').innerHTML = ''; addBlock(null); } }   /* 복원한 보관분의 이름을 기억 → 이름을 바꿔 이어 쓰면 옛 이름 보관분 정리 */
   }
+  $('#entryWorkerLabel').textContent=$('#fWorker').value||'선택 안 됨';$('#workerDetails').open=!$('#fWorker').value;
+  syncQuickProducts();
+  if(row && !isCase) expandProduct($('#prodBlocks .pb'),false);
   $('#fWorker').classList.remove('need');
   $('#entryOv').classList.add('open');
   $('#entryOv').scrollTop = 0;
@@ -2037,6 +2253,16 @@ function openEntry(row, presetName, mode){
   updateRecentBtn();
   if(!row && !$('#fWorker').value) $('#fWorker').focus();
   else $('#entryTitle').focus({preventScroll:true});   /* 포커스를 대화상자 안으로 (키보드는 띄우지 않음) */
+}
+function openWorkerEntry(name){
+  const rows=orderRows(S.rows.filter(r=>r.worker===name && !r.off));
+  if(!rows.length){openEntryFor(name);return;}
+  openEntry(rows[0],name);
+  S.editIds=rows.map(r=>r.id);
+  rows.slice(1).forEach(addBlock);
+  $('#entryDel').style.display=rows.length===1?'':'none';
+  $('#entryTitle').innerHTML=$('#entryTitle').innerHTML.replace('기록 수정','하루 기록 수정');
+  $$('#prodBlocks .pb').forEach(el=>expandProduct(el,false));renumberBlocks();entrySnap=formSnapshot();
 }
 function entryDirty(){ return formSnapshot() !== entrySnap; }
 /* ── 작성 중 임시저장: 전화·앱 종료로 폼이 닫혀도 다음에 열면 이어서 (새 기록만, 같은 날짜, 12시간 이내) ── */
@@ -2058,18 +2284,32 @@ function pickDraft(presetName){
 }
 function persistDraft(){
   if(!$('#entryOv').classList.contains('open') || S.editId || S.entryMode === 'case') return false;
-  const snap = formSnapshot(), key = draftKeyOf(), m = draftsAll();
+  const scope=S.entryScope || activeScope, date=S.entryDate || S.date;
+  const snap = formSnapshot(), key = draftKeyOf(), m = LS.get('ilbo.drafts',{},scope) || {};
   if(S.draftKey !== undefined && S.draftKey !== key && S.draftOwn) delete m[S.draftKey];   /* 이 세션에서 만든 보관분만, 이름을 바꾸면 옛 이름 것 정리 */
   const has = draftHas(snap);
-  if(has) m[key] = {date: S.date, w: key, snap, t: Date.now()}; else delete m[key];
-  LS.set('ilbo.drafts', m); S.draftKey = key; S.draftOwn = true;
+  if(has) m[key] = {date, w: key, snap, t: Date.now()}; else delete m[key];
+  if(!LS.set('ilbo.drafts', m, scope)){
+    S.draftSaveFailed = true;
+    $('#entryErr').hidden = false; $('#entryErr').textContent = '작성 중인 내용을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장공간을 확인해 주세요.';
+    return false;
+  }
+  S.draftSaveFailed = false; S.draftKey = key; S.draftOwn = true;
   return has;
 }
 function saveDraft(){ clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); }
 function clearDraft(){
   clearTimeout(draftTimer);
+  if(S.editId || S.entryMode==='case') return true;
   const m = draftsAll(); delete m[draftKeyOf()]; if(S.draftKey !== undefined && S.draftOwn) delete m[S.draftKey];
-  LS.set('ilbo.drafts', m);
+  if(!LS.set('ilbo.drafts', m)) return false;
+  return true;
+}
+function finishEntrySave(){
+  if(clearDraft()){closeEntry();return true;}
+  $('#entryErr').hidden=false;
+  $('#entryErr').textContent='기록은 저장·보관됐지만 임시저장 정리에 실패했습니다. 공간을 비운 뒤 다시 저장하세요. 같은 기록 ID로 갱신됩니다.';
+  return false;
 }
 function restoreForm(snap){
   const j = JSON.parse(snap);
@@ -2088,6 +2328,7 @@ function restoreForm(snap){
     el.querySelector('.pb-b1').value = b.b1 || ''; el.querySelector('.pb-b2').value = b.b2 || ''; el.querySelector('.pb-remark').value = b.r || '';
     el.querySelector('.pb-defect').open = !!(b.s || b.dq || b.dp);
     updateDefSummary(el); updateBlockNeed(el); updateProdProg(el);
+    syncPlanMode(el);expandProduct(el,false);
   });
   renumberBlocks();
 }
@@ -2102,11 +2343,14 @@ function closeEntry(fromPop){
   if(S.tab === 'input'){ try{ $('#addBtn').focus({preventScroll:true}); }catch(e){} }
 }
 function requestCloseEntry(fromPop){
+  if($('#entrySave').disabled){ toast('저장 처리 중입니다. 잠시만 기다려 주세요.'); if(fromPop) history.pushState({ov:'entry'},''); return; }
   if(entryDirty()){
     if(!S.editId){
       /* 새 기록은 임시저장되므로 확인창 없이 닫고, 다음에 열면 이어서 쓰게 */
       clearTimeout(draftTimer);
       if(persistDraft()) toast('작성 중이던 내용은 보관됩니다 — 다시 열면 이어서 쓸 수 있어요');
+      else if(S.draftSaveFailed){ if(fromPop) history.pushState({ov:'entry'},''); return; }
+      else if(S.entryMode==='case' && !confirm('입력한 케이스 교체 시간이 저장되지 않았습니다. 저장하지 않고 닫을까요?')){ if(fromPop) history.pushState({ov:'entry'},''); return; }
     }else if(!confirm('고친 내용이 아직 저장되지 않았습니다.\n\n[확인] 저장하지 않고 닫기 — 고친 내용이 사라집니다\n[취소] 계속 수정')){
       if(fromPop){ try{ history.pushState({ov:'entry'}, ''); }catch(e){} }
       return;
@@ -2116,6 +2360,8 @@ function requestCloseEntry(fromPop){
 }
 async function saveEntry(){
   if($('#entrySave').disabled) return;   /* 저장 진행 중 재진입 차단 (버튼·Ctrl+Enter 공통) */
+  if(S.entryScope!==activeScope || S.entryDate!==S.date){ toast('날짜 또는 연결이 바뀌었습니다. 해당 날짜의 기록을 다시 열어 주세요.'); return; }
+  const epoch = storeEpoch;
   clearFieldErrs(); $('#entryErr').hidden = true;
   const worker = $('#fWorker').value.replace(/\s+/g, '');   /* '김 철수' → '김철수' (유령 작업자 방지) */
   $('#fWorker').value = worker;
@@ -2127,7 +2373,7 @@ async function saveEntry(){
     /* 케이스 교체: 제품 없이 작업시간만 저장 */
     if(hours === ''){ fieldErr($('#fHours'), '케이스 교체한 작업시간을 입력하세요'); return; }
     const oldC = S.editId ? S.rows.find(r => r.id === S.editId) : null;
-    const row = {id: oldC ? oldC.id : uid(), worker, off: true, offKind: '케이스 교체', hours, product:'', plan:'', prod:'', scrapKg:'', defQty:'', defPart:'',
+    const row = {...oldC, id: oldC ? oldC.id : S.caseRowId, worker, off: true, offKind: '케이스 교체', hours, product:'', plan:'', prod:'', scrapKg:'', defQty:'', defPart:'',
       gasa:'', cs:'', gap:'', inlet:'', face:'', bubble:'', b1:'', b2:'', remark:'', ts: oldC ? oldC.ts : Date.now(), t: Date.now()};
     const btnC = $('#entrySave'); btnC.disabled = true; btnC.textContent = '저장 중…';
     const caseDate = S.date;
@@ -2136,13 +2382,14 @@ async function saveEntry(){
       closeEntry();
       toast(`${worker}님 케이스 교체 ${hours}hr 기록됨`);
     }catch(e){
+      if(epoch!==storeEpoch){ toast(e.message); return; }
       if(driver.mode === 'gh' && e.isNetwork){
         if(!outboxPush(caseDate, [row])){
           const ee = $('#entryErr'); ee.hidden = false;
           ee.textContent = '기기 저장 공간이 부족해 보관하지 못했습니다 — 공간을 비우고 [저장]을 다시 눌러주세요';
           return;
         }
-        if(caseDate === S.date){ S.rows = mergeRows(S.rows, [row]); renderAll(); } closeEntry();
+        showPendingDay(caseDate);closeEntry();
         toast('연결이 안 돼 기기에 보관했습니다 — 연결되면 자동 전송됩니다');
       } else { const ee = $('#entryErr'); ee.hidden = false; ee.textContent = '저장 안 됨: ' + e.message + ' — 잠시 후 [저장]을 다시 눌러주세요'; toast(e.message); }
     }
@@ -2162,7 +2409,7 @@ async function saveEntry(){
   if(noQty.length){
     const nm = noQty.map(x => `제품 ${x.i+1} ${x.d.product}`).join(', ');
     if(!confirm(`${nm} 의 생산량이 비어 있습니다.\n\n[확인] 생산량 없이 저장\n[취소] 돌아가서 수량 입력 (없으면 0)`)){
-      const el = els[noQty[0].i]; el.scrollIntoView({block:'center'}); el.querySelector('.pb-prod').focus(); return;
+      const el = els[noQty[0].i]; expandProduct(el); el.scrollIntoView({block:'center'}); el.querySelector('.pb-prod').focus(); return;
     }
   }
   /* 명단에 없는 새 이름 → 오타로 '유령 작업자'가 생기지 않게 한 번 확인 (다른 검증을 모두 통과한 뒤에만 물음) */
@@ -2177,7 +2424,7 @@ async function saveEntry(){
   if(!S.editId && knownP.length >= 3){
     const unknown = [...new Set(datas.map(d => d.product).filter(pn => !knownP.includes(pn) && !S.rows.some(r => r.product === pn)))];
     if(unknown.length && !confirm(`"${unknown.join('", "')}" 은(는) 처음 보는 제품명입니다.\n\n[확인] 새 제품으로 등록하고 저장\n[취소] 돌아가서 확인 (제품 버튼에서 고르면 오타가 없습니다)`)){
-      const el = els[datas.findIndex(d => d.product === unknown[0])]; el.scrollIntoView({block:'center'}); el.querySelector('.pb-product').focus(); return;
+       const el = els[datas.findIndex(d => d.product === unknown[0])]; expandProduct(el); el.scrollIntoView({block:'center'}); el.querySelector('.pb-product').focus(); return;
     }
   }
   /* 같은 사람·같은 제품이 이미 있으면 이중 집계 경고 */
@@ -2192,12 +2439,10 @@ async function saveEntry(){
   }
   const old = S.editId ? S.rows.find(r=>r.id===S.editId) : null;
   const base = Date.now();
-  const newRows = datas.map((d,i) => ({
-    id: (old && i===0) ? old.id : (els[i].dataset.rid || uid()),   /* 수정 모드: 첫 블록이 항상 원본 행을 대체 · 폼 세션 고정 id → 재전송해도 중복 없음 */
-    worker, hours, ...d,
-    ts: (old && i===0) ? old.ts : base + i,
-    t: base   /* 마지막 저장 시각 (정정 추적) */
-  }));
+  const newRows = datas.map((d,i) => {
+    const id=els[i].dataset.rid||uid(), previous=S.rows.find(r=>r.id===id);
+    return {...previous,id,worker,hours,...d,ts:previous?previous.ts:base+i,t:base};
+  });
   const align = {worker, hours};
   /* 내 이름은 처음 한 번만 자동 학습 — 남의 기록을 고치거나 대신 입력해도 내 이름이 바뀌지 않게 */
   if(!S.me.worker){ S.me = {worker, hours: hours || 10}; LS.set('ilbo.me', S.me); }
@@ -2207,12 +2452,12 @@ async function saveEntry(){
   try{
     await upsertRows(newRows, align, `${worker} ${newRows.length}건`);
     LS.set('ilbo.guideDone', true);   /* 한 번 저장한 기기에는 첫 안내 카드를 더 보이지 않음 */
-    clearDraft();
-    closeEntry();
+    if(!finishEntrySave()) return;
     const dd = parseDate(saveDate);
     const lab = saveDate === todayStr() ? '' : `${dd.getMonth()+1}/${dd.getDate()} 일보에 `;
     toast(lab + (newRows.length>1 ? `${newRows.length}개 제품 저장됨` : '저장되었습니다'));
   }catch(e){
+    if(epoch!==storeEpoch){ toast(e.message); return; }
     if(driver.mode === 'gh' && e.isNetwork){
       /* 연결 불가: 기기에 보관 후 자동 전송 (화면에는 바로 반영) */
       if(!outboxPush(saveDate, newRows, align)){
@@ -2221,9 +2466,8 @@ async function saveEntry(){
         ee.textContent = '기기 저장 공간이 부족해 보관하지 못했습니다 — 공간을 비우고 [저장]을 다시 눌러주세요';
         return;
       }
-      if(saveDate === S.date){ S.rows = mergeRows(S.rows, newRows, align); renderAll(); }
-      clearDraft();
-      closeEntry();
+      showPendingDay(saveDate);
+      if(!finishEntrySave()) return;
       toast('연결이 안 돼 기기에 보관했습니다 — 연결되면 자동 전송됩니다');
     } else {
       /* 폼 위에 고정 띠로 남겨 놓침 방지 */
@@ -2314,6 +2558,7 @@ function rowsHash(){
   let h = 0; for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h;
 }
 function renderSheet(){
+  renderPrintChecks();
   /* 날짜와 데이터가 안 맞으면(로딩 전·불러오기 실패) 빈 시트 + 안내 — 엉뚱한 날짜 인쇄 방지 */
   const stale = S.rowsDate !== S.date;
   const wrap = $('#sheetwrap');
@@ -2360,25 +2605,35 @@ let monthSeq = 0;
 const FRESH_MONTH_MS = 5*60*1000;   /* 지난달 이전: 5분 안에 받은 적 있으면 재대조 생략 (이번 달은 항상 대조) */
 async function renderMonth(){
   const my = ++monthSeq;
+  const epoch = storeEpoch, drv = driver;
   ensureProgress();
   const ym = S.month;
   const [y,m] = ym.split('-').map(Number);
   $('#monLabel').textContent = `${y}년 ${m}월`;
   /* ① 캐시가 있으면 즉시 그림 → ② 서버 목록(요청 1회)과 대조해 바뀐 날짜만 다시 받음 → 달라졌을 때만 다시 그림 */
   const cached = driver.mode === 'gh' ? monthCache[ym] : null;
+  const cachedJson = cached ? JSON.stringify(cached.days) : null;
   if(cached) drawMonth(cached.days, y, m);
   else $('#monBody').innerHTML = `<div class="empty-note">불러오는 중…</div>`;
   if(cached && ym !== todayStr().slice(0,7) && Date.now() - cached.t < FRESH_MONTH_MS) return;
   let days;
-  try{ days = await driver.monthDays(ym); }
+  try{ days = await drv.monthDays(ym); assertContext(epoch); }
   catch(e){ if(my===monthSeq && !cached) $('#monBody').innerHTML = `<div class="empty-note">불러오기 실패: ${esc(e.message)}</div>`; return; }
   if(my !== monthSeq) return;   /* 빠른 월 이동 시 늦은 응답 폐기 */
   const anyErr = Object.values(days).some(v => v && !Array.isArray(v));
   if(driver.mode === 'gh' && !anyErr) monthCache[ym] = {days, t: Date.now()};
-  if(cached && JSON.stringify(days) === JSON.stringify(cached.days)) return;   /* 변화 없음 → 다시 그리지 않음 */
+  if(cached && JSON.stringify(days) === cachedJson) return;
   drawMonth(days, y, m);
 }
-function drawMonth(days, y, m){
+function effectiveMonthDays(raw, ym){
+  const days = {...raw};
+  if(driver.mode!=='gh') return days;
+  outboxAll().filter(i=>i.date.startsWith(ym+'-')).forEach(i=>{ if(!(i.date in days)) days[i.date]=[]; });
+  Object.keys(days).forEach(d=>{ if(Array.isArray(days[d])) days[d]=pendingApply(d,days[d]); });
+  return days;
+}
+function drawMonth(rawDays, y, m){
+  const days = effectiveMonthDays(rawDays,`${y}-${pad2(m)}`);
   /* 이 달의 모든 날짜 나열 (미래·오늘 이후 제외) — 기록 없는 날도 보이게 */
   const today = todayStr();
   const lastDay = new Date(y, m, 0).getDate();
@@ -2391,7 +2646,7 @@ function drawMonth(days, y, m){
   if(!allDates.length){ $('#monBody').innerHTML = `<div class="empty-note">아직 시작되지 않은 달입니다</div>`; return; }
 
   monthData = days; monthDataYm = `${y}-${pad2(m)}`;   /* 엑셀용 복사에 사용 (어느 달 것인지 함께 기억) */
-  lastDraw = {days, y, m};
+  lastDraw = {days:rawDays, y, m};
   const roster = activeWorkers();
   const sinceMap = (S.presets && S.presets.since) || {};
   const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;   /* 소수 1자리 % */
@@ -2442,7 +2697,8 @@ function drawMonth(days, y, m){
 
   /* ── 요약 타일 ── */
   const rate = defRate(td, tp);
-  const tiles = `<div class="daysum mon-sum">
+  const waiting = driver.mode==='gh' ? outboxAll().filter(i=>i.date.startsWith(`${y}-${pad2(m)}-`)).length : 0;
+  const tiles = `${waiting ? `<div class="warnbar send">전송 대기 ${waiting}건을 합계에 포함했습니다. 서버 전송이 끝나기 전 값입니다.</div>` : ''}<div class="daysum mon-sum">
     <div class="ds"><b>${daysWithRows}</b><span>기록 있는 날</span></div>
     <div class="ds emph"><b>${r2(tp)}</b><span>생산량(조)</span></div>
     <div class="ds"><b class="${td>0?'alert':''}">${r2(td)}</b><span>불량수${rate !== null ? ` · ${rate}%` : ''}</span></div>
@@ -2496,40 +2752,43 @@ function drawMonth(days, y, m){
     .sort((a,b) => { const A = pInfo(a), B = pInfo(b); return (stOrder[A.st]-stOrder[B.st]) || (((prodStat[b]||{}).prod||0) - ((prodStat[a]||{}).prod||0)) || a.localeCompare(b, 'ko'); });
   const maxPP = Math.max(1, ...pNames.map(n => (prodStat[n]||{}).prod || 0));
   const cnt = {on:0, noplan:0, end:0}; pNames.forEach(n => { const st = pInfo(n).st; if(cnt[st] !== undefined) cnt[st]++; });
-  const pTable = pNames.length ? `<table class="mon">
-      <thead><tr><th>제품명</th><th>상태</th><th>시작일</th><th>계획(조)</th><th>누적 생산</th><th>달성률</th><th>남은</th><th>이번 달 생산</th><th>불량수</th><th>불량률</th><th>불량석고(kg)</th></tr></thead>
-      <tbody>${pNames.map(n => { const p = prodStat[n] || {days:new Set(), prod:0, def:0, scrap:0}; const {pr, t, st} = pInfo(n); const dr = defRate(p.def, p.prod);
+  const pTable = pNames.length ? `<table class="mon product-focus">
+      <thead><tr><th>제품 · 상태</th><th>${showProg?'누적 / 계획(조)':'생산 기록일'}</th><th>${showProg?'남은(조)':'불량(개)'}</th><th>이달 생산(조)</th><th class="desktop-col">최근 기록</th><th class="desktop-col">불량석고(kg)</th></tr></thead>
+      <tbody>${pNames.map(n => { const p = prodStat[n] || {days:new Set(), prod:0, def:0, scrap:0}; const {pr, t, st} = pInfo(n);
         const stCell = st==='on' ? '<b style="color:var(--good)">생산중</b>' : st==='end' ? '<span style="color:var(--ink-dim)">종료</span>' : st==='noplan' ? '<span style="color:var(--warn)" title="시작일에 계획수량을 적지 않은 기물">계획 미기록</span>' : '';
         const ach = t && t.pct !== null ? t.pct : null;
         return `<tr>
-        <td class="d" title="${esc(n)}">${esc(n)}</td><td>${stCell}</td><td>${pr ? fmtMD(pr.start) : ''}</td><td>${pr && pr.plan ? r2(pr.plan) : ''}</td><td>${pr ? r2(pr.made) : ''}</td>
-        <td>${ach === null ? '' : `<b style="color:${ach >= 100 ? 'var(--good)' : 'var(--ink)'}">${ach}%</b>${st==='on' ? bar(Math.min(100, ach), 100) : ''}`}</td>
-        <td>${st==='on' ? (t.remain ? r2(t.remain) : '<b style="color:var(--good)">달성</b>') : ''}</td>
-        <td>${p.prod ? r2(p.prod) : ''}${p.prod ? bar(p.prod, maxPP) : ''}</td><td>${r2(p.def) || ''}</td><td>${dr ? `<span style="color:${dr >= 5 ? 'var(--bad)' : 'var(--ink-dim)'}">${dr}%</span>` : ''}</td><td>${r2(p.scrap) || ''}</td></tr>`; }).join('')}</tbody>
-      <tfoot><tr><td class="d">합계</td><td></td><td></td><td></td><td></td><td></td><td></td><td>${r2(tp)}</td><td>${r2(td) || ''}</td><td>${rate !== null ? rate+'%' : ''}</td><td>${r2(ts) || ''}</td></tr></tfoot>
+        <td class="d"><button class="product-link" data-product="${esc(n)}">${esc(n)} ›</button><small>${stCell}</small></td>
+        <td>${!showProg?p.days.size+'일':pr?`${r2(pr.made)} / ${pr.plan?r2(pr.plan):'미기록'}${ach===null?'':`<small>${ach}%${bar(Math.min(100,ach),100)}</small>`}`:'계산 대기'}</td>
+        <td>${!showProg?r2(p.def):st==='on'?(t.remain?r2(t.remain):'<b style="color:var(--good)">달성</b>'):'—'}</td>
+        <td><b>${r2(p.prod)}</b></td><td class="desktop-col">${fmtMD(pr?.last || [...p.days].sort().at(-1) || '')}</td><td class="desktop-col">${r2(p.scrap)}</td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><td class="d">이달 합계</td><td></td><td>${showProg?'':r2(td)}</td><td>${r2(tp)}</td><td class="desktop-col"></td><td class="desktop-col">${r2(ts)}</td></tr></tfoot>
     </table>` : `<div class="empty-note">이 달 제품 기록이 없습니다</div>`;
-  const pNote = `${!showProg ? '지난 달 표: 상태·누적·달성률은 이번 달 화면에서만 표시 — ' : S.progress ? `생산중 <b>${cnt.on}</b> · 종료 ${cnt.end}${cnt.noplan ? ` · 계획 미기록 ${cnt.noplan}` : ''} — ` : '진행 상황 계산 중… — '}계획 = 기물 시작일에 적은 수량 · 누적 = 시작일부터 지금까지(달이 바뀌어도 이어짐) · 달성률 = 누적 ÷ 계획 · 불량률 = 불량 ÷ (생산+불량)`;
+  const pNote = `${!showProg ? '선택한 달의 실적입니다. 현재 진행 상황은 이번 달에서 확인하세요.' : S.progress ? `생산중 <b>${cnt.on}</b> · 종료 ${cnt.end}${cnt.noplan ? ` · 계획 미기록 ${cnt.noplan}` : ''}<br>누적은 기물 시작일부터, 이달 생산은 선택한 달 기준입니다. 달성률 = 누적 ÷ 계획.` : '진행 상황 계산 중…'} <b>제품명을 누르면 이달의 일자별 기록을 볼 수 있습니다.</b>`;
 
   /* ── 작업자별 ── */
-  const wNames = Object.keys(workerStat).sort((a,b) => workerStat[b].prod - workerStat[a].prod || a.localeCompare(b, 'ko'));
+  const wNames = Object.keys(workerStat).sort((a,b) => workerStat[b].miss - workerStat[a].miss || a.localeCompare(b, 'ko'));
   const wTable = wNames.length ? `<table class="mon">
-      <thead><tr><th>작업자</th><th>작업일</th><th>휴무</th><th>교체</th><th>미작성</th><th>시간(hr)</th><th>생산량(조)</th><th>일평균</th><th>불량수</th><th>불량률</th><th>불량석고(kg)</th></tr></thead>
-      <tbody>${wNames.map(n => { const w = workerStat[n]; const dr = defRate(w.def, w.prod); return `<tr>
-        <td class="d" title="${esc(n)}">${esc(n)}</td><td>${w.days.size}일</td><td>${w.off || ''}</td><td>${w.kase || ''}</td><td>${w.miss ? `<b style="color:var(--warn)">${w.miss}일</b>` : ''}</td><td>${r2(w.hours) || ''}</td>
-        <td>${r2(w.prod)}</td><td>${w.days.size ? r2(w.prod / w.days.size) : ''}</td><td>${r2(w.def) || ''}</td><td>${dr ? `<span style="color:${dr >= 5 ? 'var(--bad)' : 'var(--ink-dim)'}">${dr}%</span>` : ''}</td><td>${r2(w.scrap) || ''}</td></tr>`; }).join('')}</tbody>
-      <tfoot><tr><td class="d">합계</td><td></td><td>${toff || ''}</td><td>${tcase || ''}</td><td>${tmiss || ''}</td><td>${r2(wNames.reduce((a,n)=>a+workerStat[n].hours,0)) || ''}</td><td>${r2(tp)}</td><td></td><td>${r2(td) || ''}</td><td>${rate !== null ? rate+'%' : ''}</td><td>${r2(ts) || ''}</td></tr></tfoot>
+      <thead><tr><th>작업자</th><th>작업일</th><th>휴무</th><th>교체</th><th>미작성</th><th>시간(hr)</th><th>생산량(조)</th></tr></thead>
+      <tbody>${wNames.map(n => { const w = workerStat[n]; return `<tr>
+        <td class="d"><button class="product-link" data-worker-detail="${esc(n)}">${esc(n)} ›</button></td><td>${w.days.size}일</td><td>${w.off || ''}</td><td>${w.kase || ''}</td><td>${w.miss ? `<b style="color:var(--warn)">${w.miss}일</b>` : ''}</td><td>${r2(w.hours) || ''}</td>
+        <td>${r2(w.prod)}</td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><td class="d">합계</td><td></td><td>${toff || ''}</td><td>${tcase || ''}</td><td>${tmiss || ''}</td><td>${r2(wNames.reduce((a,n)=>a+workerStat[n].hours,0)) || ''}</td><td>${r2(tp)}</td></tr></tfoot>
     </table>` : `<div class="empty-note">작업자 기록이 없습니다</div>`;
 
-  const wrapT = h => h.replace(/<table class="mon">/g, '<div class="mon-scroll"><table class="mon">').replace(/<\/table>/g, '</table></div>');
+  const wrapT = h => h.replace(/<table class="mon([^"]*)">/g, '<div class="mon-scroll"><table class="mon$1">').replace(/<\/table>/g, '</table></div>');
   const body = $('#monBody');
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
     `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
-    `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">작업일 = 생산 기록 또는 케이스 교체가 있는 날 · 일평균 = 생산량 ÷ 작업일 · 시간에는 케이스 교체일 포함</div>${wrapT(wTable)}</div>`;
+    `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
+  body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
+  body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
   body.dataset.view = S.monView;
   $$('#monBody .mon-pills button').forEach(b => b.onclick = () => {
     S.monView = b.dataset.v; LS.set('ilbo.monView', S.monView);
     body.dataset.view = S.monView;
+    $('#monthDetail').hidden=true;
     $$('#monBody .mon-pills button').forEach(x => { x.classList.toggle('sel', x === b); x.setAttribute('aria-selected', x === b); });
   });
   $$('#monBody tbody tr[data-d]').forEach(tr => {
@@ -2539,6 +2798,34 @@ function drawMonth(days, y, m){
   });
 }
 let monthData = null, monthDataYm = null;
+function showMonthDetail(kind,name){
+  if(monthDataYm!==S.month || !monthData) return;
+  const box=$('#monthDetail'), entries=[];
+  Object.keys(monthData).sort().forEach(d=>{if(Array.isArray(monthData[d]))monthData[d].filter(r=>r[kind]===name).forEach(r=>entries.push({d,r}));});
+  box.innerHTML=`<header><h3>${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p><div class="mon-scroll"><table class="mon"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr><td><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?r.worker:r.off?offLabel(r):r.product)}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
+  box.hidden=false;$('#closeMonthDetail').onclick=()=>{box.hidden=true;};
+  box.querySelectorAll('[data-detail-date]').forEach(b=>b.onclick=()=>{setDate(b.dataset.detailDate);setTab('input');});
+  box.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function renderPrintChecks(){
+  const box=$('#printCheckList');if(!box)return;
+  const checks=[];
+  if(S.rowsDate!==S.date) checks.push({text:'이 날짜 기록을 불러오지 못했습니다. 다시 불러오기',action:()=>refreshDay(false,true)});
+  else{
+    const miss=missingWorkers() || [];
+    if(miss.length)checks.push({text:`미작성 ${miss.length}명: ${miss.join(', ')} — 부서 현황에서 확인`,action:()=>{S.rosterFilter='missing';LS.set('ilbo.rosterOpen',true);setTab('input');renderMissing();}});
+    if(driver.mode==='gh' && outboxAll().some(i=>i.date===S.date))checks.push({text:'이 날짜에 전송 대기 기록이 있습니다. 서버 반영 후 인쇄를 권장합니다.',action:()=>outboxFlush()});
+    S.rows.filter(r=>!r.off).forEach(r=>{
+      const reasons=[];
+      if(r.prod===''||r.prod==null)reasons.push('생산량 미입력');
+      if([...CHECK_KEYS.map(k=>r[k]),r.gasa].some(v=>v==='△'||v==='Ⅹ') && !String(r.remark||'').trim()) reasons.push('△·Ⅹ 사유 없음');
+      if(reasons.length)checks.push({text:`${r.worker} · ${r.product}: ${reasons.join(', ')} — 수정`,action:()=>openEntry(r)});
+    });
+  }
+  $('#printChecks summary').textContent=checks.length?`인쇄 전 확인 · ${checks.length}개 항목`:'인쇄 전 확인 · 미작성·입력 누락 경고 없음';
+  box.innerHTML=checks.map((c,i)=>`<button data-check="${i}">${esc(c.text)}</button>`).join('')||'<p class="quick-hint">자동 점검 결과입니다. 인쇄 미리보기에서 날짜와 내용을 한 번 더 확인하세요.</p>';
+  box.querySelectorAll('[data-check]').forEach(b=>b.onclick=checks[Number(b.dataset.check)].action);
+}
 function copyMonthTSV(){
   if(!monthData || monthDataYm !== S.month){ toast('이 달 기록을 아직 다 불러오지 못했습니다 — 잠시 후 다시 누르세요'); return; }
   const H = ['날짜','작업자','작업시간','제품명','계획수량','생산량','불량석고kg','불량수량','불량부위','가사시간','CASE','틈새','주입구','제품면','기포','분동1호','분동2호','비고','휴무/교체'];
@@ -2661,7 +2948,8 @@ function ghSaveCfg(){
   if(!cfg.owner||!cfg.repo||!cfg.token){ toast('소유자·저장소·토큰을 입력하세요'); return; }
   const prev = ghCfg();
   const tokenChanged = !!(prev && prev.token && prev.token !== cfg.token);
-  LS.set('ilbo.gh', cfg); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner();
+  try{ saveConnection(cfg); }catch(e){ toast(e.message); return; }
+  S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner();
   loadPresets(); refreshDay(false, true);
   if(tokenChanged){
     /* 토큰이 바뀌면 작업자 폰의 옛 링크는 더 이상 연결되지 않음 → 설정을 닫지 않고 공유 링크 재배포로 안내 */
@@ -2680,7 +2968,8 @@ function ghClearCfg(){
     const rm = new Set(i.removeIds || []);
     if(!LS.set('ilbo.day.'+i.date, {rows: mergeRows(cur, i.rows || [], i.align).filter(r => !rm.has(r.id))})) moved = false;
   });
-  if(moved) localStorage.removeItem('ilbo.outbox');   /* 실패분은 남겨 재연결 때 전송 */
+  if(!moved){ toast('일부 기록을 기기로 옮기지 못해 연결을 유지했습니다. 저장공간을 확인해 주세요.'); return; }
+  LS.remove('ilbo.outbox');
   localStorage.removeItem('ilbo.gh'); S.authError = false; initDriver(); updateNetBanner(); closeSettings();
   toast(ob.length && moved ? `이 기기 저장 모드 — 보관 ${ob.length}건을 이 기기 일보로 옮겼습니다` : '이 기기 저장 모드');
   loadPresets(); refreshDay();
@@ -2690,8 +2979,7 @@ function exportData(){
   const out = {days:{}, presets: LS.get(presetKey, null) || S.presets || {}};
   /* 공유 모드에서는 이 기기가 불러왔던 날짜(캐시)를 내보냄 — 원본은 GitHub 저장소 */
   const prefix = driver.mode === 'gh' ? 'ilbo.cache.' : 'ilbo.day.';
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
+  for(const k of LS.keys(prefix)){
     if(k && k.startsWith(prefix)){
       const d = k.slice(prefix.length);
       if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
@@ -2705,6 +2993,7 @@ function exportData(){
   try{ document.execCommand('copy'); toast('복사되었습니다'); }catch(e){ toast('내용을 길게 눌러 복사하세요'); }
 }
 async function importData(){
+  const epoch=storeEpoch, drv=driver;
   let j; try{ j = JSON.parse($('#ioArea').value); }catch(e){ toast('가져오기 실패: 형식이 올바르지 않습니다'); return; }
   const days = Object.entries(j.days||{}).filter(([d]) => /^\d{4}-\d{2}-\d{2}$/.test(d));
   const rowsOf = v => Array.isArray(v) ? v : ((v && v.rows) || []);
@@ -2715,9 +3004,11 @@ async function importData(){
     let n=0, fail=0; setBusy(true);
     try{
       for(const [d,v] of days){
-        try{ await driver.mutateDay(d, cur => mergeRows(cur, rowsOf(v)), '가져오기'); n++; }catch(e){ fail++; }
+        if(epoch!==storeEpoch){ toast('연결이 바뀌어 가져오기를 중단했습니다.');return; }
+        try{ await drv.mutateDay(d, cur => mergeRows(cur, rowsOf(v)), '가져오기'); assertContext(epoch); n++; }catch(e){ fail++; }
       }
-      if(hasList(j.presets)){ try{ await driver.savePresets(j.presets); }catch(e){} }
+      if(epoch!==storeEpoch){ toast('연결이 바뀌어 가져오기를 중단했습니다.');return; }
+      if(hasList(j.presets)){ try{ await drv.savePresets(j.presets); }catch(e){} }
     } finally { setBusy(false); }
     toast(`${n}일치 서버에 반영${fail ? ` · 실패 ${fail}일 (연결 확인 후 다시)` : ''}`); refreshDay(false, true); loadPresets();
     return;
@@ -2762,16 +3053,16 @@ function init(){
   $('#addBtn').onclick = () => openEntry(null);
   $('#entryClose').onclick = () => requestCloseEntry(false);
   $('#entrySave').onclick = saveEntry;
-  $('#fWorker').addEventListener('change', () => updateRecentBtn(false));
+  $('#fWorker').addEventListener('change', () => {$('#entryWorkerLabel').textContent=$('#fWorker').value||'선택 안 됨';updateRecentBtn(false);});
   $('#entryOv').addEventListener('input', saveDraft);
   ['#fWorker','#fHours'].forEach(sel => $(sel).addEventListener('input', e => {   /* 이름·시간 칸의 오류 표시도 입력하면 사라지게 */
     e.target.classList.remove('need');
     const n = (e.target.closest('.stepper') || e.target).nextElementSibling;
     if(n && n.classList.contains('f-err')) n.remove();
   }));
-  $('#entryOv').addEventListener('click', e => { if(e.target && e.target.closest && e.target.closest('.seg, .gasa-row, .pb-planzero, .chip, .pb-pm, .pb-pp, #hrMinus, #hrPlus, .pb-pct, .pb-del, .pb-defclear, .recent-btn')) saveDraft(); });
+  $('#entryOv').addEventListener('click', e => { if(e.target && e.target.closest && e.target.closest('.seg, .gasa-row, .pb-planzero, .chip, .pb-pm, .pb-pp, #hrMinus, #hrPlus, .pb-pct, .pb-del, .pb-defclear, .recent-btn')){syncQuickProducts();saveDraft();} });
   $('#draftClear').onclick = () => {
-    clearDraft();
+    if(!clearDraft()){ toast('임시저장을 정리하지 못했습니다. 저장공간을 확인하세요.'); return; }
     const keepW = $('#fWorker').value;
     $('#prodBlocks').innerHTML = ''; addBlock(null); $('#fWorker').value = keepW; $('#draftBar').hidden = true;
     entrySnap = formSnapshot(); updateRecentBtn(false);
@@ -2782,15 +3073,18 @@ function init(){
     else if($('#setOv').classList.contains('open')) closeSettings(true);
   });
   $('#entryDel').onclick = async () => {
+    if($('#entrySave').disabled || $('#entryDel').disabled) return;
     if(!S.editId) return;
     const backup = S.rows.find(r => r.id === S.editId);
     if(!backup) return;
     if(!confirm(`${backup.worker} · ${backup.product || (backup.off ? offLabel(backup) : '(제품명 없음)')} 기록을 삭제할까요?\n(같은 사람의 다른 기록은 그대로 남습니다)`)) return;
     const delDate = S.date;
+    $('#entrySave').disabled=true;$('#entryDel').disabled=true;
     try{
       await deleteRow(S.editId); closeEntry();
       toastUndo(`${backup.product || '기록'} 삭제됨`, backup, delDate);
     }catch(e){ toast(e.message); }
+    finally{$('#entrySave').disabled=false;$('#entryDel').disabled=false;}
   };
   $('#hrMinus').onclick = () => { $('#fHours').value = Math.max(0, (numOr($('#fHours').value,0)||0)-0.5); };
   $('#hrPlus').onclick = () => { $('#fHours').value = (numOr($('#fHours').value,0)||0)+0.5; };
@@ -2848,7 +3142,7 @@ function init(){
     if(entryOpen && e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); saveEntry(); return; }
     if(entryOpen && e.key === 'Enter' && e.target && e.target.matches && e.target.matches('#entryOv input')){
       e.preventDefault();
-      const f = [...$('#entryOv').querySelectorAll('input:not([disabled]),textarea')].filter(x => !x.closest('details:not([open])') && !x.hidden);   /* 접힌 불량 칸은 건너뜀 */
+      const f = [...$('#entryOv').querySelectorAll('input:not([disabled]),textarea')].filter(x => x.getClientRects().length && !x.closest('details:not([open])'));   /* 접힌 상세·불량 칸은 건너뜀 */
       const i = f.indexOf(e.target); if(i >= 0 && f[i+1]) f[i+1].focus();
     }
   });
@@ -2916,7 +3210,7 @@ function renderSyncInfo(){
   if(si) si.textContent = (driver.mode==='gh' && S.lastSync)
     ? ` · 최근 동기화 ${new Date(S.lastSync).getHours()}:${pad2(new Date(S.lastSync).getMinutes())}` : '';
 }
-function renderAll(){ renderInput(); renderMeChips(); renderSheet(); renderSyncInfo(); }
+function renderAll(){ renderInput(); renderMeChips(); if(S.tab==='sheet') renderSheet(); renderSyncInfo(); }   /* 숨은 인쇄표는 탭 진입·beforeprint 때 렌더 */
 init();
 </script>
 </body>
