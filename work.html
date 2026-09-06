@@ -553,7 +553,7 @@ function success(j,offline=false){if(j){if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{
 async function change(){
  const d=document.createElement('dialog');d.className='accessChange';d.setAttribute('aria-label','로그인 비밀번호 변경');
  d.innerHTML='<form><h2>로그인 비밀번호 변경</h2><p>기존 관리자 비밀번호로 확인합니다. 저장하면 생산관리와 현장일보, 다른 기기의 다음 온라인 로그인에 함께 적용됩니다.</p><label>관리자 비밀번호<input name="admin" type="password" autocomplete="off" required maxlength="128"></label><label>새 로그인 비밀번호<input name="next" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><label>새 비밀번호 다시 입력<input name="repeat" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><p role="alert"></p><div class="accessActions"><button type="button">취소</button><button type="submit">두 앱에 적용</button></div></form>';
- let closed=false,processing=false;const close=()=>{if(processing)return;closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove()};d.querySelector('[type=button]').onclick=close;d.oncancel=e=>{e.preventDefault();if(!processing)close()};d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(processing)return;const f=e.target,error=d.querySelector('[role=alert]');if(f.elements.next.value!==f.elements.repeat.value){error.textContent='새 비밀번호가 서로 다릅니다.';return}processing=true;const requestVersion=lockVersion,adminPassword=f.elements.admin.value,password=f.elements.next.value;for(const i of d.querySelectorAll('input'))i.value='';d.querySelector('[type=submit]').disabled=true;try{const current=await api(),j=await api({action:'change',revision:current.revision,adminPassword,password});if(closed||!d.isConnected||requestVersion!==lockVersion)return;if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('비밀번호 변경 응답을 확인하지 못했습니다.');cache(j.verifier);if(unlocked)session=j.session;processing=false;close();if(unlocked){mount();alert('두 앱의 로그인 비밀번호를 변경했습니다. 오프라인용 HTML도 다시 내려받아 보관하세요.')}else message('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.')}catch(err){if(!closed)error.textContent=err.network?'변경 결과를 확인하지 못했습니다. 인터넷 연결 후 새 비밀번호로 로그인해 보세요. 되지 않으면 다시 변경해 주세요.':err.message}finally{processing=false;if(!closed)d.querySelector('[type=submit]').disabled=false}};
+ let closed=false,processing=false;const close=()=>{if(processing)return;closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove()};d.querySelector('[type=button]').onclick=close;d.oncancel=e=>{e.preventDefault();if(!processing)close()};d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(processing)return;const f=e.target,error=d.querySelector('[role=alert]');if(f.elements.next.value!==f.elements.repeat.value){error.textContent='새 비밀번호가 서로 다릅니다.';return}processing=true;const requestVersion=lockVersion,adminPassword=f.elements.admin.value,password=f.elements.next.value;for(const i of d.querySelectorAll('input'))i.value='';d.querySelector('[type=submit]').disabled=true;try{const current=await api(),j=await api({action:'change',revision:current.revision,adminPassword,password});if(closed||!d.isConnected||requestVersion!==lockVersion)return;if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('비밀번호 변경 응답을 확인하지 못했습니다.');lockVersion++;cache(j.verifier);if(unlocked)session=j.session;processing=false;close();if(unlocked){mount();alert('두 앱의 로그인 비밀번호를 변경했습니다. 오프라인용 HTML도 다시 내려받아 보관하세요.')}else message('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.')}catch(err){if(!closed)error.textContent=err.network?'변경 결과를 확인하지 못했습니다. 인터넷 연결 후 새 비밀번호로 로그인해 보세요. 되지 않으면 다시 변경해 주세요.':err.message}finally{processing=false;if(!closed)d.querySelector('[type=submit]').disabled=false}};
  document.body.append(d);d.showModal();d.querySelector('input').focus();
 }
 async function downloadHtml(button){button.disabled=true;try{
@@ -580,13 +580,28 @@ function mount(){for(const host of document.querySelectorAll('[data-access-setti
 root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED')lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
- el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
+ el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){if(version===lockVersion)message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
  new MutationObserver(mount).observe(document.body,{childList:true,subtree:true});el.querySelector('input').focus();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',draw,{once:true});else draw();
 root.addEventListener('online',()=>{if(unlocked&&!session)lock('인터넷이 연결되었습니다. 최신 비밀번호로 다시 로그인해 주세요.')});
 root.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{const v=JSON.parse(e.newValue);if(valid(v)&&v.revision!==verifier.revision){verifier=v;lock('다른 창에서 비밀번호가 변경되었습니다. 다시 로그인해 주세요.')}}catch{}}});
-root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSettings,start(fn){ready.then(fn).catch(e=>{lock('앱을 열지 못했습니다. '+e.message)})}};
+root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSettings,start(fn){
+ let complete=false,running=false;
+ const run=async()=>{
+  if(complete||running||!unlocked)return;
+  running=true;const version=lockVersion;let failure;
+  try{await fn();complete=true}catch(e){failure=e}finally{running=false}
+  if(failure){
+   if(version===lockVersion)lock('앱을 열지 못했습니다. '+(failure.message||'다시 로그인해 재시도해 주세요.'));
+   else if(unlocked)queueMicrotask(run);
+  }
+ };
+ // A failed restore may be retried after login; a successful boot is never
+ // repeated, so existing handlers and unsaved inputs are preserved.
+ root.addEventListener('production:login',e=>{if(!e.detail?.initial)queueMicrotask(run)});
+ ready.then(run);
+}};
 })(globalThis);
 
 </script><!-- APP_ACCESS_END --></head>
@@ -1041,6 +1056,7 @@ async function makeShareLink(){
    낡은 기기가 다른 기기의 변경(새 이름·제외 토글)을 지우는 문제 원천 차단 */
 function applyPresetsOp(m, op){
   const p = {
+    ...(m||{}),
     workers:[...((m&&m.workers)||[])], products:[...((m&&m.products)||[])],
     parts:[...((m&&m.parts)||[])], inactive:[...((m&&m.inactive)||[])], notice: (m&&m.notice)||'',
     since: {...((m&&m.since)||{})}   /* 이름별 명단 등록일 — 그 전 날짜는 미작성으로 세지 않음 */
@@ -1080,12 +1096,13 @@ const localDriver = {
   },
   async loadPresets(){ return LS.get('ilbo.presets', {workers:[],products:[],parts:[]}); },
   async savePresets(p, replace){
-    if(replace) return LS.set('ilbo.presets', p);
     const m = LS.get('ilbo.presets', {workers:[],products:[],parts:[]});
+    if(replace) return LS.set('ilbo.presets', {...m,...p});
     const u = (a,b) => [...new Set([...(a||[]), ...(b||[])])];
     const inactive = (m.inactive||[]).filter(x => !(p.workers||[]).includes(x));   /* 일보를 쓰면 자동 복귀 */
     const since = {...(m.since||{})}; (p.workers||[]).forEach(w => { if(w && !(m.workers||[]).includes(w)) since[w] ||= todayStr(); });
     return LS.set('ilbo.presets', {
+      ...m,
       workers:trimWorkers(u(p.workers,m.workers), inactive), products:u(p.products,m.products).slice(0,40), parts:u(p.parts,m.parts).slice(0,20),
       inactive, notice: m.notice || '', since
     });
@@ -1249,12 +1266,13 @@ function ghDriver(cfg){
     async savePresets(p, replace){
       try{
         await mutateJson('data/presets.json', j => {
-          if(replace) return {workers:p.workers||[], products:p.products||[], parts:p.parts||[], inactive:p.inactive||[], notice:(p.notice ?? (j&&j.notice) ?? ''), since:(p.since || (j&&j.since) || {})};
+          if(replace) return {...(j||{}),...p,workers:p.workers||[], products:p.products||[], parts:p.parts||[], inactive:p.inactive||[], notice:(p.notice ?? (j&&j.notice) ?? ''), since:(p.since || (j&&j.since) || {})};
           const m = j || {};
           const u = (a,b) => [...new Set([...(a||[]), ...(b||[])])];
           const inactive = (m.inactive||[]).filter(x => !(p.workers||[]).includes(x));   /* 일보를 쓰면 자동 복귀 */
           const since = {...(m.since||{})}; (p.workers||[]).forEach(w => { if(w && !(m.workers||[]).includes(w)) since[w] ||= todayStr(); });
           return {
+            ...m,
             workers: trimWorkers(u(p.workers, m.workers), inactive), products: u(p.products, m.products).slice(0,40), parts: u(p.parts, m.parts).slice(0,20),
             inactive, notice: m.notice || '', since
           };
@@ -1340,7 +1358,7 @@ async function migrateFieldBridge(force=false){
   try{return await task;}finally{if(fieldMigration===task)fieldMigration=null;}
 }
 function fieldRefreshBlocked(){
-  return !!(fieldWrites||flushing||outboxAll().length||$('#entryOv').classList.contains('open')||$('#setOv').classList.contains('open'));
+  return !!(fieldWrites||flushing||presetOperations.has(storeEpoch)||outboxAll().length||$('#entryOv').classList.contains('open')||$('#setOv').classList.contains('open'));
 }
 function deferFieldBackground(background){
   if(!background||!fieldRefreshBlocked())return false;
@@ -1864,7 +1882,7 @@ function prefetchAround(date){
   }, 250);
 }
 async function loadPresets(background=false){
-  const epoch = storeEpoch, drv = driver;
+  const epoch = storeEpoch, drv = driver,version=presetWriteVersion;
   const catalogTask=Promise.all([loadProductCatalog(background),loadProductionProgress(background)]);
   /* 공유 모드: 기기에 보관된 목록을 먼저 보여주고(즉시) 서버 응답으로 갱신 */
   if(driver.mode === 'gh' && !S.presetsShown && !background){
@@ -1873,11 +1891,13 @@ async function loadPresets(background=false){
   }
   try{
     const loaded = await drv.loadPresets(); assertContext(epoch);
+    if(version!==presetWriteVersion){await catalogTask;return;}
     if(deferFieldBackground(background)){await catalogTask;return;}
     S.presets = loaded || {workers:[],products:[],parts:[]};
     if(driver.mode === 'gh') LS.set('ilbo.cache.presets', S.presets);   /* 오프라인 대비 */
   }catch(e){
     if(epoch !== storeEpoch) return;
+    if(version!==presetWriteVersion){await catalogTask;return;}
     if(deferFieldBackground(background)){await catalogTask;return;}
     if(background)fieldRemotePending=true;
     if(driver.mode === 'gh'){
@@ -1887,6 +1907,18 @@ async function loadPresets(background=false){
   }
   S.presets.workers ||= []; S.presets.products ||= []; S.presets.parts ||= []; S.presets.inactive ||= [];
   renderMeChips(); renderNotice();await catalogTask;
+}
+/* 명단·공지는 저장 성공 후만 반영하고 같은 연결 안에서 클릭 순서대로 처리한다. */
+const presetOperations=new Map();let presetWriteVersion=0;
+function applyFieldPresetOperation(op){
+  const epoch=storeEpoch,drv=driver;
+  if(globalThis.AppAccess&&!AppAccess.unlocked)return Promise.reject(new Error('로그인 후 다시 시도해 주세요.'));
+  presetWriteVersion++;
+  const previous=presetOperations.get(epoch)||Promise.resolve();
+  const task=previous.catch(()=>{}).then(async()=>{assertContext(epoch);if(globalThis.AppAccess&&!AppAccess.unlocked)throw new Error('로그인 후 다시 시도해 주세요.');const next=await drv.presetsOp(op);assertContext(epoch);presetWriteVersion++;S.presets=next;renderRoster();renderMeChips();renderNotice();return next;});
+  presetOperations.set(epoch,task);
+  task.finally(()=>{if(presetOperations.get(epoch)===task)presetOperations.delete(epoch);}).catch(()=>{});
+  return task;
 }
 /* 재직 명단 = 전체 이름 − 체크 해제(inactive) */
 function activeWorkers(){
@@ -1903,7 +1935,7 @@ function mergeRows(rows, newRows, align){
   newRows.forEach(nr => {
     if(isRest(nr) && out.some(r => !r.off && r.worker === nr.worker && r.id !== nr.id)) return;   /* 이미 생산 기록이 있으면 늦게 온 휴무는 버림 */
     const i = out.findIndex(r => r.id === nr.id);
-    if(i >= 0) out[i] = nr; else out.push(nr);
+    if(i >= 0) out[i] = {...out[i],...nr}; else out.push(nr);
   });
   /* 실제 기록이 들어오면 같은 사람의 '휴무' 표시는 자동 해제 — 오터치 휴무가 남아 이중 집계되지 않게 */
   const wrote = new Set(newRows.filter(r => !r.off && r.worker).map(r => r.worker));
@@ -2524,11 +2556,7 @@ function removePreset(kind, value){
     if(!confirm(`"${value}" 을(를) 자주쓰는 목록에서 삭제할까요?`)) return false;
     op = {kind:'remove-item', list:kind, value};
   }
-  S.presets = applyPresetsOp(S.presets, op);   /* 화면 즉시 반영 */
-  renderMeChips();
-  driver.presetsOp(op)
-    .then(next => { S.presets = next; renderMeChips(); })
-    .catch(() => toast('서버에 반영하지 못했습니다 — 연결 확인 후 다시 시도하세요'));
+  applyFieldPresetOperation(op).catch(e=>{if(!e.contextChanged)toast('목록 변경을 저장하지 못했습니다 — 기존 목록은 유지됩니다. 다시 시도해 주세요.');});
   return true;
 }
 function updateDefSummary(el){
@@ -2831,6 +2859,7 @@ function formSnapshot(){
   return JSON.stringify({
     w: $('#fWorker').value, h: $('#fHours').value,
     b: els.map(el => ({
+      id:el.dataset.rid,
       p: el.querySelector('.pb-product').value, pl: el.querySelector('.pb-plan').value,
       pz: el.querySelector('.pb-planzero').classList.contains('sel'),
       pm: el.querySelector('.pb-planmode').value, pc: el.dataset.planModeChanged==='1',
@@ -2902,10 +2931,11 @@ const draftKeyOf = () => $('#fWorker').value.replace(/\s+/g, '');
 function draftHas(snap){ try{ return JSON.parse(snap).b.some(b => b.p || b.pr || b.pl || b.s || b.dq || b.r || b.b1 || b.b2); }catch(e){ return false; } }
 /* 임시저장은 작업자별로 따로(공용 기기에서 남의 것을 지우지 않게) — 같은 날짜·12시간 이내만 유효 */
 function draftsAll(){
-  const m = LS.get('ilbo.drafts', {}) || {}; const now = Date.now();
-  Object.keys(m).forEach(k => { const d = m[k]; if(!d || d.date !== S.date || now - (d.t||0) > 12*3600*1000) delete m[k]; });
-  return m;
+  const all = LS.get('ilbo.drafts', {}) || {}, current=Object.create(null), now=Date.now();
+  for(const [key,d] of Object.entries(all))if(d&&d.date===S.date&&now-(d.t||0)<=12*3600*1000){const worker=d.w??key;if(!current[worker]||(current[worker].t||0)<(d.t||0))current[worker]=d;}
+  return current;
 }
+function removeOwnDraft(map,date,worker){for(const [key,d]of Object.entries(map))if(d&&d.date===date&&(d.w??key)===worker)delete map[key];}
 function pickDraft(presetName){
   const m = draftsAll();
   if(presetName) return m[presetName] || null;
@@ -2917,9 +2947,10 @@ function persistDraft(){
   if(!$('#entryOv').classList.contains('open') || S.editId || S.entryMode === 'case') return false;
   const scope=S.entryScope || activeScope, date=S.entryDate || S.date;
   const snap = formSnapshot(), key = draftKeyOf(), m = LS.get('ilbo.drafts',{},scope) || {};
-  if(S.draftKey !== undefined && S.draftKey !== key && S.draftOwn) delete m[S.draftKey];   /* 이 세션에서 만든 보관분만, 이름을 바꾸면 옛 이름 것 정리 */
+  if(S.draftKey !== undefined && S.draftKey !== key && S.draftOwn) removeOwnDraft(m,date,S.draftKey);
   const has = draftHas(snap);
-  if(has) m[key] = {date, w: key, snap, t: Date.now()}; else delete m[key];
+  const stored=Object.keys(m).find(k=>m[k]?.date===date&&(m[k].w??k)===key);
+  if(has){const target=stored??(!Object.prototype.hasOwnProperty.call(m,key)?key:JSON.stringify([date,key]));Object.defineProperty(m,target,{value:{date,w:key,snap,t:Date.now()},enumerable:true,writable:true,configurable:true});}else removeOwnDraft(m,date,key);
   if(!LS.set('ilbo.drafts', m, scope)){
     S.draftSaveFailed = true;
     $('#entryErr').hidden = false; $('#entryErr').textContent = '작성 중인 내용을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장공간을 확인해 주세요.';
@@ -2932,8 +2963,9 @@ function saveDraft(){ clearTimeout(draftTimer); draftTimer = setTimeout(persistD
 function clearDraft(){
   clearTimeout(draftTimer);
   if(S.editId || S.entryMode==='case') return true;
-  const m = draftsAll(); delete m[draftKeyOf()]; if(S.draftKey !== undefined && S.draftOwn) delete m[S.draftKey];
-  if(!LS.set('ilbo.drafts', m)) return false;
+  const scope=S.entryScope||activeScope,date=S.entryDate||S.date,m=LS.get('ilbo.drafts',{},scope)||{};
+  removeOwnDraft(m,date,draftKeyOf());if(S.draftKey !== undefined && S.draftOwn)removeOwnDraft(m,date,S.draftKey);
+  if(!LS.set('ilbo.drafts', m,scope)) return false;
   return true;
 }
 function finishEntrySave(){
@@ -2947,8 +2979,11 @@ function restoreForm(snap){
   if(j.w) $('#fWorker').value = j.w;
   if(j.h !== '' && j.h != null) $('#fHours').value = j.h;
   $('#prodBlocks').innerHTML = '';
+  const restoredIds=new Set();
   (j.b && j.b.length ? j.b : [null]).forEach(b => {
     const el = addBlock(null); if(!b) return;
+    if(typeof b.id==='string'&&b.id.trim()&&!restoredIds.has(b.id))el.dataset.rid=b.id;
+    restoredIds.add(el.dataset.rid);
     el.querySelector('.pb-product').value = b.p || '';
     el.querySelector('.pb-plan').value = b.pl || '';
     if(b.pz){ const pz = el.querySelector('.pb-planzero'), pl = el.querySelector('.pb-plan'); pz.classList.add('sel'); pl.disabled = true; pl.value = ''; pl.placeholder = '생산 종료 → 0으로 기록'; }
@@ -2994,6 +3029,7 @@ function requestCloseEntry(fromPop){
   closeEntry(fromPop);
 }
 async function saveEntry(){
+  if(globalThis.AppAccess&&!AppAccess.unlocked)return;
   if($('#entrySave').disabled) return;   /* 저장 진행 중 재진입 차단 (버튼·Ctrl+Enter 공통) */
   if(S.entryScope!==activeScope || S.entryDate!==S.date){ toast('날짜 또는 연결이 바뀌었습니다. 해당 날짜의 기록을 다시 열어 주세요.'); return; }
   const epoch = storeEpoch;
@@ -3065,8 +3101,8 @@ async function saveEntry(){
   /* 같은 사람·같은 제품이 이미 있으면 이중 집계 경고 */
   const dayWord = S.date === todayStr() ? '오늘' : '이 날';
   if(!S.editId){
-    for(const d of datas){
-      const dup = S.rows.find(r => !r.off && r.worker === worker && fieldProductIdentity(r) === fieldProductIdentity(d));
+    for(const [i,d] of datas.entries()){
+      const dup = S.rows.find(r => r.id!==els[i].dataset.rid && !r.off && r.worker === worker && fieldProductIdentity(r) === fieldProductIdentity(d));
       if(dup){
         if(!confirm(`${dayWord} ${worker}님의 "${d.product}" 기록이 이미 있습니다 (생산 ${dup.prod || 0}조).\n\n[확인] 추가로 또 등록\n[취소] 돌아가기 (기존 기록을 고치려면 목록에서 그 기록을 누르세요)`)) return;
       }
@@ -3500,21 +3536,19 @@ function renderRoster(){
     const n = b.dataset.n;
     if(!confirm(`"${n}" 을(를) 목록에서 완전히 지울까요?\n(과거 일보 기록은 그대로 남습니다)`)) return;
     const op = {kind:'remove-item', list:'workers', value:n};
-    S.presets = applyPresetsOp(S.presets, op);
-    S.presets.inactive = (S.presets.inactive||[]).filter(x => x !== n);
-    renderRoster(); renderMeChips();
-    try{ S.presets = await driver.presetsOp(op); S.presets.inactive = (S.presets.inactive||[]).filter(x => x !== n); renderRoster(); renderMeChips(); }
-    catch(err){ toast('서버에 반영하지 못했습니다 — 연결 확인'); }
+    b.disabled=true;
+    try{ await applyFieldPresetOperation(op); }
+    catch(err){ if(!err.contextChanged)toast('목록 삭제를 저장하지 못했습니다 — 기존 목록은 유지됩니다.'); }
+    finally{b.disabled=false;}
   });
   box.querySelectorAll('input').forEach(cb => cb.onchange = async () => {
     const n = cb.dataset.n;
     const op = {kind: cb.checked ? 'worker-on' : 'worker-off', name: n};
-    S.presets = applyPresetsOp(S.presets, op);   /* 화면 즉시 반영 */
-    renderRoster(); renderMeChips();
+    cb.disabled=true;
     try{
-      const next = await driver.presetsOp(op);   /* 서버 최신본에 이 변경만 적용 */
-      S.presets = next; renderRoster(); renderMeChips();
-    }catch(e){ toast('명단 변경을 서버에 저장하지 못했습니다 — 연결 확인 후 다시 시도하세요'); }
+      await applyFieldPresetOperation(op);
+    }catch(e){ if(!e.contextChanged){renderRoster();toast('명단 변경을 저장하지 못했습니다 — 기존 명단은 유지됩니다. 다시 시도해 주세요.');} }
+    finally{cb.disabled=false;}
   });
 }
 /* FIELD_CONNECTION_LOCK_START */
@@ -3946,6 +3980,7 @@ function init(){
   $('#rosterAdd').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); $('#rosterAddBtn').click(); } });
   /* 키보드: Esc 닫기 · Ctrl+Enter 저장 · 입력칸 Enter=다음 칸 · Ctrl+P=인쇄 버튼과 같은 절차 */
   document.addEventListener('keydown', e => {
+    if(globalThis.AppAccess&&!AppAccess.unlocked)return;
     if(e.target?.closest?.('dialog[open]')) return;
     if(e.isComposing || e.keyCode === 229) return;   /* 한글 조합 중 Enter 무시 */
     const entryOpen = $('#entryOv').classList.contains('open'), setOpen = $('#setOv').classList.contains('open');
@@ -3966,15 +4001,15 @@ function init(){
   });
   $('#rosterAddBtn').onclick = async () => {
     const inp = $('#rosterAdd');
+    const button=$('#rosterAddBtn');if(button.disabled)return;
     const name = inp.value.replace(/\s+/g, '');   /* '김 철수' → '김철수' 중복 방지 */
     if(!name){ inp.focus(); return; }
     if((S.presets.workers||[]).includes(name) && !(S.presets.inactive||[]).includes(name)){ toast(`"${name}" 은(는) 이미 명단에 있습니다`); inp.value=''; return; }
     const op = {kind:'worker-add', name};
-    S.presets = applyPresetsOp(S.presets, op);
-    inp.value = '';
-    renderRoster(); renderMeChips();
-    try{ S.presets = await driver.presetsOp(op); renderRoster(); renderMeChips(); toast(`"${name}" 명단에 추가되었습니다`); }
-    catch(e){ toast('서버에 반영하지 못했습니다 — 연결 확인'); }
+    const typed=inp.value;button.disabled=true;
+    try{ await applyFieldPresetOperation(op);if(inp.value===typed)inp.value='';toast(`"${name}" 명단에 추가되었습니다`); }
+    catch(e){ if(!e.contextChanged)toast('명단 추가를 저장하지 못했습니다 — 입력한 이름은 그대로입니다. 다시 시도해 주세요.'); }
+    finally{button.disabled=false;}
   };
   window.addEventListener('resize', () => { if(S.tab==='sheet') applyZoom(); });
   let hiddenAt = null;
@@ -4012,11 +4047,13 @@ function init(){
   setupFieldServerImport();
   $('#noticeSave').onclick = async () => {
     if(!await requestFieldConnection()) return;
+    const button=$('#noticeSave');if(button.disabled)return;
     const text = $('#noticeIn').value.trim();
     const op = {kind:'notice', text};
-    S.presets = applyPresetsOp(S.presets, op); renderNotice();
-    try{ S.presets = await driver.presetsOp(op); renderNotice(); toast(text ? '공지를 올렸습니다 — 모든 작업자 화면 맨 위에 보입니다' : '공지를 지웠습니다'); }
-    catch(e){ toast('서버에 반영하지 못했습니다 — 연결 확인'); }
+    button.disabled=true;
+    try{ await applyFieldPresetOperation(op);toast(text ? '공지를 올렸습니다 — 모든 작업자 화면 맨 위에 보입니다' : '공지를 지웠습니다'); }
+    catch(e){ if(!e.contextChanged)toast('공지를 저장하지 못했습니다 — 기존 공지는 유지됩니다. 다시 시도해 주세요.'); }
+    finally{button.disabled=false;}
   };
   updateNetBanner();
   loadPresets(); refreshDay();
