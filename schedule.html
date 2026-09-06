@@ -4023,7 +4023,14 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 const managementConnectionGate=ScheduleConnectionGate.create();
 const connectionWorkspaceSettingsBefore=workspaceSettings;
 workspaceSettings=function(main){
+ if(typeof shareViewSession!=='undefined'&&shareViewSession.active)return;
  connectionWorkspaceSettingsBefore(main);const details=main.querySelector('.workspaceConnection');if(!details)return;
+ if(!details.querySelector('[data-share-admin-launch]')){
+  const area=document.createElement('section'),title=document.createElement('h3'),note=document.createElement('p'),button=document.createElement('button');
+  area.className='connectionShareEntry';title.textContent='생산관리 조회 공유';note.textContent='별도 관리 화면에서 토큰 없는 조회 링크를 만들거나 사용을 중지합니다. 현재 기기의 저장된 관리 연결을 확인해 새 창으로 전달합니다.';
+  button.type='button';button.textContent='조회 링크 관리';button.setAttribute('data-share-admin-launch','');
+  button.addEventListener('click',()=>{if(typeof shareAdminLaunch==='function')shareAdminLaunch();else toast('공유 관리 기능을 준비하지 못했습니다. 화면을 새로 열어 주세요.')});area.append(title,note,button);details.append(area);
+ }
  const summary=details.querySelector('summary');details.open=managementConnectionGate.unlocked;
  const label=()=>{summary.textContent=(managementConnectionGate.unlocked?'GitHub 저장소 연결 설정':'🔒 GitHub 저장소 연결 설정 · 비밀번호');};label();
  summary.addEventListener('click',async event=>{
@@ -4200,6 +4207,52 @@ function shareSetupParse(hash){
  return{server:config.server,nonce:config.nonce};
 }
 const shareSetupState={running:false,finished:false,version:0};
+const shareAdminLaunchState={pending:null};
+function shareAdminLaunch(){
+ const allowed=()=>page==='settings'&&managementConnectionGate.unlocked&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active);
+ if(!allowed()){toast('연결 설정의 비밀번호를 먼저 확인해 주세요.');return false}
+ if(shareAdminLaunchState.pending){try{shareAdminLaunchState.pending.window?.focus()}catch{}return false}
+ const readSaved=()=>{
+  const config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null'),valid=c=>c?.owner==='parkjkk'&&c.repo==='schedule-data'&&(c.branch||'main')==='main';
+  if(!valid(config)||workspace?.config&&!valid(workspace.config))throw Error('repository');
+  const token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token');
+  if(typeof token!=='string'||!token.trim())throw Error('missing');return token;
+ };
+ let token;try{token=readSaved()}catch{toast('이 기기의 관리 저장소 연결이 필요합니다. GitHub 연결 설정을 먼저 저장한 뒤 다시 눌러 주세요.');return false}
+ let nonce;try{nonce=crypto.randomUUID()}catch{token=null;toast('새 창 연결을 준비하지 못했습니다. 최신 브라우저에서 다시 열어 주세요.');return false}
+ let opened=null,timeout=null,watch=null,done=false;
+ const pending={window:null,cancel:()=>finish()};
+ const finish=(message='')=>{
+  if(done)return;done=true;token=null;
+  if(timeout!==null)clearTimeout(timeout);if(watch!==null)clearInterval(watch);
+  window.removeEventListener('message',ready);window.removeEventListener('pagehide',leave);window.removeEventListener('hashchange',leave);
+  if(shareAdminLaunchState.pending===pending)shareAdminLaunchState.pending=null;
+  if(message)toast(message);
+ };
+ const current=()=>allowed()&&shareAdminLaunchState.pending===pending&&opened&&!opened.closed;
+ const leave=()=>finish();
+ const ready=event=>{
+  if(event.origin!==shareSetupOrigin||event.source!==opened||event.data?.type!=='production-admin-ready'||event.data?.nonce!==nonce)return;
+  if(!current()){finish();return}
+  try{
+   if(readSaved()!==token){finish('관리 연결이 바뀌었습니다. 조회 링크 관리를 다시 열어 주세요.');return}
+   // Only this exact opened window receives the one-time approved credential.
+   opened.postMessage({type:'production-admin-launch',nonce,token},shareSetupOrigin);
+   finish('공유 관리 화면에 연결을 전달했습니다. 새 창에서 결과를 확인해 주세요.');
+  }catch{finish('공유 관리 화면에 연결을 전달하지 못했습니다. 연결 설정을 확인하고 다시 시도해 주세요.')}
+ };
+ shareAdminLaunchState.pending=pending;
+ window.addEventListener('message',ready);window.addEventListener('pagehide',leave);window.addEventListener('hashchange',leave);
+ try{
+  // The button is inside settings that are already unlocked, so open remains
+  // in the original user activation instead of following an awaited prompt.
+  opened=window.open(shareSetupOrigin+'/#launch='+nonce,'_blank');pending.window=opened;
+  if(!opened){finish('팝업이 차단되었습니다. 이 사이트의 팝업을 허용한 뒤 조회 링크 관리를 다시 눌러 주세요.');return false}
+  timeout=setTimeout(()=>finish('공유 관리 화면의 응답을 기다리다 종료했습니다. 새 창을 확인한 뒤 다시 눌러 주세요.'),45000);
+  watch=setInterval(()=>{if(!current())finish()},500);
+  return true;
+ }catch{finish('공유 관리 창을 열지 못했습니다. 브라우저의 팝업 설정을 확인해 주세요.');return false}
+}
 async function shareSetupStart(){
  if(shareSetupState.running||shareSetupState.finished||typeof shareViewSession!=='undefined'&&shareViewSession.active)return;
  let request;try{request=shareSetupParse(location.hash)}catch{toast('공유 설정 링크를 확인하지 못했습니다. 공유 관리 화면에서 다시 열어 주세요.');return}if(!request)return;

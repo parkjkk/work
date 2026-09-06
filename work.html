@@ -652,8 +652,9 @@ table.sh td.num{font-variant-numeric:tabular-nums}
       <details id="ghAdv">
         <summary style="cursor:pointer; font-weight:700; padding:6px 0">관리자 설정 (GitHub 연결 정보 · 공지)</summary>
         <div class="set-note">비밀번호 확인 후 연결 정보를 수정할 수 있습니다. 설정을 닫거나 접으면 다시 잠깁니다.</div>
-        <div class="set-note" style="margin-top:8px">
-          모든 작업자의 입력을 한곳에 모으려면 GitHub 저장소를 연결하세요. 토큰은 <b>이 기기 브라우저에만</b> 저장됩니다.
+        <div class="set-note" id="bridgeConnectionNote" style="margin-top:8px" hidden>일보는 공유 서버를 통해 GitHub에 바로 저장됩니다. GitHub 토큰은 서버에서 보관하며, 이 기기에는 일보 읽기·쓰기용 공유 연결만 보관합니다. 토큰 변경은 <a href="https://parkjkk-production-view.pjk3742.chatgpt.site" target="_blank" rel="noopener noreferrer">서버 관리 화면</a>에서 진행하세요.</div>
+        <div class="set-note" id="directConnectionNote" style="margin-top:8px">
+          기존 일보 저장소는 서버 연결로 전환합니다. 다른 저장소의 직접 연결은 이 기기 브라우저에 토큰을 보관합니다.
           <ol>
             <li>github.com 로그인 → 데이터용 <b>비공개 저장소</b> 준비</li>
             <li>Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
@@ -685,7 +686,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
         받은 사람이 링크를 열면 <b>자동으로 연결</b>되고, 연결된 뒤에는 <b>주소창의 주소를 복사</b>해서
         다른 사람에게 전달해도 똑같이 연결됩니다 (아무것도 입력할 필요 없음).
         링크에 접속 정보가 들어 있으니 <b>회사 사람에게만</b> 전달하세요.
-        링크가 밖으로 새면 GitHub에서 토큰을 삭제하면 즉시 무효화됩니다.
+        공유 링크를 가진 사람은 일보를 읽고 쓸 수 있습니다. 서버 연결 링크는 서버 관리 화면에서 해제하세요.
       </div>
       <div class="btnrow" style="margin-top:0">
         <button class="btn pri" id="shareLink">📋 공유 링크 복사</button>
@@ -873,7 +874,11 @@ function resolveFieldProduct(catalog,input,previous){
 /* PRODUCT_CATALOG_END */
 
 /* ================= 저장 드라이버 ================= */
-const scopeFor = c => c && c.owner && c.repo && c.token ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
+const FIELD_BRIDGE = 'https://parkjkk-production-view.pjk3742.chatgpt.site';
+const fieldTarget = c => !!(c && String(c.owner).toLowerCase()==='parkjkk' && String(c.repo).toLowerCase()==='ilbo-data' && (c.branch||'main')==='main');
+const bridgeConfig = c => !!(fieldTarget(c) && c.transport==='bridge' && typeof c.bridgeKey==='string' && /^[A-Za-z0-9_-]{43}$/.test(c.bridgeKey));
+const connectedConfig = c => !!(c && c.owner && c.repo && (bridgeConfig(c) || (c.transport!=='bridge' && c.token)));
+const scopeFor = c => connectedConfig(c) ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
 const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|progress$)/.test(k);
 let activeScope = 'local', legacyScope = '', storeEpoch = 0;
 const storageKey = (k, scope=activeScope) => scopedItem(k) ? 'ilbo.store.'+encodeURIComponent(scope)+'.'+k : k;
@@ -921,24 +926,42 @@ function setupFromHash(){
   if(!m) return;
   try{
     const j = JSON.parse(b64uD(m[1]));
-    if(j && j.o && j.r && j.t){
+    const sharedBridge=j && j.transport==='bridge' && bridgeConfig({owner:j.o,repo:j.r,branch:j.b,transport:j.transport,bridgeKey:j.bridgeKey});
+    if(j && j.o && j.r && (sharedBridge || (j.t && !j.transport))){
       const cur = ghCfg();
       const sameRepo=cur && cur.owner.toLowerCase()===String(j.o).toLowerCase() && cur.repo.toLowerCase()===String(j.r).toLowerCase() && (cur.branch||'main')===(j.b||'main');
-      if(!(sameRepo && cur.v && j.v && j.v <= cur.v)){ /* 같은 저장소의 더 새 설정만 유지 */
-        saveConnection({owner:j.o, repo:j.r, branch:j.b||'main', token:j.t, exp:j.exp||'', v:j.v||Date.now(), src:'link'});
+      if(!(sameRepo && bridgeConfig(cur) && !sharedBridge) && !(sameRepo && cur.v && j.v && j.v <= cur.v)){ /* bridge 연결을 옛 토큰 링크로 되돌리지 않음 */
+        saveConnection(sharedBridge
+          ? {owner:j.o,repo:j.r,branch:j.b||'main',transport:'bridge',bridgeKey:j.bridgeKey,v:j.v||Date.now(),src:'link'}
+          : {owner:j.o,repo:j.r,branch:j.b||'main',token:j.t,exp:j.exp||'',v:j.v||Date.now(),src:'link'});
         setTimeout(()=>toast('공유 저장에 자동 연결되었습니다'), 400);
       }
     }
   }catch(e){ setTimeout(()=>toast('공유 연결 정보를 적용하지 못했습니다 — '+e.message),0); }
-  /* 해시(#s=)를 주소창에 그대로 유지 — 주소 복사만으로 다른 기기·브라우저에 연결까지 전달됨
-     (2026-09-01 사용자 결정: 토큰이 일보 데이터 전용이라 링크 노출 위험을 감수하고 편의 우선) */
+  /* 기존 링크도 읽되 서버 연결 저장이 끝나면 PAT가 없는 새 공유 주소로 교체한다. */
+  if(bridgeConfig(ghCfg())) replaceFieldShareHash(ghCfg());
+}
+function fieldSharePayload(c){
+  return bridgeConfig(c)
+    ? {o:c.owner,r:c.repo,b:c.branch||'main',transport:'bridge',bridgeKey:c.bridgeKey,v:c.v||Date.now()}
+    : {o:c.owner,r:c.repo,b:c.branch||'main',t:c.token,exp:c.exp||'',v:c.v||Date.now()};
+}
+function replaceFieldShareHash(c){
+  if(!bridgeConfig(c) || !/[#&]s=/.test(location.hash)) return;
+  try{history.replaceState(history.state,'',location.pathname+location.search+'#s='+b64u(JSON.stringify(fieldSharePayload(c))));}catch(e){}
 }
 async function makeShareLink(){
   if(!await requestFieldConnection()) return;
   const session = fieldConnectionSession, current = () => session === fieldConnectionSession && fieldConnectionReady();
-  const c = ghCfg();
-  if(!c || !c.token){ toast('먼저 GitHub 연결 정보를 저장하세요'); return; }
-  const payload = b64u(JSON.stringify({o:c.owner, r:c.repo, b:c.branch, t:c.token, exp:c.exp||'', v:c.v||Date.now()}));
+  let c = ghCfg();
+  if(!connectedConfig(c)){ toast('먼저 공유 저장을 연결하세요'); return; }
+  if(fieldTarget(c) && !bridgeConfig(c)){
+    await migrateFieldBridge();
+    if(!current()) return;
+    c=ghCfg();
+    if(!bridgeConfig(c)){toast('서버 연결을 준비 중입니다. 잠시 후 다시 복사해 주세요.');return;}
+  }
+  const payload = b64u(JSON.stringify(fieldSharePayload(c)));
   const url = (location.origin && location.origin.startsWith('http'))
     ? location.origin + location.pathname + '#s=' + payload
     : location.href.split('#')[0] + '#s=' + payload;
@@ -1037,7 +1060,9 @@ function ghDriver(cfg){
   const epoch = storeEpoch;
   const dayReads = new Map();
   const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/`;
-  const H = { 'Authorization':'Bearer '+cfg.token, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
+  const bridge=bridgeConfig(cfg);
+  const H = bridge ? {'Authorization':'Bearer '+cfg.bridgeKey} : { 'Authorization':'Bearer '+cfg.token, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
+  const readUrl=path => bridge ? FIELD_BRIDGE+'/api/field?path='+encodeURIComponent(path) : base+path+'?ref='+encodeURIComponent(cfg.branch)+'&_='+Date.now();
   function authCheck(r){
     const rlLeft = r.headers.get('x-ratelimit-remaining'), retryAfter = r.headers.get('retry-after');
     if(r.status===429 || (r.status===403 && (rlLeft === '0' || retryAfter))){
@@ -1047,7 +1072,7 @@ function ghDriver(cfg){
     }
     if(r.status===401 || r.status===403){
       S.authError = true;
-      S.authErrMsg = r.status===401 ? '토큰이 만료됐거나 삭제됨' : '저장소 접근 권한 없음';
+      S.authErrMsg = bridge ? '공유 연결이 해제되었거나 서버 연결을 확인해야 합니다' : r.status===401 ? '토큰이 만료됐거나 삭제됨' : '저장소 접근 권한 없음';
       updateNetBanner();
       throw new Error('연결 권한 오류 — ' + S.authErrMsg);
     }
@@ -1059,7 +1084,7 @@ function ghDriver(cfg){
   }
   async function getFile(path){
     assertContext(epoch);
-    const r = await ghFetch(base+path+'?ref='+encodeURIComponent(cfg.branch)+'&_='+Date.now(), {headers:H, cache:'no-store'}, 8000);   /* 읽기는 8초 — 캐시를 먼저 보여주므로 짧게 */
+    const r = await ghFetch(readUrl(path), {headers:H, cache:'no-store'}, 8000);
     assertContext(epoch);
     authCheck(r);
     if(r.status===404){ S.authError = false; return {json:null, sha:null}; }
@@ -1071,9 +1096,9 @@ function ghDriver(cfg){
   }
   async function putFile(path, obj, sha, msg){
     assertContext(epoch);
-    const body = {message: msg, content: b64e(JSON.stringify(obj, null, 1)), branch: cfg.branch};
+    const body = bridge ? {path,content:b64e(JSON.stringify(obj,null,1))} : {message: msg, content: b64e(JSON.stringify(obj, null, 1)), branch: cfg.branch};
     if(sha) body.sha = sha;
-    const r = await ghFetch(base+path, {method:'PUT', headers:{...H,'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const r = await ghFetch(bridge ? FIELD_BRIDGE+'/api/field' : base+path, {method:'PUT', headers:{...H,'Content-Type':'application/json'}, body: JSON.stringify(body)});
     assertContext(epoch);
     authCheck(r);
     if(r.status===409) return false;
@@ -1089,6 +1114,8 @@ function ghDriver(cfg){
     return true;
   }
   async function mutateJson(path, fn, msg){
+    fieldWrites++;
+    try{
     for(let i=0;i<6;i++){
       const {json, sha} = await getFile(path);
       const next = fn(json);
@@ -1098,9 +1125,20 @@ function ghDriver(cfg){
       await new Promise(res=>setTimeout(res, 400*Math.pow(2,i) + Math.random()*400));
     }
     throw new Error('다른 기기와 저장이 계속 겹칩니다. 잠시 후 다시 시도해 주세요.');
+    }finally{fieldWrites--;}
   }
   return {
     mode: 'gh',
+    async revision(){
+      assertContext(epoch);
+      if(!bridge)return null;
+      const r=await ghFetch(FIELD_BRIDGE+'/api/field?revision=1',{headers:H,cache:'no-store'},8000);
+      assertContext(epoch);authCheck(r);
+      if(!r.ok)throw new Error('공유 변경 확인 실패 ('+r.status+')');
+      const j=await r.json();assertContext(epoch);
+      if(typeof j.revision!=='string'||!j.revision)throw new Error('공유 변경 정보 형식 오류');
+      return j.revision;
+    },
     loadDay(date){
       assertContext(epoch);
       if(dayReads.has(date)) return dayReads.get(date);
@@ -1116,7 +1154,7 @@ function ghDriver(cfg){
       return task;
     },
     async mutateDay(date, fn, label){
-      const next = await mutateJson('data/'+date+'.json', j => ({rows: fn((j&&j.rows)||[])}), '일보 '+date + (label ? ' · '+label : ''));
+      const next = await mutateJson('data/'+date+'.json', j => ({...(j&&typeof j==='object'&&!Array.isArray(j)?j:{}),rows: fn((j&&j.rows)||[])}), '일보 '+date + (label ? ' · '+label : ''));
       assertContext(epoch); dayReads.delete(date);
       noteDay(date, next.rows, null);   /* sha 미상 → 다음 월 조회 때 그 날만 한 번 다시 받음 */
       return next.rows;
@@ -1147,7 +1185,7 @@ function ghDriver(cfg){
     },
     async monthDays(ym){
       assertContext(epoch);
-      const r = await ghFetch(base+'data?ref='+encodeURIComponent(cfg.branch)+'&_='+Date.now(), {headers:H, cache:'no-store'});
+      const r = await ghFetch(readUrl('data'), {headers:H, cache:'no-store'});
       assertContext(epoch);
       authCheck(r);
       if(r.status===404) return {};
@@ -1185,6 +1223,92 @@ function ghDriver(cfg){
   };
 }
 
+/* 전송 방식만 변경한다. 기기 보관분의 저장소 키와 기존 SHA 재시도 병합은 유지한다. */
+let fieldWrites=0,fieldMigration=null,fieldMigrationAttempt=0,fieldRevision=null,fieldRemotePending=false,fieldPolling=false,fieldSetup=null;
+async function migrateFieldBridge(force=false){
+  const cfg=ghCfg();
+  if(bridgeConfig(cfg))return true;
+  if(!fieldTarget(cfg)||!cfg.token||cfg.transport)return false;
+  if(fieldMigration)return fieldMigration;
+  if(!force && Date.now()-fieldMigrationAttempt<60000)return false;
+  if(fieldSetup || fieldWrites || flushing || $('#entryOv').classList.contains('open'))return false;
+  const epoch=storeEpoch,signature=JSON.stringify(cfg);
+  fieldMigrationAttempt=Date.now();
+  const task=(async()=>{
+    try{
+      const res=await ghFetch(FIELD_BRIDGE+'/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exchange',legacyToken:cfg.token,owner:'parkjkk',repo:'ilbo-data',branch:'main'})});
+      if(!res.ok)return false;
+      const data=await res.json();
+      if(typeof data.key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.key))return false;
+      if(epoch!==storeEpoch||signature!==JSON.stringify(ghCfg())||fieldSetup||fieldWrites||flushing||$('#entryOv').classList.contains('open'))return false;
+      const next={owner:'parkjkk',repo:'ilbo-data',branch:'main',transport:'bridge',bridgeKey:data.key,v:Date.now(),src:cfg.src||'server'};
+      saveConnection(next); // 저장이 실패하면 옛 연결·해시·기기 보관분을 그대로 둔다.
+      replaceFieldShareHash(next);
+      S.authError=false;initDriver();updateNetBanner();
+      if(fieldConnectionReady())fillFieldConnection();
+      renderSetStatus();loadPresets();refreshDay(true,true);
+      return true;
+    }catch(e){return false;}
+  })();
+  fieldMigration=task;
+  try{return await task;}finally{if(fieldMigration===task)fieldMigration=null;}
+}
+function fieldRefreshBlocked(){
+  return !!(fieldWrites||flushing||outboxAll().length||$('#entryOv').classList.contains('open')||$('#setOv').classList.contains('open'));
+}
+function deferFieldBackground(background){
+  if(!background||!fieldRefreshBlocked())return false;
+  fieldRemotePending=true;renderSyncInfo();return true;
+}
+async function pollFieldRevision(){
+  if(fieldPolling||document.hidden||!navigator.onLine)return;
+  if(!bridgeConfig(ghCfg())){await migrateFieldBridge();return;}
+  const epoch=storeEpoch,drv=driver;
+  fieldPolling=true;
+  try{
+    const rev=await drv.revision();
+    assertContext(epoch);
+    if(rev===fieldRevision&&!fieldRemotePending)return;
+    fieldRevision=rev;
+    if(fieldRefreshBlocked()){fieldRemotePending=true;renderSyncInfo();return;}
+    fieldRemotePending=false;
+    // 수정이 없는 화면만 다시 읽는다. 입력 폼과 보관된 원본은 변경하지 않는다.
+    for(const k of Object.keys(monthCache))delete monthCache[k];
+    await Promise.all([refreshDay(true,true,true),loadPresets(true)]);
+    assertContext(epoch);
+    if(S.tab==='month'&&!fieldRefreshBlocked())await renderMonth();
+    renderSyncInfo();
+  }catch(e){/* 일시 통신 실패는 다음 확인 때 재시도. 이전 revision을 성공으로 확정하지 않는다. */
+    if(epoch===storeEpoch){fieldRemotePending=true;renderSyncInfo();}
+  }finally{fieldPolling=false;}
+}
+function setupFieldServerImport(){
+  const m=location.hash.match(/[#&]fieldSetup=([A-Za-z0-9_-]+)/);
+  if(!m)return;
+  let req;
+  try{req=JSON.parse(b64uD(m[1]));}catch(e){return;}
+  if(req.server!==FIELD_BRIDGE||typeof req.nonce!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.nonce))return;
+  fieldSetup={nonce:req.nonce,opener:window.opener};
+  openSettings();
+  let box=$('#fieldServerImport');
+  if(!box){box=document.createElement('div');box.id='fieldServerImport';box.className='set-note';$('#setStatus').after(box);}
+  box.innerHTML='<p>서버 관리 화면에 이 기기의 일보 연결을 전달합니다. 관리자 비밀번호 확인 후에만 진행됩니다.</p><button class="btn pri" type="button">서버에 연결 전달</button><p role="status"></p>';
+  const status=box.querySelector('[role="status"]'),button=box.querySelector('button');
+  button.onclick=async()=>{
+    if(!await requestFieldConnection())return;
+    const req=fieldSetup,cfg=ghCfg();
+    if(!req||!req.opener||req.opener!==window.opener||req.opener.closed){status.textContent='서버 관리 화면에서 다시 연결 가져오기를 열어 주세요.';return;}
+    if(!fieldTarget(cfg)||(!bridgeConfig(cfg)&&!cfg.token)){status.textContent='이 브라우저에는 지정된 일보 저장소 연결이 없습니다. 기존 현장 공유 링크를 같은 브라우저에서 연 뒤 다시 진행하세요.';return;}
+    try{
+      const payload={type:'field-share-connection',nonce:req.nonce,...(bridgeConfig(cfg)?{bridgeKey:cfg.bridgeKey}:{token:cfg.token})};
+      req.opener.postMessage(payload,FIELD_BRIDGE);
+      status.textContent=bridgeConfig(cfg)?'서버 연결을 전달했습니다. 서버 관리 화면으로 돌아가세요.':'연결 정보를 전달했습니다. 서버 관리 화면에서 설정을 완료하세요.';
+      fieldSetup=null;button.disabled=true;
+      history.replaceState(history.state,'',location.pathname+location.search);
+      lockFieldConnection();
+    }catch(e){status.textContent='연결 전달에 실패했습니다. 서버 관리 화면에서 다시 열어 주세요.';}
+  };
+}
 let driver = localDriver;
 /* ---- 속도: 메모리 캐시 (세션 한정) ----
    dayCache[date]=rows · dayMeta[date]={sha, t:서버에서 마지막 확인 시각} · monthCache[ym]={days, t}
@@ -1212,7 +1336,8 @@ function initDriver(){
   const cfg = ghCfg();
   storeEpoch++;
   activeScope = scopeFor(cfg);
-  driver = (cfg && cfg.owner && cfg.repo && cfg.token) ? ghDriver(cfg) : localDriver;
+  driver = connectedConfig(cfg) ? ghDriver(cfg) : localDriver;
+  fieldRevision=null;fieldRemotePending=false;
   const key = driver.mode === 'gh' ? `gh:${cfg.owner}/${cfg.repo}/${cfg.branch||'main'}` : 'local';
   if(driverKey && driverKey !== key){   /* 저장소·모드가 바뀌면 옛 기물 진행률은 폐기 */
     S.progress = null; S.progressSpan = null;
@@ -1396,11 +1521,12 @@ function refreshProductChips(el){
   });
   input.oninput=()=>{show();updateProdProg(el);};show();
 }
-async function loadProductCatalog(){
+async function loadProductCatalog(background=false){
   const epoch=storeEpoch,seq=++productCatalogRead,drv=driver;
   if(drv.mode!=='gh'){S.productCatalogMode='legacy';renderProductCatalogNote();return;}
   try{
     const value=await drv.loadProductCatalog();assertContext(epoch);if(seq!==productCatalogRead)return;
+    if(deferFieldBackground(background))return;
     if(value){
       const next=parseProductCatalog(value);S.productCatalog=next;S.productCatalogSeen=true;S.productCatalogMode='ready';
       if(!validLocalProgress(S.progress,next))S.progress=null;
@@ -1410,6 +1536,8 @@ async function loadProductCatalog(){
     else{S.productCatalog=null;S.productCatalogMode='legacy';S.productCatalogMessage='';if(!validLocalProgress(S.progress,null))S.progress=null;}
   }catch(e){
     if(epoch!==storeEpoch||seq!==productCatalogRead)return;
+    if(deferFieldBackground(background))return;
+    if(background)fieldRemotePending=true;
     S.productCatalogMode=S.productCatalog?'cached':'blocked';S.productCatalogMessage='관리 품목을 확인하지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.';
   }
   if(epoch!==storeEpoch||seq!==productCatalogRead)return;
@@ -1468,14 +1596,15 @@ function progressSourceNote(projection=S.productionProgress){
   const stamp=new Date(projection.updatedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
   return `관리 집계 ${projection.asOf} 기준 · ${stamp} 반영${S.productionProgressMode==='cached'?' · 보관한 자료':''}`;
 }
-async function loadProductionProgress(){
+async function loadProductionProgress(background=false){
   const epoch=storeEpoch,seq=++productionProgressRead,drv=driver;
   if(drv.mode!=='gh'||typeof drv.loadProductionProgress!=='function')return;
   try{
     const value=await drv.loadProductionProgress();assertContext(epoch);if(seq!==productionProgressRead)return;
+    if(deferFieldBackground(background))return;
     if(value){const next=parseProductionProgress(value);S.productionProgress=next;S.productionProgressMode='ready';LS.set('ilbo.cache.productionProgress',next);}
     else{S.productionProgress=null;S.productionProgressMode='none';LS.remove('ilbo.cache.productionProgress');}
-  }catch{if(epoch!==storeEpoch||seq!==productionProgressRead)return;S.productionProgressMode=S.productionProgress?'cached':'none';}
+  }catch{if(epoch!==storeEpoch||seq!==productionProgressRead)return;if(deferFieldBackground(background))return;if(background)fieldRemotePending=true;S.productionProgressMode=S.productionProgress?'cached':'none';}
   if(epoch!==storeEpoch||seq!==productionProgressRead)return;
   if(S.tab==='input')renderInput();
   if(S.tab==='month'&&lastDraw&&`${lastDraw.y}-${pad2(lastDraw.m)}`===S.month)drawMonth(lastDraw.days,lastDraw.y,lastDraw.m);
@@ -1553,15 +1682,16 @@ function applyDay(date, raw){
 const FRESH_DAY_MS = 60*1000;   /* 오늘이 아닌 날짜: 1분 안에 서버에서 받은 적 있으면 재요청 생략 */
 /* 날짜 조회: ① 캐시를 먼저 즉시 그림 → ② 서버와 대조해 달라졌을 때만 다시 그림 → ③ 앞뒤 날짜 미리 받기
    force=true 면(↻·인쇄·복귀) 캐시가 신선해도 반드시 서버 대조 */
-async function refreshDay(quiet, force){
+async function refreshDay(quiet, force, background=false){
   const epoch = storeEpoch, drv = driver;
   const reqDate = S.date, my = ++loadSeq;   /* 늦게 도착한 응답이 다른 날짜를 덮지 못하게 */
   const cached = getCachedDay(reqDate);
   const cachedJson = cached ? JSON.stringify(cached) : null;
+  const displayedJson = S.rowsDate===reqDate ? JSON.stringify(S.rows) : null;
   const skip = !force && !!cached && reqDate !== todayStr() && isFresh(reqDate, FRESH_DAY_MS);
   S.loading = !skip;
-  if(cached) applyDay(reqDate, cached);
-  else{
+  if(cached){if(!background)applyDay(reqDate,cached);}
+  else if(!background){
     /* 이전 날짜 데이터가 새 날짜 화면에 남지 않게 비움 (아웃박스 보관분만 표시) */
     S.rows = driver.mode === 'gh' ? pendingApply(reqDate, []) : [];
     S.rowsDate = S.rows.length ? reqDate : null;
@@ -1574,22 +1704,25 @@ async function refreshDay(quiet, force){
     const rows = await drv.loadDay(reqDate);
     assertContext(epoch);
     if(epoch !== storeEpoch || my !== loadSeq || reqDate !== S.date) return;
+    if(deferFieldBackground(background))return;
     S.offline = false;
     if(driver.mode==='gh') S.lastSync = Date.now();
-    if(!S.dayLoaded || JSON.stringify(rows) !== cachedJson) applyDay(reqDate, rows);
+    if(!S.dayLoaded || JSON.stringify(rows) !== (background?displayedJson:cachedJson)) applyDay(reqDate, rows);
     else renderSyncInfo();
     updateNetBanner();
     outboxFlush(); presetsRetryFlush();
     prefetchAround(reqDate);
   }catch(e){
     if(my !== loadSeq || reqDate !== S.date) return;
+    if(deferFieldBackground(background))return;
+    if(background)fieldRemotePending=true;
     if(driver.mode === 'gh'){
       S.offline = !S.authError;   /* 캐시를 이미 보여주고 있으면 배너만 띄움 */
       if(!cached && !quiet) toast('불러오기 실패: '+e.message);
       updateNetBanner();
     }else if(!quiet) toast('불러오기 실패: '+e.message);
   }
-  finally{ setBusy(false); if(--refreshing <= 0){ refreshing = 0; S.loading = false; if(S.tab==='sheet') renderSheet(); } }   /* 다른 조회가 진행 중이면 '불러오는 중' 유지 */
+  finally{ setBusy(false); if(--refreshing <= 0){ refreshing = 0; S.loading = false; if(S.tab==='sheet'&&!deferFieldBackground(background)) renderSheet(); } }   /* 다른 조회가 진행 중이면 '불러오는 중' 유지 */
 }
 /* 앞뒤 날짜를 미리 받아 두면 ◀ ▶ 이동이 요청 없이 즉시 뜬다 (공유 저장 모드만, 연결 문제면 중단) */
 let prefetchTimer = null;
@@ -1607,20 +1740,23 @@ function prefetchAround(date){
     }
   }, 250);
 }
-async function loadPresets(){
+async function loadPresets(background=false){
   const epoch = storeEpoch, drv = driver;
-  const catalogTask=Promise.all([loadProductCatalog(),loadProductionProgress()]);
+  const catalogTask=Promise.all([loadProductCatalog(background),loadProductionProgress(background)]);
   /* 공유 모드: 기기에 보관된 목록을 먼저 보여주고(즉시) 서버 응답으로 갱신 */
-  if(driver.mode === 'gh' && !S.presetsShown){
+  if(driver.mode === 'gh' && !S.presetsShown && !background){
     const c = LS.get('ilbo.cache.presets', null);
     if(c){ S.presets = c; S.presets.workers ||= []; S.presets.products ||= []; S.presets.parts ||= []; S.presets.inactive ||= []; S.presetsShown = true; renderMeChips(); }
   }
   try{
     const loaded = await drv.loadPresets(); assertContext(epoch);
+    if(deferFieldBackground(background)){await catalogTask;return;}
     S.presets = loaded || {workers:[],products:[],parts:[]};
     if(driver.mode === 'gh') LS.set('ilbo.cache.presets', S.presets);   /* 오프라인 대비 */
   }catch(e){
     if(epoch !== storeEpoch) return;
+    if(deferFieldBackground(background)){await catalogTask;return;}
+    if(background)fieldRemotePending=true;
     if(driver.mode === 'gh'){
       const c = LS.get('ilbo.cache.presets', null);
       if(c) S.presets = c;   /* 오프라인 아침에도 이름 칩·미작성 카드 유지 */
@@ -3282,6 +3418,10 @@ function fillFieldConnection(){
   $('#ghExp').value = c.exp || '';
   $('#noticeIn').value = (S.presets && S.presets.notice) || '';
   fieldConnectionInputs(true);
+  const bridge=bridgeConfig(c);
+  $('#bridgeConnectionNote').hidden=!bridge;$('#directConnectionNote').hidden=bridge;
+  for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp'])$('#'+id).disabled=bridge;
+  $('#ghToken').placeholder=bridge?'서버에서 보관 중 · 이 기기에는 토큰 없음':'';
 }
 async function requestFieldConnection(){
   if(!$('#setOv').classList.contains('open')) return false;
@@ -3313,12 +3453,14 @@ function openSettings(){
 }
 function renderSetStatus(){
   const c = ghCfg() || {};
-  const cfgd = !!(c.owner && c.repo && c.token);
+  const cfgd = connectedConfig(c);
   const dl = tokenDaysLeft();
   const expNote = dl === null ? '' : (dl < 0 ? ` <b style="color:var(--bad)">· 토큰 만료됨 (${-dl}일 지남) — 새 토큰 발급 필요</b>`
     : dl <= 14 ? ` <b style="color:var(--warn)">· 토큰 만료 ${dl}일 전 — 미리 새 토큰을 발급해 두세요</b>` : ` · 토큰 만료까지 ${dl}일`);
   $('#setStatus').innerHTML = cfgd
-    ? (S.authError
+    ? (bridgeConfig(c)
+        ? `<b style="color:var(--${S.authError?'bad':'good'})">● ${S.authError?'서버 연결 확인 필요':'서버를 통해 공유 저장 중'}</b> — ${esc(c.owner)}/${esc(c.repo)}<div style="margin-top:6px">저장 즉시 GitHub에 반영 · 다른 기기 변경은 약 5초 간격으로 확인 · GitHub 토큰은 서버에서 보관</div>${S.authError?'<div>관리자에게 공유 연결 상태를 확인하거나 새 링크를 요청하세요.</div>':''}`
+        : S.authError
         ? `<b style="color:var(--bad)">● 연결 오류</b> — ${esc(c.owner)}/${esc(c.repo)} (${esc(S.authErrMsg || '권한 오류')})
            <div style="margin-top:6px"><b>작업자</b>라면: 관리자가 보낸 <b>새 공유 링크</b>를 한 번 열면 됩니다.</div>
            <div style="margin-top:4px"><b>관리자</b>라면 이 순서로:</div>
@@ -3343,6 +3485,13 @@ async function ghTest(){
   const o=$('#ghOwner').value.trim(), r=$('#ghRepo').value.trim(), t=$('#ghToken').value.trim();
   const br = ($('#ghBranch').value.trim() || 'main');
   const out = $('#ghTestOut');
+  const cfg=ghCfg();
+  if(bridgeConfig(cfg)){
+    out.textContent='서버 연결 확인 중…';out.className='';
+    try{await driver.revision();if(current()){out.textContent='✓ 서버 연결 성공 · 일보 읽기·쓰기 연결 · 토큰은 서버 보관';out.className='ok';}}
+    catch(e){if(current()){out.textContent='✕ 서버 연결을 확인하지 못했습니다. 관리 화면에서 연결을 확인하세요.';out.className='err';}}
+    return;
+  }
   if(!o||!r||!t){ out.textContent='소유자·저장소·토큰을 모두 입력하세요'; out.className='err'; return; }
   out.textContent='확인 중…'; out.className='';
   try{
@@ -3364,13 +3513,27 @@ async function ghTest(){
   }catch(e){ if(current()){ out.textContent='✕ '+e.message; out.className='err'; } }
 }
 function tokenDaysLeft(){
-  const c = ghCfg(); if(!c || !c.exp || !/^\d{4}-\d{2}-\d{2}$/.test(c.exp)) return null;
+  const c = ghCfg(); if(!c || bridgeConfig(c) || !c.exp || !/^\d{4}-\d{2}-\d{2}$/.test(c.exp)) return null;
   return Math.ceil((parseDate(c.exp) - new Date()) / 864e5);
 }
 async function ghSaveCfg(){
   if(!await requestFieldConnection()) return;
+  if(bridgeConfig(ghCfg())){closeSettings();toast('서버 연결이 유지됩니다');return;}
+  const session=fieldConnectionSession,epoch=storeEpoch;
   const cfg = {owner:$('#ghOwner').value.trim(), repo:$('#ghRepo').value.trim(), branch:$('#ghBranch').value.trim()||'main', token:$('#ghToken').value.trim(), exp:$('#ghExp').value||'', v:Date.now()};
   if(!cfg.owner||!cfg.repo||!cfg.token){ toast('소유자·저장소·토큰을 입력하세요'); return; }
+  if(fieldTarget(cfg)){
+    try{
+      const res=await ghFetch(FIELD_BRIDGE+'/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exchange',legacyToken:cfg.token,owner:'parkjkk',repo:'ilbo-data',branch:'main'})});
+      if(!res.ok)throw new Error('서버 연결을 준비하지 못했습니다. 서버 관리 화면에서 일보 연결을 확인하세요.');
+      const j=await res.json();
+      const next={owner:'parkjkk',repo:'ilbo-data',branch:'main',transport:'bridge',bridgeKey:j.key,v:Date.now()};
+      if(!bridgeConfig(next))throw new Error('서버 연결 응답을 확인하지 못했습니다.');
+      if(epoch!==storeEpoch||session!==fieldConnectionSession||!fieldConnectionReady())return;
+      saveConnection(next);replaceFieldShareHash(next);S.authError=false;initDriver();updateNetBanner();loadPresets();refreshDay(false,true);closeSettings();toast('토큰을 서버에 보관하는 공유 저장으로 연결되었습니다');
+    }catch(e){if(epoch===storeEpoch&&session===fieldConnectionSession&&fieldConnectionReady())toast(e.message);}
+    return;
+  }
   const prev = ghCfg();
   const tokenChanged = !!(prev && prev.token && prev.token !== cfg.token);
   try{ saveConnection(cfg); }catch(e){ toast(e.message); return; }
@@ -3543,9 +3706,9 @@ function init(){
   $('#gearBtn').onclick = openSettings;
   $('#modeBadge').onclick = openSettings;
   $('#setClose').onclick = () => closeSettings(false);
-  window.addEventListener('online', () => { outboxFlush(); presetsRetryFlush(); });
+  window.addEventListener('online', () => { outboxFlush(); presetsRetryFlush(); pollFieldRevision(); });
   /* 열린 탭 주소창에 새 공유 링크를 붙여넣어도 새로고침 없이 적용 */
-  window.addEventListener('hashchange', () => { if(!/[#&]s=/.test(location.hash)) return; lockFieldConnection(); setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); });
+  window.addEventListener('hashchange', () => { if(/[#&]fieldSetup=/.test(location.hash)){lockFieldConnection();setupFieldServerImport();return;} if(!/[#&]s=/.test(location.hash)) return; fieldSetup=null;lockFieldConnection(); setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); migrateFieldBridge(true); });
   $('#ghTest').onclick = ghTest;
   $('#ghSave').onclick = ghSaveCfg;
   $('#ghClear').onclick = ghClearCfg;
@@ -3593,11 +3756,13 @@ function init(){
     if(hiddenAt && Date.now() - hiddenAt > 4*3600*1000 && S.date !== todayStr() && !$('#entryOv').classList.contains('open')){
       setDate(todayStr());
       toast('오늘 날짜로 이동했습니다');
-    }else{
+    }else if(!bridgeConfig(ghCfg()) || !fieldRefreshBlocked()){
       refreshDay(true, true);
+    }else{
+      fieldRemotePending=true;renderSyncInfo();
     }
     hiddenAt = null;
-    outboxFlush(); loadPresets();
+    outboxFlush();if(!bridgeConfig(ghCfg())||!fieldRefreshBlocked())loadPresets();pollFieldRevision();
   });
   window.addEventListener('beforeprint', renderSheet);
   window.addEventListener('afterprint', () => { if(S.rowsDate !== S.date) return; LS.set('ilbo.printed.'+S.date, {t: Date.now(), h: rowsHash()}); renderSheet(); });   /* 빈(stale) 시트가 나간 경우는 기록 안 함 */
@@ -3612,9 +3777,11 @@ function init(){
   /* 보관분(아웃박스)은 1분마다 재전송 시도 */
   setInterval(() => { if(navigator.onLine && outboxAll().length) outboxFlush(); }, 60*1000);
   setInterval(() => { if(!document.hidden&&navigator.onLine)loadProductionProgress(); },5*60*1000);
+  setInterval(pollFieldRevision,5000);
   pruneCaches(120);   /* 120일 지난 날짜 캐시 정리 */
   installManifest();
   bindFieldConnection();
+  setupFieldServerImport();
   $('#noticeSave').onclick = async () => {
     if(!await requestFieldConnection()) return;
     const text = $('#noticeIn').value.trim();
@@ -3625,12 +3792,13 @@ function init(){
   };
   updateNetBanner();
   loadPresets(); refreshDay();
+  setTimeout(pollFieldRevision,1800);
   setTimeout(() => ensureProgress(), 1500);   /* 첫 화면이 뜬 뒤 기물 진행 상황 계산 */
 }
 function renderSyncInfo(){
   const si = $('#syncInfo');
   if(si) si.textContent = (driver.mode==='gh' && S.lastSync)
-    ? ` · 최근 동기화 ${new Date(S.lastSync).getHours()}:${pad2(new Date(S.lastSync).getMinutes())}` : '';
+    ? ` · 최근 동기화 ${new Date(S.lastSync).getHours()}:${pad2(new Date(S.lastSync).getMinutes())}${fieldRemotePending?' · 서버 변경 확인 대기 — 입력·전송 후 반영':''}` : (fieldRemotePending?' · 서버 변경 확인 대기':'');
 }
 function renderAll(){ renderInput(); renderMeChips(); if(S.tab==='sheet') renderSheet(); renderSyncInfo(); }   /* 숨은 인쇄표는 탭 진입·beforeprint 때 렌더 */
 init();
