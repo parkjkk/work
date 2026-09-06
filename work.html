@@ -651,6 +651,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
       <div class="f-label" style="margin-top:22px"></div>
       <details id="ghAdv">
         <summary style="cursor:pointer; font-weight:700; padding:6px 0">관리자 설정 (GitHub 연결 정보 · 공지)</summary>
+        <div class="set-note">비밀번호 확인 후 연결 정보를 수정할 수 있습니다. 설정을 닫거나 접으면 다시 잠깁니다.</div>
         <div class="set-note" style="margin-top:8px">
           모든 작업자의 입력을 한곳에 모으려면 GitHub 저장소를 연결하세요. 토큰은 <b>이 기기 브라우저에만</b> 저장됩니다.
           <ol>
@@ -703,6 +704,48 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* CONNECTION_GATE_START */
+(function(root){'use strict';
+// Screen access guard only. Repository authorization remains GitHub's job.
+// Keep the password verifier separate from all connection and business storage.
+const salt='fa14c513e5783e91ac6a32fd5a947317',iterations=120000,digest='db0b8a4be81ad2f32ce33740de779dd3e4c8d3b0ffcc4bdfe2e7095527b03f0d';
+async function verify(value){
+ if(typeof value!=='string'||value.length>128)return false;
+ if(!root.crypto?.subtle)throw Error('이 브라우저에서 비밀번호를 확인할 수 없습니다. HTTPS 주소로 다시 열어 주세요.');
+ const encoder=new TextEncoder(),key=await root.crypto.subtle.importKey('raw',encoder.encode(value),'PBKDF2',false,['deriveBits']);
+ const bits=await root.crypto.subtle.deriveBits({name:'PBKDF2',salt:encoder.encode(salt),iterations,hash:'SHA-256'},key,256);
+ const result=Array.from(new Uint8Array(bits),x=>x.toString(16).padStart(2,'0')).join('');let different=0;
+ for(let i=0;i<digest.length;i++)different|=digest.charCodeAt(i)^result.charCodeAt(i);return different===0;
+}
+function style(){
+ if(document.getElementById('connectionGateStyle'))return;
+ const element=document.createElement('style');element.id='connectionGateStyle';element.textContent='.connectionGateDialog{box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #cfd7e4;border-radius:16px;background:#fff;color:#25344a;box-shadow:0 20px 80px #14233c33;font-family:inherit}.connectionGateDialog::backdrop{background:#18253c66}.connectionGateDialog h2{font-size:19px;margin:0 0 10px}.connectionGateDialog p{font-size:13px;line-height:1.6}.connectionGateDialog label{display:block;font-size:13px;font-weight:600}.connectionGateDialog input{box-sizing:border-box;width:100%;height:44px;padding:9px 12px;margin-top:7px;border:1px solid #aab8cc;border-radius:8px;font:inherit;font-size:18px}.connectionGateDialog .connectionGateActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.connectionGateDialog button{min-height:40px;border:1px solid #bcc8d8;border-radius:8px;padding:8px 16px;background:#fff;color:#25344a;font:inherit}.connectionGateDialog button[type=submit]{background:#425b9e;color:#fff;border-color:#425b9e}.connectionGateDialog button:disabled{opacity:.55}.connectionGateDialog [role=alert]{color:#ad3434;min-height:20px;margin:10px 0 0}@media print{.connectionGateDialog{display:none!important}}';document.head.append(element);
+}
+function create(){
+ let granted=false,pending=null,cancel=null,version=0;
+ return{get unlocked(){return granted},lock(){version++;granted=false;cancel?.()},request(){
+  if(granted)return Promise.resolve(true);if(pending)return pending;
+  const current=version;
+  pending=Promise.resolve().then(()=>new Promise(resolve=>{
+   if(version!==current){pending=null;resolve(false);return}
+   style();const before=document.activeElement,dialog=document.createElement('dialog');dialog.className='connectionGateDialog';dialog.setAttribute('aria-label','연결 설정 잠금 해제');
+   dialog.innerHTML='<form><h2>연결 설정 잠금 해제</h2><p>저장소 연결 정보를 열려면 비밀번호를 입력하세요.</p><label>설정 비밀번호<input type="password" name="password" inputmode="numeric" autocomplete="off" maxlength="128" required></label><p role="alert"></p><div class="connectionGateActions"><button type="button">취소</button><button type="submit">잠금 해제</button></div></form>';
+   const input=dialog.querySelector('input'),form=dialog.querySelector('form'),error=dialog.querySelector('[role=alert]');let finished=false,checking=false;
+   const finish=ok=>{if(finished)return;finished=true;input.value='';granted=ok&&version===current;if(dialog.open&&typeof dialog.close==='function')dialog.close();dialog.remove();cancel=null;pending=null;if(before?.isConnected)before.focus({preventScroll:true});resolve(granted)};
+   cancel=()=>finish(false);dialog.querySelector('button[type=button]').onclick=()=>finish(false);dialog.oncancel=event=>{event.preventDefault();finish(false)};dialog.addEventListener('keydown',event=>event.stopPropagation());
+   form.onsubmit=async event=>{event.preventDefault();if(checking||finished)return;checking=true;error.textContent='';form.querySelector('[type=submit]').disabled=true;
+    const value=input.value;input.value='';try{const ok=await verify(value);if(finished||version!==current)return;if(ok){finish(true);return}error.textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요.'}catch(e){if(!finished)error.textContent=e.message||'비밀번호를 확인하지 못했습니다.'}finally{checking=false;if(!finished){form.querySelector('[type=submit]').disabled=false;input.focus()}}
+   };
+   document.body.append(dialog);if(typeof dialog.showModal!=='function'){error.textContent='이 브라우저는 설정 잠금을 지원하지 않습니다. 최신 브라우저로 열어 주세요.';finish(false);return}dialog.showModal();input.focus();
+  }));return pending;
+ }};
+}
+const api={create,verify};root.ScheduleConnectionGate=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+})(globalThis);
+/* CONNECTION_GATE_END */
+</script>
 
 <script>
 "use strict";
@@ -890,7 +933,9 @@ function setupFromHash(){
   /* 해시(#s=)를 주소창에 그대로 유지 — 주소 복사만으로 다른 기기·브라우저에 연결까지 전달됨
      (2026-09-01 사용자 결정: 토큰이 일보 데이터 전용이라 링크 노출 위험을 감수하고 편의 우선) */
 }
-function makeShareLink(){
+async function makeShareLink(){
+  if(!await requestFieldConnection()) return;
+  const session = fieldConnectionSession, current = () => session === fieldConnectionSession && fieldConnectionReady();
   const c = ghCfg();
   if(!c || !c.token){ toast('먼저 GitHub 연결 정보를 저장하세요'); return; }
   const payload = b64u(JSON.stringify({o:c.owner, r:c.repo, b:c.branch, t:c.token, exp:c.exp||'', v:c.v||Date.now()}));
@@ -898,9 +943,10 @@ function makeShareLink(){
     ? location.origin + location.pathname + '#s=' + payload
     : location.href.split('#')[0] + '#s=' + payload;
   const out = $('#shareLinkOut'); out.value = url;
-  const done = ok => toast(ok ? '복사되었습니다 — 카카오톡 등으로 작업자에게 보내주세요' : '복사가 안 되면 아래 링크를 길게 눌러 복사하세요');
+  const done = ok => { if(current()) toast(ok ? '복사되었습니다 — 카카오톡 등으로 작업자에게 보내주세요' : '복사가 안 되면 아래 링크를 길게 눌러 복사하세요'); };
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(url).then(()=>done(true), ()=>{ out.select(); done(document.execCommand('copy')); });
+    try{ await navigator.clipboard.writeText(url); done(true); }
+    catch{ if(current()){ out.select(); done(document.execCommand('copy')); } }
   } else { out.select(); done(document.execCommand('copy')); }
 }
 
@@ -3211,13 +3257,55 @@ function renderRoster(){
     }catch(e){ toast('명단 변경을 서버에 저장하지 못했습니다 — 연결 확인 후 다시 시도하세요'); }
   });
 }
-function openSettings(){
+/* FIELD_CONNECTION_LOCK_START */
+const fieldConnectionGate = globalThis.ScheduleConnectionGate?.create();
+let fieldConnectionSession = 0;
+function fieldConnectionReady(){
+  return !!(fieldConnectionGate?.unlocked && $('#setOv').classList.contains('open') && $('#ghAdv').open);
+}
+function fieldConnectionInputs(enabled){
+  for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp','noticeIn','ghTest','ghSave','ghClear','noticeSave']) $('#'+id).disabled = !enabled;
+}
+function lockFieldConnection(){
+  fieldConnectionSession++;
+  fieldConnectionGate?.lock();
+  $('#ghAdv').open = false;
+  for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp','shareLinkOut','noticeIn']) $('#'+id).value = '';
+  $('#ghTestOut').textContent = ''; $('#ghTestOut').className = '';
+  fieldConnectionInputs(false);
+}
+function fillFieldConnection(){
+  if(!fieldConnectionGate?.unlocked) return;
   const c = ghCfg() || {};
   $('#ghOwner').value = c.owner||''; $('#ghRepo').value = c.repo||'';
   $('#ghBranch').value = c.branch||'main'; $('#ghToken').value = c.token||'';
   $('#ghExp').value = c.exp || '';
-  $('#ghTestOut').textContent=''; $('#ghTestOut').className='';
   $('#noticeIn').value = (S.presets && S.presets.notice) || '';
+  fieldConnectionInputs(true);
+}
+async function requestFieldConnection(){
+  if(!$('#setOv').classList.contains('open')) return false;
+  if(fieldConnectionReady()) return true;
+  if(!fieldConnectionGate){ toast('연결 설정 잠금을 준비하지 못했습니다. 새로고침해 주세요.'); return false; }
+  const session = fieldConnectionSession;
+  if(!await fieldConnectionGate.request() || session !== fieldConnectionSession || !$('#setOv').classList.contains('open')) return false;
+  fillFieldConnection(); $('#ghAdv').open = true;
+  return fieldConnectionReady();
+}
+function bindFieldConnection(){
+  lockFieldConnection();
+  const details = $('#ghAdv');
+  details.querySelector('summary').addEventListener('click', async e => {
+    e.preventDefault();
+    if(details.open) lockFieldConnection(); else await requestFieldConnection();
+  });
+  details.addEventListener('toggle', () => {
+    if(!details.open || !fieldConnectionGate?.unlocked) lockFieldConnection();
+  });
+}
+/* FIELD_CONNECTION_LOCK_END */
+function openSettings(){
+  lockFieldConnection();
   renderSetStatus();
   renderRoster();
   $('#setOv').classList.add('open'); document.body.style.overflow='hidden'; syncInert();
@@ -3241,39 +3329,46 @@ function renderSetStatus(){
            </ol>`
         : `<b style="color:var(--good)">● 공유 저장 중</b> — 모든 기록이 <b>${esc(c.owner)}/${esc(c.repo)}</b> 저장소에 모입니다.${expNote} <a href="https://github.com/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/commits" target="_blank" rel="noopener" style="color:var(--accent-ink)">변경 이력 ↗</a>`)
     : `<b>● 이 기기에만 저장 중</b> — 다른 폰·PC와 자동으로 합쳐지지 않습니다. 아래 관리자 설정에서 연결하거나, 관리자가 보낸 공유 링크로 접속하세요.`;
-  $('#ghAdv').open = !cfgd || !!S.authError;
+  if(!fieldConnectionGate?.unlocked) $('#ghAdv').open = false;
 }
 function closeSettings(fromPop){
+  lockFieldConnection();
   $('#setOv').classList.remove('open'); document.body.style.overflow=''; syncInert();
   if(!fromPop && history.state && history.state.ov === 'set'){ try{ history.back(); }catch(e){} }
   try{ $('#gearBtn').focus({preventScroll:true}); }catch(e){}
 }
 async function ghTest(){
+  if(!await requestFieldConnection()) return;
+  const session = fieldConnectionSession, current = () => session === fieldConnectionSession && fieldConnectionReady();
   const o=$('#ghOwner').value.trim(), r=$('#ghRepo').value.trim(), t=$('#ghToken').value.trim();
+  const br = ($('#ghBranch').value.trim() || 'main');
   const out = $('#ghTestOut');
   if(!o||!r||!t){ out.textContent='소유자·저장소·토큰을 모두 입력하세요'; out.className='err'; return; }
   out.textContent='확인 중…'; out.className='';
   try{
     const res = await fetch(`https://api.github.com/repos/${o}/${r}`, {headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}, cache:'no-store'});
+    if(!current()) return;
     if(!res.ok) throw new Error(res.status===404 ? '저장소를 찾을 수 없습니다 (이름/토큰 권한 확인)' : res.status===401 ? '토큰이 올바르지 않습니다' : '실패 ('+res.status+')');
     const j = await res.json();
+    if(!current()) return;
     if(j.permissions && !j.permissions.push) throw new Error('연결은 되지만 쓰기 권한이 없습니다 (토큰 Contents: Read and write 필요)');
     if(j.private === false){
       out.textContent = `⚠ 연결은 되지만 이 저장소가 ‘공개’ 상태입니다! 작업자 이름과 생산 데이터가 인터넷에 그대로 공개됩니다. GitHub 저장소 Settings에서 Private으로 바꾼 뒤 사용하세요.`;
       out.className='err'; return;
     }
-    const br = ($('#ghBranch').value.trim() || 'main');
     const rb = await fetch(`https://api.github.com/repos/${o}/${r}/branches/${encodeURIComponent(br)}`, {headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}, cache:'no-store'});
+    if(!current()) return;
     if(rb.status === 404) throw new Error(`브랜치 '${br}' 가 없습니다 — 저장소 기본 브랜치(${j.default_branch})로 바꿔보세요`);
     out.textContent = `✓ 연결 성공: ${j.full_name} (비공개) · 브랜치 ${br} — 쓰기 가능`;
     out.className='ok';
-  }catch(e){ out.textContent='✕ '+e.message; out.className='err'; }
+  }catch(e){ if(current()){ out.textContent='✕ '+e.message; out.className='err'; } }
 }
 function tokenDaysLeft(){
   const c = ghCfg(); if(!c || !c.exp || !/^\d{4}-\d{2}-\d{2}$/.test(c.exp)) return null;
   return Math.ceil((parseDate(c.exp) - new Date()) / 864e5);
 }
-function ghSaveCfg(){
+async function ghSaveCfg(){
+  if(!await requestFieldConnection()) return;
   const cfg = {owner:$('#ghOwner').value.trim(), repo:$('#ghRepo').value.trim(), branch:$('#ghBranch').value.trim()||'main', token:$('#ghToken').value.trim(), exp:$('#ghExp').value||'', v:Date.now()};
   if(!cfg.owner||!cfg.repo||!cfg.token){ toast('소유자·저장소·토큰을 입력하세요'); return; }
   const prev = ghCfg();
@@ -3288,7 +3383,8 @@ function ghSaveCfg(){
     toast('토큰이 바뀌었습니다 — 아래 [공유 링크 복사]로 새 링크를 작업자 전원에게 다시 보내세요');
   } else { closeSettings(); toast('공유 저장이 연결되었습니다'); }
 }
-function ghClearCfg(){
+async function ghClearCfg(){
+  if(!await requestFieldConnection()) return;
   const ob = outboxAll();
   if(!confirm('GitHub 연결을 해제할까요? (이 기기 저장 모드로 전환)' + (ob.length ? `\n\n보관 중이던 ${ob.length}건은 이 기기 일보로 옮겨집니다.` : ''))) return;
   /* 아웃박스를 이 기기 일보로 이관 — 그냥 두면 화면에서 사라지고 나중에 다른 저장소로 전송됨 */
@@ -3449,7 +3545,7 @@ function init(){
   $('#setClose').onclick = () => closeSettings(false);
   window.addEventListener('online', () => { outboxFlush(); presetsRetryFlush(); });
   /* 열린 탭 주소창에 새 공유 링크를 붙여넣어도 새로고침 없이 적용 */
-  window.addEventListener('hashchange', () => { if(!/[#&]s=/.test(location.hash)) return; setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); });
+  window.addEventListener('hashchange', () => { if(!/[#&]s=/.test(location.hash)) return; lockFieldConnection(); setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); });
   $('#ghTest').onclick = ghTest;
   $('#ghSave').onclick = ghSaveCfg;
   $('#ghClear').onclick = ghClearCfg;
@@ -3459,6 +3555,7 @@ function init(){
   $('#rosterAdd').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); $('#rosterAddBtn').click(); } });
   /* 키보드: Esc 닫기 · Ctrl+Enter 저장 · 입력칸 Enter=다음 칸 · Ctrl+P=인쇄 버튼과 같은 절차 */
   document.addEventListener('keydown', e => {
+    if(e.target?.closest?.('dialog[open]')) return;
     if(e.isComposing || e.keyCode === 229) return;   /* 한글 조합 중 Enter 무시 */
     const entryOpen = $('#entryOv').classList.contains('open'), setOpen = $('#setOv').classList.contains('open');
     if((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p'){
@@ -3517,15 +3614,9 @@ function init(){
   setInterval(() => { if(!document.hidden&&navigator.onLine)loadProductionProgress(); },5*60*1000);
   pruneCaches(120);   /* 120일 지난 날짜 캐시 정리 */
   installManifest();
-  /* 관리자 설정: 공유 링크로 연결된(작업자) 기기에서는 실수로 못 만지게 한 번 확인 */
-  $('#ghAdv').querySelector('summary').addEventListener('click', e => {
-    const c = ghCfg();
-    if(c && c.src === 'link' && !S.adminUnlocked && !$('#ghAdv').open){
-      e.preventDefault();
-      if(confirm('관리자 설정입니다 — 작업자는 만질 필요가 없습니다.\n\n[확인] 관리자입니다, 열기\n[취소] 닫기')){ S.adminUnlocked = true; $('#ghAdv').open = true; }
-    }
-  });
+  bindFieldConnection();
   $('#noticeSave').onclick = async () => {
+    if(!await requestFieldConnection()) return;
     const text = $('#noticeIn').value.trim();
     const op = {kind:'notice', text};
     S.presets = applyPresetsOp(S.presets, op); renderNotice();

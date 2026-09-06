@@ -681,7 +681,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
 @media screen and (max-width:720px){
  body.sheetWorkspace .top{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px}
  body.sheetWorkspace .top h1{font-size:18px;margin:0}
- body.sheetWorkspace .top>.actions{display:flex;flex:1;justify-content:flex-end;align-items:center;width:auto;gap:6px}
+ body.sheetWorkspace .top>.actions{display:flex;flex:1 1 210px;flex-wrap:wrap;justify-content:flex-end;align-items:center;width:auto;gap:6px}
  body.sheetWorkspace .top>.actions>select{width:115px!important;flex:none}
  body.sheetWorkspace .top>.actions>label{flex:1}
  body.sheetWorkspace .top>.actions>.mobileTools{position:relative;flex:none;width:auto;min-width:68px}
@@ -1015,9 +1015,17 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
 // Formal name changes share one identity. Field-report aliases are deliberately
 // excluded: registering an alias must never merge an unrelated ledger product.
-function catalogProduct(state,name){const key=text(name);if(!key)return null;const matches=(state.products||[]).filter(p=>text(p.name)===key||(p.renameFrom||[]).some(old=>text(old)===key));if(matches.length>1)throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);return matches[0]||null}
+function catalogProduct(state,name){const key=text(name);if(!key)return null;let found=null;for(const p of state.products||[])if(text(p.name)===key||(p.renameFrom||[]).some(old=>text(old)===key)){if(found)throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);found=p}return found}
 function catalogName(state,name){return text(catalogProduct(state,name)?.name)||text(name)}
 function catalogIdentity(state,name){const p=catalogProduct(state,name);return p?text((p.renameFrom||[]).find(old=>text(old)))||text(p.name):text(name)}
+// A fresh lookup belongs to one calculation. Never cache mutable product arrays
+// across calls: edits and synchronization can change names without replacing them.
+function catalogLookup(state){
+ const formal=new Map(),current=new Map(),ambiguous=new Set();
+ for(const p of state.products||[]){if(!current.has(p.name))current.set(p.name,p);for(const key of new Set([text(p.name),...(p.renameFrom||[]).map(text)].filter(Boolean))){if(formal.has(key))ambiguous.add(key);else formal.set(key,p)}}
+ const product=value=>{const key=text(value);if(ambiguous.has(key))throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);return formal.get(key)||null};
+ return{product,current:value=>current.get(value)||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)))||text(p.name):text(value)}};
+}
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
  if(!mappings.size)return[];
@@ -1115,12 +1123,26 @@ function normalize(book){
  if(scheduleAsOf)for(const[key,m]of Object.entries(months))if(m.modern&&!m.closed&&key.slice(0,4)===scheduleAsOf.slice(0,4))m.scheduleAsOf=scheduleAsOf;
  return{schema:1,app:'johyeong-schedule',importedAt:new Date().toISOString(),source:book.source||'Excel',sourceHash:book.sha256||'',products,workers,months,memos,counts,locations:audit?['F','G','H','I','J'].map(c=>text(val(audit,c+'5'))):[],scheduleRows,scheduleHistory:savedSchedulePeriods(book.sheets,book.styles),scheduleDryHistory:savedScheduleDryMarkers(book.sheets),archive:book.sheets.map(s=>({name:s.name,state:s.state,cells:s.cells,merges:s.merges||[]})),changes:[]};
 }
-function inventory(state,key){const m=state.months[key];if(!m)return[];if(m.closed&&m.closeSnapshot?.inventory)return clone(m.closeSnapshot.inventory);const name=v=>m.closed?text(v):catalogName(state,v),previous=m.openingSource&&m.openingSource<key?inventory(state,m.openingSource):[],names=new Set([...m.stocks,...m.rows,...m.issues,...previous].map(r=>name(r.product)).filter(Boolean));return [...names].map(product=>{const ss=m.stocks.filter(s=>name(s.product)===product),previousRows=previous.filter(p=>name(p.product)===product);if(!m.closed&&previousRows.length>1)throw Error('이전 월의 품명 연결이 중복됩니다: '+product);const carried=previousRows[0]?.current;const opening=ss.length?sum(ss,s=>s.sourceType==='previous'?(carried??(state.months[m.openingSource]?0:s.opening)):s.opening):(carried??0);const production=sum(m.rows.filter(r=>name(r.product)===product),r=>r.pours);const deduction=sum(m.issues.filter(r=>name(r.product)===product),r=>r.replacement);const current=opening+production-deduction,kg=state.products.find(p=>p.name===catalogName(state,product))?.kg;return{product,opening,production,deduction,current,kg:kg==null?null:current*kg,original:ss.some(s=>s.current!=null)?sum(ss,s=>s.current):null,source:ss.map(s=>s.source).join(', ')}})}
+function inventory(state,key){
+ const initial=state.months[key];if(!initial)return[];if(initial.closed&&initial.closeSnapshot?.inventory)return clone(initial.closeSnapshot.inventory);
+ const catalog=catalogLookup(state);
+ function calculate(key){
+  const m=state.months[key];if(!m)return[];if(m.closed&&m.closeSnapshot?.inventory)return clone(m.closeSnapshot.inventory);
+  const name=m.closed?text:catalog.name,previous=m.openingSource&&m.openingSource<key?calculate(m.openingSource):[],groups=new Map();
+  const group=value=>{const product=name(value);if(!product)return null;if(!groups.has(product))groups.set(product,{stocks:[],previous:[],production:0,deduction:0});return groups.get(product)};
+  for(const r of m.stocks){const g=group(r.product);if(g)g.stocks.push(r)}
+  for(const r of m.rows){const g=group(r.product);if(g)g.production+=num(r.pours)??0}
+  for(const r of m.issues){const g=group(r.product);if(g)g.deduction+=num(r.replacement)??0}
+  for(const r of previous){const g=group(r.product);if(g)g.previous.push(r)}
+  return [...groups].map(([product,g])=>{const ss=g.stocks;if(!m.closed&&g.previous.length>1)throw Error('이전 월의 품명 연결이 중복됩니다: '+product);const carried=g.previous[0]?.current,opening=ss.length?sum(ss,s=>s.sourceType==='previous'?(carried??(state.months[m.openingSource]?0:s.opening)):s.opening):(carried??0),production=g.production,deduction=g.deduction,current=opening+production-deduction,kg=catalog.current(catalog.name(product))?.kg;return{product,opening,production,deduction,current,kg:kg==null?null:current*kg,original:ss.some(s=>s.current!=null)?sum(ss,s=>s.current):null,source:ss.map(s=>s.source).join(', ')}});
+ }
+ return calculate(key);
+}
 function completionValue(value){if(value==null)return null;if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||value.stockQty!=null&&(typeof value.stockQty!=='number'||!Number.isFinite(value.stockQty)||value.stockQty<0)||value.reason!=='stock'&&value.stockQty!=null)throw Error('완료 사유와 재고 활용 조수를 확인해 주세요.');return{reason:value.reason,note:value.note,stockQty:value.stockQty??null}}
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);return true}
 function updateDaily(state,key,row){const m=state.months[key];if(!m||m.closed)throw Error('마감된 월은 수정할 수 없습니다.');const i=m.rows.findIndex(x=>x.id===row.id),before=i<0?null:clone(m.rows[i]);const next={...before,...row,id:row.id||id(),rev:(before?.rev||0)+1};if(before?.plan>0&&next.plan===0&&next.productionPlanQty==null)next.productionPlanQty=before.plan;validateRecord(next);if(!next.date.startsWith(key))throw Error('선택한 월과 입력 날짜가 다릅니다.');if(Object.prototype.hasOwnProperty.call(next,'productionCompletion'))next.productionCompletion=completionValue(next.productionCompletion);if(next.productionCompletion&&root.SchedulePlanning){const staged={...state,months:{...state.months,[key]:{...m,rows:i<0?[...m.rows,next]:m.rows.map(r=>r.id===next.id?next:r)}}};if(root.SchedulePlanning.jobs(staged,key).filter(j=>j.records?.some(r=>r.id===next.id)).length!==1)throw Error('완료할 작업의 시작 계획 또는 연결을 확인해 주세요.')}if(i<0)m.rows.push(next);else m.rows[i]=next;m.rev++;const change={id:id(),at:new Date().toISOString(),type:'생산 입력',kind:'daily',month:key,before,after:clone(next)};state.changes??=[];state.changes.push(change);m.history??=[];m.history.push(clone(change));return next}
 function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[])],names=[...new Set(all.map(r=>r.worker).filter(Boolean))];return names.map(worker=>{const rows=all.filter(r=>r.worker===worker),headers=rows.filter(r=>r.header||r.explicit?.day||r.explicit?.worker||r.explicit?.hours),rawHours=sum(rows,r=>r.hours),max=Math.max(0,...headers.map(r=>r.hours||0)),adjusted=sum(headers,r=>r.hours)+max*headers.filter(r=>!r.hours).length-1.5*headers.length,explicit=rows.filter(r=>r.explicit?.worker),injectionDays=new Set(explicit.filter(r=>r.explicit?.day&&r.explicit?.hours&&r.explicit?.pours).map(r=>r.date)).size,qtyExplicit=sum(explicit,r=>r.pours),kg=sum(rows,r=>daily(r).plaster);return{worker,kg,quantity:sum(rows.filter(r=>!catalogIdentity(s,r.product).includes('부속')),r=>r.pours),defectKg:sum(rows,r=>daily(r).defect),rawHours,workingDays:new Set(explicit.map(r=>r.date)).size,adjustedHours:adjusted,hourly:adjusted>0?kg/adjusted:null,cycle:qtyExplicit>0?(sum(explicit,r=>r.hours)-1.5*injectionDays)/qtyExplicit:null}})}
-root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
 </script><script>(function(root){'use strict';
@@ -1762,13 +1784,25 @@ function upsert(s,k,kind,record,reason=''){const m=open(s,k);if(!['issues','plas
 function remove(s,k,kind,id,reason){if(!reason?.trim())throw Error('삭제 사유를 적어 주세요.');const m=open(s,k),i=m[kind]?.findIndex(r=>r.id===id);if(!(i>=0))throw Error('기록을 찾을 수 없습니다.');const old=m[kind][i];m[kind].splice(i,1);history(m,'삭제:'+kind,old,null,reason)}
 function countValue(text){if(text==null||String(text).trim()==='')return null;const t=String(text).trim();if(!/^\d+(?:\.\d+)?(?:\s*\+\s*\d+(?:\.\d+)?)*$/.test(t))throw Error('수량 또는 4+4+6처럼 더할 수량을 입력해 주세요.');return t.split('+').reduce((a,b)=>a+Number(b),0)}
 function group(name){if(/^CC/i.test(name))return /R$/i.test(name)?'림':'바디';if(/^CL/i.test(name))return '세면기';if(/^TC/i.test(name))return '쌍뚜껑';if(/^CT/i.test(name))return '탱크';if(/^CU/i.test(name))return '스톨';return '부속·보형물·토수구'}
-function auditMeasure(s,k,product){const m=s.months[k],r=C.inventory(s,k).find(x=>sameProduct(s,x.product,product)),stock=m.stocks.find(x=>sameProduct(s,x.product,product));const a=(m.auditSessions||[]).find(x=>x.id===stock?.auditId&&x.status==='applied'&&x.mode==='current'),p=a?.preview?.find(x=>sameProduct(s,x.product,product));return p&&r&&p.total!=null&&p.production===r.production&&p.deduction===r.deduction&&p.total===r.current?p.total:null}
+function firstProductRows(rows,catalog){const map=new Map();for(const row of rows||[]){const key=catalog.name(row.product);if(!map.has(key))map.set(key,row)}return map}
+function auditMeasureLookup(s,k,inventory,catalog){
+ const m=s.months[k],current=firstProductRows(inventory,catalog),stocks=firstProductRows(m.stocks,catalog),audits=new Map();
+ for(const a of m.auditSessions||[])if(a.status==='applied'&&a.mode==='current'&&!audits.has(a.id))audits.set(a.id,a);
+ return product=>{const key=catalog.name(product),r=current.get(key),stock=stocks.get(key),a=audits.get(stock?.auditId),p=a?.preview?.find(row=>catalog.name(row.product)===key);return p&&r&&p.total!=null&&p.production===r.production&&p.deduction===r.deduction&&p.total===r.current?p.total:null};
+}
+function auditMeasure(s,k,product){const catalog=C.catalogLookup(s);return auditMeasureLookup(s,k,C.inventory(s,k),catalog)(product)}
 function carryFields(j){const fields=Object.fromEntries(['id','originId','product','worker','plan','daily','start','end','duration','group','machines','manual','note','stoppedAt','previousProduced','previousPlan','previousStart'].map(k=>[k,j[k]??null]));if(j.manualSource)fields.manualSource=j.manualSource;return fields}
-function report(s,k){const m=s.months[k];if(m.closed&&m.closeSnapshot?.report)return clone(m.closeSnapshot.report);const inv=C.inventory(s,k),n=s.months[nextMonth(k)],unit=p=>s.products.find(r=>r.name===C.catalogName(s,p))?.kg??null;
- const additional=(n?.stocks||[]).filter(r=>!inv.some(x=>sameProduct(s,x.product,r.product))).map(r=>({product:C.catalogName(s,r.product),opening:0,production:0,deduction:0,current:0,kg:null}));const rows=[...inv,...additional].map(r=>{const p=s.products.find(p=>p.name===C.catalogName(s,r.product)),st=n?.stocks.find(x=>sameProduct(s,x.product,r.product)),actual=st?.sourceType==='audit'?st.opening:st?.inheritedAuditQuantity!=null&&st.opening===st.inheritedAuditQuantity&&auditMeasure(s,k,r.product)===st.inheritedAuditQuantity?st.inheritedAuditQuantity:auditMeasure(s,k,r.product); return{...r,category:p?.category||group(C.catalogIdentity(s,r.product)),unitKg:unit(r.product),productionKg:C.sum(m.rows.filter(x=>sameProduct(s,x.product,r.product)),x=>C.daily(x).plaster),replacementKg:unit(r.product)==null?null:r.deduction*unit(r.product),physical:actual,physicalKg:actual==null||unit(r.product)==null?null:actual*unit(r.product)}});
- const dateCount=new Date(+k.slice(0,4),+k.slice(5),0).getDate(),dates=Array.from({length:dateCount},(_,i)=>k+'-'+String(i+1).padStart(2,'0'));const days=dates.map(date=>{const used=C.sum(m.rows.filter(r=>r.date===date),r=>C.daily(r).plaster),actual=m.plaster.find(r=>r.date===date)?.actual??null;return{date,used,actual,difference:actual==null?null:actual-used}});
- const actualDays=days.filter(r=>r.actual!=null&&r.actual!==0),usedDays=days.filter(r=>r.used!==0);return{month:k,rows,days,totals:{production:C.sum(m.rows.filter(r=>!C.catalogIdentity(s,r.product).includes('부속')),r=>r.pours),kg:C.sum(m.rows,r=>C.daily(r).plaster),defectKg:C.sum(m.rows,r=>C.daily(r).defect),replacement:C.sum(m.issues,r=>r.replacement),actual:days.some(d=>d.actual!=null)?C.sum(days,r=>r.actual):null,actualAverage:actualDays.length?C.sum(actualDays,r=>r.actual)/actualDays.length:null,usedAverage:usedDays.length?C.sum(usedDays,r=>r.used)/usedDays.length:null}}}
-function newAudit(s,k,date){auditWritable(s,k);if(!C.iso(date))throw Error('실사 날짜를 확인해 주세요.');return{id:C.id(),rev:1,baseMonth:k,countedAt:date,status:'draft',locations:clone(s.locations),items:[...C.inventory(s,k),...s.products.filter(p=>!p.inactive&&!C.inventory(s,k).some(r=>r.product===p.name)).map(p=>({product:p.name,current:0}))].map(r=>({id:r.product,product:r.product,book:r.current,counts:s.locations.map(()=>null),raw:s.locations.map(()=>''),note:''}))}}
+function report(s,k){
+ const m=s.months[k];if(m.closed&&m.closeSnapshot?.report)return clone(m.closeSnapshot.report);
+ const catalog=C.catalogLookup(s),inv=C.inventory(s,k),n=s.months[nextMonth(k)],invNames=new Set(inv.map(r=>catalog.name(r.product))),nextStocks=firstProductRows(n?.stocks,catalog),measure=auditMeasureLookup(s,k,inv,catalog),kgByProduct=new Map(),kgByDate=new Map(),actualByDate=new Map();let production=0,kg=0,defectKg=0;
+ for(const r of m.rows){const name=catalog.name(r.product),value=C.daily(r),plaster=C.num(value.plaster)??0;kgByProduct.set(name,(kgByProduct.get(name)??0)+plaster);kgByDate.set(r.date,(kgByDate.get(r.date)??0)+plaster);kg+=plaster;defectKg+=C.num(value.defect)??0;if(!catalog.identity(r.product).includes('부속'))production+=C.num(r.pours)??0}
+ for(const r of m.plaster)if(!actualByDate.has(r.date))actualByDate.set(r.date,r.actual);
+ const additional=(n?.stocks||[]).filter(r=>!invNames.has(catalog.name(r.product))).map(r=>({product:catalog.name(r.product),opening:0,production:0,deduction:0,current:0,kg:null}));
+ const rows=[...inv,...additional].map(r=>{const name=catalog.name(r.product),p=catalog.current(name),unitKg=p?.kg??null,st=nextStocks.get(name),actual=st?.sourceType==='audit'?st.opening:measure(r.product);return{...r,category:p?.category||group(catalog.identity(r.product)),unitKg,productionKg:kgByProduct.get(name)??0,replacementKg:unitKg==null?null:r.deduction*unitKg,physical:actual,physicalKg:actual==null||unitKg==null?null:actual*unitKg}});
+ const dateCount=new Date(+k.slice(0,4),+k.slice(5),0).getDate(),dates=Array.from({length:dateCount},(_,i)=>k+'-'+String(i+1).padStart(2,'0')),days=dates.map(date=>{const used=kgByDate.get(date)??0,actual=actualByDate.get(date)??null;return{date,used,actual,difference:actual==null?null:actual-used}});
+ const actualDays=days.filter(r=>r.actual!=null&&r.actual!==0),usedDays=days.filter(r=>r.used!==0);return{month:k,rows,days,totals:{production,kg,defectKg,replacement:C.sum(m.issues,r=>r.replacement),actual:days.some(d=>d.actual!=null)?C.sum(days,r=>r.actual):null,actualAverage:actualDays.length?C.sum(actualDays,r=>r.actual)/actualDays.length:null,usedAverage:usedDays.length?C.sum(usedDays,r=>r.used)/usedDays.length:null}};
+}
+function newAudit(s,k,date){auditWritable(s,k);if(!C.iso(date))throw Error('실사 날짜를 확인해 주세요.');const inventory=C.inventory(s,k),names=new Set(inventory.map(r=>r.product));return{id:C.id(),rev:1,baseMonth:k,countedAt:date,status:'draft',locations:clone(s.locations),items:[...inventory,...s.products.filter(p=>!p.inactive&&!names.has(p.name)).map(p=>({product:p.name,current:0}))].map(r=>({id:r.product,product:r.product,book:r.current,counts:s.locations.map(()=>null),raw:s.locations.map(()=>''),note:''}))}}
 function auditWritable(s,k){const m=open(s,k);for(const [sourceMonth,mm]of Object.entries(s.months||{}))for(const t of mm.auditTransfers||[]){if(sourceMonth!==k&&t.targetMonth!==k)continue;const target=s.months[t.targetMonth],complete=target?.operations?.some(o=>o.id===t.operationId)&&target?.auditSessions?.some(a=>a.id===t.auditId&&a.operationId===t.operationId&&a.status==='applied');if(!complete)throw Error('실사 전달 확인이 끝나지 않았습니다. 실사 화면에서 전달을 다시 반영한 뒤 처리해 주세요.')}return m}
 function auditApplication(s,id){const transfers=Object.entries(s.months||{}).flatMap(([sourceMonth,mm])=>(mm.auditTransfers||[]).filter(t=>t.auditId===id).map(transfer=>({sourceMonth,transfer})));for(const [month,mm]of Object.entries(s.months||{})){const audit=(mm.auditSessions||[]).find(a=>a.id===id&&a.status==='applied');if(audit){const reserved=transfers.find(x=>x.transfer.operationId===audit.operationId);if(reserved&&!mm.operations?.some(o=>o.id===audit.operationId))return{month,audit,...reserved,pending:true};return{month,audit,pending:false}}}const reserved=transfers[0];return reserved?{month:reserved.transfer.targetMonth,audit:reserved.transfer.audit,...reserved,pending:true}:null}
 function auditOrigin(s,a){const found=Object.entries(s.months||{}).flatMap(([month,mm])=>(mm.auditSessions||[]).filter(x=>x.id===a.id&&x.status!=='applied').map(audit=>({month,audit})));if(found.length>1)throw Error('같은 실사 원본이 여러 월에 있어 확인이 필요합니다.');return found[0]||null}
@@ -2416,12 +2450,15 @@ function pgView(){const key=sheetContext(pgId);if(!pgViews.has(key))pgViews.set(
 function pgClean(j){const row=cleanJob(C.clone(j));delete row.archived;return row}
 function pgJobMonth(row){return row._ownerMonth||month}
 function pgPersistJob(row){const out=pgClean(row);delete out._ownerMonth;return out}
+// A caller may share this read-only list while inspecting one unchanged snapshot.
+// Never retain it across a draft edit, source reload, month switch or calendar change.
+function pgAllJobs(s){return Object.keys(s.months).sort().flatMap(owner=>P.jobs(s,owner).map(job=>({owner,job})))}
 function pgManualSuccessor(s,row,owner=pgJobMonth(row),all=null){
- if(!row?.manual)return null;all??=Object.keys(s.months).sort().flatMap(k=>P.jobs(s,k).map(job=>({owner:k,job})));const actual=all.find(x=>x.owner===owner&&x.job.id===row.id)?.job||row;
+ if(!row?.manual)return null;all??=pgAllJobs(s);const actual=all.find(x=>x.owner===owner&&x.job.id===row.id)?.job||row;
  if(actual.firstActual||actual.produced>0||actual.previousProduced>0)return null;const origin=actual.originId||actual.id;
  return all.filter(x=>x.owner>owner&&x.job.manual&&x.job.carried&&(x.job.originId||x.job.id)===origin).sort((a,b)=>b.owner.localeCompare(a.owner))[0]||null;
 }
-function pgRows(s,k){const all=Object.keys(s.months).sort().flatMap(owner=>P.jobs(s,owner).map(job=>({owner,job})));return all.filter(({owner,job})=>(owner===k||!s.months[owner].closed&&job.manual)&&!pgManualSuccessor(s,job,owner,all)).map(({owner,job})=>({...pgClean(job),_ownerMonth:owner}))}
+function pgRows(s,k,all=pgAllJobs(s)){return all.filter(({owner,job})=>(owner===k||!s.months[owner].closed&&job.manual)&&!pgManualSuccessor(s,job,owner,all)).map(({owner,job})=>({...pgClean(job),_ownerMonth:owner}))}
 function pgRangeInfo(){const v=pgView(),start=v.rangeStart||month,end=v.rangeEnd||(v.twoMonths?O.nextMonth(month):month),months=[];for(let k=start;k<=end&&months.length<24;k=O.nextMonth(k))months.push(k);const first=start+'-01',last=P.add(O.nextMonth(months.at(-1)||start)+'-01',-1);return{first,last,months,dayCount:P.days(first,last).length}}
 function pgDraftState(draft){
  const next=C.clone(state),managed=new Set([...draft.baseRows,...draft.rows].map(r=>r.id));next.calendar=C.clone(draft.calendar||pgCalendar(state));if(draft.scheduleAsOf)next.months[month].scheduleAsOf=draft.scheduleAsOf;
@@ -2453,9 +2490,9 @@ function pgGroupName(value){return !value?'개별':String(value).startsWith('man
 function pgDates(row,key){const rows=pgView().result?.rows.filter(r=>r.jobId===row.id)||[],values=rows.map(r=>r[key]).filter(Boolean).sort();return values.length?(key==='start'?values[0]:values.at(-1)):'—'}
 function pgNumber(value){return sheetInputNumber(value)}
 function pgError(field,message){const e=Error(message);e.field=field;throw e}
-function pgValidate(row,latest=pgRows(state,month)){
- const old=latest.find(r=>r.id===row.id),owner=pgJobMonth(row),actual=state.months[owner]?P.jobs(state,owner).find(j=>j.id===row.id):null;
- if(pgManualSuccessor(state,row,owner))pgError('start','다음달로 이월된 계획입니다. 원래 초안을 보관하고 이월된 일정에서 다시 수정해 주세요.');
+function pgValidate(row,latest=pgRows(state,month),all=null){
+ const old=latest.find(r=>r.id===row.id),owner=pgJobMonth(row),actual=all?all.find(x=>x.owner===owner&&x.job.id===row.id)?.job:state.months[owner]?P.jobs(state,owner).find(j=>j.id===row.id):null;
+ if(pgManualSuccessor(state,row,owner,all))pgError('start','다음달로 이월된 계획입니다. 원래 초안을 보관하고 이월된 일정에서 다시 수정해 주세요.');
  if(!/^\d{4}-\d{2}$/.test(owner)||!C.iso(owner+'-01'))pgError('start','저장할 월을 확인해 주세요.');
  if(state.months[owner]?.closed)pgError('start','마감된 월의 작업조건은 수정할 수 없습니다.');
  if(old&&pgJobMonth(old)!==owner)pgError('start','기존 작업의 저장 월은 이동할 수 없습니다. 시작·종료 날짜를 수정해 주세요.');
@@ -2489,11 +2526,12 @@ function pgCalendarChanges(base,next){
  const a=map(base),b=map(next),changed=[];for(const key of new Set([...a.keys(),...b.keys()]))if(!pgEqual(a.get(key)?.value,b.get(key)?.value))changed.push({key,date:(a.get(key)||b.get(key)).date});return changed;
 }
 function pgInspect(d){
- const errors=[],base=new Map(d.baseRows.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),latest=pgRows(state,month);
- for(const row of d.rows){if(deleted.has(row.id)||pgEqual(row,base.get(row.id)))continue;try{pgValidate(row,latest)}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
- for(const entry of d.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&P.jobs(state,owner).find(j=>j.id===entry.id);if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
- for(const changed of pgCalendarChanges(d.baseCalendar||{},d.calendar||{}))if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
- const counts=sheetCounts(d),calendarCount=pgCalendarChanges(d.baseCalendar||{},d.calendar||{}).length;
+ const errors=[],base=new Map(d.baseRows.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),changedRows=d.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),all=changedRows.length||d.deleted.length?pgAllJobs(state):null,latest=changedRows.length?pgRows(state,month,all):[];
+ for(const row of changedRows){try{pgValidate(row,latest,all)}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
+ for(const entry of d.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
+ const calendarChanges=pgCalendarChanges(d.baseCalendar||{},d.calendar||{});
+ for(const changed of calendarChanges)if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
+ const counts=sheetCounts(d),calendarCount=calendarChanges.length;
  counts.changed+=calendarCount||(!pgEqual(d.baseCalendar,d.calendar)?1:0);
  if(!pgEqual(d.baseScheduleAsOf,d.scheduleAsOf)){counts.changed++;if(!C.iso(d.scheduleAsOf)||m().closed)errors.push({id:'',field:'scheduleAsOf',message:'계산 기준일을 확인해 주세요. 마감월은 변경할 수 없습니다.'})}
  return{ok:errors.length===0,errors,counts};
@@ -2557,9 +2595,9 @@ scheduleView=function(){
 };
 function pgPreview(g){
  if(P.captureSourceBaseline)P.captureSourceBaseline(state);
- const draft=C.clone(g.draft),base=new Map(draft.baseRows.map(r=>[r.id,r])),latest=pgRows(state,month),pending=[];
+ const draft=C.clone(g.draft),base=new Map(draft.baseRows.map(r=>[r.id,r])),pending=[];let all,latest;
  draft.rows=pgKeep(draft).flatMap(row=>{
-  if(!pgEqual(row,base.get(row.id))){try{pgValidate(row,latest)}catch(e){pending.push({id:row.id,product:row.product||'새 작업',message:e.message+(base.has(row.id)?' 입력을 마치기 전까지 저장된 작업조건으로 표시합니다.':' 입력을 마치면 일정에 표시됩니다.')});return base.has(row.id)?[pgClean(base.get(row.id))]:[]}}
+  if(!pgEqual(row,base.get(row.id))){try{all??=pgAllJobs(state);latest??=pgRows(state,month,all);pgValidate(row,latest,all)}catch(e){pending.push({id:row.id,product:row.product||'새 작업',message:e.message+(base.has(row.id)?' 입력을 마치기 전까지 저장된 작업조건으로 표시합니다.':' 입력을 마치면 일정에 표시됩니다.')});return base.has(row.id)?[pgClean(base.get(row.id))]:[]}}
   return[pgClean(row)];
  });
  const next=pgDraftState(draft),result=pgDraftResult(next);
@@ -2572,8 +2610,8 @@ function pgRefresh(g){
  try{const preview=pgPreview(g);pgView().result=preview.result;pgTimeline(g,preview);pgWarnings(preview.result);g.update();
   const selected=pgView().selected||g.selected;if(!pgKeep(g.draft).some(r=>r.id===selected))pgView().selected=pgView().timelineSelection?'':pgKeep(g.draft)[0]?.id||'';
   else pgView().selected=selected;
-  const detail=$('#pgDetail');if(!detail.contains(document.activeElement))pgDetail(g);else pgDetailMetrics(g);
-  pgInlineManual(g);pgLock(g);pgMarkSelection(g);pgQueueReflow();
+  const detail=$('#pgDetail');if(!detail.contains(document.activeElement))pgDetail(g,preview.result.jobs);else pgDetailMetrics(g);
+  pgInlineManual(g);pgLock(g,preview.result.jobs);pgMarkSelection(g);pgQueueReflow();
  }catch(e){$('#pgWarnings').innerHTML=`<div class="notice" role="status">입력 중인 작업조건을 확인해 주세요. ${esc(e.message)}</div>`}
 }
 function pgWarnings(result){const area=$('#pgWarnings');if(!area)return;area.innerHTML=result.warnings.length?`<details class="pgWarnings" open><summary>배치 확인 ${result.warnings.length}건</summary>${result.warnings.map(r=>`<button class="pgWarning" data-pg-select="${esc(r.id)}"><b>${esc(r.product)}</b> ${esc(r.message)}</button>`).join('')}</details>`:''}
@@ -2695,8 +2733,8 @@ function pgSetManualDate(g,id,key,value){
  g.host()?.querySelectorAll('[data-cell]').forEach(input=>{if(input.dataset.row===id&&['start','end'].includes(input.dataset.cell)&&input!==document.activeElement)input.value=row[input.dataset.cell]||''});
  return true;
 }
-function pgDetail(g){
- pgMobileSelection(g);
+function pgDetail(g,cachedJobs=null){
+ pgMobileSelection(g,cachedJobs);
  const area=$('#pgDetail');if(!area)return;const v=pgView(),row=pgKeep(g.draft).find(r=>r.id===v.selected);
  if(!row){area.innerHTML='<h2>호기별 배정과 수기 기간</h2><p class="empty">자동 작업·수기 예약을 추가하거나 표의 행 번호를 누르세요.</p>';return}
  const locked=g.locked(),actual=pgMeta(row),groups=[...new Set(pgKeep(g.draft).filter(r=>pgJobMonth(r)===pgJobMonth(row)&&r.worker===row.worker).map(r=>r.group).filter(Boolean))],machines=[...new Set(Object.values(state.months).flatMap(m=>(m.jobs||[]).flatMap(j=>(j.machines||[]).map(x=>x.name))))];
@@ -2723,9 +2761,9 @@ function pgMarkSelection(g){
  const row=pgKeep(g.draft).find(r=>r.id===v.selected);if(row&&g.selected!==row.id){g.selected=row.id;g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',el.dataset.row===row.id))}else if(!row)g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',false));
 }
 function pgSaveState(g){const count=g.status().n;return{count,disabled:g.locked()||count===0,label:g.loading?'초안 확인 중…':g.saving?'저장 중…':g.spec.readonly?'마감 · 조회 전용':`변경 ${count}건${g.dirty&&count?' · 저장 전':''}`}}
-function pgMobileSelection(g){const row=pgSelectedRow(g),label=$('#pgMobileSelected'),button=$('#pgMobileEdit');if(label)label.textContent=row?row.worker+' · '+row.product+' · '+(row.start||'시작일 미입력'):'막대를 누르면 작업이 선택됩니다.';if(button){const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row)):null;button.disabled=g.locked()||!access?.ok;button.title=access?.reason||''}}
-function pgSyncSave(g){const status=pgSaveState(g),label=$('#pgSaveStatus'),button=$('#pgSaveChanges');if(label)label.textContent=status.label;if(button){button.disabled=status.disabled;button.textContent=g.saving?'저장 중…':'일정 변경 저장'}}
-function pgLock(g){pgMobileSelection(g);const root=$('#planGridSurface');if(!root)return;const locked=g.locked();pgSyncSave(g);const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-manual-mode],[data-pg-inline-date]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date'))&&row&&pgStarted(row))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=pgSaveState(g).disabled;b.disabled=disabled})}
+function pgMobileSelection(g,cachedJobs=null){const row=pgSelectedRow(g),label=$('#pgMobileSelected'),button=$('#pgMobileEdit');if(label)label.textContent=row?row.worker+' · '+row.product+' · '+(row.start||'시작일 미입력'):'막대를 누르면 작업이 선택됩니다.';if(button){const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row),cachedJobs):null;button.disabled=g.locked()||!access?.ok;button.title=access?.reason||''}}
+function pgSyncSave(g,status=pgSaveState(g)){const label=$('#pgSaveStatus'),button=$('#pgSaveChanges');if(label)label.textContent=status.label;if(button){button.disabled=status.disabled;button.textContent=g.saving?'저장 중…':'일정 변경 저장'}}
+function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs);const root=$('#planGridSurface');if(!root)return;const locked=g.locked(),saveStatus=pgSaveState(g);pgSyncSave(g,saveStatus);const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-manual-mode],[data-pg-inline-date]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date'))&&row&&pgStarted(row))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=saveStatus.disabled;b.disabled=disabled})}
 function pgCalendarEdit(g,mutate){
  if(g.locked())return;const before=C.clone(g.draft.calendar),next=C.clone(before);mutate(next);
  for(const changed of pgCalendarChanges(before,next))if(state.months[changed.date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');
@@ -2776,7 +2814,9 @@ function bindPlanGrid(){
  pgEscapeHandler=e=>{if(e.key==='Escape'&&pgView().focus){e.preventDefault();pgSetFocus(false)}};document.addEventListener('keydown',pgEscapeHandler);
  pgWindowResize=()=>pgQueueReflow();window.addEventListener('resize',pgWindowResize);
  if(typeof ResizeObserver!=='undefined'){pgResizeObserver=new ResizeObserver(()=>pgQueueReflow());pgResizeObserver.observe($('#pgTimeline'))}
- pgRefresh(g);
+ // SheetEditor.load restores the draft and invokes onChange in finally. Avoid
+ // drawing the same timeline once before that pending read and immediately again.
+ if(!g.loading||!g.loaded)pgRefresh(g);
 }
 
 // Main timetable editing. Inject after plan-grid.js in the shared app closure.
@@ -2909,7 +2949,7 @@ function pgDirectRenderForm(g){
 function pgDirectDecorate(g,preview){
  const root=$('#planGridSurface');if(!root)return;
  if(!root.querySelector('.pgDirectHelp'))root.querySelector('#pgTimeline')?.insertAdjacentHTML?.('beforebegin','<p class="pgDirectHelp"><span class="pgDirectHelpDesktop">빈 생산기간 칸을 끌어 새 일정 · 막대를 더블클릭하거나 Enter로 입력 · 몸통을 끌어 이동 · 양끝을 끌어 기간 조절</span><span class="pgDirectHelpTouch">손가락으로 표를 상하·좌우 이동합니다. 막대를 선택한 뒤 일정 수정에서 날짜를 입력하세요.</span></p>');
- const blocks=[...root.querySelectorAll('.pgWorkerBlock')];for(const block of blocks){const worker=block.getAttribute('aria-label')?.replace(/ 일정$/,'')||'';block.dataset.directWorker=worker;block.querySelectorAll('.pgProductionRow').forEach((row,lane)=>{row.dataset.directLane=lane;row.querySelectorAll('.pgRailGrid .pgDay').forEach((cell,i)=>{cell.dataset.directDate=P.add(pgRangeInfo().first,i);cell.dataset.directWorker=worker;const locked=g.locked()||m().closed||!!state.months[cell.dataset.directDate.slice(0,7)]?.closed;cell.tabIndex=locked?-1:0;cell.setAttribute('role','button');cell.setAttribute('aria-disabled',String(locked));cell.setAttribute('aria-label',worker+' '+cell.dataset.directDate+(locked?' 마감·저장 중: 조회 전용':' 빈 생산기간: 누르거나 끌어서 수기 입력'))})})}
+ const firstDate=pgRangeInfo().first,blocks=[...root.querySelectorAll('.pgWorkerBlock')];for(const block of blocks){const worker=block.getAttribute('aria-label')?.replace(/ 일정$/,'')||'';block.dataset.directWorker=worker;block.querySelectorAll('.pgProductionRow').forEach((row,lane)=>{row.dataset.directLane=lane;row.querySelectorAll('.pgRailGrid .pgDay').forEach((cell,i)=>{cell.dataset.directDate=P.add(firstDate,i);cell.dataset.directWorker=worker;const locked=g.locked()||m().closed||!!state.months[cell.dataset.directDate.slice(0,7)]?.closed;cell.tabIndex=locked?-1:0;cell.setAttribute('role','button');cell.setAttribute('aria-disabled',String(locked));cell.setAttribute('aria-label',worker+' '+cell.dataset.directDate+(locked?' 마감·저장 중: 조회 전용':' 빈 생산기간: 누르거나 끌어서 수기 입력'))})})}
  for(const button of root.querySelectorAll('.pgBar')){
   if(button.dataset.pgHistory!=null||!button.dataset.pgSelect){button.dataset.directReadonly='true';continue}
   const id=button.dataset.pgSelect,access=pgDirectAccess(g,id,button.dataset.pgMonth||month,preview.result.jobs);button.dataset.directJob=id;button.classList.toggle('pgDirectMovable',access.ok);button.setAttribute('aria-keyshortcuts','Enter ArrowLeft ArrowRight');
@@ -2965,7 +3005,7 @@ const pgBindBeforeDirect=bindPlanGrid;
 bindPlanGrid=function(){pgDirectCancel();pgBindBeforeDirect();if(page==='schedule')pgBindDirect(sheetEditor(pgId));else{if(pgDirectState.escape)document.removeEventListener('keydown',pgDirectState.escape,true);pgDirectState.escape=null;pgDirectState.root=null}};
 
 const pgLockBeforeDirect=pgLock;
-pgLock=function(g){pgLockBeforeDirect(g);const root=$('#planGridSurface');root?.querySelectorAll('.pgDirectEditor input,.pgDirectEditor select,.pgDirectEditor button').forEach(el=>{el.disabled=g.locked()||el.dataset.pdStaticLock==='1'})};
+pgLock=function(g,cachedJobs=null){pgLockBeforeDirect(g,cachedJobs);const root=$('#planGridSurface');root?.querySelectorAll('.pgDirectEditor input,.pgDirectEditor select,.pgDirectEditor button').forEach(el=>{el.disabled=g.locked()||el.dataset.pdStaticLock==='1'})};
 
 // The workbook connects matching B/R mould drying markers, not production bars.
 function pgPairProduct(product){
@@ -3305,6 +3345,44 @@ function secondaryBindLedger(){
  const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{const rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock);csv(['품명','이월','생산','교체 차감','현재고','kg'],rows.map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.kg]),'재고표')});
 }
 
+(function(root){'use strict';
+// Screen access guard only. Repository authorization remains GitHub's job.
+// Keep the password verifier separate from all connection and business storage.
+const salt='fa14c513e5783e91ac6a32fd5a947317',iterations=120000,digest='db0b8a4be81ad2f32ce33740de779dd3e4c8d3b0ffcc4bdfe2e7095527b03f0d';
+async function verify(value){
+ if(typeof value!=='string'||value.length>128)return false;
+ if(!root.crypto?.subtle)throw Error('이 브라우저에서 비밀번호를 확인할 수 없습니다. HTTPS 주소로 다시 열어 주세요.');
+ const encoder=new TextEncoder(),key=await root.crypto.subtle.importKey('raw',encoder.encode(value),'PBKDF2',false,['deriveBits']);
+ const bits=await root.crypto.subtle.deriveBits({name:'PBKDF2',salt:encoder.encode(salt),iterations,hash:'SHA-256'},key,256);
+ const result=Array.from(new Uint8Array(bits),x=>x.toString(16).padStart(2,'0')).join('');let different=0;
+ for(let i=0;i<digest.length;i++)different|=digest.charCodeAt(i)^result.charCodeAt(i);return different===0;
+}
+function style(){
+ if(document.getElementById('connectionGateStyle'))return;
+ const element=document.createElement('style');element.id='connectionGateStyle';element.textContent='.connectionGateDialog{box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #cfd7e4;border-radius:16px;background:#fff;color:#25344a;box-shadow:0 20px 80px #14233c33;font-family:inherit}.connectionGateDialog::backdrop{background:#18253c66}.connectionGateDialog h2{font-size:19px;margin:0 0 10px}.connectionGateDialog p{font-size:13px;line-height:1.6}.connectionGateDialog label{display:block;font-size:13px;font-weight:600}.connectionGateDialog input{box-sizing:border-box;width:100%;height:44px;padding:9px 12px;margin-top:7px;border:1px solid #aab8cc;border-radius:8px;font:inherit;font-size:18px}.connectionGateDialog .connectionGateActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.connectionGateDialog button{min-height:40px;border:1px solid #bcc8d8;border-radius:8px;padding:8px 16px;background:#fff;color:#25344a;font:inherit}.connectionGateDialog button[type=submit]{background:#425b9e;color:#fff;border-color:#425b9e}.connectionGateDialog button:disabled{opacity:.55}.connectionGateDialog [role=alert]{color:#ad3434;min-height:20px;margin:10px 0 0}@media print{.connectionGateDialog{display:none!important}}';document.head.append(element);
+}
+function create(){
+ let granted=false,pending=null,cancel=null,version=0;
+ return{get unlocked(){return granted},lock(){version++;granted=false;cancel?.()},request(){
+  if(granted)return Promise.resolve(true);if(pending)return pending;
+  const current=version;
+  pending=Promise.resolve().then(()=>new Promise(resolve=>{
+   if(version!==current){pending=null;resolve(false);return}
+   style();const before=document.activeElement,dialog=document.createElement('dialog');dialog.className='connectionGateDialog';dialog.setAttribute('aria-label','연결 설정 잠금 해제');
+   dialog.innerHTML='<form><h2>연결 설정 잠금 해제</h2><p>저장소 연결 정보를 열려면 비밀번호를 입력하세요.</p><label>설정 비밀번호<input type="password" name="password" inputmode="numeric" autocomplete="off" maxlength="128" required></label><p role="alert"></p><div class="connectionGateActions"><button type="button">취소</button><button type="submit">잠금 해제</button></div></form>';
+   const input=dialog.querySelector('input'),form=dialog.querySelector('form'),error=dialog.querySelector('[role=alert]');let finished=false,checking=false;
+   const finish=ok=>{if(finished)return;finished=true;input.value='';granted=ok&&version===current;if(dialog.open&&typeof dialog.close==='function')dialog.close();dialog.remove();cancel=null;pending=null;if(before?.isConnected)before.focus({preventScroll:true});resolve(granted)};
+   cancel=()=>finish(false);dialog.querySelector('button[type=button]').onclick=()=>finish(false);dialog.oncancel=event=>{event.preventDefault();finish(false)};dialog.addEventListener('keydown',event=>event.stopPropagation());
+   form.onsubmit=async event=>{event.preventDefault();if(checking||finished)return;checking=true;error.textContent='';form.querySelector('[type=submit]').disabled=true;
+    const value=input.value;input.value='';try{const ok=await verify(value);if(finished||version!==current)return;if(ok){finish(true);return}error.textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요.'}catch(e){if(!finished)error.textContent=e.message||'비밀번호를 확인하지 못했습니다.'}finally{checking=false;if(!finished){form.querySelector('[type=submit]').disabled=false;input.focus()}}
+   };
+   document.body.append(dialog);if(typeof dialog.showModal!=='function'){error.textContent='이 브라우저는 설정 잠금을 지원하지 않습니다. 최신 브라우저로 열어 주세요.';finish(false);return}dialog.showModal();input.focus();
+  }));return pending;
+ }};
+}
+const api={create,verify};root.ScheduleConnectionGate=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
+})(globalThis);
+
 // Screen-only organization: keep the mounted input grids and their drafts intact.
 const workspaceScreen={compact:true,focusPage:null,panels:new Map()};
 const workspaceFocusScreen={session:null,selected:new Map()};
@@ -3506,7 +3584,8 @@ setInterval(()=>ilboCheck(),60000);
 window.addEventListener('focus',()=>ilboCheck());
 
 // Responsive organization only: move existing controls, never copy input values or ledger rows.
-const mobileScreen={observer:null,resize:null,frame:0,sequence:0,page:null,focus:null,menus:new Map()};
+const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),fits:new WeakMap(),labelDirty:new WeakSet()};
+const mobileObserverOptions={childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem']};
 function mobileLayout(){return typeof matchMedia==='function'&&matchMedia('(max-width: 720px)').matches}
 function mobileTools(host,buttons,title='도구'){
  if(!host||!buttons.length||mobileScreen.menus.has(host))return;
@@ -3517,43 +3596,59 @@ function mobileTools(host,buttons,title='도구'){
 }
 function mobileRestoreTools(){for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear()}
 function mobileOverflow(wrapper){return wrapper.clientWidth>0&&wrapper.scrollWidth>wrapper.clientWidth+2}
-function mobileFitColumns(main,small){
+function mobileSameNodes(before,after){return before?.length===after.length&&after.every((node,index)=>before[index]===node)}
+function mobileSetStyle(node,key,value){if(node.style.getPropertyValue(key)!==value)node.style.setProperty(key,value)}
+function mobileSetLabel(node,key,value){if(node.getAttribute(key)!==value)node.setAttribute(key,value)}
+function mobileFitColumns(main,small,resetPosition=false){
  for(const table of main.querySelectorAll('.sheetEditor .inputSheet')){
   const columns=[...table.querySelectorAll('col[data-sheet-col]')];if(!columns.length)continue;
   const sheetId=table.closest('.sheetEditor')?.dataset.sheetId,production=sheetId==='production',fit=!small||sheetId==='plaster-month';
   const widths={__rowNumber:44,workerGroup:72,product:108,pours:60,plan:64};
   const bases=columns.map(col=>{col.dataset.baseWidth??=col.style.width;const base=parseFloat(col.dataset.baseWidth);return Number.isFinite(base)?small&&production?(widths[col.dataset.sheetCol]??base):base:100});
   const total=bases.reduce((sum,width)=>sum+width,0),viewport=table.closest('.sheetViewport'),available=viewport?.clientWidth||0;
-  table.classList.toggle('sheetFitted',fit);
   const stacked=!small&&available>0&&total>available*1.65;
-  table.classList.toggle('sheetStacked',stacked);
+  const previous=mobileScreen.fits.get(table),signature=[small,production,fit,stacked,available,...columns.map((col,index)=>col.dataset.sheetCol+':'+bases[index])].join('|'),same=previous?.signature===signature&&previous.viewport===viewport&&mobileSameNodes(previous.columns,columns);
+  if(table.classList.contains('sheetFitted')!==fit)table.classList.toggle('sheetFitted',fit);
+  if(table.classList.contains('sheetStacked')!==stacked)table.classList.toggle('sheetStacked',stacked);
+  const next={signature,viewport,columns,production,rows:previous?.rows,labels:previous?.labels};
   if(stacked){
-   const labels=new Map([...table.querySelectorAll('thead th[data-sheet-col]')].map(th=>[th.dataset.sheetCol,th.textContent]));let worker='';
-   for(const row of table.querySelectorAll('tbody tr[data-row]')){
-    const workerCell=row.querySelector('.productionWorkerCell');
-    if(workerCell)worker=workerCell.querySelector('.productionWorkerName')?.textContent||workerCell.querySelector('select')?.value||'';
-    const number=row.querySelector('th');if(number)number.setAttribute('data-sheet-row-title',production?worker:'');
-    for(const cell of row.querySelectorAll('td')){
-     const key=cell.classList.contains('productionWorkerCell')?'workerGroup':cell.classList.contains('rowActions')?'__rowAction':cell.dataset.result||cell.querySelector('[data-cell]')?.dataset.cell;
-     if(key&&labels.has(key))cell.setAttribute('data-sheet-label',labels.get(key));
+   const labels=new Map([...table.querySelectorAll('thead th[data-sheet-col]')].map(th=>[th.dataset.sheetCol,th.textContent])),labelSignature=JSON.stringify([...labels]),rows=[...table.querySelectorAll('tbody tr[data-row]')];
+   if(previous?.production!==production||previous?.labels!==labelSignature||!mobileSameNodes(previous?.rows,rows)||mobileScreen.labelDirty.has(table)){
+    let worker='';
+    for(const row of rows){
+     const workerCell=row.querySelector('.productionWorkerCell');
+     if(workerCell)worker=workerCell.querySelector('.productionWorkerName')?.textContent||workerCell.querySelector('select')?.value||'';
+     const number=row.querySelector('th');if(number)mobileSetLabel(number,'data-sheet-row-title',production?worker:'');
+     for(const cell of row.querySelectorAll('td')){
+      const key=cell.classList.contains('productionWorkerCell')?'workerGroup':cell.classList.contains('rowActions')?'__rowAction':cell.dataset.result||cell.querySelector('[data-cell]')?.dataset.cell;
+      if(key&&labels.has(key))mobileSetLabel(cell,'data-sheet-label',labels.get(key));
+     }
     }
    }
+   next.rows=rows;next.labels=labelSignature;mobileScreen.labelDirty.delete(table);
   }
+  mobileScreen.fits.set(table,next);
+  if(same){if(resetPosition&&fit&&available>0)viewport.scrollLeft=0;continue}
   if(fit&&available>0){
    const target=production?available:Math.min(total,available),index=small?44:34,fixed=columns.map(col=>col.dataset.sheetCol==='__rowNumber'?index:col.dataset.sheetCol==='__rowAction'?34:null),fixedTotal=fixed.reduce((sum,width)=>sum+(width||0),0),flexTotal=bases.reduce((sum,width,i)=>sum+(fixed[i]==null?width:0),0);
-   columns.forEach((col,i)=>{const width=fixed[i]??Math.max(0,target-fixedTotal)*bases[i]/flexTotal;col.style.width=(100*width/target)+'%'});
-   table.style.setProperty('--sheet-width',target+'px');table.style.setProperty('--sheet-index-width',index+'px');
+   columns.forEach((col,i)=>{const width=fixed[i]??Math.max(0,target-fixedTotal)*bases[i]/flexTotal,value=(100*width/target)+'%';if(col.style.width!==value)col.style.width=value});
+   mobileSetStyle(table,'--sheet-width',target+'px');mobileSetStyle(table,'--sheet-index-width',index+'px');
    // A narrower table must not retain a horizontal offset from its old geometry.
    viewport.scrollLeft=0;
   }else{
-   columns.forEach((col,i)=>{col.style.width=bases[i]+'px'});
-   table.style.setProperty('--sheet-width',total+'px');table.style.setProperty('--sheet-index-width',small?'44px':'42px');
+   columns.forEach((col,i)=>{const value=bases[i]+'px';if(col.style.width!==value)col.style.width=value});
+   mobileSetStyle(table,'--sheet-width',total+'px');mobileSetStyle(table,'--sheet-index-width',small?'44px':'42px');
   }
  }
 }
 
 function mobileRefresh(){
- mobileScreen.frame=0;const main=document.querySelector('#main');if(!main)return;const small=mobileLayout(),focused=document.body.classList.contains('workspaceFocused');if(mobileScreen.focus!==focused){mobileRestoreTools();mobileScreen.focus=focused}document.body.classList.toggle('mobileWorkspace',small);
+ mobileScreen.frame=0;const resetPosition=mobileScreen.resetPosition;mobileScreen.resetPosition=false;const main=document.querySelector('#main');if(!main)return;
+ // This synchronous pass already accounts for its own moved controls and hints.
+ // Do not schedule another whole-table pass for those same DOM insertions.
+ const observer=mobileScreen.observer,observing=observer&&mobileScreen.observedMain===main;if(observing){const pending=observer.takeRecords?.()||[];if(pending.length)mobileMutations(pending,false);observer.disconnect()}
+ try{
+ const small=mobileLayout(),focused=document.body.classList.contains('workspaceFocused');if(mobileScreen.focus!==focused){mobileRestoreTools();mobileScreen.focus=focused}document.body.classList.toggle('mobileWorkspace',small);
  for(const [host,value]of mobileScreen.menus)if(!host.isConnected||!value.menu.isConnected)mobileScreen.menus.delete(host);
  const tableFocus=focused&&typeof workspaceRefreshFocus==='function';
  if(!small||tableFocus)mobileRestoreTools();
@@ -3564,7 +3659,7 @@ function mobileRefresh(){
   for(const bar of main.querySelectorAll('.sheetGroupBar')){const actions=bar.querySelector('[data-sheet-group-actions]');if(actions)mobileTools(bar,[actions],'입력 도구')}
   const sync=main.querySelector('#ilboSyncStatus');if(sync)mobileTools(sync,[...sync.children],'현장일보 연동 상태');
  }
- mobileFitColumns(main,small);
+ mobileFitColumns(main,small,resetPosition);
  if(!tableFocus)for(const wrapper of main.querySelectorAll('.sheetViewport,.tableWrap,.secondaryTableScroll,.ledgerReadViewport,.archivePane')){
   const overflow=small&&mobileOverflow(wrapper);let hint=wrapper.previousElementSibling;
   if(!hint?.classList.contains('mobileScrollHint')){if(!overflow)continue;hint=document.createElement('p');hint.className='mobileScrollHint';hint.id='mobile-scroll-'+(++mobileScreen.sequence);hint.textContent='표를 좌우로 밀어 나머지 열을 확인하세요.';wrapper.before(hint);wrapper.setAttribute('aria-describedby',[wrapper.getAttribute('aria-describedby'),hint.id].filter(Boolean).join(' '))}
@@ -3572,13 +3667,28 @@ function mobileRefresh(){
  }
  for(const problem of main.querySelectorAll('[data-sheet-problem="true"]')){const menu=problem.closest('.mobileTools');if(menu)menu.open=true}
  const help=main.querySelector('.pgHelp');if(help){help.dataset.desktopHelp??=help.textContent;const text=small?'휴일 칸은 변경할 날짜 선택용입니다. 휴일 도구에서 대상·날짜·처리를 확인하고 범위 적용을 누르세요. 건조일에는 노란 공장 휴일만 제외됩니다.':help.dataset.desktopHelp;if(help.textContent!==text)help.textContent=text}
+ }finally{if(observing&&mobileScreen.observer===observer&&mobileScreen.observedMain===main&&main.isConnected)observer.observe(main,mobileObserverOptions)}
 }
 function mobileQueue(){if(!mobileScreen.frame)mobileScreen.frame=requestAnimationFrame(mobileRefresh)}
+function mobileMutations(records,queue=true){
+ let refresh=false;
+ for(const record of records){
+  const target=record.target?.nodeType===1?record.target:record.target?.parentNode;if(!target?.isConnected)continue;
+  const nodes=record.addedNodes&&record.removedNodes?[...record.addedNodes,...record.removedNodes]:null,textOnly=record.type==='childList'&&nodes&&!nodes.some(node=>node.nodeType===1);
+  // Status wording cannot change authored columns. Error visibility and inserted
+  // buttons/menus remain structural changes and must still reach mobileRefresh.
+  if(textOnly&&!target.closest('[data-sheet-problem="true"]')&&target.closest('[data-sheet-status],[data-sheet-message],[data-sheet-summary],[data-sheet-group-summary],.productionViewCaption,.productionProgressBasis,#ilboSyncStatus'))continue;
+  const table=target.closest('.inputSheet');
+  if(table&&record.type==='childList'&&(target.closest('thead,.productionWorkerCell')||!textOnly&&!target.closest('[data-result]')))mobileScreen.labelDirty.add(table);
+  refresh=true;
+ }
+ if(refresh&&queue)mobileQueue();
+}
 function bindMobileUI(){
- mobileScreen.observer?.disconnect();if(mobileScreen.frame){cancelAnimationFrame(mobileScreen.frame);mobileScreen.frame=0}mobileRestoreTools();
- if(mobileScreen.resize)window.removeEventListener('resize',mobileScreen.resize);mobileScreen.resize=mobileQueue;window.addEventListener('resize',mobileScreen.resize);
+ mobileScreen.observer?.disconnect();mobileScreen.observedMain=null;if(mobileScreen.frame){cancelAnimationFrame(mobileScreen.frame);mobileScreen.frame=0}mobileRestoreTools();
+ if(mobileScreen.resize)window.removeEventListener('resize',mobileScreen.resize);mobileScreen.resize=()=>{mobileScreen.resetPosition=true;mobileQueue()};window.addEventListener('resize',mobileScreen.resize);
  const main=document.querySelector('#main');if(!main)return;mobileRefresh();
- if(typeof MutationObserver==='function'){mobileScreen.observer=new MutationObserver(mobileQueue);mobileScreen.observer.observe(main,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem']})}
+ if(typeof MutationObserver==='function'){mobileScreen.observer=new MutationObserver(mobileMutations);mobileScreen.observedMain=main;mobileScreen.observer.observe(main,mobileObserverOptions)}
  if(mobileLayout()&&mobileScreen.page!==null&&mobileScreen.page!==page)window.scrollTo({top:0,left:0});mobileScreen.page=page;
 }
 const workspaceBindBeforeMobile=bindWorkspaceUI;
@@ -3756,6 +3866,26 @@ function viewPreferenceEvent(event){
 for(const type of['click','change','input','keydown'])document.addEventListener(type,viewPreferenceEvent,true);
 window.addEventListener('pagehide',viewPreferenceFlush);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')viewPreferenceFlush()});
+
+// Only manual connection settings require the screen password. Restoring an
+// existing connection and background data synchronization do not use this gate.
+const managementConnectionGate=ScheduleConnectionGate.create();
+const connectionWorkspaceSettingsBefore=workspaceSettings;
+workspaceSettings=function(main){
+ connectionWorkspaceSettingsBefore(main);const details=main.querySelector('.workspaceConnection');if(!details)return;
+ const summary=details.querySelector('summary');details.open=managementConnectionGate.unlocked;
+ const label=()=>{summary.textContent=(managementConnectionGate.unlocked?'GitHub 저장소 연결 설정':'🔒 GitHub 저장소 연결 설정 · 비밀번호');};label();
+ summary.addEventListener('click',async event=>{
+  if(details.open)return;event.preventDefault();
+  if(await managementConnectionGate.request()){if(!details.isConnected||page!=='settings'){managementConnectionGate.lock();return}details.open=true;label();details.querySelector('#owner')?.focus()}
+ });
+ details.addEventListener('toggle',()=>{if(!details.open){managementConnectionGate.lock();const token=details.querySelector('#token');if(token)token.value='';label()}});
+};
+const connectionRenderBefore=render;
+render=function(...args){if(page!=='settings')managementConnectionGate.lock();return connectionRenderBefore.apply(this,args)};
+const connectionNativeActionBefore=nativeAction;
+nativeAction=async function(action,...args){if(action==='connect'&&!managementConnectionGate.unlocked)throw Error('연결 설정의 비밀번호를 먼저 입력해 주세요.');return connectionNativeActionBefore.call(this,action,...args)};
+document.addEventListener('click',event=>{if(event.target.closest?.('[data-action="checkConnection"]')&&!managementConnectionGate.unlocked){event.preventDefault();event.stopImmediatePropagation();toast('연결 설정의 비밀번호를 먼저 입력해 주세요.')}},true);
 
 render();restoreConnection().catch(e=>toast('시작 화면 오류: '+e.message));window.addEventListener('online',()=>workspace?.flush());setInterval(()=>{if(workspace?.envelope.queue.length)workspace.flush()},30000);
 })();
