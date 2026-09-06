@@ -466,7 +466,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .workflow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
  body.sheetWorkspace .workflow button{padding:8px;border-radius:7px;white-space:normal;font-size:13px}
 
- /* Each data surface owns its scroll; never squeeze all columns into a phone. */
+ /* Timeline and complex comparison tables own their scroll. Input records wrap below. */
  body.sheetWorkspace :is(.sheetEditor,.sheetViewport,.tableWrap,.ledgerReadViewport,.archivePane,.pgTimeline){min-width:0;max-width:100%}
  body.sheetWorkspace :is(.sheetViewport,.tableWrap,.ledgerReadViewport,.archivePane){overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:auto;scroll-padding:8px}
  body.sheetWorkspace :is(.tableWrap,.archivePane)>.tableWrap{overflow:visible;max-height:none}
@@ -781,7 +781,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>td{display:block;position:static;min-width:0;width:auto;height:auto;border:1px solid #e3eaf0;text-align:left;align-self:stretch;padding:3px}
  body.sheetWorkspace .inputSheet.sheetStacked td[data-sheet-label]::before{content:attr(data-sheet-label);display:block;font-size:11px;line-height:1.5;color:#6c7688;white-space:normal;padding:2px 4px}
  body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell>div{position:static;padding:3px 4px}
- body.sheetWorkspace .inputSheet.sheetStacked .sheetGroupRow>th{display:block;width:100%;min-width:0;position:static}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetGroupRow>th{display:block;width:100%;min-width:0;height:auto;position:static}
  body.sheetWorkspace .inputSheet.sheetStacked .sheetRowNote>td{display:block;width:100%}
  body.sheetWorkspace .inputSheet.sheetStacked td:has(textarea[data-cell]){grid-column:span 2}
 }
@@ -815,6 +815,103 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace.workspaceFocused .workspaceFocusOptions .workspaceTabs{display:flex;flex-wrap:wrap}
  body.sheetWorkspace.workspaceFocused .workspaceFocusOptions .sheetFilters{display:flex;flex-wrap:wrap}
  body.sheetWorkspace.workspaceFocused .workspaceFocusOptions .productionDateRail{grid-auto-columns:44px}
+}
+
+/* A record keeps its actual controls when a phone cannot hold the column grid. */
+@media screen and (max-width:720px){
+ body.sheetWorkspace .sheetViewport:has(>.sheetStacked){max-height:none;overflow:visible;min-height:0}
+ body.sheetWorkspace .sheetViewport>.inputSheet.sheetStacked{display:block;width:100%;min-width:0;max-width:100%;margin:0}
+ body.sheetWorkspace .inputSheet.sheetStacked>colgroup{display:none}
+ body.sheetWorkspace .inputSheet.sheetStacked>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody{display:block}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr{display:block}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]{display:grid;position:relative;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:8px;margin:8px;border:1px solid #dce3ec;border-radius:10px;background:#fff;box-shadow:0 2px 4px #23324705}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row][hidden]{display:none}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child{display:flex;grid-column:1/-1;grid-row:1;position:static;align-items:center;gap:8px;width:auto;min-width:0;height:auto;min-height:44px;padding:0 50px 0 0;border:0;text-align:left;background:transparent}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child>button{width:44px;flex:none;border-radius:6px;background:#f0f3f8}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child::after{content:attr(data-sheet-row-title);font-size:14px;font-weight:600;color:#344564}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row][data-sheet-worker-lead=true]>th:first-child::after{content:''}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>td{display:block;position:static;left:auto;min-width:0;width:auto;height:auto;padding:4px;border:1px solid #dce3ec;border-radius:7px;text-align:left;align-self:stretch;background:#fff}
+ body.sheetWorkspace .inputSheet.sheetStacked td[data-sheet-label]::before{content:attr(data-sheet-label);display:block;padding:2px 5px;color:#60718b;font-size:11px;font-weight:500;line-height:1.5;white-space:normal}
+ body.sheetWorkspace .inputSheet.sheetStacked td:is([data-sheet-key=product],[data-sheet-key=name],[data-sheet-key=workerGroup],[data-sheet-key=currentProgress]):not([hidden]),body.sheetWorkspace .inputSheet.sheetStacked td:has(textarea){grid-column:1/-1}
+ body.sheetWorkspace .inputSheet.sheetStacked td.calculated{background:#f3f6fa;color:#354f73;font-size:15px;font-variant-numeric:tabular-nums}
+ body.sheetWorkspace .inputSheet.sheetStacked td:is([data-sheet-key=product],[data-sheet-key=name]) input{font-weight:600}
+ body.sheetWorkspace .inputSheet.sheetStacked td :is(input,select,textarea){max-width:100%;width:100%;text-align:left;padding:7px 5px;border-radius:4px}
+ body.sheetWorkspace .inputSheet.sheetStacked td input[inputmode=decimal]{text-align:right}
+ body.sheetWorkspace .inputSheet.sheetStacked td.productionWorkerCell{grid-column:1/-1;grid-row:1;margin:0 48px 0 48px;padding:0;background:#edf2f9;border:0}
+ body.sheetWorkspace .inputSheet.sheetStacked td.productionWorkerCell::before{content:none}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell>div{position:static;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px;padding:4px}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell .productionWorkerName{font-size:14px}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell select{width:100%;min-width:0}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerPicker{flex:1;min-width:0}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionProgress{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:3px 5px}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionProgress>strong{font-size:16px}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionProgress>button{min-width:80px;padding:7px 9px}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>td.rowActions{position:absolute;top:8px;right:8px;width:44px;height:44px;padding:0;border:0;background:transparent}
+ body.sheetWorkspace .inputSheet.sheetStacked td.rowActions::before{content:none}
+ body.sheetWorkspace .inputSheet.sheetStacked .rowActions button{width:100%;border:1px solid #e3d7d7;border-radius:6px}
+ body.sheetWorkspace .inputSheet.sheetStacked tr.deleted td{background:#fff3f2}
+ body.sheetWorkspace .inputSheet.sheetStacked tr.edited{border-color:#a5b3da}
+ body.sheetWorkspace .inputSheet.sheetStacked tr.selected{box-shadow:0 0 0 2px #7a89cc}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetGroupRow>th{display:block;width:100%;min-width:0;height:auto;position:static}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetGroupBar{position:static;width:100%;max-width:100%;left:auto;padding:8px 10px;gap:4px 8px}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetRowNote>td{display:block;width:100%;height:auto;padding:8px}
+ body.sheetWorkspace .sheetToolbar{flex-wrap:nowrap;gap:6px}
+ body.sheetWorkspace .sheetToolbar>div:first-child{flex:0 1 auto;font-size:12px}
+ body.sheetWorkspace .sheetToolbar .actions{display:flex;flex:1;justify-content:flex-end;align-items:flex-start;width:auto;flex-wrap:wrap}
+ body.sheetWorkspace .sheetToolbar .actions>button{flex:1}
+ body.sheetWorkspace .sheetToolbar .actions>.mobileTools{width:auto;flex:0 0 auto}
+ body.sheetWorkspace .sheetToolbar .actions>.mobileTools[open]{flex-basis:100%}
+ body.sheetWorkspace .sheetToolbar:has(.mobileTools[open]){flex-wrap:wrap}
+ body.sheetWorkspace .sheetToolbar .actions>.mobileTools .mobileToolItems>.sheetDatePicker{font-size:13px;display:flex;flex-wrap:wrap}
+ body.sheetWorkspace .sheetToolbar .mobileToolItems>.sheetFilters{padding:0}
+ body.sheetWorkspace .sheetToolbar .mobileToolItems input[data-sheet-search]{width:100%}
+ body.sheetWorkspace .sheetToolbar .mobileToolItems>button{width:100%}
+ body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar{flex-wrap:wrap}
+ body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar>div:first-child{flex-basis:100%}
+ body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar>.actions{width:100%;flex-basis:100%}
+ body.sheetWorkspace .sheetToolbar .actions>button{white-space:nowrap}
+ body.sheetWorkspace .productionOverview{padding:7px 8px 3px}
+ body.sheetWorkspace .productionOverviewLine{gap:4px 8px}
+ body.sheetWorkspace .productionDateRail{padding:5px 0;gap:3px}
+ body.sheetWorkspace .workspaceTools{margin:4px 0 6px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgTopActions>.actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgTopActions>.actions>button{min-width:0;padding:6px 3px;font-size:11px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgTopActions{padding:7px;margin-bottom:8px;gap:6px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgTimelineToolbar{margin-bottom:8px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgTimelineToolbar h2{font-size:15px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgDisplayTools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgDisplayTools>.mobileTools{flex:1;width:auto}
+ body.sheetWorkspace .pgSurface:not(.pgFocused) .pgDisplayTools>.mobileTools[open]{flex-basis:100%}
+ body.sheetWorkspace .pgDisplayTools .mobileToolItems{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+ body.sheetWorkspace .pgDisplayTools .mobileToolItems>label{flex:1 1 120px;min-width:0}
+ body.sheetWorkspace .pgDisplayTools .mobileToolItems :is(input,select){max-width:100%;width:100%}
+ body.sheetWorkspace .pgDisplayTools .mobileToolItems>:is(p,.pgLegend,.pgBasis,.pgDirectHelp){flex-basis:100%;margin:0}
+ body.sheetWorkspace .pgFocused:not(.pgFocusToolsOpen) .pgFocusToolbar>.pgFocusRangeControls{display:none}
+ body.sheetWorkspace.workspaceFocused .workspaceFocusSurface:has(>.sheetStacked){overflow:auto;min-height:0;max-height:none}
+
+ /* Narrow read tables use labelled values, retaining every original cell. */
+ body.sheetWorkspace table.mobileReadTable{display:block;width:100%;min-width:0;max-width:100%;table-layout:auto}
+ body.sheetWorkspace table.mobileReadTable>colgroup{display:none}
+ body.sheetWorkspace table.mobileReadTable>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ body.sheetWorkspace table.mobileReadTable>tbody{display:block}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:9px 12px;border:1px solid #dce3ec;border-radius:9px;background:#fff;margin:0 0 10px}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr[hidden]{display:none}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr[data-mobile-empty=true]{display:block;text-align:center}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr>td{display:block;position:static;width:auto;min-width:0;padding:7px 0;border:0;border-bottom:1px solid #edf0f5;white-space:normal;overflow-wrap:anywhere;text-align:left;font-size:14px}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr>td::before{content:attr(data-mobile-label);display:block;color:#6d7a90;font-size:11px;line-height:1.5;padding-bottom:3px;font-weight:400}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr>td:first-child{grid-column:1/-1;font-size:15px;font-weight:600;color:#2f4161}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr>td:is([data-mobile-key=product],[data-mobile-key=text],[data-mobile-key=action]){grid-column:1/-1}
+ body.sheetWorkspace table.mobileReadTable>tbody>tr>td[data-mobile-key=number]{font-variant-numeric:tabular-nums}
+ body.sheetWorkspace table.mobileReadTable :is(button,input,select){max-width:100%;white-space:normal}
+ body.sheetWorkspace .tableWrap:has(>table.mobileReadTable){border:0;overflow:visible;background:transparent;max-height:none}
+ body.sheetWorkspace .ledgerReadViewport:has(>table.mobileReadTable){max-height:none;overflow:visible;min-height:0}
+ body.sheetWorkspace.workspaceFocused .workspaceFocusSurface:has(>table.mobileReadTable){overflow:auto;max-height:none}
+}
+@media screen and (min-width:721px){
+ body.sheetWorkspace .inputSheet.sheetStacked td:is([data-sheet-key=workerGroup],[data-sheet-key=product],[data-sheet-key=name],[data-sheet-key=currentProgress]){grid-column:1/-1}
+ body.sheetWorkspace .inputSheet.sheetStacked td:has(textarea[data-cell]){grid-column:1/-1}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell>div{flex-direction:row;align-items:center;justify-content:space-between}
 }
 
 /* Visual finish only. Responsive geometry, printing and schedule meaning colors stay in their own styles. */
@@ -3584,44 +3681,58 @@ setInterval(()=>ilboCheck(),60000);
 window.addEventListener('focus',()=>ilboCheck());
 
 // Responsive organization only: move existing controls, never copy input values or ledger rows.
-const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),fits:new WeakMap(),labelDirty:new WeakSet()};
-const mobileObserverOptions={childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem']};
+const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
+const mobileObserverOptions={childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem','colspan','rowspan']};
 function mobileLayout(){return typeof matchMedia==='function'&&matchMedia('(max-width: 720px)').matches}
+function mobileFocusSnapshot(){const node=document.activeElement;return node?{node,start:node.selectionStart,end:node.selectionEnd,direction:node.selectionDirection}:null}
+function mobileRestoreFocus(saved){if(!saved?.node.isConnected||document.activeElement===saved.node)return;try{saved.node.focus({preventScroll:true});if(saved.start!=null)saved.node.setSelectionRange?.(saved.start,saved.end,saved.direction)}catch{}}
 function mobileTools(host,buttons,title='도구'){
  if(!host||!buttons.length||mobileScreen.menus.has(host))return;
+ const focused=mobileFocusSnapshot(),keepFocus=focused&&buttons.some(button=>button===focused.node||button.contains(focused.node));
  const menu=document.createElement('details'),summary=document.createElement('summary'),items=document.createElement('div');
  menu.className='mobileTools';summary.textContent=title;items.className='mobileToolItems';menu.append(summary,items);
  const locations=buttons.map(button=>{const anchor=document.createComment('mobile control position');button.before(anchor);return{button,anchor}});
  host.append(menu);items.append(...buttons);mobileScreen.menus.set(host,{menu,locations});
+ if(keepFocus){menu.open=true;mobileRestoreFocus(focused)}
 }
-function mobileRestoreTools(){for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear()}
+function mobileRestoreStatus(){const dock=mobileScreen.dockedStatus;if(!dock)return;if(dock.node.isConnected&&dock.anchor.isConnected)dock.anchor.replaceWith(dock.node);else dock.anchor.remove();mobileScreen.dockedStatus=null}
+function mobileDockStatus(node,host){
+ if(!node||!host)return false;
+ if(mobileScreen.dockedStatus?.node===node&&node.parentNode===host)return true;
+ mobileRestoreStatus();const focused=mobileFocusSnapshot(),anchor=document.createComment('mobile status position');node.before(anchor);host.append(node);mobileScreen.dockedStatus={node,anchor,host};
+ if(focused&&(node===focused.node||node.contains(focused.node))){const menu=host.closest('.workspaceMore');menu?.classList.add('open');menu?.querySelector('button')?.setAttribute('aria-expanded','true');mobileRestoreFocus(focused)}
+ return true;
+}
+function mobileRestoreTools(){const focused=mobileFocusSnapshot();mobileRestoreStatus();for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear();mobileRestoreFocus(focused)}
 function mobileOverflow(wrapper){return wrapper.clientWidth>0&&wrapper.scrollWidth>wrapper.clientWidth+2}
 function mobileSameNodes(before,after){return before?.length===after.length&&after.every((node,index)=>before[index]===node)}
 function mobileSetStyle(node,key,value){if(node.style.getPropertyValue(key)!==value)node.style.setProperty(key,value)}
 function mobileSetLabel(node,key,value){if(node.getAttribute(key)!==value)node.setAttribute(key,value)}
+function mobileHeaderLabel(node){return[...node.childNodes].map(child=>child.tagName==='SMALL'?' · '+child.textContent.trim():child.textContent).join('').trim()||node.textContent.trim()}
 function mobileFitColumns(main,small,resetPosition=false){
  for(const table of main.querySelectorAll('.sheetEditor .inputSheet')){
   const columns=[...table.querySelectorAll('col[data-sheet-col]')];if(!columns.length)continue;
-  const sheetId=table.closest('.sheetEditor')?.dataset.sheetId,production=sheetId==='production',fit=!small||sheetId==='plaster-month';
+  const sheetId=table.closest('.sheetEditor')?.dataset.sheetId,production=sheetId==='production',fit=true;
   const widths={__rowNumber:44,workerGroup:72,product:108,pours:60,plan:64};
   const bases=columns.map(col=>{col.dataset.baseWidth??=col.style.width;const base=parseFloat(col.dataset.baseWidth);return Number.isFinite(base)?small&&production?(widths[col.dataset.sheetCol]??base):base:100});
   const total=bases.reduce((sum,width)=>sum+width,0),viewport=table.closest('.sheetViewport'),available=viewport?.clientWidth||0;
-  const stacked=!small&&available>0&&total>available*1.65;
+  const stacked=small?sheetId!=='plaster-month':available>0&&total>available*1.65;
   const previous=mobileScreen.fits.get(table),signature=[small,production,fit,stacked,available,...columns.map((col,index)=>col.dataset.sheetCol+':'+bases[index])].join('|'),same=previous?.signature===signature&&previous.viewport===viewport&&mobileSameNodes(previous.columns,columns);
   if(table.classList.contains('sheetFitted')!==fit)table.classList.toggle('sheetFitted',fit);
   if(table.classList.contains('sheetStacked')!==stacked)table.classList.toggle('sheetStacked',stacked);
   const next={signature,viewport,columns,production,rows:previous?.rows,labels:previous?.labels};
-  if(stacked){
-   const labels=new Map([...table.querySelectorAll('thead th[data-sheet-col]')].map(th=>[th.dataset.sheetCol,th.textContent])),labelSignature=JSON.stringify([...labels]),rows=[...table.querySelectorAll('tbody tr[data-row]')];
+  {
+   const labels=new Map([...table.querySelectorAll('thead th[data-sheet-col]')].map(th=>[th.dataset.sheetCol,mobileHeaderLabel(th)])),labelSignature=JSON.stringify([...labels]),rows=[...table.querySelectorAll('tbody tr[data-row]')];
    if(previous?.production!==production||previous?.labels!==labelSignature||!mobileSameNodes(previous?.rows,rows)||mobileScreen.labelDirty.has(table)){
     let worker='';
     for(const row of rows){
      const workerCell=row.querySelector('.productionWorkerCell');
      if(workerCell)worker=workerCell.querySelector('.productionWorkerName')?.textContent||workerCell.querySelector('select')?.value||'';
+     if(production)mobileSetLabel(row,'data-sheet-worker-lead',String(!!workerCell));
      const number=row.querySelector('th');if(number)mobileSetLabel(number,'data-sheet-row-title',production?worker:'');
      for(const cell of row.querySelectorAll('td')){
       const key=cell.classList.contains('productionWorkerCell')?'workerGroup':cell.classList.contains('rowActions')?'__rowAction':cell.dataset.result||cell.querySelector('[data-cell]')?.dataset.cell;
-      if(key&&labels.has(key))mobileSetLabel(cell,'data-sheet-label',labels.get(key));
+      if(key){mobileSetLabel(cell,'data-sheet-key',key);mobileSetLabel(cell,'data-sheet-label',labels.get(key)||'')}
      }
     }
    }
@@ -3642,24 +3753,55 @@ function mobileFitColumns(main,small,resetPosition=false){
  }
 }
 
+// Flat read tables can become labelled cards without rebuilding their rows.
+// A spanning cell or layered header carries relationships that require its
+// original table layout; keep those tables scrollable instead of guessing.
+function mobileLabelReadTables(main){
+ for(const table of main.querySelectorAll('.tableWrap table,.ledgerReadViewport table')){
+  if(table.classList.contains('inputSheet')||table.closest('.pgMachines'))continue;
+  const heads=[...table.querySelectorAll('thead tr')].filter(row=>row.closest('table')===table),headers=heads.length===1?[...heads[0].children].filter(cell=>cell.tagName==='TH'||cell.tagName==='TD'):[],rows=[...table.querySelectorAll('tbody tr')].filter(row=>row.closest('table')===table),labels=headers.map(mobileHeaderLabel),signature=JSON.stringify(labels),previous=mobileScreen.readLabels.get(table);
+  if(previous?.signature===signature&&mobileSameNodes(previous.headers,headers)&&mobileSameNodes(previous.rows,rows)&&!mobileScreen.labelDirty.has(table))continue;
+  const span=cell=>Number(cell.getAttribute('colspan')||1)!==1||Number(cell.getAttribute('rowspan')||1)!==1;
+  const empty=row=>row.children.length===1&&row.children[0].classList.contains('empty');
+  const complex=heads.length!==1||!headers.length||headers.some(span)||rows.some(row=>!empty(row)&&(row.children.length!==headers.length||[...row.children].some(span)));
+  if(table.classList.contains('mobileReadTable')===complex)table.classList.toggle('mobileReadTable',!complex);
+  if(table.classList.contains('mobileComplexTable')!==complex)table.classList.toggle('mobileComplexTable',complex);
+  for(const row of rows){
+   const isEmpty=empty(row);mobileSetLabel(row,'data-mobile-empty',String(isEmpty));
+   if(complex||isEmpty)continue;
+   [...row.children].forEach((cell,index)=>{
+    const label=labels[index],key=cell.classList.contains('product')||/품명|품목/.test(label)?'product':cell.classList.contains('num')?'number':cell.querySelector('button,a')?'action':'text';
+    mobileSetLabel(cell,'data-mobile-label',label);mobileSetLabel(cell,'data-mobile-key',key);
+   });
+  }
+  mobileScreen.readLabels.set(table,{signature,headers,rows});mobileScreen.labelDirty.delete(table);
+ }
+}
+
 function mobileRefresh(){
  mobileScreen.frame=0;const resetPosition=mobileScreen.resetPosition;mobileScreen.resetPosition=false;const main=document.querySelector('#main');if(!main)return;
  // This synchronous pass already accounts for its own moved controls and hints.
  // Do not schedule another whole-table pass for those same DOM insertions.
  const observer=mobileScreen.observer,observing=observer&&mobileScreen.observedMain===main;if(observing){const pending=observer.takeRecords?.()||[];if(pending.length)mobileMutations(pending,false);observer.disconnect()}
  try{
- const small=mobileLayout(),focused=document.body.classList.contains('workspaceFocused');if(mobileScreen.focus!==focused){mobileRestoreTools();mobileScreen.focus=focused}document.body.classList.toggle('mobileWorkspace',small);
+ const small=mobileLayout(),focused=document.body.classList.contains('workspaceFocused'),planFocused=document.body.classList.contains('pgFocusMode');if(mobileScreen.focus!==focused){mobileRestoreTools();mobileScreen.focus=focused}document.body.classList.toggle('mobileWorkspace',small);
  for(const [host,value]of mobileScreen.menus)if(!host.isConnected||!value.menu.isConnected)mobileScreen.menus.delete(host);
  const tableFocus=focused&&typeof workspaceRefreshFocus==='function';
- if(!small||tableFocus)mobileRestoreTools();
+ if(!small||tableFocus||planFocused)mobileRestoreTools();
  if(tableFocus)workspaceRefreshFocus();
- else if(small){
+ else if(small&&!planFocused){
   const actions=main.querySelector('.top>.actions');if(actions&&!actions.querySelector('.workspaceMore'))mobileTools(actions,[...actions.children].filter(el=>el.tagName==='BUTTON'));
-  for(const toolbar of main.querySelectorAll('.sheetToolbar'))mobileTools(toolbar.querySelector('.actions')||toolbar,[...toolbar.querySelectorAll('[data-sheet-command="pasteToggle"],[data-sheet-command="undo"]'),...toolbar.closest('.sheetEditor').querySelectorAll('.sheetMessage,.productionProgressBasis,.productionViewCaption'),...(focused?[...toolbar.closest('.sheetEditor').querySelectorAll('.sheetDatePicker,[data-sheet-command="groupCreate"],.sheetFilters')]:[])]);
+  for(const toolbar of main.querySelectorAll('.sheetToolbar'))mobileTools(toolbar.querySelector('.actions')||toolbar,[...toolbar.querySelectorAll('[data-sheet-command="pasteToggle"],[data-sheet-command="undo"]'),...toolbar.closest('.sheetEditor').querySelectorAll('.sheetMessage,.productionProgressBasis,.productionViewCaption,.sheetDatePicker,[data-sheet-command="groupCreate"],.sheetFilters')]);
   for(const bar of main.querySelectorAll('.sheetGroupBar')){const actions=bar.querySelector('[data-sheet-group-actions]');if(actions)mobileTools(bar,[actions],'입력 도구')}
-  const sync=main.querySelector('#ilboSyncStatus');if(sync)mobileTools(sync,[...sync.children],'현장일보 연동 상태');
+  const sync=main.querySelector('#ilboSyncStatus');if(sync&&!mobileDockStatus(sync,main.querySelector('.top>.actions')?.querySelector('.workspaceMoreItems')))mobileTools(sync,[...sync.children],'현장일보 연동 상태');
+  const plan=main.querySelector('#planGridSurface'),display=plan?.querySelector('.pgDisplayTools');
+  if(display){
+   const ranges=[...plan.querySelectorAll('#pgRangeStart,#pgRangeEnd')].map(input=>input.closest('label')||input),options=[...display.children].filter(node=>node.tagName!=='DETAILS'&&node.dataset.pgCommand!=='focus-mode');
+   mobileTools(display,[...ranges,...plan.querySelectorAll('.pgTimelineToolbar [data-pg-command="today"],.pgTimelineToolbar p'),...options,...plan.querySelectorAll('.pgBasis,.pgLegend,.pgDirectHelp,.pgCalendarControls,.pgPattern,.pgHelp')],'일정 보기 도구');
+  }
  }
  mobileFitColumns(main,small,resetPosition);
+ mobileLabelReadTables(main);
  if(!tableFocus)for(const wrapper of main.querySelectorAll('.sheetViewport,.tableWrap,.secondaryTableScroll,.ledgerReadViewport,.archivePane')){
   const overflow=small&&mobileOverflow(wrapper);let hint=wrapper.previousElementSibling;
   if(!hint?.classList.contains('mobileScrollHint')){if(!overflow)continue;hint=document.createElement('p');hint.className='mobileScrollHint';hint.id='mobile-scroll-'+(++mobileScreen.sequence);hint.textContent='표를 좌우로 밀어 나머지 열을 확인하세요.';wrapper.before(hint);wrapper.setAttribute('aria-describedby',[wrapper.getAttribute('aria-describedby'),hint.id].filter(Boolean).join(' '))}
@@ -3680,6 +3822,8 @@ function mobileMutations(records,queue=true){
   if(textOnly&&!target.closest('[data-sheet-problem="true"]')&&target.closest('[data-sheet-status],[data-sheet-message],[data-sheet-summary],[data-sheet-group-summary],.productionViewCaption,.productionProgressBasis,#ilboSyncStatus'))continue;
   const table=target.closest('.inputSheet');
   if(table&&record.type==='childList'&&(target.closest('thead,.productionWorkerCell')||!textOnly&&!target.closest('[data-result]')))mobileScreen.labelDirty.add(table);
+  const readTable=target.closest('.tableWrap table,.ledgerReadViewport table');
+  if(readTable&&(record.type==='attributes'&&['colspan','rowspan'].includes(record.attributeName)||record.type==='childList'&&(target.closest('thead')||!textOnly)))mobileScreen.labelDirty.add(readTable);
   refresh=true;
  }
  if(refresh&&queue)mobileQueue();
@@ -3705,6 +3849,13 @@ document.addEventListener('keydown',mobileCloseMenus);
 
 const workspaceFocusBeforeMobile=workspaceSetFocus;
 workspaceSetFocus=function(on){workspaceFocusBeforeMobile(on);mobileQueue()};
+
+// Restore ranges before the existing full-screen toolbar takes ownership of
+// their parent. Both arrangements continue to use the same input nodes.
+if(typeof pgArrangeFocusToolbar==='function'){
+ const mobilePlanFocusBefore=pgArrangeFocusToolbar;
+ pgArrangeFocusToolbar=function(root,focused){if(focused)mobileRestoreTools();const result=mobilePlanFocusBefore(root,focused);mobileQueue();return result};
+}
 
 // Device-only presentation preferences. Never serialize a ledger, editor draft,
 // selected job, calendar, connection configuration or authentication material.
