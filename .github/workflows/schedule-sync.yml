@@ -9,7 +9,7 @@ on:
       - '.github/workflows/schedule-sync.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: production-data-sync
   cancel-in-progress: false
@@ -49,5 +49,18 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Synchronize JSON with trusted application code
         run: node app/integration/sync-workflow.cjs --target schedule --source field
+  maintain:
+    needs: synchronize
+    if: github.repository == 'parkjkk/work' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - name: Read public application repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: app
+          ref: main
       - name: Maintain monthly automation checkpoint
         run: node app/integration/keepalive.cjs --repo app
