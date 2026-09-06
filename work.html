@@ -619,6 +619,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
     <div id="quickProducts" hidden></div>
+    <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
     <div id="prodBlocks"></div>
     <button type="button" id="addProdBlock">＋ 제품 추가 (같은 작업자)</button>
     <div id="entryErr" role="alert" hidden></div>
@@ -756,6 +757,54 @@ function b64e(str){ const b=new TextEncoder().encode(str); let x=''; for(let i=0
 function b64d(s){ const bin=atob(String(s).replace(/\s/g,'')); const b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return new TextDecoder().decode(b); }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now()+'-'+Math.random().toString(36).slice(2));
 const numOr = (v, alt='') => { const s=String(v??'').trim(); if(s==='') return alt; const n=Number(s); return isNaN(n) ? alt : n; };
+
+/* PRODUCT_CATALOG_START — 관리 품목은 읽기 전용이며 원본 일보를 재작성하지 않는다. */
+function productNameKey(value){
+  const name=String(value??'').trim();
+  return /^[\x20-\x7E]+$/.test(name)?name.toUpperCase():name;
+}
+function parseProductCatalog(value){
+  if(!value || value.schema!==1 || value.kind!=='schedule-product-catalog' || typeof value.revision!=='string' || !value.revision || !Array.isArray(value.products) || !Array.isArray(value.aliases)) throw Error('관리 품목 목록의 형식을 확인해 주세요.');
+  const ids=new Set(),names=new Map();
+  const products=value.products.map(row=>{
+    if(!row || typeof row.id!=='string' || !row.id || typeof row.name!=='string' || !row.name.trim() || ids.has(row.id) || names.has(productNameKey(row.name))) throw Error('관리 품목 목록에 중복되거나 비어 있는 품명이 있습니다.');
+    if(row.active!=null && typeof row.active!=='boolean') throw Error('관리 품목의 사용 여부를 확인해 주세요.');
+    ids.add(row.id);names.set(productNameKey(row.name),row.id);
+    return {id:row.id,name:row.name.trim(),active:row.active!==false};
+  });
+  const aliases=value.aliases.map(row=>{
+    const key=productNameKey(row?.name);
+    if(!key || !ids.has(row.productId) || names.has(key)&&names.get(key)!==row.productId) throw Error('관리 품목의 별칭 연결이 겹치거나 없습니다.');
+    names.set(key,row.productId);return {name:row.name.trim(),productId:row.productId};
+  });
+  return {schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt||'',products,aliases};
+}
+function catalogProduct(catalog,name){
+  if(!catalog)return null;
+  const key=productNameKey(name),exact=catalog.products.find(p=>productNameKey(p.name)===key);
+  if(exact)return exact;
+  const alias=catalog.aliases.find(a=>productNameKey(a.name)===key);
+  return alias?catalog.products.find(p=>p.id===alias.productId)||null:null;
+}
+function catalogProductNames(catalog,recent=[]){
+  if(!catalog)return [...new Set(recent.map(productNameKey).filter(Boolean))].slice(0,40);
+  const prioritized=recent.map(n=>catalogProduct(catalog,n)).filter(p=>p?.active).map(p=>p.name);
+  return [...new Set([...prioritized,...catalog.products.filter(p=>p.active).map(p=>p.name)])];
+}
+function resolveFieldProduct(catalog,input,previous){
+  const entered=String(input??'').trim(),key=productNameKey(entered),same=previous&&key===productNameKey(previous.product);
+  if(!catalog)return {product:key,...(!same&&previous?.productId?{productId:undefined,productCatalogRevision:undefined}:{})};
+  const linked=catalogProduct(catalog,entered) || (same&&previous.productId?catalog.products.find(p=>p.id===previous.productId):null);
+  if(!linked){
+    if(same)return {product:previous.product};
+    throw Error('관리 목록에 없는 품명입니다. 생산일정 앱의 관리 탭에서 품명을 추가하거나 별칭을 연결해 주세요.');
+  }
+  if(!linked.active && !(same&&(previous.productId===linked.id||catalogProduct(catalog,previous.product)?.id===linked.id))) throw Error('사용 중지된 품명은 새 기록에 입력할 수 없습니다. 관리 탭에서 사용 여부를 확인해 주세요.');
+  const product=!linked.active&&same?previous.product:linked.name;
+  const original=previous?.sourceProduct || (same&&previous.product!==product?previous.product:entered!==product?entered:'');
+  return {product,productId:linked.id,productCatalogRevision:catalog.revision,...(original?{sourceProduct:original}:{})};
+}
+/* PRODUCT_CATALOG_END */
 
 /* ================= 저장 드라이버 ================= */
 const scopeFor = c => c && c.owner && c.repo && c.token ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
@@ -1004,6 +1053,7 @@ function ghDriver(cfg){
       return next.rows;
     },
     async loadPresets(){ const {json} = await getFile('data/presets.json'); return json || {workers:[],products:[],parts:[]}; },
+    async loadProductCatalog(){ const {json} = await getFile('meta/products.json'); return json; },
     async savePresets(p, replace){
       try{
         await mutateJson('data/presets.json', j => {
@@ -1100,6 +1150,7 @@ function initDriver(){
     S.presets = {workers:[],products:[],parts:[],inactive:[]}; S.presetsShown = false;
   }
   driverKey = key;
+  resetProductCatalog();
   S.progress = LS.get('ilbo.progress',null); progressBusy = false;
   loadSeq++; monthSeq++; lastDraw = null; monthData = null; monthDataYm = null;
   clearTimeout(prefetchTimer); S.offline = false; S.lastSync = null;
@@ -1242,6 +1293,56 @@ const S = {
   flashIds: null
 };
 const CHECK_KEYS = ['cs','gap','inlet','face','bubble'];
+let productCatalogRead=0;
+function resetProductCatalog(){
+  productCatalogRead++;
+  S.productCatalog=null;S.productCatalogMessage='';
+  S.productCatalogSeen=!!LS.get('ilbo.cache.productCatalogSeen',false);
+  if(driver.mode!=='gh'){S.productCatalogMode='legacy';return;}
+  const cached=LS.get('ilbo.cache.productCatalog',null);
+  if(cached)S.productCatalogSeen=true;
+  try{if(cached)S.productCatalog=parseProductCatalog(cached);}
+  catch(e){S.productCatalogMessage=e.message;}
+  S.productCatalogMode=S.productCatalog?'cached':'loading';
+}
+function renderProductCatalogNote(){
+  const el=$('#productCatalogNote');if(!el)return;
+  el.hidden=S.entryMode==='case'||S.productCatalogMode==='legacy';
+  if(el.hidden)return;
+  if(S.productCatalog){
+    const count=S.productCatalog.products.filter(p=>p.active).length;
+    el.textContent=`관리 품목 ${count}개 · 품명 추가·수정은 생산일정 앱의 관리 탭에서 합니다.${S.productCatalogMode==='cached'?' 보관한 목록을 사용 중입니다. 연결되면 최신 목록을 확인합니다.':''}${S.productCatalogMessage?' '+S.productCatalogMessage:''}`;
+  }else el.textContent=S.productCatalogMode==='loading'?'관리 품목을 확인하고 있습니다…':(S.productCatalogMessage||'관리 품목을 불러오지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.');
+}
+function refreshProductChips(el){
+  const input=el.querySelector('.pb-product'),host=el.querySelector('.pb-prodchips');if(!input||!host)return;
+  input.placeholder=S.productCatalog?'관리 품명 또는 등록된 별칭 검색':'예: CC267B';
+  host.innerHTML=prodsListAll().map((p,i)=>`<button type="button" class="chip" data-p="${esc(p)}"${i>=14?' hidden':''}>${esc(p)}</button>`).join('');
+  const show=()=>{const q=productNameKey(input.value);host.querySelectorAll('.chip').forEach((c,i)=>{const item=catalogProduct(S.productCatalog,c.dataset.p),aliases=S.productCatalog?.aliases.filter(a=>a.productId===item?.id).map(a=>productNameKey(a.name))||[];c.hidden=q?![productNameKey(c.dataset.p),...aliases].some(n=>n.includes(q)):i>=14;});};
+  host.querySelectorAll('.chip').forEach(button=>{
+    button.onclick=()=>{input.value=button.dataset.p;show();updateProdProg(el);syncQuickProducts();const qty=el.querySelector('.pb-prod');qty.scrollIntoView({block:'center'});qty.focus();};
+    if(!S.productCatalog)bindLongPress(button,()=>{if(removePreset('products',button.dataset.p))button.remove();});
+  });
+  input.oninput=()=>{show();updateProdProg(el);};show();
+}
+async function loadProductCatalog(){
+  const epoch=storeEpoch,seq=++productCatalogRead,drv=driver;
+  if(drv.mode!=='gh'){S.productCatalogMode='legacy';renderProductCatalogNote();return;}
+  try{
+    const value=await drv.loadProductCatalog();assertContext(epoch);if(seq!==productCatalogRead)return;
+    if(value){
+      const next=parseProductCatalog(value);S.productCatalog=next;S.productCatalogSeen=true;S.productCatalogMode='ready';
+      const saved=LS.set('ilbo.cache.productCatalog',next),seen=LS.set('ilbo.cache.productCatalogSeen',true);
+      S.productCatalogMessage=saved&&seen?'':'이 기기에 목록을 보관하지 못했습니다.';
+    }else if(S.productCatalogSeen){S.productCatalogMode=S.productCatalog?'cached':'blocked';S.productCatalogMessage='서버의 관리 목록을 찾지 못했습니다. 관리자에게 확인해 주세요.';}
+    else{S.productCatalog=null;S.productCatalogMode='legacy';S.productCatalogMessage='';}
+  }catch(e){
+    if(epoch!==storeEpoch||seq!==productCatalogRead)return;
+    S.productCatalogMode=S.productCatalog?'cached':'blocked';S.productCatalogMessage='관리 품목을 확인하지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.';
+  }
+  if(epoch!==storeEpoch||seq!==productCatalogRead)return;
+  renderProductCatalogNote();$$('#prodBlocks .pb').forEach(refreshProductChips);
+}
 
 /* ================= 데이터 ================= */
 let loadSeq = 0, refreshing = 0;   /* refreshing = 진행 중인 조회 수 (저장의 loadSeq++ 와 분리) */
@@ -1334,6 +1435,7 @@ function prefetchAround(date){
 }
 async function loadPresets(){
   const epoch = storeEpoch, drv = driver;
+  const catalogTask=loadProductCatalog();
   /* 공유 모드: 기기에 보관된 목록을 먼저 보여주고(즉시) 서버 응답으로 갱신 */
   if(driver.mode === 'gh' && !S.presetsShown){
     const c = LS.get('ilbo.cache.presets', null);
@@ -1351,7 +1453,7 @@ async function loadPresets(){
     }
   }
   S.presets.workers ||= []; S.presets.products ||= []; S.presets.parts ||= []; S.presets.inactive ||= [];
-  renderMeChips(); renderNotice();
+  renderMeChips(); renderNotice();await catalogTask;
 }
 /* 재직 명단 = 전체 이름 − 체크 해제(inactive) */
 function activeWorkers(){
@@ -1827,8 +1929,8 @@ function renderInput(){
 }
 
 /* ================= 기록 폼 (작업자 1명 + 제품 블록 여러 개) ================= */
-function prodsList(){ return [...new Set([...S.rows.map(r=>r.product), ...(S.presets.products||[])])].filter(Boolean).slice(0,14); }
-function prodsListAll(){ return [...new Set([...S.rows.map(r=>r.product), ...(S.presets.products||[])])].filter(Boolean).slice(0,40); }
+function prodsList(){ return prodsListAll().slice(0,14); }
+function prodsListAll(){ return catalogProductNames(S.productCatalog,[...S.rows.map(r=>r.product),...(S.presets.products||[])]); }
 function partsList(){ return [...new Set([...(S.presets.parts||[]), '상형1','하형1'])].filter(Boolean).slice(0,10); }
 function segBtns(){ return ['○','△','Ⅹ'].map(v=>`<button type="button" data-v="${v}">${v}</button>`).join(''); }
 function blockHTML(){
@@ -1943,6 +2045,7 @@ function bindLongPress(btn, fn){
   btn.addEventListener('contextmenu', e => e.preventDefault());
 }
 function removePreset(kind, value){
+  if(kind==='products'&&S.productCatalog){toast('품명 추가·수정은 생산일정 앱의 관리 탭에서 합니다.');return false;}
   let op;
   if(kind === 'workers'){
     /* 이름은 지우지 않고 '명단에서 제외' — 설정 > 부서 명단에서 다시 켤 수 있음 */
@@ -1975,18 +2078,9 @@ function addBlock(row){
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
   el.querySelector('.pb-toggle').onclick=()=>expandProduct(el,el.querySelector('.pb-body').hidden);
-  /* 칩은 최근 순 14개만 보이고, 제품명을 치면 전체 목록(40개)에서 걸러 보여줌 */
+  /* 최근 14개를 먼저 표시하고, 검색은 관리 품목 전체와 별칭을 사용한다. */
   const prodIn = el.querySelector('.pb-product');
-  el.querySelector('.pb-prodchips').innerHTML = prodsListAll().map((p,i)=>`<button type="button" class="chip" data-p="${esc(p)}"${i>=14?' hidden':''}>${esc(p)}</button>`).join('');
-  const showChips = q => el.querySelectorAll('.pb-prodchips .chip').forEach((c,j) => { c.hidden = q ? !c.dataset.p.toUpperCase().includes(q) : j >= 14; });
-  el.querySelectorAll('.pb-prodchips .chip').forEach(b => {
-    b.onclick = () => {
-      prodIn.value = b.dataset.p; showChips(''); updateProdProg(el); syncQuickProducts();
-      const q = el.querySelector('.pb-prod'); q.scrollIntoView({block:'center'}); q.focus();   /* 바로 생산량 숫자 키패드 */
-    };
-    bindLongPress(b, () => { if(removePreset('products', b.dataset.p)) b.remove(); });
-  });
-  prodIn.addEventListener('input', () => { showChips(prodIn.value.trim().toUpperCase()); updateProdProg(el); });
+  refreshProductChips(el);
   el.querySelector('.pb-partchips').innerHTML = partsList().map(p=>`<button type="button" class="chip" data-p="${esc(p)}">${esc(p)}</button>`).join('');
   el.querySelectorAll('.pb-partchips .chip').forEach(b => b.onclick = () => { el.querySelector('.pb-defpart').value = b.dataset.p; });
   el.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
@@ -2097,7 +2191,12 @@ function collectBlock(el, i){
     fieldErr(el.querySelector('.pb-product'), `제품 ${i+1}의 제품명을 입력하세요`);
     return null;
   }
-  if(/^[\x20-\x7E]+$/.test(product)) product = product.toUpperCase();   /* 영문 코드 대문자 통일 */
+  let productFields;
+  try{
+    if(driver.mode==='gh'&&!S.productCatalog&&S.productCatalogMode!=='legacy')throw Error('관리 품목 목록을 확인한 뒤 저장해 주세요. 연결을 확인하고 기록을 다시 열어 주세요.');
+    const previous=S.rows.find(r=>r.id===el.dataset.rid);
+    productFields=resolveFieldProduct(S.productCatalog,product,previous);product=productFields.product;
+  }catch(e){fieldErr(el.querySelector('.pb-product'),`제품 ${i+1}: ${e.message}`);return null;}
   if(blockBadMark(el) && !el.querySelector('.pb-remark').value.trim()){
     fieldErr(el.querySelector('.pb-remark'), `제품 ${i+1}: △·Ⅹ 체크 시 비고(사유)를 적어주세요`);
     return null;
@@ -2117,7 +2216,7 @@ function collectBlock(el, i){
   const scrap = numField(el, 'pb-scrap', '불량석고량', i); if(!scrap.ok) return null;
   const defq = numField(el, 'pb-defqty', '불량수량', i);  if(!defq.ok) return null;
   return {
-    product,
+    ...productFields,
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -2170,9 +2269,10 @@ async function updateRecentBtn(auto){
     if(rows === null) continue;
     const mine = orderRows(rows).filter(r => r.worker === worker && !r.off);
     if(!mine.length) continue;
-    const prods = [...new Set(mine.map(r => r.product).filter(Boolean))];
+    const recentName=n=>S.productCatalog?(catalogProduct(S.productCatalog,n)?.active?catalogProduct(S.productCatalog,n).name:''):n;
+    const prods = [...new Set(mine.map(r=>recentName(r.product)).filter(Boolean))];
     if(!prods.length) break;
-    const lastQ = {}; mine.forEach(r => { if(r.product) lastQ[r.product] = r.prod; });   /* 제품별 지난번 수량 → 힌트 */
+    const lastQ = {}; mine.forEach(r => { const name=recentName(r.product);if(name)lastQ[name]=r.prod; });   /* 수량은 힌트로만 사용 */
     box.innerHTML = `<button type="button" class="recent-btn">↩ ${esc(worker)}님 ${d.getMonth()+1}/${d.getDate()} 제품 ${prods.length}개 그대로 불러오기<br><span>${esc(prods.slice(0,4).join(', '))}${prods.length>4 ? ' 외 '+(prods.length-4)+'개' : ''}</span></button>`;
     box.hidden = false;
     box.querySelector('.recent-btn').onclick = () => {
@@ -2218,6 +2318,7 @@ function openEntry(row, presetName, mode){
   S.entryScope=activeScope;S.entryDate=S.date;S.draftSaveFailed=false;
   ensureProgress();
   S.entryMode = mode === 'case' ? 'case' : null;
+  renderProductCatalogNote();
   const isCase = S.entryMode === 'case';
   $('#prodBlocks').hidden = isCase; $('#addProdBlock').hidden = isCase; $('#caseNote').hidden = !isCase;
   S.draftKey = undefined; S.draftOwn = false;
@@ -2421,7 +2522,7 @@ async function saveEntry(){
   }
   /* 처음 보는 제품명 → 오타 확인 (제품 목록이 어느 정도 쌓인 뒤부터) */
   const knownP = S.presets.products || [];
-  if(!S.editId && knownP.length >= 3){
+  if(!S.productCatalog && !S.editId && knownP.length >= 3){
     const unknown = [...new Set(datas.map(d => d.product).filter(pn => !knownP.includes(pn) && !S.rows.some(r => r.product === pn)))];
     if(unknown.length && !confirm(`"${unknown.join('", "')}" 은(는) 처음 보는 제품명입니다.\n\n[확인] 새 제품으로 등록하고 저장\n[취소] 돌아가서 확인 (제품 버튼에서 고르면 오타가 없습니다)`)){
        const el = els[datas.findIndex(d => d.product === unknown[0])]; expandProduct(el); el.scrollIntoView({block:'center'}); el.querySelector('.pb-product').focus(); return;
@@ -2431,7 +2532,7 @@ async function saveEntry(){
   const dayWord = S.date === todayStr() ? '오늘' : '이 날';
   if(!S.editId){
     for(const d of datas){
-      const dup = S.rows.find(r => !r.off && r.worker === worker && r.product === d.product);
+      const dup = S.rows.find(r => !r.off && r.worker === worker && (catalogProduct(S.productCatalog,r.product)?.name||r.product) === d.product);
       if(dup){
         if(!confirm(`${dayWord} ${worker}님의 "${d.product}" 기록이 이미 있습니다 (생산 ${dup.prod || 0}조).\n\n[확인] 추가로 또 등록\n[취소] 돌아가기 (기존 기록을 고치려면 목록에서 그 기록을 누르세요)`)) return;
       }
