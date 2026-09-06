@@ -1288,26 +1288,57 @@ function setupFieldServerImport(){
   let req;
   try{req=JSON.parse(b64uD(m[1]));}catch(e){return;}
   if(req.server!==FIELD_BRIDGE||typeof req.nonce!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.nonce))return;
-  fieldSetup={nonce:req.nonce,opener:window.opener};
+  cancelFieldServerHandoff();
+  fieldSetup={nonce:req.nonce,opener:window.opener,hash:location.hash};
   openSettings();
   let box=$('#fieldServerImport');
   if(!box){box=document.createElement('div');box.id='fieldServerImport';box.className='set-note';$('#setStatus').after(box);}
-  box.innerHTML='<p>서버 관리 화면에 이 기기의 일보 연결을 전달합니다. 관리자 비밀번호 확인 후에만 진행됩니다.</p><button class="btn pri" type="button">서버에 연결 전달</button><p role="status"></p>';
-  const status=box.querySelector('[role="status"]'),button=box.querySelector('button');
-  button.onclick=async()=>{
-    if(!await requestFieldConnection())return;
-    const req=fieldSetup,cfg=ghCfg();
-    if(!req||!req.opener||req.opener!==window.opener||req.opener.closed){status.textContent='서버 관리 화면에서 다시 연결 가져오기를 열어 주세요.';return;}
-    if(!fieldTarget(cfg)||(!bridgeConfig(cfg)&&!cfg.token)){status.textContent='이 브라우저에는 지정된 일보 저장소 연결이 없습니다. 기존 현장 공유 링크를 같은 브라우저에서 연 뒤 다시 진행하세요.';return;}
-    try{
-      const payload={type:'field-share-connection',nonce:req.nonce,...(bridgeConfig(cfg)?{bridgeKey:cfg.bridgeKey}:{token:cfg.token})};
-      req.opener.postMessage(payload,FIELD_BRIDGE);
-      status.textContent=bridgeConfig(cfg)?'서버 연결을 전달했습니다. 서버 관리 화면으로 돌아가세요.':'연결 정보를 전달했습니다. 서버 관리 화면에서 설정을 완료하세요.';
-      fieldSetup=null;button.disabled=true;
-      history.replaceState(history.state,'',location.pathname+location.search);
-      lockFieldConnection();
-    }catch(e){status.textContent='연결 전달에 실패했습니다. 서버 관리 화면에서 다시 열어 주세요.';}
-  };
+  box.innerHTML='<p><b>처음 연결하는 기기</b>는 관리자 비밀번호 확인 후 아래 토큰 칸에 일보 저장소의 토큰을 입력하고 <b>저장</b>을 누르세요. 기존 연결이 있으면 아래 버튼으로 전달할 수 있습니다.</p><p>서버가 등록 완료를 확인한 뒤에만 이 기기의 연결을 저장합니다. 확인을 기다리는 동안 두 창을 열어 두세요.</p><button class="btn pri" type="button">서버에 연결 전달</button><p role="status" aria-live="polite"></p>';
+  box.querySelector('button').onclick=sendFieldServerConnection;
+}
+function fieldSetupInputs(){return{owner:$('#ghOwner').value.trim(),repo:$('#ghRepo').value.trim(),branch:$('#ghBranch').value.trim()||'main',token:$('#ghToken').value.trim(),exp:$('#ghExp').value||''};}
+function cancelFieldServerHandoff(){fieldSetup?.pending?.finish(false,'연결 확인을 중단했습니다. 설정을 다시 열고 재시도할 수 있습니다.');}
+async function sendFieldServerConnection(){
+  if(!await requestFieldConnection())return false;
+  const req=fieldSetup,box=$('#fieldServerImport'),status=box?.querySelector('[role="status"]'),button=box?.querySelector('button');
+  if(!req||!status)return false;
+  if(req.pending)return req.pending.promise;
+  if(!req.opener||req.opener!==window.opener||req.opener.closed||req.hash!==location.hash){status.textContent='서버 관리 화면에서 연결 가져오기를 다시 열어 주세요.';return false;}
+  const entered=fieldSetupInputs(),saved=ghCfg();
+  const cfg=entered.token?entered:saved;
+  if(!fieldTarget(cfg)||(!bridgeConfig(cfg)&&!cfg.token)){status.textContent='관리자 설정에 소유자 parkjkk, 저장소 ilbo-data, 브랜치 main과 해당 저장소 토큰을 입력한 뒤 저장을 누르세요.';return false;}
+  const epoch=storeEpoch,session=fieldConnectionSession,signature=JSON.stringify(saved),inputSignature=JSON.stringify(entered),requestId=crypto.randomUUID();
+  const current=()=>fieldSetup===req&&req.hash===location.hash&&req.opener===window.opener&&!req.opener.closed&&epoch===storeEpoch&&session===fieldConnectionSession&&fieldConnectionReady()&&signature===JSON.stringify(ghCfg())&&inputSignature===JSON.stringify(fieldSetupInputs());
+  let finish;
+  const promise=new Promise(resolve=>{
+    let done=false,timer;
+    finish=(ok,message)=>{
+      if(done)return;done=true;clearTimeout(timer);window.removeEventListener('message',receive);
+      if(req.pending?.finish===finish)req.pending=null;
+      if(fieldSetup===req&&$('#setOv').classList.contains('open')){status.textContent=message||'';button.disabled=!!ok;$('#ghSave').disabled=!fieldConnectionReady();}
+      resolve(ok);
+    };
+    function receive(event){
+      const data=event.data;
+      if(event.origin!==FIELD_BRIDGE||event.source!==req.opener||!data||data.type!=='field-share-result'||data.nonce!==req.nonce||data.requestId!==requestId)return;
+      if(!current()){finish(false,'연결 정보나 설정 상태가 바뀌어 응답을 적용하지 않았습니다. 다시 전달해 주세요.');return;}
+      if(data.ok!==true){finish(false,/expired|만료/i.test(String(data.error||''))?'서버의 연결 요청이 만료되었습니다. 서버 관리 화면에서 연결 가져오기를 다시 여세요.':'서버가 등록을 완료하지 못했습니다. 서버 관리 화면의 안내를 확인하고 다시 전달해 주세요.');return;}
+      const next={owner:'parkjkk',repo:'ilbo-data',branch:'main',transport:'bridge',bridgeKey:data.bridgeKey,v:Date.now(),src:'server'};
+      if(!bridgeConfig(next)){finish(false,'서버의 연결 확인 형식이 올바르지 않습니다. 다시 시도해 주세요.');return;}
+      try{saveConnection(next);}catch(e){finish(false,'서버 등록은 완료됐지만 이 기기에 연결을 저장하지 못했습니다. 저장공간을 비운 뒤 다시 전달해 주세요.');return;}
+      finish(true,'서버 등록과 이 기기 연결 저장이 완료되었습니다. 서버 관리 화면으로 돌아가세요.');
+      fieldSetup=null;
+      try{history.replaceState(history.state,'',location.pathname+location.search);}catch(e){}
+      lockFieldConnection();S.authError=false;initDriver();updateNetBanner();renderSetStatus();loadPresets();refreshDay(true,true);
+    }
+    window.addEventListener('message',receive);
+    timer=setTimeout(()=>finish(false,'서버 확인이 60초 안에 도착하지 않았습니다. 기존 연결은 그대로입니다. 서버 관리 화면의 상태를 확인한 뒤 다시 전달해 주세요.'),60000);
+  });
+  req.pending={promise,finish};button.disabled=true;$('#ghSave').disabled=true;
+  status.textContent='서버 등록 확인을 기다리는 중입니다… 아직 이 기기의 연결을 바꾸지 않았습니다.';
+  try{req.opener.postMessage({type:'field-share-connection',nonce:req.nonce,requestId,...(bridgeConfig(cfg)?{bridgeKey:cfg.bridgeKey}:{token:cfg.token})},FIELD_BRIDGE);}
+  catch(e){finish(false,'연결 정보를 전달하지 못했습니다. 서버 관리 화면에서 연결 가져오기를 다시 열어 주세요.');}
+  return promise;
 }
 let driver = localDriver;
 /* ---- 속도: 메모리 캐시 (세션 한정) ----
@@ -3403,6 +3434,7 @@ function fieldConnectionInputs(enabled){
   for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp','noticeIn','ghTest','ghSave','ghClear','noticeSave']) $('#'+id).disabled = !enabled;
 }
 function lockFieldConnection(){
+  if(typeof cancelFieldServerHandoff==='function')cancelFieldServerHandoff();
   fieldConnectionSession++;
   fieldConnectionGate?.lock();
   $('#ghAdv').open = false;
@@ -3412,7 +3444,7 @@ function lockFieldConnection(){
 }
 function fillFieldConnection(){
   if(!fieldConnectionGate?.unlocked) return;
-  const c = ghCfg() || {};
+  const c = ghCfg() || (typeof fieldSetup!=='undefined'&&fieldSetup?{owner:'parkjkk',repo:'ilbo-data',branch:'main'}:{});
   $('#ghOwner').value = c.owner||''; $('#ghRepo').value = c.repo||'';
   $('#ghBranch').value = c.branch||'main'; $('#ghToken').value = c.token||'';
   $('#ghExp').value = c.exp || '';
@@ -3518,6 +3550,7 @@ function tokenDaysLeft(){
 }
 async function ghSaveCfg(){
   if(!await requestFieldConnection()) return;
+  if(typeof fieldSetup!=='undefined'&&fieldSetup)return sendFieldServerConnection();
   if(bridgeConfig(ghCfg())){closeSettings();toast('서버 연결이 유지됩니다');return;}
   const session=fieldConnectionSession,epoch=storeEpoch;
   const cfg = {owner:$('#ghOwner').value.trim(), repo:$('#ghRepo').value.trim(), branch:$('#ghBranch').value.trim()||'main', token:$('#ghToken').value.trim(), exp:$('#ghExp').value||'', v:Date.now()};
@@ -3525,7 +3558,7 @@ async function ghSaveCfg(){
   if(fieldTarget(cfg)){
     try{
       const res=await ghFetch(FIELD_BRIDGE+'/api/field',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exchange',legacyToken:cfg.token,owner:'parkjkk',repo:'ilbo-data',branch:'main'})});
-      if(!res.ok)throw new Error('서버 연결을 준비하지 못했습니다. 서버 관리 화면에서 일보 연결을 확인하세요.');
+      if(!res.ok)throw new Error(res.status===503?'서버의 일보 연결을 아직 사용할 수 없습니다. 처음 연결한다면 서버 관리 화면에서 연결 가져오기를 열어 토큰을 등록하세요. 이미 연결했다면 인터넷·서버 상태를 확인하고 다시 시도하세요.':'서버 연결을 확인하지 못했습니다. 인터넷 연결과 서버 관리 화면을 확인하세요.');
       const j=await res.json();
       const next={owner:'parkjkk',repo:'ilbo-data',branch:'main',transport:'bridge',bridgeKey:j.key,v:Date.now()};
       if(!bridgeConfig(next))throw new Error('서버 연결 응답을 확인하지 못했습니다.');
@@ -3708,7 +3741,7 @@ function init(){
   $('#setClose').onclick = () => closeSettings(false);
   window.addEventListener('online', () => { outboxFlush(); presetsRetryFlush(); pollFieldRevision(); });
   /* 열린 탭 주소창에 새 공유 링크를 붙여넣어도 새로고침 없이 적용 */
-  window.addEventListener('hashchange', () => { if(/[#&]fieldSetup=/.test(location.hash)){lockFieldConnection();setupFieldServerImport();return;} if(!/[#&]s=/.test(location.hash)) return; fieldSetup=null;lockFieldConnection(); setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); migrateFieldBridge(true); });
+  window.addEventListener('hashchange', () => { if(/[#&]fieldSetup=/.test(location.hash)){lockFieldConnection();setupFieldServerImport();return;} cancelFieldServerHandoff();if(!/[#&]s=/.test(location.hash)) return; fieldSetup=null;lockFieldConnection(); setupFromHash(); S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner(); loadPresets(); refreshDay(false, true); migrateFieldBridge(true); });
   $('#ghTest').onclick = ghTest;
   $('#ghSave').onclick = ghSaveCfg;
   $('#ghClear').onclick = ghClearCfg;
