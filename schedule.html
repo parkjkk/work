@@ -305,7 +305,7 @@ body.pgFocusMode{overflow:hidden}body.pgFocusMode>header,body.pgFocusMode .layou
 @media print{.workspaceMore{display:none!important}}
 
 /* The daily input grid fills its own frame; other compact ledgers remain centered. */
-@media screen{[data-sheet-id=production] .inputSheet{width:100%;min-width:var(--sheet-width)}}
+@media screen{[data-sheet-id=production] .inputSheet{width:100%;min-width:0}}
 .inputSheet td textarea[data-cell]{display:block;width:100%;min-height:31px;max-height:144px;resize:vertical;overflow:auto;border:0;border-radius:0;background:transparent;padding:5px 8px;font:inherit;color:inherit;line-height:1.45;white-space:pre-wrap}.inputSheet td textarea[data-cell]:focus{outline:2px solid var(--accent,#5264a3);outline-offset:-2px;background:#f5f7ff}.inputSheet td textarea[data-cell]:disabled{background:#f6f8fa;color:#65778a}.inputSheet td:has([data-cell=productMemo]){vertical-align:top}.inputSheet td.calculated[data-result=productMemo]{white-space:pre-wrap;text-align:left;overflow-wrap:anywhere}
 @media(max-width:700px){.inputSheet td textarea[data-cell]{font-size:16px}}
 
@@ -316,7 +316,7 @@ body.pgFocusMode #ilboSyncStatus{display:none!important}
 #ilboSyncStatus p{margin:6px 0 0}
 @media print{#ilboSyncStatus{display:none!important}}
 
-/* Mobile presentation only. Keep source rows, column widths and print layout intact. */
+/* Responsive presentation only. Keep source rows, input values and print layout intact. */
 @media screen and (max-width:720px){
  body.sheetWorkspace{--mobile-touch:44px;--mobile-index:44px}
  body.sheetWorkspace .layout{display:block;min-width:0}
@@ -649,6 +649,66 @@ body.pgFocusMode #ilboSyncStatus{display:none!important}
  body.sheetWorkspace .sheetEditor[data-sheet-id=production] .productionWorkerCell .productionWorkerName{font-size:12px}
  body.sheetWorkspace .sheetEditor[data-sheet-id=production] .productionWorkerCell select{width:64px}
  body.sheetWorkspace .ledgerReadTable{min-width:650px}
+}
+
+/* Fit the visible desktop/tablet grid to its actual frame, including at browser zoom.
+   Percentage columns share the remaining width; overflow is never merely hidden. */
+@media screen and (min-width:721px){
+ body.sheetWorkspace .sheetViewport>.inputSheet.sheetFitted{table-layout:fixed;width:min(100%,var(--sheet-width));min-width:0;max-width:100%;margin-inline:auto}
+ body.sheetWorkspace .inputSheet.sheetFitted>thead>tr>th:first-child,
+ body.sheetWorkspace .inputSheet.sheetFitted>tbody>tr[data-row]>th:first-child{width:var(--sheet-index-width);min-width:0;padding-inline:2px}
+ body.sheetWorkspace .inputSheet.sheetFitted>tbody>tr>td:nth-child(2){position:static}
+ body.sheetWorkspace .inputSheet.sheetFitted>thead>tr>th:nth-child(2){left:auto}
+ body.sheetWorkspace .inputSheet.sheetFitted td.productionWorkerCell{position:static;left:auto}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionWorkerCell>div{padding:5px 4px;max-width:100%}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionWorkerName{overflow-wrap:anywhere;max-width:100%}
+ body.sheetWorkspace .inputSheet.sheetFitted td :is(input,select,textarea){min-width:0;max-width:100%;padding-inline:4px}
+ body.sheetWorkspace .inputSheet.sheetFitted td.calculated{padding-inline:4px;overflow-wrap:anywhere}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;min-width:0}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>strong{flex-basis:100%;white-space:normal;overflow-wrap:anywhere}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>small{white-space:normal;overflow-wrap:anywhere}
+ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button{max-width:100%;white-space:normal;margin-left:auto}
+ body.sheetWorkspace .inputSheet.sheetFitted .sheetGroupBar{width:100%;max-width:100%;left:0;box-sizing:border-box;flex-wrap:wrap}
+ body.sheetWorkspace .inputSheet.sheetFitted [data-sheet-group-actions]{min-width:0;max-width:100%;flex-wrap:wrap}
+ body.sheetWorkspace .inputSheet.sheetFitted textarea[data-cell]{overflow-wrap:anywhere}
+ body.sheetWorkspace .ledgerReadTable{table-layout:fixed;width:100%;min-width:0}
+ body.sheetWorkspace .ledgerReadTable :is(th,td){min-width:0;padding-inline:6px;overflow-wrap:anywhere;white-space:normal}
+ body.sheetWorkspace .ledgerReadTable .ledgerReason{min-width:0}
+ body.sheetWorkspace .ledgerReadTable button{max-width:100%;white-space:normal;padding-inline:4px}
+ body.sheetWorkspace .tableWrap>table:not(.pgMachines){table-layout:fixed;width:100%;min-width:0}
+ body.sheetWorkspace .tableWrap>table:not(.pgMachines) :is(th,td){min-width:0;white-space:normal;overflow-wrap:anywhere;padding-inline:5px}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:first-child{width:14%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(2),body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(3){width:7%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(4),body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(5){width:8%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(6){width:9%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(7){width:13%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:nth-child(8){width:12%}
+ body.sheetWorkspace .ledgerStockPanel .tableWrap>table th:last-child{width:22%}
+ /* Many optional columns wrap below each record without hiding any input or moving nodes. */
+ body.sheetWorkspace .sheetViewport>.inputSheet.sheetStacked{display:block}
+ body.sheetWorkspace .inputSheet.sheetStacked>colgroup{display:none}
+ body.sheetWorkspace .inputSheet.sheetStacked>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody{display:block}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr{display:block}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));padding:0 8px 8px;gap:1px 8px;border-bottom:2px solid #cbd5e6}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child{position:static;display:flex;align-items:center;gap:8px;width:auto;min-width:0;height:auto;grid-column:1/-1;text-align:left;background:#f1f4f9;border:0;padding:4px 0}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child>button{width:34px;flex:none}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>th:first-child::after{content:attr(data-sheet-row-title);font-weight:600;color:#39496c}
+ body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>td{display:block;position:static;min-width:0;width:auto;height:auto;border:1px solid #e3eaf0;text-align:left;align-self:stretch;padding:3px}
+ body.sheetWorkspace .inputSheet.sheetStacked td[data-sheet-label]::before{content:attr(data-sheet-label);display:block;font-size:11px;line-height:1.5;color:#6c7688;white-space:normal;padding:2px 4px}
+ body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell>div{position:static;padding:3px 4px}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetGroupRow>th{display:block;width:100%;min-width:0;position:static}
+ body.sheetWorkspace .inputSheet.sheetStacked .sheetRowNote>td{display:block;width:100%}
+ body.sheetWorkspace .inputSheet.sheetStacked td:has(textarea[data-cell]){grid-column:span 2}
+}
+@media screen and (min-width:721px) and (max-width:980px){
+ body.sheetWorkspace .productionDateRail{grid-template-columns:repeat(16,minmax(0,1fr));grid-auto-flow:row;grid-auto-columns:auto}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace [data-sheet-id=plaster-month] .sheetViewport>.inputSheet.sheetFitted{width:min(100%,var(--sheet-width));min-width:0;max-width:100%;table-layout:fixed}
+ body.sheetWorkspace [data-sheet-id=plaster-month] .inputSheet td.calculated{padding:5px 3px;font-size:12px;overflow-wrap:anywhere}
+ body.sheetWorkspace [data-sheet-id=plaster-month] .inputSheet td input{padding-inline:3px}
+ body.sheetWorkspace [data-sheet-id=plaster-month] .inputSheet thead th{padding-inline:3px;font-size:11px}
 }
 
 /* Visual finish only. Responsive geometry, printing and schedule meaning colors stay in their own styles. */
@@ -1641,7 +1701,7 @@ function dailyView(){const rows=m().rows.filter(r=>!filter||[r.worker,r.product,
 function sourceView(){const cached=state.archive.flatMap(s=>Object.entries(s.cells).filter(([a,c])=>c.error).map(([a,c])=>({sheet:s.name,cell:a,value:c.v}))),diffs=C.inventory(state,month).filter(r=>r.original!=null&&Math.abs(r.current-r.original)>1e-6);return head('원본·전환 점검','원본 자료, 현재 계산 차이, 원본 대조 범위을 구분합니다.')+`<div class="stats">${metric('가져온 시트',state.archive.length,'개','숨김 시트 포함')}${metric('기준 품목',state.products.length,'개','관리 기준표에서 읽음')}${metric('현재월 재고 차이',diffs.length,'품목','원천 재계산 vs 저장된 값')}${metric('원본 오류 셀',cached.length,'개','가져오기 전 Excel 저장값')}</div><section class="card"><h2>기능 전환 상태</h2>${table(['기능','현재 상태','추가 대조'],[['엑셀 파일 읽기·원본 보관','구현','과거 월의 서로 다른 열 배치는 조회로 보존'],['생산일보 입력 흐름·기기 저장','웹 입력 연결','기존 원장과 수식 대조'],['재고·불출·실사·보고서 조회','입력·조회·반영 연결','집계 범위 차이와 원본 인쇄 일치'],['자동일정·동시그룹·수기바','웹 자동계산 연결','복합 일정은 원본 VBA 실제 실행 결과와 최종 비교 필요'],['새달·실사반영·월마감·연도전환','웹 처리 연결','실사·마감·이월 처리 이력 및 마감 스냅샷'],['GitHub 읽기·충돌방지 저장 모듈','기기 대기열·충돌 차단 연결','가짜 HTTP 검증 후 실제 저장소 연결 필요']].map(r=>tr(r.map(x=>td(esc(x))))))}</section>${state.migrationWarnings?.length?`<section class="card"><h2>원본 일정 확인사항</h2>${table(['출처','내용'],state.migrationWarnings.map(w=>tr([td(esc(w.source)),td(esc(w.message))])))}</section>`:''}<section class="card"><h2>원본 시트 조회</h2><div class="toolbar"><select id="sheetSelect" aria-label="원본 시트 선택">${state.archive.filter(s=>s.name!=='사용설명서').map(s=>`<option ${s.name===m().name?'selected':''}>${esc(s.name)}</option>`).join('')}</select><span class="subtle">저장 당시 값 · 수식 재계산 없음</span></div><div id="archiveView"></div></section><section class="card"><h2>원본 오류 위치</h2>${table(['시트','셀','저장된 오류'],cached.slice(0,100).map(r=>tr([td(esc(r.sheet)),td(esc(r.cell)),td(esc(r.value))])))}<p class="footerNote">원본 오류와 웹 구현 오류를 구분합니다. 오류값은 실제 생산·재고 숫자로 사용하지 않습니다.</p></section>`}
 function connectionView(first=false){let config={};try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'{}')}catch(e){}return `<div class="top"><div><h1>${first?'조형 생산관리 시작하기':'연결·백업'}</h1><p class="subtle">웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.</p></div></div><section class="card"><h2>데이터 저장소 연결</h2><div class="formGrid"><label>GitHub 계정<input id="owner" value="${esc(config.owner||'parkjkk')}" placeholder="계정 이름" autocomplete="off"></label><label>데이터 저장소<input id="repo" value="${esc(config.repo||'schedule-data')}" autocomplete="off"></label><label>브랜치<input id="branch" value="${esc(config.branch||'main')}"></label><label>시작할 월<input id="firstMonth" type="month" value="${today().slice(0,7)}"></label><label class="full">접근 토큰<input id="token" type="password" autocomplete="off" placeholder="이 데이터 저장소의 Contents 읽기·쓰기 권한"></label><label class="full" style="display:block;font-weight:400"><input id="rememberConnection" type="checkbox"> 내 기기에서 연결 유지</label></div><p class="footerNote">업무 데이터용 비공개 저장소를 연결합니다. 새 저장소는 README를 포함해 생성해야 합니다. 연결 유지 선택 시 토큰은 이 브라우저에 저장되며 HTML·GitHub 자료·공유주소에는 포함되지 않습니다.</p><div class="actions"><button class="primary" data-action="connect">연결하고 자료 열기</button><span id="connectionResult" class="subtle"></span></div></section>${first?'<section class="card"><h2>HTML 먼저 준비하기</h2><p>저장소 연결 전 기준정보와 입력 화면을 준비할 수 있습니다. 자료는 이 기기에 보관하며 연결 후 최초 이전으로 저장합니다.</p><button data-action="startDraft">연결 전 입력 시작</button></section>':`<section class="card"><h2>저장 상태</h2><p>${esc(connectionStatus)}</p><div class="actions"><button data-action="retry">대기 자료 다시 전송</button><button data-action="refresh">GitHub 최신자료 읽기</button><button data-action="remoteBackup">GitHub 전체자료 백업</button></div><div id="conflictList"></div></section><section class="card"><h2>최초 이전 · 복구</h2><p class="subtle">엑셀은 기존자료를 처음 옮길 때만 사용합니다. 평소 입력과 수정은 웹 화면에서 진행합니다.</p><div class="actions"><button data-action="import">최초 엑셀자료 이전</button><button data-action="migrate">이 기기 이전자료를 GitHub에 저장</button><button data-action="export">기기 보관자료 내려받기</button></div><p class="source">${esc(state?.source||'')}</p></section>`}`}
 function settingsView(){return connectionView(false)+'<details class="card"><summary>기존 엑셀과 전환 내용 확인</summary><p class="footerNote">최초 이전한 원본 시트와 계산 대조 범위를 확인합니다.</p><button data-action="source">원본·전환 점검 열기</button></details>'}
-function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){page=a;render();return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
+function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){if(a==='report'&&b.dataset.workspacePanel==='plaster'&&typeof workspaceScreen!=='undefined')workspaceScreen.panels.set('report','plaster');page=a;render();return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
 function bindPage(){const search=$('#search');if(search)search.oninput=e=>{const pos=e.target.selectionStart;filter=e.target.value;render();$('#search').focus();$('#search').setSelectionRange(pos,pos)};document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{try{await entry(m().rows.find(r=>r.id===b.dataset.edit))}catch(e){toast(e.message)}});if(page==='settings')showConflicts();if(page==='source'){$('#sheetSelect').onchange=showArchive;showArchive()}}
 function showArchive(){if(!state.archive.length){$('#archiveView').innerHTML='<p class="empty">최초 이전한 원본은 GitHub 전체자료 백업에 포함됩니다. 현재 화면은 웹 원장을 사용합니다.</p>';return}const s=state.archive.find(s=>s.name===$('#sheetSelect').value),maxR=Math.min(300,Math.max(...Object.keys(s.cells).map(a=>+a.match(/\d+/)[0]))),maxC=Math.min(44,Math.max(...Object.keys(s.cells).map(a=>C.ci(a.match(/[A-Z]+/)[0]))));const rows=[];for(let r=1;r<=maxR;r++){if(!Object.keys(s.cells).some(a=>+a.match(/\d+/)[0]===r))continue;rows.push(tr([td(r,'source'),...Array.from({length:maxC},(_,i)=>{const cell=s.cells[C.col(i+1)+r],v=cell?.v;return td(`<span title="${esc(C.col(i+1)+r)}">${esc(v==null?'':typeof v==='number'?fmt(v,4):String(v).replace(/(?:암호|비밀번호|password)\s*[:=]?\s*\d+/gi,'보호정보 생략'))}</span>`)})]))}$('#archiveView').innerHTML=`<div class="archivePane">${table(['행',...Array.from({length:maxC},(_,i)=>C.col(i+1))],rows)}</div><p class="footerNote">앞 44열·300행 조회. 내려받는 전체 기기자료에는 모든 시트의 읽은 셀 값이 포함됩니다.</p>`}
 function csv(headers,rows,name){const safe=x=>{let s=String(x??'');if(/^[=+@-]/.test(s)&&isNaN(Number(s)))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'};download('\ufeff'+[headers,...rows].map(r=>r.map(safe).join(',')).join('\r\n'),name+'_'+month+'.csv','text/csv;charset=utf-8')}
@@ -2131,7 +2191,7 @@ dailyView=function(){
   pasteValue:(row,column,value,previous)=>['date','worker','lot'].includes(column.key)&&!String(value??'').trim()&&previous?previous[column.key]||'':value,
   summary:draft=>{const rows=draft.rows.filter(r=>!B.blank(r)&&!draft.deleted.some(d=>d.id===r.id));return`입력 ${rows.length}행 · 생산 ${fmt(C.sum(rows.filter(r=>!String(r.product).includes('부속')),r=>r.pours))}조 · 석고 ${fmt(C.sum(rows,r=>C.daily(productionPreview(r,key)).plaster))}kg · 불량 ${fmt(C.sum(rows,r=>C.daily(productionPreview(r,key)).defect))}kg`}
  });
- return head('생산일보','날짜별로 작업자·품목을 모아 입력하고 월 전체를 한 번에 저장합니다.',`<button data-action="master" class="productionMasterLink">관리 · 품명·석고량</button><button data-action="dailyPrint">수기일보 인쇄</button><button data-action="csvDaily">표 내려받기</button>`)+(!products.length||!workers.length?'<div class="setupLine"><span>관리에서 작업자와 품명을 등록하면 이 표의 선택 목록에 표시됩니다.</span></div>':'')+grid+`<details class="sheetHelp"><summary>입력 방법과 계산 기준</summary><p>날짜를 선택해 + 날짜 추가를 누르고 이전 입력일 구성을 가져오면 작업자·품명·LOT가 준비됩니다. 생산량·계획·근무·불량은 복사하지 않습니다. 입력 대기 행은 기기 초안에만 남고 수량 등을 입력한 행만 원장에 저장됩니다. 같은 구성을 다시 가져와도 기존 행을 덮어쓰거나 중복 추가하지 않습니다.</p><p>날짜 아래 같은 작업자의 품목을 모아 보여 줍니다. + 품목은 해당 작업자의 빈 행, + 작업자는 이름을 선택할 새 행을 추가합니다. 작업자 이름은 왼쪽 묶음 칸에 한 번 표시하며 개별 기록의 이름은 상세 열의 작업자 정정에서 고칩니다. 같은 작업자의 빈 새 행은 앞선 작업자·LOT를 이어받고 직접 지정한 값은 유지합니다. Tab은 옆 칸, Enter는 아래 칸이며 작업자 묶음 끝에서는 같은 작업자의 행이 추가됩니다. 날짜 포함 월 전체 붙여넣기는 선택 행이 없으면 빈 행에만 적용합니다. 혼수율·불량·단가·날짜를 켜면 추가 항목과 개별 날짜를 수정할 수 있습니다.</p><p>메모는 원본 Excel의 품명별 메모를 표시합니다. 같은 품명은 날짜·작업자·월이 달라도 같은 메모를 사용하며, 메모를 수정한 뒤 변경 저장을 누르면 관리·재고에도 반영됩니다. 메모는 모바일에서는 Enter, PC에서는 Shift+Enter로 줄을 바꿉니다. 생산량이 없는 준비 행에서 메모만 적어도 품목 메모만 저장됩니다. 월 전체 붙여넣기 순서는 기존대로 유지하고 메모는 해당 칸에서 따로 입력합니다.</p><p>현장일보에서 연동한 불량은 상세 열의 현장 불량 총 kg·현장 불량 개수에 표시합니다. 0은 실제 입력한 0, —는 미기록입니다. 총 kg은 kg/개로 나누어 추정하지 않으며, 불량률은 실제 개수 ÷ 탈형 개수로 계산합니다. 연동한 값은 현장일보에서 수정한 뒤 다시 연동하세요. 해당 현장 항목 자체가 없는 기존 기록은 직접 입력한 불량 kg/개 × 불량 개수를 사용합니다.</p><p>단위의 관리 연동 표시는 미마감 기록의 품명 기준을 따릅니다. 직접 수정한 단위와 출처 없는 기존 기록은 당시 값을 유지합니다. 초안은 월·저장소별로 기기에 보관하며 변경 저장 후 일정·재고에 반영됩니다.</p><button data-action="newEntry">한 작업자 입력창 열기</button></details>`;
+ return head('생산일보','날짜별로 작업자·품목을 모아 입력하고 월 전체를 한 번에 저장합니다.',`<button data-action="report" data-workspace-panel="plaster" data-workspace-primary class="primary">실석고사용량 입력</button><button data-action="master" class="productionMasterLink">관리 · 품명·석고량</button><button data-action="dailyPrint">수기일보 인쇄</button><button data-action="csvDaily">표 내려받기</button>`)+(!products.length||!workers.length?'<div class="setupLine"><span>관리에서 작업자와 품명을 등록하면 이 표의 선택 목록에 표시됩니다.</span></div>':'')+grid+`<details class="sheetHelp"><summary>입력 방법과 계산 기준</summary><p>날짜를 선택해 + 날짜 추가를 누르고 이전 입력일 구성을 가져오면 작업자·품명·LOT가 준비됩니다. 생산량·계획·근무·불량은 복사하지 않습니다. 입력 대기 행은 기기 초안에만 남고 수량 등을 입력한 행만 원장에 저장됩니다. 같은 구성을 다시 가져와도 기존 행을 덮어쓰거나 중복 추가하지 않습니다.</p><p>날짜 아래 같은 작업자의 품목을 모아 보여 줍니다. + 품목은 해당 작업자의 빈 행, + 작업자는 이름을 선택할 새 행을 추가합니다. 작업자 이름은 왼쪽 묶음 칸에 한 번 표시하며 개별 기록의 이름은 상세 열의 작업자 정정에서 고칩니다. 같은 작업자의 빈 새 행은 앞선 작업자·LOT를 이어받고 직접 지정한 값은 유지합니다. Tab은 옆 칸, Enter는 아래 칸이며 작업자 묶음 끝에서는 같은 작업자의 행이 추가됩니다. 날짜 포함 월 전체 붙여넣기는 선택 행이 없으면 빈 행에만 적용합니다. 혼수율·불량·단가·날짜를 켜면 추가 항목과 개별 날짜를 수정할 수 있습니다.</p><p>메모는 원본 Excel의 품명별 메모를 표시합니다. 같은 품명은 날짜·작업자·월이 달라도 같은 메모를 사용하며, 메모를 수정한 뒤 변경 저장을 누르면 관리·재고에도 반영됩니다. 메모는 모바일에서는 Enter, PC에서는 Shift+Enter로 줄을 바꿉니다. 생산량이 없는 준비 행에서 메모만 적어도 품목 메모만 저장됩니다. 월 전체 붙여넣기 순서는 기존대로 유지하고 메모는 해당 칸에서 따로 입력합니다.</p><p>현장일보에서 연동한 불량은 상세 열의 현장 불량 총 kg·현장 불량 개수에 표시합니다. 0은 실제 입력한 0, —는 미기록입니다. 총 kg은 kg/개로 나누어 추정하지 않으며, 불량률은 실제 개수 ÷ 탈형 개수로 계산합니다. 연동한 값은 현장일보에서 수정한 뒤 다시 연동하세요. 해당 현장 항목 자체가 없는 기존 기록은 직접 입력한 불량 kg/개 × 불량 개수를 사용합니다.</p><p>단위의 관리 연동 표시는 미마감 기록의 품명 기준을 따릅니다. 직접 수정한 단위와 출처 없는 기존 기록은 당시 값을 유지합니다. 초안은 월·저장소별로 기기에 보관하며 변경 저장 후 일정·재고에 반영됩니다.</p><button data-action="newEntry">한 작업자 입력창 열기</button></details>`;
 };
 
 // Inject after features.js and grid-ui.js, inside the shared app closure.
@@ -3051,7 +3111,7 @@ function workspacePanelGroup(anchor,groups,key){
 }
 function workspaceReportPanels(main,tools){
  const children=[...main.children],nodes=children.filter(el=>el.matches('section.card,details.card,.sheetEditor'));
- const groups=[{id:'monthly',label:'품목별 월 집계',nodes:[]},{id:'plaster',label:'실사용 석고 입력',nodes:[]},{id:'workers',label:'작업자·연간 집계',nodes:[]},{id:'history',label:'변경 이력',nodes:[]}];
+ const groups=[{id:'monthly',label:'품목별 월 집계',nodes:[]},{id:'plaster',label:'실석고사용량 입력',nodes:[]},{id:'workers',label:'작업자·연간 집계',nodes:[]},{id:'history',label:'변경 이력',nodes:[]}];
  for(const node of nodes){const title=node.querySelector('h2,summary')?.textContent||'',id=node.dataset.sheetId;const group=id==='plaster-month'||title.includes('일자별 석고')?groups[1]:title.includes('작업자별')||title.includes('년 월별')?groups[2]:title.includes('변경 이력')?groups[3]:groups[0];group.nodes.push(node)}
  workspacePanelGroup(main.querySelector('.stats')||tools,groups.filter(g=>g.nodes.length),'report');
 }
@@ -3061,7 +3121,7 @@ function workspaceSettings(main){
  if(connection){const details=document.createElement('details');details.className='card workspaceConnection';const summary=document.createElement('summary');summary.textContent=workspace?'저장소 연결 설정':'GitHub 저장소 연결';details.append(summary);connection.before(details);connection.querySelector('h2')?.remove();details.append(...connection.childNodes);connection.remove();details.open=!workspace}
 }
 function workspaceDailyActions(top){
- const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')):[];if(!buttons.length)return;
+ const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')&&!el.hasAttribute('data-workspace-primary')):[];if(!buttons.length)return;
  const menu=document.createElement('div'),toggle=document.createElement('button'),items=document.createElement('div');menu.className='workspaceMore';toggle.type='button';toggle.textContent='추가 기능';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','workspaceDailyMore');items.id='workspaceDailyMore';items.className='workspaceMoreItems';actions.append(menu);menu.append(toggle,items);items.append(...buttons);
  toggle.onclick=()=>{const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))};items.addEventListener('click',e=>{if(e.target.closest('button')){menu.classList.remove('open');toggle.setAttribute('aria-expanded','false')}});
 }
@@ -3169,11 +3229,37 @@ function mobileTools(host,buttons,title='도구'){
 function mobileRestoreTools(){for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear()}
 function mobileOverflow(wrapper){return wrapper.clientWidth>0&&wrapper.scrollWidth>wrapper.clientWidth+2}
 function mobileFitColumns(main,small){
- for(const table of main.querySelectorAll('[data-sheet-id="production"] .inputSheet')){
+ for(const table of main.querySelectorAll('.sheetEditor .inputSheet')){
   const columns=[...table.querySelectorAll('col[data-sheet-col]')];if(!columns.length)continue;
-  const widths={__rowNumber:44,workerGroup:72,product:108,pours:60,plan:64};let total=0;
-  for(const col of columns){col.dataset.baseWidth??=col.style.width;const base=parseFloat(col.dataset.baseWidth);if(!Number.isFinite(base))continue;const width=small?(widths[col.dataset.sheetCol]??base):base;col.style.width=width+'px';total+=width}
-  if(total)table.style.setProperty('--sheet-width',total+'px');
+  const sheetId=table.closest('.sheetEditor')?.dataset.sheetId,production=sheetId==='production',fit=!small||sheetId==='plaster-month';
+  const widths={__rowNumber:44,workerGroup:72,product:108,pours:60,plan:64};
+  const bases=columns.map(col=>{col.dataset.baseWidth??=col.style.width;const base=parseFloat(col.dataset.baseWidth);return Number.isFinite(base)?small&&production?(widths[col.dataset.sheetCol]??base):base:100});
+  const total=bases.reduce((sum,width)=>sum+width,0),viewport=table.closest('.sheetViewport'),available=viewport?.clientWidth||0;
+  table.classList.toggle('sheetFitted',fit);
+  const stacked=!small&&available>0&&total>available*1.65;
+  table.classList.toggle('sheetStacked',stacked);
+  if(stacked){
+   const labels=new Map([...table.querySelectorAll('thead th[data-sheet-col]')].map(th=>[th.dataset.sheetCol,th.textContent]));let worker='';
+   for(const row of table.querySelectorAll('tbody tr[data-row]')){
+    const workerCell=row.querySelector('.productionWorkerCell');
+    if(workerCell)worker=workerCell.querySelector('.productionWorkerName')?.textContent||workerCell.querySelector('select')?.value||'';
+    const number=row.querySelector('th');if(number)number.setAttribute('data-sheet-row-title',production?worker:'');
+    for(const cell of row.querySelectorAll('td')){
+     const key=cell.classList.contains('productionWorkerCell')?'workerGroup':cell.classList.contains('rowActions')?'__rowAction':cell.dataset.result||cell.querySelector('[data-cell]')?.dataset.cell;
+     if(key&&labels.has(key))cell.setAttribute('data-sheet-label',labels.get(key));
+    }
+   }
+  }
+  if(fit&&available>0){
+   const target=production?available:Math.min(total,available),index=small?44:34,fixed=columns.map(col=>col.dataset.sheetCol==='__rowNumber'?index:col.dataset.sheetCol==='__rowAction'?34:null),fixedTotal=fixed.reduce((sum,width)=>sum+(width||0),0),flexTotal=bases.reduce((sum,width,i)=>sum+(fixed[i]==null?width:0),0);
+   columns.forEach((col,i)=>{const width=fixed[i]??Math.max(0,target-fixedTotal)*bases[i]/flexTotal;col.style.width=(100*width/target)+'%'});
+   table.style.setProperty('--sheet-width',target+'px');table.style.setProperty('--sheet-index-width',index+'px');
+   // A narrower table must not retain a horizontal offset from its old geometry.
+   viewport.scrollLeft=0;
+  }else{
+   columns.forEach((col,i)=>{col.style.width=bases[i]+'px'});
+   table.style.setProperty('--sheet-width',total+'px');table.style.setProperty('--sheet-index-width',small?'44px':'42px');
+  }
  }
 }
 
