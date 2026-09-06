@@ -1,0 +1,53 @@
+name: Synchronize production repository data
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'integration/**'
+      - '.github/workflows/schedule-sync.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: production-data-sync
+  cancel-in-progress: false
+jobs:
+  synchronize:
+    if: github.repository == 'parkjkk/work' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read trusted application code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: app
+          ref: main
+      - name: Read private management data
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: parkjkk/schedule-data
+          ssh-key: ${{ secrets.SCHEDULE_DATA_SSH_KEY }}
+          ssh-strict: true
+          path: schedule
+          ref: main
+          sparse-checkout: |
+            meta
+            months
+      - name: Read private field JSON
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: parkjkk/ilbo-data
+          ssh-key: ${{ secrets.ILBO_DATA_SSH_KEY }}
+          ssh-strict: true
+          path: field
+          ref: main
+          sparse-checkout: |
+            data
+            meta/products.json
+          sparse-checkout-cone-mode: false
+      - name: Synchronize JSON with trusted application code
+        run: node app/integration/sync-workflow.cjs --target schedule --source field
+      - name: Maintain monthly automation checkpoint
+        run: node app/integration/keepalive.cjs --repo app
