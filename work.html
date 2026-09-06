@@ -220,6 +220,8 @@ main.wide{max-width:none}
 .pb-prog b{color:var(--accent-ink)}
 .pb-prog .bar{display:block; width:100%; height:6px; margin-top:6px; background:var(--line); border-radius:3px; overflow:hidden}
 .pb-prog .bar i{display:block; height:100%; background:var(--accent); border-radius:3px}
+.pb-completion{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface2)}
+.pb-completion .f-label{margin-top:8px}.pb-completion .hint{display:block;line-height:1.5}.pb-completion-note{min-height:58px;resize:vertical}
 #addBtn{
   position:fixed; right:14px; bottom:calc(64px + env(safe-area-inset-bottom)); z-index:29;
   height:54px; padding:0 22px; border-radius:99px; background:var(--accent); color:var(--on-accent);
@@ -1054,6 +1056,7 @@ function ghDriver(cfg){
     },
     async loadPresets(){ const {json} = await getFile('data/presets.json'); return json || {workers:[],products:[],parts:[]}; },
     async loadProductCatalog(){ const {json} = await getFile('meta/products.json'); return json; },
+    async loadProductionProgress(){ const {json} = await getFile('meta/production-progress.json'); return json; },
     async savePresets(p, replace){
       try{
         await mutateJson('data/presets.json', j => {
@@ -1295,6 +1298,7 @@ const S = {
 const CHECK_KEYS = ['cs','gap','inlet','face','bubble'];
 let productCatalogRead=0;
 function resetProductCatalog(){
+  resetProductionProgress();
   productCatalogRead++;
   S.productCatalog=null;S.productCatalogMessage='';
   S.productCatalogSeen=!!LS.get('ilbo.cache.productCatalogSeen',false);
@@ -1342,6 +1346,106 @@ async function loadProductCatalog(){
   }
   if(epoch!==storeEpoch||seq!==productCatalogRead)return;
   renderProductCatalogNote();$$('#prodBlocks .pb').forEach(refreshProductChips);
+}
+
+/* PRODUCTION_PROGRESS_PROJECTION_START */
+const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty'];
+function progressSourceFields(row){return Object.fromEntries(PROGRESS_SOURCE_FIELDS.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,row[k]]));}
+function progressStable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
+function parseProductionProgress(value){
+  const validDate=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&!Number.isNaN(Date.parse(d+'T00:00:00Z'))&&new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;
+  if(!value||value.schema!==1||value.kind!=='schedule-production-progress'||typeof value.revision!=='string'||!value.revision||!validDate(value.asOf)||typeof value.updatedAt!=='string'||Number.isNaN(Date.parse(value.updatedAt))||!Array.isArray(value.entries))throw Error('관리 진행 자료 형식이 올바르지 않습니다');
+  const seen=new Set(),entries=value.entries.map(e=>{
+    const date=typeof e?.path==='string'?e.path.match(/^data\/(\d{4}-\d{2}-\d{2})\.json$/)?.[1]:null;
+    if(!date||!validDate(date)||!e.id||typeof e.id!=='string'||!(e.jobId===null||typeof e.jobId==='string'&&e.jobId)||!(e.productId===null||typeof e.productId==='string'&&e.productId)||typeof e.product!=='string'||typeof e.worker!=='string'||typeof e.complete!=='boolean'||!e.source||typeof e.source!=='object'||e.source.id!==e.id)throw Error('관리 진행 자료의 연결 정보가 올바르지 않습니다');
+    const key=e.path+'#'+e.id;if(seen.has(key))throw Error('관리 진행 자료에 중복 연결이 있습니다');seen.add(key);
+    for(const k of ['plan','produced','remaining','unproduced','percent','stockQty'])if(!(e[k]===null||typeof e[k]==='number'&&Number.isFinite(e[k])&&e[k]>=0))throw Error('관리 진행 자료의 수량이 올바르지 않습니다');
+    if(e.completedAt!==null&&!validDate(e.completedAt))throw Error('관리 진행 자료의 종료일이 올바르지 않습니다');
+    const originId=typeof e.originId==='string'&&e.originId?e.originId:e.jobId,progressMonth=typeof e.progressMonth==='string'?e.progressMonth:date.slice(0,7);
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(progressMonth))throw Error('관리 진행 자료의 기준월이 올바르지 않습니다');
+    return{path:e.path,id:e.id,worker:e.worker,productId:e.productId,product:e.product,jobId:e.jobId,originId,progressMonth,plan:e.plan,produced:e.produced,remaining:e.remaining,unproduced:e.unproduced,percent:e.percent,complete:e.complete,completedAt:e.completedAt,reason:typeof e.reason==='string'?e.reason:null,stockQty:e.stockQty,note:typeof e.note==='string'?e.note:'',warning:typeof e.warning==='string'?e.warning:'',source:progressSourceFields(e.source)};
+  });
+  const result={schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt,asOf:value.asOf,entries},bySource=new Map(),byIdentity=new Map(),byWorker=new Map();
+  for(const e of entries){bySource.set(e.path+'#'+e.id,e);const key=progressIdentity(e);if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(e);if(!byWorker.has(e.worker))byWorker.set(e.worker,[]);byWorker.get(e.worker).push(e);}
+  // Lookup indexes are memory-only; the cached/public data format stays JSON.
+  Object.defineProperties(result,{_bySource:{value:bySource},_byIdentity:{value:byIdentity},_byWorker:{value:byWorker}});
+  return result;
+}
+function findProjectedProgress(projection,date,row){
+  if(!projection||!row||row.off||date>projection.asOf)return null;
+  const key='data/'+date+'.json#'+row.id,e=projection._bySource?projection._bySource.get(key):projection.entries.find(x=>x.path==='data/'+date+'.json'&&x.id===row.id);
+  return e&&progressStable(e.source)===progressStable(progressSourceFields(row))?e:null;
+}
+function projectedRun(entry,projection){
+  return{plan:entry.plan,made:entry.produced,start:null,end:entry.complete?(entry.completedAt||projection.asOf):null,last:entry.path.slice(5,15),completion:entry.reason?{reason:entry.reason,note:entry.note,stockQty:entry.stockQty}:null,managed:entry,asOf:projection.asOf,updatedAt:projection.updatedAt};
+}
+function progressIdentity(entry){return entry.originId||entry.jobId?JSON.stringify([entry.originId||entry.jobId,entry.worker,entry.productId||entry.product]):null;}
+function latestProjectedEntry(projection,entry){
+  const key=progressIdentity(entry);if(!key)return entry;
+  const peers=projection._byIdentity?.get(key)||projection.entries.filter(x=>progressIdentity(x)===key);
+  return peers.filter(x=>x.progressMonth<=projection.asOf.slice(0,7)&&x.path.slice(5,15)<=projection.asOf).sort((a,b)=>b.progressMonth.localeCompare(a.progressMonth)||b.path.localeCompare(a.path)||a.id.localeCompare(b.id))[0]||entry;
+}
+/* PRODUCTION_PROGRESS_PROJECTION_END */
+let productionProgressRead=0;
+function resetProductionProgress(){
+  productionProgressRead++;S.productionProgress=null;S.productionProgressMode='none';S.progressDays=null;
+  if(driver.mode!=='gh')return;
+  const cached=LS.get('ilbo.cache.productionProgress',null);
+  try{if(cached){S.productionProgress=parseProductionProgress(cached);S.productionProgressMode='cached';}}catch{}
+}
+function progressSourceNote(projection=S.productionProgress){
+  if(!projection)return driver.mode==='gh'?'현장 기록 기준 · 관리 집계 확인 대기':'현장 기록 기준';
+  const stamp=new Date(projection.updatedAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  return `관리 집계 ${projection.asOf} 기준 · ${stamp} 반영${S.productionProgressMode==='cached'?' · 보관한 자료':''}`;
+}
+async function loadProductionProgress(){
+  const epoch=storeEpoch,seq=++productionProgressRead,drv=driver;
+  if(drv.mode!=='gh'||typeof drv.loadProductionProgress!=='function')return;
+  try{
+    const value=await drv.loadProductionProgress();assertContext(epoch);if(seq!==productionProgressRead)return;
+    if(value){const next=parseProductionProgress(value);S.productionProgress=next;S.productionProgressMode='ready';LS.set('ilbo.cache.productionProgress',next);}
+    else{S.productionProgress=null;S.productionProgressMode='none';LS.remove('ilbo.cache.productionProgress');}
+  }catch{if(epoch!==storeEpoch||seq!==productionProgressRead)return;S.productionProgressMode=S.productionProgress?'cached':'none';}
+  if(epoch!==storeEpoch||seq!==productionProgressRead)return;
+  if(S.tab==='input')renderInput();
+  if(S.tab==='month'&&lastDraw&&`${lastDraw.y}-${pad2(lastDraw.m)}`===S.month)drawMonth(lastDraw.days,lastDraw.y,lastDraw.m);
+  $$('#prodBlocks .pb').forEach(updateProdProg);
+}
+function recordProjectedProgress(row,date=S.date){
+  const exact=findProjectedProgress(S.productionProgress,date,row);if(!exact)return null;
+  const e=latestProjectedEntry(S.productionProgress,exact),key=progressIdentity(e);
+  // A newer local edit in any known row of this job invalidates the cached
+  // aggregate, even when the currently displayed row itself is unchanged.
+  const peers=key?(S.productionProgress._byIdentity?.get(key)||S.productionProgress.entries.filter(x=>progressIdentity(x)===key)):[e];
+  for(const peer of peers){
+    if(peer.progressMonth>S.productionProgress.asOf.slice(0,7)||peer.path.slice(5,15)>S.productionProgress.asOf)continue;
+    const ds=peer.path.slice(5,15),rows=ds===S.rowsDate?S.rows:(dayCache[ds]||S.progressDays?.[ds]);
+    if(Array.isArray(rows)&&!findProjectedProgress(S.productionProgress,ds,rows.find(r=>r.id===peer.id)))return null;
+  }
+  return projectedRun(e,S.productionProgress);
+}
+function knownManagedRuns(product,worker){
+  if(!S.productionProgress)return [];
+  const id=catalogProduct(S.productCatalog,product)?.id,jobs=new Map();
+  for(const e of S.productionProgress._byWorker?.get(worker)||S.productionProgress.entries){
+    if(e.worker!==worker||!(id?e.productId===id:e.product===product))continue;
+    const ds=e.path.slice(5,15),rows=ds===S.rowsDate?S.rows:(dayCache[ds]||S.progressDays?.[ds]);
+    const row=Array.isArray(rows)&&rows.find(r=>r.id===e.id),run=row&&recordProjectedProgress(row,ds);
+    if(run?.managed.jobId)jobs.set(progressIdentity(run.managed),run);
+  }
+  return [...jobs.values()];
+}
+function renderManagedProgressTable(days){
+  if(!S.productionProgress)return '';
+  const jobs=new Map();let waiting=0;
+  for(const [date,rows]of Object.entries(days))if(date<=todayStr()&&Array.isArray(rows))for(const row of rows){
+    if(row.off||!row.product)continue;
+    const run=recordProjectedProgress(row,date),e=run?.managed;
+    if(!e?.jobId){waiting++;continue;}
+    const key=progressIdentity(e),prior=jobs.get(key);if(!prior||prior.managed.progressMonth<e.progressMonth||prior.managed.progressMonth===e.progressMonth&&prior.managed.path<e.path)jobs.set(key,run);
+  }
+  const qty=v=>v===null?'—':r2(v),runs=[...jobs.values()].sort((a,b)=>(a.managed.worker+'\0'+a.managed.product+'\0'+a.managed.jobId).localeCompare(b.managed.worker+'\0'+b.managed.product+'\0'+b.managed.jobId,'ko'));
+  return `<div class="mon-note" style="text-align:left"><b>연결 작업별 진행</b> · ${esc(progressSourceNote())}<br>실제 생산과 완료 상태를 따로 표시합니다. 재고 활용량은 생산 실적·이달 합계에 더하지 않습니다.${waiting?`<br>관리 연결 확인 대기 ${waiting}행 · 아래 이달 실적에는 현장 기록대로 포함됩니다.`:''}</div>`+(runs.length?`<table class="mon product-focus"><thead><tr><th>제품 · 작업자</th><th>실제 누적 / 계획(조)</th><th>생산 상태</th><th>계획 대비 미생산(조)</th></tr></thead><tbody>${runs.map(run=>{const e=run.managed;return `<tr><td class="d"><b>${esc(e.product)}</b><small>${esc(e.worker)} · 최근 기록 ${fmtMD(run.last)}</small></td><td>${qty(e.produced)} / ${qty(e.plan)}${e.percent===null?'':`<small>${r2(e.percent)}%</small>`}</td><td>${e.complete?'<b>생산 종료</b>':'생산중'}${e.complete&&e.completedAt?`<small>${fmtMD(e.completedAt)} 종료</small>`:''}${run.completion?`<small>${esc(productionCompletionLabel(run.completion))}</small>`:''}${e.warning?`<small>${esc(e.warning)}</small>`:''}</td><td>${qty(e.unproduced)}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-note">현재 일보와 일치하는 관리 집계를 기다리고 있습니다. 현장 실적은 아래 표에서 확인할 수 있습니다.</div>');
 }
 
 /* ================= 데이터 ================= */
@@ -1435,7 +1539,7 @@ function prefetchAround(date){
 }
 async function loadPresets(){
   const epoch = storeEpoch, drv = driver;
-  const catalogTask=loadProductCatalog();
+  const catalogTask=Promise.all([loadProductCatalog(),loadProductionProgress()]);
   /* 공유 모드: 기기에 보관된 목록을 먼저 보여주고(즉시) 서버 응답으로 갱신 */
   if(driver.mode === 'gh' && !S.presetsShown){
     const c = LS.get('ilbo.cache.presets', null);
@@ -1754,13 +1858,13 @@ function renderGuide(){
   $('#guideOk').onclick = () => { LS.set('ilbo.guideDone', true); $('#guideCard').remove(); };
 }
 /* ── 기물 진행 상황: 시작일(계획>0 기록)부터 누적 생산을 세어 '생산 종료(0)'까지 — 달이 바뀌어도 이어짐 ── */
-function computeProgress(daysMap){
+function computeProgress(daysMap,asOf=todayStr()){
   const runs = {};
-  Object.keys(daysMap).filter(d => Array.isArray(daysMap[d])).sort().forEach(ds => {
+  Object.keys(daysMap).filter(d => d<=asOf&&Array.isArray(daysMap[d])).sort().forEach(ds => {
     orderRows(daysMap[ds]).forEach(r => {
       if(r.off || !r.product) return;
       const pn = r.product;
-      const plan = numOr(r.plan, '');
+      const preserved=r.productionPlanQty,plan = String(r.plan)==='0'&&typeof preserved==='number'&&Number.isFinite(preserved)&&preserved>0?preserved:numOr(r.plan, '');
       let run = runs[pn];
       if(plan !== '' && plan > 0){
         /* 같은 날 두 사람이 계획을 적어도 런은 하나(먼저 적은 계획 유지) — 다른 날의 새 계획 = 새 시작 */
@@ -1771,7 +1875,7 @@ function computeProgress(daysMap){
       }
       run.made += Number(r.prod) || 0;
       if(run.last !== ds){ run.days++; run.last = ds; }
-      if(String(r.plan) === '0') run.end = ds;
+      if(String(r.plan) === '0'||r.productionCompletion&&['stock','plan-change','other'].includes(r.productionCompletion.reason)){run.end=ds;run.completion=r.productionCompletion||null;}
     });
   });
   return runs;
@@ -1783,13 +1887,16 @@ function progOf(product){
 }
 function progText(pr){
   if(!pr) return null;
-  if(pr.end) return {state:'end', pct: pr.plan ? Math.round(pr.made / pr.plan * 100) : null, remain: 0};
+  if(pr.managed){const e=pr.managed;return{state:e.complete?'end':e.produced===null||!e.jobId?'warning':e.plan===null?'noplan':'on',pct:e.percent===null?null:r2(e.percent),remain:e.remaining,unproduced:e.unproduced};}
+  if(pr.end) return {state:'end', pct: pr.plan ? Math.round(pr.made / pr.plan * 100) : null, remain: 0,unproduced:pr.plan?Math.max(0,pr.plan-pr.made):null};
   if(!pr.plan) return {state:'noplan', pct: null, remain: null};
   const pct = Math.round(pr.made / pr.plan * 100), remain = Math.max(0, pr.plan - pr.made);
   return {state:'on', pct, remain};
 }
 function planBadge(r){
-  if(String(r.plan) === '0') return '<span class="badge end">생산 종료</span>';
+  const managed=recordProjectedProgress(r);
+  if(managed){const e=managed.managed,state=e.complete?'관리 확인 · 생산 종료':e.jobId?'생산중':'연결 확인 필요';return `<span class="badge ${e.complete?'end':'on'}" title="${esc(progressSourceNote())}">${state}${e.produced===null?'':` · 실제 ${r2(e.produced)} / ${e.plan===null?'계획 미기록':r2(e.plan)}조${e.percent===null?'':' · '+r2(e.percent)+'%'}`}${e.complete&&e.reason?' · '+esc(productionCompletionLabel(managed.completion)):''}</span>`;}
+  if(String(r.plan) === '0'||r.productionCompletion) return `<span class="badge end">생산 종료${r.productionCompletion?' · '+esc(productionCompletionLabel(r.productionCompletion)):''}</span>`;
   if(r.plan !== '' && r.plan != null) return `<span class="badge plan">생산 시작 · 계획 ${esc(r.plan)}조</span>`;
   const pr = progOf(r.product), t = progText(pr);
   if(t && t.state === 'on') return `<span class="badge on" title="${fmtMD(pr.start)} 시작 · 계획 ${r2(pr.plan)}조 중 ${r2(pr.made)}조 · 남은 ${r2(t.remain)}조">생산중 ${r2(pr.made)}/${r2(pr.plan)}조 · ${t.pct}%</span>`;
@@ -1799,12 +1906,21 @@ function updateProdProg(el){
   const box = el.querySelector('.pb-prog'); if(!box) return;
   let pn = el.querySelector('.pb-product').value.trim();
   if(/^[\x20-\x7E]+$/.test(pn)) pn = pn.toUpperCase();
-  const pr = pn ? progOf(pn) : null, t = progText(pr);
+  const previous=S.rows.find(r=>r.id===el.dataset.rid);
+  const sameProduct=previous&&(catalogProduct(S.productCatalog,pn)?.id||pn)===(catalogProduct(S.productCatalog,previous.product)?.id||previous.product);
+  if(!previous){
+    const references=knownManagedRuns(pn,$('#fWorker').value.replace(/\s+/g,''));
+    if(references.length){box.innerHTML=`<b>저장된 연결 작업 참고</b> · 현재 입력은 아직 연결 전${references.map(run=>{const e=run.managed;return `<br>${esc(e.product)} · 실제 ${e.produced===null?'—':r2(e.produced)} / 계획 ${e.plan===null?'미기록':r2(e.plan)}조${e.percent===null?'':' ('+r2(e.percent)+'%)'} · <b>${e.complete?'생산 종료':'생산중'}</b>${run.completion?' · '+esc(productionCompletionLabel(run.completion)):''}`;}).join('')}<br><small>${esc(progressSourceNote())} · 읽기 전용</small>`;box.hidden=false;return;}
+  }
+  const pr = pn ? (sameProduct&&recordProjectedProgress(previous)||progOf(pn)) : null, t = progText(pr);
   if(!t){ box.hidden = true; box.innerHTML = ''; return; }
   let html;
-  if(t.state === 'on') html = `📦 <b>${esc(pn)}</b> 계획 ${r2(pr.plan)}조 · 누적 ${r2(pr.made)}조 (${t.pct}%) · 남은 <b>${r2(t.remain)}조</b> <span style="color:var(--ink-faint)">· ${fmtMD(pr.start)} 시작</span>${t.remain ? '' : ' — 계획 달성! 다 만들었으면 <b>생산 종료 (0)</b>'}<span class="bar"><i style="width:${Math.min(100, t.pct)}%"></i></span>`;
-  else if(t.state === 'end') html = `📦 <b>${esc(pn)}</b> ${fmtMD(pr.end)}에 생산 종료된 기물 (누적 ${r2(pr.made)}${pr.plan ? '/'+r2(pr.plan) : ''}조) — 새로 시작하면 계획수량을 적으세요`;
-  else html = `📦 <b>${esc(pn)}</b> 누적 ${r2(pr.made)}조 (${fmtMD(pr.start)}부터) · 계획수량이 기록되지 않은 기물`;
+  if(t.state === 'on') html = `📦 <b>${esc(pn)}</b> 계획 ${r2(pr.plan)}조 · 누적 ${r2(pr.made)}조 (${t.pct}%) · 남은 <b>${r2(t.remain)}조</b>${pr.start?` <span style="color:var(--ink-faint)">· ${fmtMD(pr.start)} 시작</span>`:''}${t.remain ? '' : ' — 계획 달성! 더 만들지 않으면 <b>생산 종료</b>'}<span class="bar"><i style="width:${Math.min(100, t.pct)}%"></i></span>`;
+  else if(t.state === 'end') html = `📦 <b>${esc(pn)}</b> ${fmtMD(pr.end)} 생산 종료 · 실제 누적 <b>${r2(pr.made)}</b>${pr.plan?' / 계획 '+r2(pr.plan):''}조${t.pct!==null?' ('+t.pct+'%)':''}${t.unproduced?' · 계획 대비 미생산 '+r2(t.unproduced)+'조':''}${pr.completion?'<br>'+esc(productionCompletionLabel(pr.completion)):''} — 새로 시작하면 계획수량을 적으세요`;
+  else if(t.state==='warning')html=`📦 <b>${esc(pn)}</b> ${esc(pr.managed.warning||'관리 앱에서 작업 연결을 확인해 주세요.')} · 누적 생산 계산 보류`;
+  else html = `📦 <b>${esc(pn)}</b> 누적 ${r2(pr.made)}조${pr.start?' ('+fmtMD(pr.start)+'부터)':''} · 계획수량이 기록되지 않은 기물`;
+  html+=`<br><small>${esc(progressSourceNote(pr.managed?S.productionProgress:null))}${pr.managed?' · 읽기 전용':''}</small>`;
+  if(pr.managed?.warning&&t.state!=='warning')html+=`<br><small>${esc(pr.managed.warning)}</small>`;
   box.innerHTML = html; box.hidden = false;
 }
 /* 진행 상황 계산: 이번 달 + 지난 2달(시작일이 창 밖이면 최대 6달까지 확장). 공유 모드는 월 캐시 재사용, quick = 네트워크 없이 캐시만 */
@@ -1814,7 +1930,7 @@ async function ensureProgress(opt){
   const epoch = storeEpoch, drv = driver;
   opt = opt || {};
   const now = Date.now();
-  if(!opt.quick && !opt.force && S.progress && now - (S.progress.computedAt||0) < 10*60*1000) return;
+  if(!opt.quick && !opt.force && S.progress?.policyVersion==='completion-1' && now - (S.progress.computedAt||0) < 10*60*1000) return;
   if(progressBusy) return;
   progressBusy = true;
   try{
@@ -1849,7 +1965,8 @@ async function ensureProgress(opt){
     }
     assertContext(epoch);
     if(!opt.quick) S.progressSpan = span;
-    S.progress = {computedAt: (opt.quick && S.progress) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct: runs};
+    S.progress = {policyVersion:'completion-1',computedAt: (opt.quick && S.progress) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct: runs};
+    S.progressDays=all;
     if(!hadErr) LS.set('ilbo.progress', S.progress);   /* 불러오기 실패가 섞인 결과는 보관하지 않음(다음에 다시 계산) */
     if(S.tab === 'input') renderInput();
     if(S.tab === 'month' && lastDraw && `${lastDraw.y}-${pad2(lastDraw.m)}` === S.month) drawMonth(lastDraw.days, lastDraw.y, lastDraw.m);
@@ -1941,11 +2058,19 @@ function blockHTML(){
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
   <div class="chips pb-prodchips" style="margin-top:7px"></div>
   <div class="pb-prog" hidden></div>
-  <div class="f-label">계획수량 (조) <span class="hint">같은 기물은 계속 생산 · 새 기물 시작일에만 계획수량 · 전량을 마쳤을 때 생산 종료</span></div>
+  <div class="f-label">생산 진행 <span class="hint">같은 기물은 계속 생산 · 새 기물 시작일에만 계획수량 · 더 만들지 않으면 생산 종료</span></div>
   <select class="f-input pb-planmode" aria-label="생산 진행 상태"><option class="pb-planlegacy" value="legacy" hidden disabled>기존 계획수량 유지</option><option value="continue">계속 생산</option><option value="start">새 계획 시작</option><option value="end">생산 종료</option></select>
   <div class="f-row">
     <input class="f-input pb-plan" inputmode="numeric" placeholder="시작일에만 기록">
-    <button type="button" class="qzero pb-planzero" hidden title="이 기물의 계획 수량을 전부 만들어 더 이상 만들지 않을 때만 누릅니다">생산 종료 (0)</button>
+    <button type="button" class="qzero pb-planzero" hidden title="계획에 못 미쳐도 이 기물을 더 만들지 않으면 생산 종료를 선택합니다">생산 종료 (0)</button>
+  </div>
+  <div class="pb-completion" hidden>
+    <span class="hint"><b>저장하면 이 기물의 생산을 종료합니다.</b> 원래 계획과 실제 생산량은 유지합니다. 계획보다 적게 생산했어도 종료할 수 있으며, 재고 활용량은 실제 생산량에 더하지 않습니다.</span>
+    <div class="f-label">종료 사유</div>
+    <select class="f-input pb-completion-reason" aria-label="종료 사유"><option value="">사유 선택 안 함</option><option value="stock">재고 활용</option><option value="plan-change">계획 변경</option><option value="other">기타</option></select>
+    <div class="pb-completion-stock-wrap" hidden><div class="f-label">재고 활용량 (조) <span class="hint">선택 입력 · 재고 장부는 별도 관리</span></div><input class="f-input pb-completion-stock" inputmode="decimal" placeholder="예: 14" aria-label="재고 활용량"></div>
+    <div class="f-label">종료 메모 <span class="hint">선택 입력</span></div><textarea class="f-input pb-completion-note" maxlength="1000" placeholder="예: 남은 14조는 기존 재고로 충당" aria-label="종료 메모"></textarea>
+    <span class="hint pb-completion-plan" hidden></span>
   </div>
   <div class="f-label">생산량 · 완성품 (조)</div>
   <div class="stepper">
@@ -1997,6 +2122,14 @@ function syncPlanMode(el){
   mode.value=zero?'end':legacy?'legacy':inp.value.trim()?'start':(mode.value==='start'?'start':'continue');
   el.querySelector('.pb-planlegacy').hidden=mode.value!=='legacy';
   inp.closest('.f-row').hidden=!['start','legacy'].includes(mode.value);
+  syncCompletionControls(el);
+}
+function syncCompletionControls(el){
+  const end=el.querySelector('.pb-planzero').classList.contains('sel');
+  el.querySelector('.pb-completion').hidden=!end;
+  el.querySelector('.pb-completion-stock-wrap').hidden=el.querySelector('.pb-completion-reason').value!=='stock';
+  const label=el.querySelector('.pb-completion-plan'),q=Number(el.dataset.productionPlanQty);
+  label.hidden=!(end&&q>0);label.textContent=end&&q>0?`시작 계획 ${r2(q)}조를 보존합니다. 종료 표시와 실제 생산량은 따로 기록됩니다.`:'';
 }
 function syncQuickProducts(){
   const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
@@ -2111,6 +2244,10 @@ function addBlock(row){
   el.querySelector('.pb-pp').onclick = () => { const i=el.querySelector('.pb-prod'); i.value = (numOr(i.value,0)||0)+1; };
   const planEl = el.querySelector('.pb-plan'), pz = el.querySelector('.pb-planzero');
   const applyPz = on => {
+    if(on&&!el.dataset.productionPlanQty){
+      const previous=S.rows.find(r=>r.id===el.dataset.rid),q=Number(previous?.productionPlanQty)||Number(planEl.value)||Number(previous?.plan);
+      if(Number.isFinite(q)&&q>0)el.dataset.productionPlanQty=String(q);
+    }
     pz.classList.toggle('sel', on);
     planEl.disabled = on;
     if(on) planEl.value = '';
@@ -2118,8 +2255,7 @@ function addBlock(row){
   };
   pz.onclick = () => {
     const on = !pz.classList.contains('sel');
-    /* '오늘 작업 완료'로 오해해 누르는 일 방지 — 켤 때만 뜻을 확인 */
-    if(on && !confirm("'생산 종료'는 오늘 작업을 마쳤다는 뜻이 아닙니다.\n이 제품(기물)의 계획 수량을 전부 다 만들어 더 이상 만들지 않을 때만 누릅니다 (계획수량 0으로 기록 → 현황에 '생산 종료').\n\n[확인] 이 기물 생산 종료 — 0으로 기록\n[취소] 아니요, 아직 생산중")) return;
+    /* 명시적 상태 선택은 초안만 바꾼다. 종료 안내·사유를 보고 최종 저장한다. */
     applyPz(on);
     el.dataset.planModeChanged='1';
     syncPlanMode(el); syncQuickProducts();
@@ -2129,10 +2265,12 @@ function addBlock(row){
     if(desired==='end'){
       if(!pz.classList.contains('sel')) pz.click();
       if(!pz.classList.contains('sel')) e.target.value=planEl.value?'start':'continue';
-    }else{applyPz(false);if(desired==='continue') planEl.value='';e.target.value=desired;el.dataset.planModeChanged='1';}
+    }else{applyPz(false);if(desired==='continue')planEl.value='';else if(!planEl.value&&Number(el.dataset.productionPlanQty)>0)planEl.value=el.dataset.productionPlanQty;e.target.value=desired;el.dataset.planModeChanged='1';}
     syncPlanMode(el);saveDraft();
   };
   planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); });
+  el.querySelector('.pb-completion-reason').onchange=()=>{syncCompletionControls(el);saveDraft();};
+  ['.pb-completion-stock','.pb-completion-note'].forEach(s=>el.querySelector(s).addEventListener('input',saveDraft));
   ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).addEventListener('input', () => updateDefSummary(el)));
   el.querySelector('.pb-defclear').onclick = () => {
     ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).value = '');
@@ -2144,6 +2282,10 @@ function addBlock(row){
     el.querySelector('.pb-product').value = row.product||'';
     el.querySelector('.pb-plan').value = String(row.plan)==='0' ? '' : (row.plan ?? '');
     applyPz(String(row.plan)==='0');
+    if(Number(row.productionPlanQty)>0)el.dataset.productionPlanQty=String(row.productionPlanQty);
+    el.querySelector('.pb-completion-reason').value=row.productionCompletion?.reason||'';
+    el.querySelector('.pb-completion-stock').value=row.productionCompletion?.stockQty??'';
+    el.querySelector('.pb-completion-note').value=row.productionCompletion?.note||'';
     el.querySelector('.pb-prod').value = row.prod ?? '';
     el.querySelector('.pb-scrap').value = row.scrapKg ?? '';
     el.querySelector('.pb-defqty').value = row.defQty ?? '';
@@ -2190,6 +2332,30 @@ function numField(el, cls, label, i){
   return {ok:true, val:Number(cleaned)};
 }
 /* 과거의 양수 계획만으로 새 작업을 단정하지 않는다. 상태 선택과 수량 수정은 별개다. */
+function productionCompletionLabel(value){
+  if(!value)return '';
+  const label=({'stock':'재고 활용','plan-change':'계획 변경','other':'기타'})[value.reason]||'생산 완료';
+  return label+(value.reason==='stock'&&value.stockQty!==null&&Number.isFinite(value.stockQty)?` ${r2(value.stockQty)}조`:'')+(value.note?` · ${value.note}`:'');
+}
+function completionFields(previous,input){
+  const out={},has=(key)=>Object.prototype.hasOwnProperty.call(previous||{},key);
+  if(input.end){
+    if(input.reason){
+      if(!['stock','plan-change','other'].includes(input.reason))throw Error('종료 사유를 다시 선택하세요');
+      const q=input.stockQty;
+      if(input.reason==='stock'&&q!==''&&q!==null&&(!/^\d+(?:\.\d+)?$/.test(String(q))||!Number.isFinite(Number(q))))throw Error('재고 활용량은 0 이상의 숫자로 입력하세요');
+      out.productionCompletion={reason:input.reason,note:String(input.note||''),stockQty:input.reason==='stock'&&q!==''&&q!==null?Number(q):null};
+    }else if(String(input.note||'').trim())throw Error('종료 메모를 기록하려면 종료 사유를 선택하세요');
+    else if(has('productionCompletion'))out.productionCompletion=null;
+    const prior=previous?.productionPlanQty,q=Number(prior)>0?Number(prior):Number(input.preservedPlan);
+    if(Number.isFinite(q)&&q>0)out.productionPlanQty=q;
+    else if(has('productionPlanQty'))out.productionPlanQty=prior;
+  }else{
+    if(has('productionCompletion')&&input.modeChanged)out.productionCompletion=null;
+    if(has('productionPlanQty')&&input.modeChanged)out.productionPlanQty=null;
+  }
+  return out;
+}
 function planIntentFields(previous, mode, plan, modeChanged){
   const fits=intent=>intent==='continue'?(plan===''||plan==null):intent==='start'?(typeof plan==='number'&&Number.isFinite(plan)&&plan>0):intent==='end'?plan===0:false;
   if(mode==='legacy'&&previous&&!modeChanged&&!Object.prototype.hasOwnProperty.call(previous,'planIntent')&&fits('start'))return {};
@@ -2227,6 +2393,7 @@ function collectBlock(el, i){
     }
     /* 종료 확인에 동의한 경우 상태 컨트롤도 함께 전환한다. 수량 편집만으로는 상태를 만들지 않는다. */
     const planInput=el.querySelector('.pb-plan');
+    if(!el.dataset.productionPlanQty){const q=Number(previous?.productionPlanQty)||Number(previous?.plan);if(Number.isFinite(q)&&q>0)el.dataset.productionPlanQty=String(q);}
     el.querySelector('.pb-planzero').classList.add('sel');
     planInput.disabled=true;planInput.value='';planInput.placeholder='생산 종료 → 0으로 기록';
     el.querySelector('.pb-planmode').value='end';el.dataset.planModeChanged='1';pzSel=true;
@@ -2235,12 +2402,16 @@ function collectBlock(el, i){
   let planFields;
   try{planFields=planIntentFields(previous,el.querySelector('.pb-planmode').value,pzSel?0:plan.val,el.dataset.planModeChanged==='1');}
   catch(e){fieldErr(el.querySelector('.pb-planmode'),`제품 ${i+1}: ${e.message}`);return null;}
+  let completion;
+  try{completion=completionFields(previous,{end:pzSel,modeChanged:el.dataset.planModeChanged==='1',reason:el.querySelector('.pb-completion-reason').value,note:el.querySelector('.pb-completion-note').value,stockQty:el.querySelector('.pb-completion-stock').value,preservedPlan:el.dataset.productionPlanQty});}
+  catch(e){fieldErr(el.querySelector('.pb-completion-reason'),`제품 ${i+1}: ${e.message}`);return null;}
   const prod = numField(el, 'pb-prod', '생산량', i);     if(!prod.ok) return null;
   const scrap = numField(el, 'pb-scrap', '불량석고량', i); if(!scrap.ok) return null;
   const defq = numField(el, 'pb-defqty', '불량수량', i);  if(!defq.ok) return null;
   return {
     ...productFields,
     ...planFields,
+    ...completion,
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -2330,6 +2501,7 @@ function formSnapshot(){
       p: el.querySelector('.pb-product').value, pl: el.querySelector('.pb-plan').value,
       pz: el.querySelector('.pb-planzero').classList.contains('sel'),
       pm: el.querySelector('.pb-planmode').value, pc: el.dataset.planModeChanged==='1',
+      pq:el.dataset.productionPlanQty||'',cr:el.querySelector('.pb-completion-reason').value,cq:el.querySelector('.pb-completion-stock').value,cn:el.querySelector('.pb-completion-note').value,
       pr: el.querySelector('.pb-prod').value, s: el.querySelector('.pb-scrap').value,
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
@@ -2449,6 +2621,8 @@ function restoreForm(snap){
     if(b.pz){ const pz = el.querySelector('.pb-planzero'), pl = el.querySelector('.pb-plan'); pz.classList.add('sel'); pl.disabled = true; pl.value = ''; pl.placeholder = '생산 종료 → 0으로 기록'; }
     if(['continue','start','end'].includes(b.pm))el.querySelector('.pb-planmode').value=b.pm;
     if(b.pc)el.dataset.planModeChanged='1';
+    if(b.pq)el.dataset.productionPlanQty=b.pq;
+    el.querySelector('.pb-completion-reason').value=b.cr||'';el.querySelector('.pb-completion-stock').value=b.cq??'';el.querySelector('.pb-completion-note').value=b.cn||'';
     el.querySelector('.pb-prod').value = b.pr || '';
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
@@ -2873,7 +3047,8 @@ function drawMonth(rawDays, y, m){
 
   /* ── 제품별: 기물 진행 상황(시작일부터 누적, 달을 넘어 이어짐) + 이번 달 실적 ── */
   const stOrder = {on:0, noplan:1, end:2, none:3};
-  const showProg = `${y}-${pad2(m)}` === todayStr().slice(0,7);   /* 진행 상황(현재 런)은 이번 달 표에서만 — 지난 달 실적에 섞이지 않게 */
+  const showManaged = `${y}-${pad2(m)}`===todayStr().slice(0,7)&&!!S.productionProgress;
+  const showProg = `${y}-${pad2(m)}` === todayStr().slice(0,7)&&!showManaged;   /* 관리 자료가 있으면 연결 작업별로, 없으면 현장 기록으로 계산 */
   const pInfo = n => { if(!showProg) return {pr:null, t:null, st:'none'}; const pr = progOf(n); const t = progText(pr); return {pr, t, st: t ? t.state : 'none'}; };
   const bp = showProg ? ((S.progress && S.progress.byProduct) || {}) : {};
   const pNames = [...new Set([...Object.keys(prodStat), ...Object.keys(bp).filter(k => bp[k] && !bp[k].end)])]
@@ -2892,7 +3067,7 @@ function drawMonth(rawDays, y, m){
         <td><b>${r2(p.prod)}</b></td><td class="desktop-col">${fmtMD(pr?.last || [...p.days].sort().at(-1) || '')}</td><td class="desktop-col">${r2(p.scrap)}</td></tr>`; }).join('')}</tbody>
       <tfoot><tr><td class="d">이달 합계</td><td></td><td>${showProg?'':r2(td)}</td><td>${r2(tp)}</td><td class="desktop-col"></td><td class="desktop-col">${r2(ts)}</td></tr></tfoot>
     </table>` : `<div class="empty-note">이 달 제품 기록이 없습니다</div>`;
-  const pNote = `${!showProg ? '선택한 달의 실적입니다. 현재 진행 상황은 이번 달에서 확인하세요.' : S.progress ? `생산중 <b>${cnt.on}</b> · 종료 ${cnt.end}${cnt.noplan ? ` · 계획 미기록 ${cnt.noplan}` : ''}<br>누적은 기물 시작일부터, 이달 생산은 선택한 달 기준입니다. 달성률 = 누적 ÷ 계획.` : '진행 상황 계산 중…'} <b>제품명을 누르면 이달의 일자별 기록을 볼 수 있습니다.</b>`;
+  const pNote = `${showManaged?'이달 제품별 실제 생산 합계입니다.':!showProg ? '선택한 달의 실적입니다. 현재 진행 상황은 이번 달에서 확인하세요.' : S.progress ? `현장 기록 기준 · 생산중 <b>${cnt.on}</b> · 종료 ${cnt.end}${cnt.noplan ? ` · 계획 미기록 ${cnt.noplan}` : ''}<br>누적은 기물 시작일부터, 이달 생산은 선택한 달 기준입니다. 달성률 = 실제 누적 ÷ 계획. 재고 활용량은 실적에 더하지 않습니다.` : '진행 상황 계산 중…'} <b>제품명을 누르면 이달의 일자별 기록을 볼 수 있습니다.</b>`;
 
   /* ── 작업자별 ── */
   const wNames = Object.keys(workerStat).sort((a,b) => workerStat[b].miss - workerStat[a].miss || a.localeCompare(b, 'ko'));
@@ -2908,7 +3083,7 @@ function drawMonth(rawDays, y, m){
   const body = $('#monBody');
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
-    `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
+    `<div class="mon-sec" data-sec="prod">${showManaged?wrapT(renderManagedProgressTable(days)):''}<div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
     `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
   body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
   body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
@@ -3195,7 +3370,7 @@ function init(){
     $('#prodBlocks').innerHTML = ''; addBlock(null); $('#fWorker').value = keepW; $('#draftBar').hidden = true;
     entrySnap = formSnapshot(); updateRecentBtn(false);
   };
-  $('#refreshTop').onclick = () => refreshDay(false, true);
+  $('#refreshTop').onclick = () => {loadProductionProgress();refreshDay(false, true);};
   window.addEventListener('popstate', () => {
     if($('#entryOv').classList.contains('open')) requestCloseEntry(true);
     else if($('#setOv').classList.contains('open')) closeSettings(true);
@@ -3237,7 +3412,7 @@ function init(){
     setTimeout(()=>window.print(), 100);
   };
   $('#zoomBtn').onclick = () => { S.fit = !S.fit; applyZoom(); };
-  $('#reloadBtn').onclick = () => refreshDay(false, true);
+  $('#reloadBtn').onclick = () => {loadProductionProgress();refreshDay(false, true);};
   $('#prevMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m-2,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#nextMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#thisMon').onclick = () => { S.month = todayStr().slice(0,7); renderMonth(); };
@@ -3305,13 +3480,14 @@ function init(){
   /* 숫자·기호 칸은 포커스 시 전체 선택 — '12'가 '1215'로 덧붙거나 '○'가 '15○'로 남는 오입력 방지 */
   $('#entryOv').addEventListener('focusin', e => {
     const t = e.target;
-    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-scrap, .pb-defqty, .pb-b1, .pb-b2, .pb-gasa')) requestAnimationFrame(() => { try{ t.select(); }catch(x){} });
+    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-completion-stock, .pb-scrap, .pb-defqty, .pb-b1, .pb-b2, .pb-gasa')) requestAnimationFrame(() => { try{ t.select(); }catch(x){} });
   });
   /* 자정을 넘겨도 켜 둔 화면(관리자 PC): 날짜 표시·미작성 카드 갱신 */
   let lastToday = todayStr();
   setInterval(() => { const t = todayStr(); if(t !== lastToday){ lastToday = t; renderDate(); renderMissing(); updateNetBanner(); } }, 60*1000);
   /* 보관분(아웃박스)은 1분마다 재전송 시도 */
   setInterval(() => { if(navigator.onLine && outboxAll().length) outboxFlush(); }, 60*1000);
+  setInterval(() => { if(!document.hidden&&navigator.onLine)loadProductionProgress(); },5*60*1000);
   pruneCaches(120);   /* 120일 지난 날짜 캐시 정리 */
   installManifest();
   /* 관리자 설정: 공유 링크로 연결된(작업자) 기기에서는 실수로 못 만지게 한 번 확인 */

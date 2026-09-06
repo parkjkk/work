@@ -3,6 +3,7 @@
 // Runs trusted integration code from the public work repository; both data repositories remain private JSON input/output.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const {planSync,projectCatalog,stable}=require('./ilbo-sync.cjs');
+const {projectProgress}=require('./progress-projection.cjs');
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const git=(dir,...args)=>cp.execFileSync('git',['-C',dir,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
 function inside(root,relative){
@@ -27,19 +28,19 @@ function write(root,relative,data){
 }
 function verifyProjectionMode(dir){
  const entries=git(dir,'ls-tree','-r','-z','HEAD','--','meta').split('\0').filter(Boolean);
- for(const entry of entries){const m=entry.match(/^(\d+) (\w+) [0-9a-f]+\t(.+)$/);if(!m)throw Error('Invalid source tree');if(m[3]==='meta'||m[3]==='meta/products.json'&&(m[1]!=='100644'||m[2]!=='blob'))throw Error('Source catalog projection must be a regular tracked file')}
+ for(const entry of entries){const m=entry.match(/^(\d+) (\w+) [0-9a-f]+\t(.+)$/);if(!m)throw Error('Invalid source tree');if(m[3]==='meta'||['meta/products.json','meta/production-progress.json'].includes(m[3])&&(m[1]!=='100644'||m[2]!=='blob'))throw Error('Source projection must be a regular tracked file')}
 }
 function nativeState(dir){
  const envelope=read(inside(dir,'meta/catalog.json'));if(envelope.schema!==1||!Array.isArray(envelope.records))throw Error('Invalid catalog envelope');
  const meta=envelope.records.find(r=>r.id==='catalog'&&r.kind==='catalog');if(meta?.app!=='johyeong-schedule'||meta.schema!==1||!Array.isArray(meta.months))throw Error('Invalid schedule catalog');
  if(meta.catalogUnitSync)throw Error('Catalog unit update is pending');
- const state={products:envelope.records.filter(r=>r.kind==='products'&&!r.deleted),months:{}};
+ const state={products:envelope.records.filter(r=>r.kind==='products'&&!r.deleted),months:{},workers:envelope.records.filter(r=>r.kind==='workers'&&!r.deleted).map(r=>r.name),calendar:meta.calendar||{factory:[],workers:[]},scheduleRows:envelope.records.filter(r=>r.kind==='scheduleRows'&&!r.deleted),scheduleHistory:envelope.records.filter(r=>r.kind==='scheduleHistory'&&!r.deleted),archive:[]};
  for(const key of meta.months){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key))throw Error('Invalid month key');const x=read(inside(dir,'months/'+key+'.json'));if(x.schema!==1||x.records?.length!==1||x.records[0].kind!=='month'||x.records[0].id!==key)throw Error('Invalid month envelope');const m=x.records[0];for(const k of['rows','issues','stocks','plans','plaster'])if(!Array.isArray(m[k]))throw Error('Missing month collection');state.months[key]=m}
  return{state,envelope,meta};
 }
 function sourceSnapshot(dir,repo='parkjkk/ilbo-data'){
  // Read tracked files at a single checked-out commit, never source executable files.
- inside(dir,'meta/products.json');inside(dir,'data');verifyProjectionMode(dir);
+ inside(dir,'meta/products.json');inside(dir,'meta/production-progress.json');inside(dir,'data');verifyProjectionMode(dir);
  const commit=git(dir,'rev-parse','HEAD'),files={};
  const lines=git(dir,'ls-tree','-r','-z','HEAD','--','data').split('\0').filter(Boolean);
  for(const line of lines){const match=line.match(/^100644 blob ([0-9a-f]+)\t(data\/\d{4}-\d{2}-\d{2}\.json)$/);if(!match){if(/\tdata(?:\/\d{4}-\d{2}-\d{2}\.json)?$/.test(line))throw Error('Source day is not a regular JSON file');continue}inside(dir,match[2]);const data=JSON.parse(git(dir,'show','HEAD:'+match[2]));files[match[2]]={sha:match[1],data}}
@@ -55,6 +56,8 @@ function run({target,source,initialConflict='review',snapshotFile,dryRun=false})
  const catalog=loaded.envelope,meta=catalog.records.find(r=>r.id==='catalog');meta.months=Object.keys(result.state.months).sort();
  const priorProjectionPath=inside(source,'meta/products.json'),priorProjection=fs.existsSync(priorProjectionPath)?read(priorProjectionPath):undefined;
  const projection=projectCatalog(result.state.products,priorProjection,snapshot.readAt);
+ const priorProgressPath=inside(source,'meta/production-progress.json'),priorProgress=fs.existsSync(priorProgressPath)?read(priorProgressPath):undefined;
+ const progress=projectProgress(result.state,snapshot,priorProgress,snapshot.readAt);
  const writes=[];
  if(!dryRun){
   for(const id of result.changedMonths)if(write(target,'months/'+id+'.json',{schema:1,records:[{...result.state.months[id],kind:'month',policyVersion:'web-ledger-2'}]}))writes.push('months/'+id+'.json');
@@ -62,6 +65,7 @@ function run({target,source,initialConflict='review',snapshotFile,dryRun=false})
   if(write(target,'meta/catalog.json',catalog))writes.push('meta/catalog.json');
   if(write(target,'meta/ilbo-sync.json',result.report))writes.push('meta/ilbo-sync.json');
   if(write(source,'meta/products.json',projection))writes.push('source:meta/products.json');
+  if(write(source,'meta/production-progress.json',progress))writes.push('source:meta/production-progress.json');
  }
  return{counts:result.report.counts,status:result.report.status,changedMonths:result.changedMonths.length,filesWritten:writes.length,dryRun};
 }

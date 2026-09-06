@@ -46,6 +46,7 @@ jobs:
           sparse-checkout: |
             data
             meta/products.json
+            meta/production-progress.json
           sparse-checkout-cone-mode: false
       - name: Synchronize JSON with trusted application code
         run: node app/integration/sync-workflow.cjs --target schedule --source field

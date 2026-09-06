@@ -8,6 +8,11 @@ const hash=x=>crypto.createHash('sha256').update(stable(x)).digest('hex');
 const clean=x=>String(x??'').trim();
 function iso(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(+d)&&d.toISOString().slice(0,10)===s}
 function number(x,label){if(x===''||x==null)return null;if(typeof x!=='number'&&typeof x!=='string'||!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(String(x).trim()))throw Error('Invalid numeric field: '+label);const n=Number(x);if(!Number.isFinite(n)||n<0)throw Error('Invalid nonnegative field: '+label);return n}
+function completionValue(value){
+ if(value===null)return null;
+ if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||!(value.stockQty===null||typeof value.stockQty==='number'&&Number.isFinite(value.stockQty)&&value.stockQty>=0)||value.reason!=='stock'&&value.stockQty!==null)throw Error('Invalid production completion');
+ return{reason:value.reason,note:value.note,stockQty:value.stockQty};
+}
 function productIndex(products){
  const ids=new Map(),names=new Map();
  const add=(name,p)=>{name=clean(name);if(!name)return;const prior=names.get(name);if(prior&&prior.id!==p.id)throw Error('Ambiguous product name or alias');names.set(name,p)};
@@ -65,6 +70,16 @@ function planSync(state,snapshot,options={}){
    if(own(raw,'planIntent')){
     const valid=own(raw,'plan')&&(['continue','start','end'].includes(raw.planIntent))&&(raw.planIntent==='continue'?values.plan===null:raw.planIntent==='start'?values.plan>0:values.plan===0);
     if(!valid){issue('invalid-plan-intent',ctx);continue}values.fieldPlanIntent=raw.planIntent;
+   }
+   // Absence means this source has never owned the field. Do not clear a
+   // completion entered in the management app; explicit null is a user clear.
+   if(own(raw,'productionCompletion')){
+    try{values.productionCompletion=completionValue(raw.productionCompletion)}catch{issue('invalid-production-completion',ctx);continue}
+   }
+   if(own(raw,'productionPlanQty')){
+    const q=raw.productionPlanQty;
+    if(!(q===null||typeof q==='number'&&Number.isFinite(q)&&q>0)){issue('invalid-production-plan-quantity',ctx);continue}
+    values.productionPlanQty=q;
    }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
