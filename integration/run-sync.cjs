@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Runs only trusted code from schedule-data. The field repository is JSON input.
+// Runs trusted integration code from the public work repository; both data repositories remain private JSON input/output.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const {planSync,projectCatalog,stable}=require('./ilbo-sync.cjs');
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));

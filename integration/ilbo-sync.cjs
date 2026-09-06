@@ -38,7 +38,7 @@ function sourceFiles(snapshot){
 }
 function planSync(state,snapshot,options={}){
  const next=clone(state),ix=productIndex(next.products),files=sourceFiles(snapshot),now=options.now||snapshot.readAt||new Date().toISOString();
- const report={schema:1,kind:'ilbo-sync-report',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},issues:[],updatedAt:now};
+ const report={schema:1,kind:'ilbo-sync-report',policyVersion:'ilbo-sync-2',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},issues:[],qualityWarnings:[],updatedAt:now};
  const touched=new Set(),seenKeys=new Set(),days=new Set(files.map(f=>f.path)),claimed=new Set(),prepared=[];
  const targetDeleted=new Set();
  for(const m of Object.values(next.months))for(const event of m.history||[]){
@@ -62,6 +62,10 @@ function planSync(state,snapshot,options={}){
   try{
    if(own(raw,'prod')){const n=number(raw.prod,'prod');if(n!==null)values.pours=n}
    if(own(raw,'plan'))values.plan=number(raw.plan,'plan');
+   if(own(raw,'planIntent')){
+    const valid=own(raw,'plan')&&(['continue','start','end'].includes(raw.planIntent))&&(raw.planIntent==='continue'?values.plan===null:raw.planIntent==='start'?values.plan>0:values.plan===0);
+    if(!valid){issue('invalid-plan-intent',ctx);continue}values.fieldPlanIntent=raw.planIntent;
+   }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
    const hours=number(raw.hours,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');
@@ -144,10 +148,20 @@ function planSync(state,snapshot,options={}){
   const before=clone(row);m[field].splice(m[field].indexOf(row),1);history(m,'source-delete',before,null,c);report.counts.deleted++;
  }
  for(const id of touched)next.months[id].rev=(next.months[id].rev||0)+1;
+ // Data-quality discrepancies are informational: preserve both sources, amounts,
+ // and manual calendars. They are not failed merges or held imports.
+ const checkedDays=new Set();
+ for(const m of Object.values(next.months))for(const attendance of m.fieldAttendance||[]){
+  if(attendance.deleted||attendance.sourceIntegration?.repo!==snapshot.repo||(clean(attendance.offKind)||'휴무')!=='휴무')continue;
+  const key=attendance.date+'\0'+attendance.worker;if(checkedDays.has(key))continue;checkedDays.add(key);
+  const rows=m.rows.filter(r=>!r.deleted&&r.date===attendance.date&&r.worker===attendance.worker&&Number.isFinite(r.pours)&&r.pours>0);
+  if(rows.length)report.qualityWarnings.push({code:'off-production-overlap',date:attendance.date,worker:attendance.worker,products:[...new Set(rows.map(r=>r.product))].sort(),rows:rows.length,pours:rows.reduce((n,r)=>n+r.pours,0),rowIds:rows.map(r=>r.id).sort(),message:'현장 휴무 기록과 같은 날의 생산실적이 함께 있습니다. 원본을 확인해 주세요.'});
+ }
+ report.qualityWarnings.sort((a,b)=>(a.date+'\0'+a.worker).localeCompare(b.date+'\0'+b.worker));
  report.issues.sort((a,b)=>stable(a).localeCompare(stable(b)));
  const previous=options.previousReport;
- report.status=report.issues.length?'review':'ok';report.revision=hash({sourceCommit:report.sourceCommit,sourceFiles:report.sourceFiles,issues:report.issues,months:[...touched].sort(),at:now});
- const finalReport=previous&&previous.sourceCommit===report.sourceCommit&&same(previous.sourceFiles,report.sourceFiles)&&same(previous.issues,report.issues)&&touched.size===0?clone(previous):report;
+ report.status=report.issues.length?'review':'ok';report.revision=hash({policyVersion:report.policyVersion,sourceCommit:report.sourceCommit,sourceFiles:report.sourceFiles,issues:report.issues,qualityWarnings:report.qualityWarnings,months:[...touched].sort(),at:now});
+ const finalReport=previous&&previous.policyVersion===report.policyVersion&&previous.sourceCommit===report.sourceCommit&&same(previous.sourceFiles,report.sourceFiles)&&same(previous.issues,report.issues)&&same(previous.qualityWarnings,report.qualityWarnings)&&touched.size===0?clone(previous):report;
  return{state:next,report:finalReport,changedMonths:[...touched].sort(),changed:!same(next,state)||!same(finalReport,previous)};
 }
 module.exports={planSync,projectCatalog,productIndex,sourceFiles,hash,stable,newMonth};

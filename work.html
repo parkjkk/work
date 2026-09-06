@@ -1941,8 +1941,8 @@ function blockHTML(){
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
   <div class="chips pb-prodchips" style="margin-top:7px"></div>
   <div class="pb-prog" hidden></div>
-  <div class="f-label">계획수량 (조) <span class="hint">이 기물을 처음 시작한 날에만 계획 수량을 적음</span></div>
-  <select class="f-input pb-planmode" aria-label="생산 진행 상태"><option value="continue">계속 생산</option><option value="start">새 계획 시작</option><option value="end">생산 종료</option></select>
+  <div class="f-label">계획수량 (조) <span class="hint">같은 기물은 계속 생산 · 새 기물 시작일에만 계획수량 · 전량을 마쳤을 때 생산 종료</span></div>
+  <select class="f-input pb-planmode" aria-label="생산 진행 상태"><option class="pb-planlegacy" value="legacy" hidden disabled>기존 계획수량 유지</option><option value="continue">계속 생산</option><option value="start">새 계획 시작</option><option value="end">생산 종료</option></select>
   <div class="f-row">
     <input class="f-input pb-plan" inputmode="numeric" placeholder="시작일에만 기록">
     <button type="button" class="qzero pb-planzero" hidden title="이 기물의 계획 수량을 전부 만들어 더 이상 만들지 않을 때만 누릅니다">생산 종료 (0)</button>
@@ -1992,8 +1992,11 @@ function expandProduct(el, open=true){
 }
 function syncPlanMode(el){
   const inp=el.querySelector('.pb-plan'), zero=el.querySelector('.pb-planzero').classList.contains('sel'), mode=el.querySelector('.pb-planmode');
-  mode.value=zero?'end':inp.value.trim()?'start':(mode.value==='start'?'start':'continue');
-  inp.closest('.f-row').hidden=mode.value!=='start';
+  const previous=S.rows.find(r=>r.id===el.dataset.rid);
+  const legacy=previous&&!Object.prototype.hasOwnProperty.call(previous,'planIntent')&&Number.isFinite(Number(previous.plan))&&Number(previous.plan)>0&&el.dataset.planModeChanged!=='1';
+  mode.value=zero?'end':legacy?'legacy':inp.value.trim()?'start':(mode.value==='start'?'start':'continue');
+  el.querySelector('.pb-planlegacy').hidden=mode.value!=='legacy';
+  inp.closest('.f-row').hidden=!['start','legacy'].includes(mode.value);
 }
 function syncQuickProducts(){
   const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
@@ -2118,6 +2121,7 @@ function addBlock(row){
     /* '오늘 작업 완료'로 오해해 누르는 일 방지 — 켤 때만 뜻을 확인 */
     if(on && !confirm("'생산 종료'는 오늘 작업을 마쳤다는 뜻이 아닙니다.\n이 제품(기물)의 계획 수량을 전부 다 만들어 더 이상 만들지 않을 때만 누릅니다 (계획수량 0으로 기록 → 현황에 '생산 종료').\n\n[확인] 이 기물 생산 종료 — 0으로 기록\n[취소] 아니요, 아직 생산중")) return;
     applyPz(on);
+    el.dataset.planModeChanged='1';
     syncPlanMode(el); syncQuickProducts();
   };
   el.querySelector('.pb-planmode').onchange=e=>{
@@ -2125,7 +2129,7 @@ function addBlock(row){
     if(desired==='end'){
       if(!pz.classList.contains('sel')) pz.click();
       if(!pz.classList.contains('sel')) e.target.value=planEl.value?'start':'continue';
-    }else{applyPz(false);if(desired==='continue') planEl.value='';e.target.value=desired;}
+    }else{applyPz(false);if(desired==='continue') planEl.value='';e.target.value=desired;el.dataset.planModeChanged='1';}
     syncPlanMode(el);saveDraft();
   };
   planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); });
@@ -2185,6 +2189,16 @@ function numField(el, cls, label, i){
   }
   return {ok:true, val:Number(cleaned)};
 }
+/* 과거의 양수 계획만으로 새 작업을 단정하지 않는다. 상태 선택과 수량 수정은 별개다. */
+function planIntentFields(previous, mode, plan, modeChanged){
+  const fits=intent=>intent==='continue'?(plan===''||plan==null):intent==='start'?(typeof plan==='number'&&Number.isFinite(plan)&&plan>0):intent==='end'?plan===0:false;
+  if(mode==='legacy'&&previous&&!modeChanged&&!Object.prototype.hasOwnProperty.call(previous,'planIntent')&&fits('start'))return {};
+  if(!fits(mode))throw Error('계속 생산은 계획수량을 비우고, 새 계획 시작은 0보다 큰 수량, 생산 종료는 0으로 기록해 주세요.');
+  if(previous&&!modeChanged&&!Object.prototype.hasOwnProperty.call(previous,'planIntent'))return {};
+  const intent=previous&&!modeChanged?previous.planIntent:mode;
+  if(intent!==mode||!fits(intent))throw Error('저장된 생산 상태와 계획수량이 다릅니다. 생산 진행 상태를 다시 선택해 주세요.');
+  return {planIntent:intent};
+}
 function collectBlock(el, i){
   let product = el.querySelector('.pb-product').value.trim();
   if(!product){
@@ -2192,9 +2206,9 @@ function collectBlock(el, i){
     return null;
   }
   let productFields;
+  const previous=S.rows.find(r=>r.id===el.dataset.rid);
   try{
     if(driver.mode==='gh'&&!S.productCatalog&&S.productCatalogMode!=='legacy')throw Error('관리 품목 목록을 확인한 뒤 저장해 주세요. 연결을 확인하고 기록을 다시 열어 주세요.');
-    const previous=S.rows.find(r=>r.id===el.dataset.rid);
     productFields=resolveFieldProduct(S.productCatalog,product,previous);product=productFields.product;
   }catch(e){fieldErr(el.querySelector('.pb-product'),`제품 ${i+1}: ${e.message}`);return null;}
   if(blockBadMark(el) && !el.querySelector('.pb-remark').value.trim()){
@@ -2202,21 +2216,31 @@ function collectBlock(el, i){
     return null;
   }
   const plan = numField(el, 'pb-plan', '계획수량', i);   if(!plan.ok) return null;
-  if(el.querySelector('.pb-planmode').value==='start' && plan.val===''){
-    fieldErr(el.querySelector('.pb-plan'), `제품 ${i+1}: 생산 시작을 선택했다면 계획수량을 입력하세요`);return null;
+  if(['start','legacy'].includes(el.querySelector('.pb-planmode').value) && plan.val===''){
+    fieldErr(el.querySelector('.pb-plan'), `제품 ${i+1}: 계획수량을 입력하거나 계속 생산을 선택하세요`);return null;
   }
-  const pzSel = el.querySelector('.pb-planzero').classList.contains('sel');
+  let pzSel = el.querySelector('.pb-planzero').classList.contains('sel');
   if(!pzSel && plan.val === 0){
     /* 계획수량에 0을 직접 치면 '생산 종료'로 기록됨 — 버튼과 같은 확인을 거침 */
     if(!confirm(`제품 ${i+1} ${product}: 계획수량 0 은 '이 기물 생산 종료'로 기록됩니다.\n\n[확인] 생산 종료로 기록\n[취소] 돌아가기 (시작일이 아니면 계획수량은 비워 두세요)`)){
       fieldErr(el.querySelector('.pb-plan'), `제품 ${i+1}: 계획수량은 기물 시작일에만 적고, 그 외에는 비워 두세요`); return null;
     }
+    /* 종료 확인에 동의한 경우 상태 컨트롤도 함께 전환한다. 수량 편집만으로는 상태를 만들지 않는다. */
+    const planInput=el.querySelector('.pb-plan');
+    el.querySelector('.pb-planzero').classList.add('sel');
+    planInput.disabled=true;planInput.value='';planInput.placeholder='생산 종료 → 0으로 기록';
+    el.querySelector('.pb-planmode').value='end';el.dataset.planModeChanged='1';pzSel=true;
+    syncPlanMode(el);syncQuickProducts();
   }
+  let planFields;
+  try{planFields=planIntentFields(previous,el.querySelector('.pb-planmode').value,pzSel?0:plan.val,el.dataset.planModeChanged==='1');}
+  catch(e){fieldErr(el.querySelector('.pb-planmode'),`제품 ${i+1}: ${e.message}`);return null;}
   const prod = numField(el, 'pb-prod', '생산량', i);     if(!prod.ok) return null;
   const scrap = numField(el, 'pb-scrap', '불량석고량', i); if(!scrap.ok) return null;
   const defq = numField(el, 'pb-defqty', '불량수량', i);  if(!defq.ok) return null;
   return {
     ...productFields,
+    ...planFields,
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -2305,6 +2329,7 @@ function formSnapshot(){
     b: els.map(el => ({
       p: el.querySelector('.pb-product').value, pl: el.querySelector('.pb-plan').value,
       pz: el.querySelector('.pb-planzero').classList.contains('sel'),
+      pm: el.querySelector('.pb-planmode').value, pc: el.dataset.planModeChanged==='1',
       pr: el.querySelector('.pb-prod').value, s: el.querySelector('.pb-scrap').value,
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
@@ -2422,6 +2447,8 @@ function restoreForm(snap){
     el.querySelector('.pb-product').value = b.p || '';
     el.querySelector('.pb-plan').value = b.pl || '';
     if(b.pz){ const pz = el.querySelector('.pb-planzero'), pl = el.querySelector('.pb-plan'); pz.classList.add('sel'); pl.disabled = true; pl.value = ''; pl.placeholder = '생산 종료 → 0으로 기록'; }
+    if(['continue','start','end'].includes(b.pm))el.querySelector('.pb-planmode').value=b.pm;
+    if(b.pc)el.dataset.planModeChanged='1';
     el.querySelector('.pb-prod').value = b.pr || '';
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
