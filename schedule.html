@@ -3891,7 +3891,7 @@ document.addEventListener('click',event=>{if(event.target.closest?.('[data-actio
 // The server enforces read-only authorization. These guards also keep shared
 // data away from this device's manager connection, cache and editor drafts.
 class ShareViewReadError extends Error{}
-const shareViewOrigin='https://parkjkk-production-view.silver-hippo-4598.chatgpt.site';
+const shareViewOrigin='https://parkjkk-production-view.pjk3742.chatgpt.site';
 const shareViewPages=new Set(['daily','schedule','stock','audit','report','master','home']);
 const shareViewActions=new Set([...shareViewPages,'csvDaily','csvStock','csvSchedule','csvReport','reportPrint','history','dryCalc']);
 const shareViewPlanCommands=new Set(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection']);
@@ -4039,7 +4039,7 @@ if(shareViewSession.active){
 
 // One-time, explicitly password-approved handoff from this manager device to
 // the fixed sharing administrator. No token is added to markup or a URL.
-const shareSetupOrigin='https://parkjkk-production-view.silver-hippo-4598.chatgpt.site';
+const shareSetupOrigin='https://parkjkk-production-view.pjk3742.chatgpt.site';
 function shareSetupParse(hash){
  const params=new URLSearchParams(String(hash||'').replace(/^#/,''));if(!params.has('shareSetup'))return null;
  if(params.has('view')||params.getAll('shareSetup').length!==1)throw Error('공유 설정 링크를 다시 열어 주세요.');
