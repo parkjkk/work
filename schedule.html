@@ -1048,7 +1048,62 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace #dialog::backdrop{background:#17203370}
  body.sheetWorkspace .toast{background:#2d374b;color:#fff;box-shadow:0 5px 18px #26314220}
 }
-</style></head><body>
+</style><script>(function(root){'use strict';
+// Login is independent of repository credentials. Offline verification cannot
+// learn a remote password change until this device reconnects.
+const INITIAL=/*ACCESS_DEFAULT*/{"schema":1,"salt":"17aa3bb56e955aa428da8d5303e825b7","iterations":100000,"digest":"60ff1375529f5f6125b169d261fa54874f0e99beed0dd2c76f326e15ec307177","revision":"initial"}/*ACCESS_DEFAULT_END*/;
+const SERVER='https://parkjkk-production-view.pjk3742.chatgpt.site',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
+let parkedDialogs=[];
+let verifier=INITIAL,cacheError='',unlocked=false,session='',pendingResolve=null,first=true,checking=false,lockVersion=0;
+function valid(v){return v&&v.schema===1&&typeof v.salt==='string'&&v.salt.length>=16&&v.salt.length<=100&&v.iterations===100000&&/^[a-f0-9]{64}$/.test(v.digest)&&typeof v.revision==='string'&&v.revision.length<=80}
+try{const text=localStorage.getItem(KEY);if(text){const v=JSON.parse(text);if(!valid(v))throw Error('기기의 로그인 확인정보가 손상되었습니다. 온라인에서 다시 로그인해 주세요.');verifier=v}}catch(e){cacheError=e.message}
+async function verify(password,v){if(!valid(v)||!crypto.subtle)throw Error('이 브라우저에서 비밀번호를 확인할 수 없습니다. 최신 Chrome 또는 Edge로 열어 주세요.');const e=new TextEncoder(),k=await crypto.subtle.importKey('raw',e.encode(password),'PBKDF2',false,['deriveBits']),b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:e.encode(v.salt),iterations:v.iterations,hash:'SHA-256'},k,256);return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('')===v.digest}
+async function api(body){let r;try{r=await originalFetch(SERVER+'/api/access',{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(6000)})}catch(e){const error=Error('인터넷 연결을 확인해 주세요.');error.network=true;throw error}let j;try{j=await r.json()}catch{throw Error('로그인 서버 응답을 확인하지 못했습니다.')}if(!r.ok){const e=Error(j.error||'로그인을 확인하지 못했습니다.');e.status=r.status;throw e}return j}
+function cache(v){verifier=v;try{localStorage.setItem(KEY,JSON.stringify(v));cacheError=''}catch{cacheError='이 기기에 로그인 정보를 보관하지 못했습니다. 다음 접속에는 인터넷이 필요할 수 있습니다.'}}
+const style=document.createElement('style');style.id='appAccessStyle';style.textContent=`html[data-app-locked] body>*:not(#appAccess):not(.accessChange):not(script):not(style){display:none!important}html[data-app-locked] body{min-height:100dvh;margin:0!important;background:#edf1f7!important}#appAccess{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#22344c;box-sizing:border-box;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#dce7f8,#edf1f7 65%)}#appAccess[hidden]{display:none!important}.accessCard{box-sizing:border-box;width:min(100%,420px);padding:30px;border:1px solid #d3ddea;border-radius:20px;background:#fff;box-shadow:0 18px 65px #17345815}.accessCard h1{font-size:26px;line-height:1.25;margin:10px 0 14px}.accessEyebrow{font-size:12px;letter-spacing:.14em;color:#586f91;font-weight:700}.accessCard p,.accessSettings p{font-size:13px;line-height:1.6}.accessCard label{display:block;font-weight:650;font-size:14px;margin:18px 0 7px}.accessCard input,.accessChange input{box-sizing:border-box;width:100%;min-height:46px;padding:11px 13px;background:#fff;color:#23364f;border:1px solid #aabbd0;border-radius:9px;font:inherit}.accessCard button,.accessSettings button,.accessChange button{box-sizing:border-box;min-height:42px;border:1px solid #adbbcf;border-radius:8px;padding:9px 14px;background:#fff;color:#264463;font:inherit;font-size:13px;cursor:pointer}.accessCard button[type=submit],.accessChange button[type=submit]{background:#325d96;border-color:#325d96;color:white;font-weight:700}.accessCard button[type=submit]{width:100%;margin-top:17px}.accessCard button:disabled{opacity:.55}.accessCard [role=alert],.accessChange [role=alert]{min-height:20px;color:#a83030;font-size:13px;white-space:pre-wrap}.accessCard .accessAdmin{border:none;background:transparent;width:100%;color:#566d89}.accessSettings{margin:12px 0;padding:16px;border:1px solid #d2dcea;border-radius:12px;background:#f6f8fc;color:#23364f}.accessSettings h3{margin:0 0 8px;font-size:15px}.accessSettings .accessActions{display:flex;flex-wrap:wrap;gap:8px}.accessChange{box-sizing:border-box;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:24px;border:1px solid #d0dbea;border-radius:16px;color:#22344c;background:#fff;font-family:inherit}.accessChange::backdrop{background:#16263b88}.accessChange label{display:block;margin:14px 0;font-size:14px}.accessChange p{font-size:13px;line-height:1.6}.accessChange .accessActions{display:flex;justify-content:flex-end;gap:8px}@media print{#appAccess,.accessSettings,.accessChange{display:none!important}html[data-app-locked] body>*{display:none!important}}`;
+document.documentElement.dataset.appLocked='';document.head.append(style);
+function message(text){const el=document.querySelector('#accessError');if(el)el.textContent=text}
+function lock(text=''){for(const d of document.querySelectorAll('dialog[open]')){d.close();if(d.classList.contains('accessChange')){for(const i of d.querySelectorAll('input'))i.value='';d.remove()}else if(!parkedDialogs.includes(d))parkedDialogs.push(d)}lockVersion++;unlocked=false;session='';document.documentElement.dataset.appLocked='';const el=document.querySelector('#appAccess');if(el){el.hidden=false;message(text);el.querySelector('input')?.focus()}root.dispatchEvent(new Event('production:lock'))}
+function success(j,offline=false){if(j){if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('로그인 응답 형식을 확인해 주세요.');cache(j.verifier);session=j.session}unlocked=true;delete document.documentElement.dataset.appLocked;document.querySelector('#appAccess').hidden=true;for(const d of parkedDialogs)if(d.isConnected&&!d.open){try{d.showModal()}catch{}}parkedDialogs=[];root.dispatchEvent(new CustomEvent('production:login',{detail:{offline,warning:cacheError,initial:first}}));if(first){first=false;pendingResolve?.();pendingResolve=null}mount();}
+async function change(){
+ const d=document.createElement('dialog');d.className='accessChange';d.setAttribute('aria-label','로그인 비밀번호 변경');
+ d.innerHTML='<form><h2>로그인 비밀번호 변경</h2><p>기존 관리자 비밀번호로 확인합니다. 저장하면 생산관리와 현장일보, 다른 기기의 다음 온라인 로그인에 함께 적용됩니다.</p><label>관리자 비밀번호<input name="admin" type="password" autocomplete="off" required maxlength="128"></label><label>새 로그인 비밀번호<input name="next" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><label>새 비밀번호 다시 입력<input name="repeat" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><p role="alert"></p><div class="accessActions"><button type="button">취소</button><button type="submit">두 앱에 적용</button></div></form>';
+ let closed=false,processing=false;const close=()=>{if(processing)return;closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove()};d.querySelector('[type=button]').onclick=close;d.oncancel=e=>{e.preventDefault();if(!processing)close()};d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(processing)return;const f=e.target,error=d.querySelector('[role=alert]');if(f.elements.next.value!==f.elements.repeat.value){error.textContent='새 비밀번호가 서로 다릅니다.';return}processing=true;const requestVersion=lockVersion,adminPassword=f.elements.admin.value,password=f.elements.next.value;for(const i of d.querySelectorAll('input'))i.value='';d.querySelector('[type=submit]').disabled=true;try{const current=await api(),j=await api({action:'change',revision:current.revision,adminPassword,password});if(closed||!d.isConnected||requestVersion!==lockVersion)return;if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('비밀번호 변경 응답을 확인하지 못했습니다.');cache(j.verifier);if(unlocked)session=j.session;processing=false;close();if(unlocked){mount();alert('두 앱의 로그인 비밀번호를 변경했습니다. 오프라인용 HTML도 다시 내려받아 보관하세요.')}else message('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.')}catch(err){if(!closed)error.textContent=err.network?'변경 결과를 확인하지 못했습니다. 인터넷 연결 후 새 비밀번호로 로그인해 보세요. 되지 않으면 다시 변경해 주세요.':err.message}finally{processing=false;if(!closed)d.querySelector('[type=submit]').disabled=false}};
+ document.body.append(d);d.showModal();d.querySelector('input').focus();
+}
+async function downloadHtml(button){button.disabled=true;try{
+ const url=new URL(location.href);url.hash='';url.search='';const r=await originalFetch(url.href,{cache:'no-store',credentials:'omit',redirect:'error'});if(!r.ok)throw Error('HTML을 읽지 못했습니다. 온라인 주소에서 내려받아 주세요.');let html=await r.text();
+ if(!html.includes('/*ACCESS_DEFAULT*/')||!html.includes('/*ACCESS_DEFAULT_END*/'))throw Error('최신 앱 파일을 확인하지 못했습니다. 새로고침 후 다시 내려받아 주세요.');
+ html=html.replace(/\/\*ACCESS_DEFAULT\*\/[\s\S]*?\/\*ACCESS_DEFAULT_END\*\//,()=> '/*ACCESS_DEFAULT*/'+JSON.stringify(verifier)+'/*ACCESS_DEFAULT_END*/');
+ const a=document.createElement('a'),blob=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));a.href=blob;a.download=location.pathname.split('/').pop()||'production.html';a.click();setTimeout(()=>URL.revokeObjectURL(blob),30000);
+ }catch(e){alert(e.message||'온라인에서 HTML을 내려받아 주세요.')}finally{button.disabled=false}}
+async function fieldSettings(cfg){
+ if(!unlocked||!session){alert('온라인으로 로그인한 뒤 서버 설정을 열어 주세요.');return}if(cfg?.transport!=='bridge'||!/^[A-Za-z0-9_-]{43}$/.test(cfg.bridgeKey||'')){alert('현장 공유 링크로 연결한 뒤 서버 설정을 열어 주세요.');return}
+ const d=document.createElement('dialog');d.className='accessChange';d.setAttribute('aria-label','현장일보 서버 설정');
+ d.innerHTML='<h2>현장일보 서버 설정</h2><p><b>parkjkk / ilbo-data</b><br>일보 전용 서버 토큰과 공유 링크를 관리합니다. 생산관리 저장소 권한은 바뀌지 않습니다.</p><form data-field-auth><label>관리자 비밀번호<input type="password" autocomplete="off" required maxlength="128"></label><button type="submit">설정 열기</button></form><section data-field-tools hidden><p data-field-status></p><form data-field-token><label>새 GitHub 일보 전용 토큰<input type="password" autocomplete="off" required maxlength="300"></label><button type="submit">서버 토큰 변경</button></form><form data-field-share><label>공유 링크 이름<input type="text" value="현장일보 공유" maxlength="80"></label><button type="submit">새 공유 링크 만들기</button></form><div data-field-created hidden><label>전달할 링크<input readonly></label><button type="button" data-field-copy>링크 복사</button></div><div data-field-links></div></section><p role="alert"></p><button type="button" data-field-close>닫기</button>';
+ let pin='',working=false,closed=false;const version=lockVersion,error=d.querySelector('[role=alert]');const current=()=>!closed&&d.isConnected&&unlocked&&version===lockVersion;
+ const close=()=>{pin='';closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove();root.removeEventListener('production:lock',close)};d.querySelector('[data-field-close]').onclick=close;d.oncancel=e=>{e.preventDefault();close()};root.addEventListener('production:lock',close);
+ const call=async action=>{if(!current())throw Error('설정을 다시 열어 주세요.');const r=await root.fetch(SERVER+'/api/field-settings',{method:'POST',headers:{Authorization:'Bearer '+cfg.bridgeKey,'Content-Type':'application/json'},body:JSON.stringify({...action,adminPassword:pin}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)});const j=await r.json();if(!r.ok)throw Error(j.error||'서버 설정을 확인하지 못했습니다.');if(!current())throw Error('설정을 다시 열어 주세요.');return j};
+ const list=async()=>{const j=await call({action:'status'});d.querySelector('[data-field-status]').textContent=j.connected?'서버 연결됨 · 토큰은 표시되지 않습니다.':'서버 연결 필요';const host=d.querySelector('[data-field-links]');host.replaceChildren();for(const item of j.links||[]){const row=document.createElement('p'),name=document.createElement('span');name.textContent=item.label+' · '+(item.revokedAt?'중지됨':'사용 중')+' ';row.append(name);if(!item.revokedAt){const button=document.createElement('button');button.type='button';button.textContent='사용 중지';button.onclick=()=>run(async()=>{if(!confirm('이 공유 링크 사용을 중지할까요? 이 링크로 연결한 기기의 접근이 중지됩니다.'))return;await call({action:'revoke',id:item.id});await list()});row.append(button)}host.append(row)}};
+ const run=async fn=>{if(working||!current())return;working=true;error.textContent='확인 중…';try{await fn();if(current())error.textContent=''}catch(e){if(current())error.textContent=e.message}finally{working=false}};
+ d.querySelector('[data-field-auth]').onsubmit=e=>{e.preventDefault();pin=e.target.querySelector('input').value;e.target.querySelector('input').value='';run(async()=>{await list();e.target.hidden=true;d.querySelector('[data-field-tools]').hidden=false})};
+ d.querySelector('[data-field-token]').onsubmit=e=>{e.preventDefault();const token=e.target.querySelector('input').value;e.target.querySelector('input').value='';run(async()=>{await call({action:'connect',token});await list();d.querySelector('[data-field-status]').textContent='서버 토큰을 변경했습니다. 기존 일보 링크는 유지됩니다.'})};
+ d.querySelector('[data-field-share]').onsubmit=e=>{e.preventDefault();const label=e.target.querySelector('input').value;run(async()=>{const j=await call({action:'create',label});d.querySelector('[data-field-created]').hidden=false;d.querySelector('[data-field-created] input').value=j.url;await list()})};d.querySelector('[data-field-copy]').onclick=()=>navigator.clipboard.writeText(d.querySelector('[data-field-created] input').value).catch(()=>{error.textContent='링크를 선택해서 직접 복사해 주세요.'});
+ document.body.append(d);d.showModal();d.querySelector('input').focus();
+}
+function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 기존 관리자 비밀번호와 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
+root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED')lock(j.error)}return r};
+const ready=new Promise(resolve=>pendingResolve=resolve);
+function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
+ el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
+ new MutationObserver(mount).observe(document.body,{childList:true,subtree:true});el.querySelector('input').focus();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',draw,{once:true});else draw();
+root.addEventListener('online',()=>{if(unlocked&&!session)lock('인터넷이 연결되었습니다. 최신 비밀번호로 다시 로그인해 주세요.')});
+root.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{const v=JSON.parse(e.newValue);if(valid(v)&&v.revision!==verifier.revision){verifier=v;lock('다른 창에서 비밀번호가 변경되었습니다. 다시 로그인해 주세요.')}}catch{}}});
+root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSettings,start(fn){ready.then(fn).catch(e=>{lock('앱을 열지 못했습니다. '+e.message)})}};
+})(globalThis);
+</script></head><body>
 <header><div class="brand"><div class="mark">조</div><div>조형 생산관리<small>생산 · 일정 · 재고 · 월마감</small></div></div><div class="headerRight"><small id="saveState">GitHub 연결 필요</small><span class="badge amber">생산관리</span></div></header>
 <div class="layout"><aside><div class="caption">WORKSPACE</div><nav id="nav"></nav><div class="sideFoot">웹 입력 · GitHub 저장<br>월별 원장과 마감자료 보관</div></aside><main id="main"></main></div>
 <input type="file" id="file" accept=".xlsm,.xlsx,.json" hidden><dialog id="dialog"></dialog><script>(function(root){
@@ -4018,18 +4073,190 @@ for(const type of['click','change','input','keydown'])document.addEventListener(
 window.addEventListener('pagehide',viewPreferenceFlush);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')viewPreferenceFlush()});
 
+// Recovery packages keep native documents and pending edits separate. An import
+// creates a new device workspace; it never replays another device's outbox.
+const ScheduleBackup=(()=>{
+ const FORMAT='johyeong-schedule-backup',VERSION=1,SELECTED='backup.v1:selected',LIMIT=120*1024*1024;
+ const copy=x=>JSON.parse(JSON.stringify(x)),object=x=>!!x&&typeof x==='object'&&!Array.isArray(x),monthKey=x=>/^\d{4}-(?:0[1-9]|1[0-2])$/.test(x),offlineKey=x=>/^offline:[0-9a-f-]{36}$/i.test(x);
+ const secret=/^(?:token|accessToken|refreshToken|githubToken|apiToken|pat|authorization|password|passwordHash|passwordDigest|passwordVerifier|adminPassword|pin|pinHash|pinVerifier|adminPin|verifier|authVerifier|accessVerifier|loginVerifier|connectionGate|accessGate|appAccess|credentials|authState|adminKey|viewKey|viewerKey|bridgeKey|apiKey|sessionKey|sessionToken|accessSession)$/i;
+ const pat=/\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/g;
+ function safe(value,{reject=false}={}){
+  let count=0;
+  const visit=(x,depth)=>{
+   if(depth>90||++count>2500000)throw Error('백업 자료의 크기 또는 중첩 단계가 너무 큽니다.');
+   if(x==null||typeof x==='boolean')return x;
+   if(typeof x==='number'){if(!Number.isFinite(x))throw Error('백업에 유효하지 않은 숫자가 있습니다.');return x}
+   if(typeof x==='string'){pat.lastIndex=0;if(reject&&pat.test(x))throw Error('접근 토큰이 포함된 파일은 가져올 수 없습니다.');pat.lastIndex=0;return x.replace(pat,'[접근 정보 제외]')}
+   if(Array.isArray(x))return x.map(v=>visit(v,depth+1));
+   if(!object(x))throw Error('JSON으로 보관할 수 없는 자료입니다.');const out={};
+   for(const [key,v]of Object.entries(x)){
+    if(['__proto__','prototype','constructor'].includes(key))throw Error('허용하지 않는 JSON 속성이 있습니다.');
+    if(secret.test(key)){if(reject)throw Error('접근 정보가 포함된 파일은 가져올 수 없습니다.');continue}
+    if(v!==undefined)out[key]=visit(v,depth+1);
+   }return out;
+  };return visit(value,0);
+ }
+ function ids(rows,label,required=false){if(!Array.isArray(rows))throw Error(label+' 목록이 없습니다.');const seen=new Set();for(const r of rows){if(!object(r))throw Error(label+' 행 형식을 확인해 주세요.');if(required&&(typeof r.id!=='string'||!r.id))throw Error(label+' 기록 ID가 없습니다.');if(r.id!=null){if(typeof r.id!=='string'||seen.has(r.id))throw Error(label+' 기록 ID가 중복되거나 잘못됐습니다.');seen.add(r.id)}}}
+ function validateState(s){
+  if(!object(s)||s.schema!==1||s.app!=='johyeong-schedule'||!object(s.months))throw Error('생산관리 전체자료 형식이 아닙니다.');
+  for(const key of ['products','memos','counts','scheduleRows','archive'])ids(s[key],key,key==='products');
+  if(!Array.isArray(s.workers)||s.workers.some(w=>typeof w!=='string')||new Set(s.workers).size!==s.workers.length)throw Error('작업자 목록을 확인해 주세요.');
+  if(!Array.isArray(s.locations)||!object(s.calendar)||!Array.isArray(s.calendar.factory)||!Array.isArray(s.calendar.workers))throw Error('보관장소 또는 휴일 자료가 없습니다.');
+  const names=s.products.map(p=>p.name);if(names.some(n=>typeof n!=='string'||!n.trim())||new Set(names).size!==names.length)throw Error('기준 품명이 중복되거나 비어 있습니다.');
+  if(!Object.keys(s.months).length)throw Error('가져올 월자료가 없습니다.');
+  for(const [key,m]of Object.entries(s.months)){
+   if(!monthKey(key)||!object(m)||m.id!==key)throw Error('월자료 ID와 월 목록이 맞지 않습니다.');
+   for(const kind of ['rows','issues','stocks','plans','plaster'])ids(m[kind],key+' '+kind,kind==='rows');
+   for(const kind of ['jobs','history','auditSessions','operations'])if(m[kind]!==undefined)ids(m[kind],key+' '+kind);
+   if(m.closed!==true&&m.closed!==false)throw Error('월 마감 상태를 확인해 주세요.');
+   for(const row of m.rows){const d=row.date;if(typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00Z'))||new Date(d+'T00:00:00Z').toISOString().slice(0,10)!==d||d.slice(0,7)!==key)throw Error('생산일보 날짜와 월이 맞지 않습니다.');for(const f of ['pours','hours','plan'])if(row[f]!=null&&(typeof row[f]!=='number'||!Number.isFinite(row[f])))throw Error('생산일보 숫자 형식을 확인해 주세요.')}
+  }return s;
+ }
+ const pathOK=p=>typeof p==='string'&&p.length<1000&&!p.startsWith('/')&&!p.includes('\\')&&!/[\u0000-\u001f]/.test(p)&&p.split('/').every(v=>v&&v!=='.'&&v!=='..')&&p.endsWith('.json');
+ function nativeFromFiles(files){
+  if(!object(files))throw Error('원격 파일 목록이 없습니다.');for(const [p,f]of Object.entries(files))if(!pathOK(p)||!object(f)||!Object.hasOwn(f,'data'))throw Error('원격 파일의 경로나 내용이 올바르지 않습니다.');
+  const cat=files['meta/catalog.json']?.data;if(cat?.schema!==1||!Array.isArray(cat.records))throw Error('원격 기준자료가 없습니다.');ids(cat.records,'원격 기준자료',true);
+  const loaded=ScheduleNative.unpackCatalog(cat.records);if(new Set(loaded.months).size!==loaded.months.length)throw Error('원격 월 목록이 중복됩니다.');
+  for(const key of loaded.months){if(!monthKey(key))throw Error('원격 월 목록이 올바르지 않습니다.');const doc=files['months/'+key+'.json']?.data;if(doc?.schema!==1||!Array.isArray(doc.records))throw Error('기준자료에 연결된 월파일이 없습니다: '+key);loaded.state.months[key]=ScheduleNative.unpackMonth(key,doc.records)}
+  for(const name of loaded.state.archiveNames||[]){if(typeof name!=='string')throw Error('원본 시트 목록을 확인해 주세요.');const doc=files['archive/'+encodeURIComponent(name)+'.json']?.data;if(doc?.schema!==1||!Array.isArray(doc.records)||doc.records.length!==1||doc.records[0]?.name!==name)throw Error('기준자료에 연결된 원본 시트가 없습니다.');loaded.state.archive.push(copy(doc.records[0]))}
+  return validateState(loaded.state);
+ }
+ function draftEntry(entry,scope){
+  if(!object(entry)||typeof entry.key!=='string')throw Error('기기 초안 항목이 올바르지 않습니다.');const v=entry.value;
+  if(entry.key.startsWith('sheet.v1:'+scope+':')){if(!object(v)||v.schema!==1||v.scope!==scope||!monthKey(v.month)||!object(v.draft))throw Error('표 초안의 저장소·월이 맞지 않습니다.');ids(v.draft.rows,'초안');ids(v.draft.baseRows,'초안 기준');ids(v.draft.deleted,'초안 삭제');if(v.draft.scope!=null&&v.draft.scope!==scope)throw Error('초안 기준 저장소가 다릅니다.');return true}
+  if(entry.key.startsWith('draft:'+scope+':')){if(!object(v))throw Error('생산 입력 초안 형식을 확인해 주세요.');return true}
+  throw Error('현재 작업공간 밖의 기기자료는 가져올 수 없습니다.');
+ }
+ function validate(input){
+  if(!object(input)||input.format!==FORMAT||input.version!==VERSION)throw Error('이 앱에서 만든 전체 JSON 백업을 선택해 주세요.');const b=safe(input,{reject:true});validateState(b.state);
+  if(!object(b.device)||typeof b.device.scope!=='string'||!b.device.scope||!Array.isArray(b.device.entries))throw Error('백업의 기기 작업공간 정보가 없습니다.');
+  if(b.device.state)validateState(b.device.state);
+  if(b.repository){if(!object(b.repository.files)||!/^[0-9a-f]{40,64}$/i.test(b.repository.commit||''))throw Error('원격 백업 기준 버전이 없습니다.');nativeFromFiles(b.repository.files)}
+  const keys=new Set();for(const e of b.device.entries){draftEntry(e,b.device.scope);if(keys.has(e.key))throw Error('기기 초안 키가 중복됩니다.');keys.add(e.key);if(e.value.month&&!(b.device.state||b.state).months[e.value.month])throw Error('초안의 월자료가 백업에 없습니다.')}
+  if(b.device.recoveryEntries!==undefined){if(!Array.isArray(b.device.recoveryEntries))throw Error('이전 기기 복구본 목록이 올바르지 않습니다.');for(const e of b.device.recoveryEntries){if(!object(e)||typeof e.key!=='string'||!e.key.startsWith(b.device.scope+':recovery:')||!object(e.value)||keys.has(e.key))throw Error('이전 기기 복구본의 저장소가 다릅니다.');keys.add(e.key);if(e.value.state)validateState(e.value.state)}}
+  const env=b.device.envelope;if(env){if(!object(env)||!object(env.baseline)||!Array.isArray(env.queue)||!Array.isArray(env.groups))throw Error('전송대기·기준본 정보가 올바르지 않습니다.');if(env.state)validateState(env.state);ids(env.queue,'전송대기',true);for(const q of env.queue){if(!pathOK(q.path))throw Error('전송대기 경로가 올바르지 않습니다.');ids(q.base,'전송 기준',true);ids(q.local,'전송 변경',true)}}
+  return b;
+ }
+ function parse(text){
+  if(typeof text!=='string'||text.length>LIMIT)throw Error('120MB 이하의 JSON 백업 파일을 선택해 주세요.');let x;try{x=JSON.parse(text)}catch{throw Error('JSON 파일을 끝까지 읽지 못했습니다. 기존 자료는 유지됩니다.')}
+  if(object(x)&&!x.format&&x.app==='johyeong-schedule'&&x.schema===1){
+   const old=safe(x,{reject:true}),queue=old._pendingOperations||[];delete old._pendingOperations;validateState(old);if(!Array.isArray(queue))throw Error('이전 백업의 전송대기 목록을 확인해 주세요.');const baseline={};for(const q of queue)if(pathOK(q?.path)&&Array.isArray(q.base))baseline[q.path]=copy(q.base);
+   const migrated=create({state:old,scope:'legacy-backup',envelope:queue.length?{state:old,queue,baseline,groups:[]}:null});migrated.coverage.warnings.unshift('이전 형식 백업입니다. 당시 파일에 없던 표 초안·전송 그룹·추가 원격 JSON은 복원할 수 없습니다.');return migrated;
+  }return validate(x);
+ }
+ function create({state,deviceState=state,scope,envelope=null,entries=[],recoveryEntries=[],preferences=null,repository=null,recovery=null,primary='device'}){
+  const b=safe({format:FORMAT,version:VERSION,createdAt:new Date().toISOString(),state,device:{state:deviceState,scope,envelope,entries,recoveryEntries,preferences,recovery},repository});
+  const missing=(b.state.archiveNames||[]).filter(n=>!b.state.archive.some(a=>a.name===n));
+  b.coverage={primary,repository:repository?'all-json-at-commit':'device-only',missingArchives:missing,warnings:[...(primary==='github'?['기본으로 GitHub 최신 원장을 엽니다. 기기 원장·초안·전송대기는 별도 보관하며 자동 적용하지 않습니다.']:[]),...(!repository?['기기에 없는 원본 시트·원격 추가 파일은 포함되지 않습니다. 완전한 원격 보관은 GitHub 전체 JSON 백업을 사용하세요.']:[]),...(missing.length?['기기에 없는 원본 시트 '+missing.length+'개는 포함되지 않았습니다.']:[]),'Git 이력·Actions 비밀값·앱 로그인·접근 토큰은 포함하지 않습니다. 다른 기기의 미전송 자료는 그 기기에서 따로 백업해야 합니다.']};return validate(b);
+ }
+ async function db(){return new Promise((resolve,reject)=>{if(typeof indexedDB==='undefined'){reject(Error('기기 저장소를 사용할 수 없습니다.'));return}const q=indexedDB.open('schedule.v1.local',1);let settled=false;const timer=setTimeout(()=>{settled=true;reject(Error('기기 저장소 응답을 기다리다 중단했습니다.'))},8000);q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains('state'))q.result.createObjectStore('state')};q.onblocked=()=>{clearTimeout(timer);settled=true;reject(Error('다른 창의 저장 작업을 마친 뒤 다시 시도해 주세요.'))};q.onerror=()=>{clearTimeout(timer);settled=true;reject(Error('기기 저장소를 열지 못했습니다.'))};q.onsuccess=()=>{clearTimeout(timer);if(settled){q.result.close();return}q.result.onversionchange=()=>q.result.close();resolve(q.result)}})}
+ async function entries(scope,{recovery=false}={}){const d=await db();return new Promise((resolve,reject)=>{const result=[],t=d.transaction('state'),q=t.objectStore('state').openCursor();q.onsuccess=()=>{const c=q.result;if(c){const k=String(c.key);if(c.value!=null&&(recovery?k.startsWith(scope+':recovery:'):k.startsWith('sheet.v1:'+scope+':')||k.startsWith('draft:'+scope+':')))result.push({key:k,value:c.value});c.continue()}};t.oncomplete=()=>{d.close();resolve(result)};t.onerror=t.onabort=()=>{d.close();reject(Error('기기 초안을 모두 읽지 못했습니다.'))}})}
+ async function atomic(pairs){const d=await db();return new Promise((resolve,reject)=>{let t;try{t=d.transaction('state','readwrite');const store=t.objectStore('state');for(const [key,value]of pairs)store.put(value,key)}catch(e){try{t?.abort()}catch{}d.close();reject(Error('기기 저장에 실패했습니다. 기존 작업공간을 유지합니다.'));return}t.oncomplete=()=>{d.close();resolve()};t.onabort=t.onerror=()=>{d.close();reject(Error('기기 저장을 완료하지 못했습니다. 기존 작업공간을 유지합니다.'))}})}
+ function importPlan(input,id,before=null){
+  const b=validate(input),key='offline:'+id;if(!offlineKey(key))throw Error('새 작업공간 ID를 만들지 못했습니다.');
+  const converted=(b.coverage?.primary==='github'?[]:b.device.entries).map(e=>{const prefix=e.key.startsWith('sheet.v1:')?'sheet.v1:':'draft:',value=copy(e.value);if(prefix==='sheet.v1:'){value.scope=key;if(value.draft.scope!==undefined)value.draft.scope=key}return{key:prefix+key+e.key.slice(prefix.length+b.device.scope.length),value}});
+  const record={schema:1,kind:'offline-workspace',key,createdAt:new Date().toISOString(),state:copy(b.state),recovery:{source:b.device,repository:b.repository,coverage:b.coverage||null},preferences:b.device.preferences,updatedAt:new Date().toISOString()};
+  const pairs=[[key,record],...converted.map(e=>[e.key,e.value]),[SELECTED,{schema:1,key}]];if(before)pairs.push(['backup.v1:before:'+id,safe(before)]);return{key,record,pairs};
+ }
+ async function remote(client){
+  const config=client.config,commit=await client.api('/commits/'+encodeURIComponent(config.branch||'main'));if(!/^[0-9a-f]{40,64}$/i.test(commit.sha||'')||!commit.commit?.tree?.sha)throw Error('GitHub 백업 기준 버전을 확인하지 못했습니다.');
+  const tree=await client.api('/git/trees/'+commit.commit.tree.sha+'?recursive=1');if(tree.truncated||!Array.isArray(tree.tree))throw Error('전체 파일 목록을 읽지 못해 백업을 중단했습니다.');
+  const list=tree.tree.filter(x=>x.path?.endsWith('.json'));if(list.length>10000||list.some(x=>x.type!=='blob'||x.mode!=='100644'||!pathOK(x.path))||list.reduce((n,x)=>n+(x.size||0),0)>LIMIT)throw Error('원격 JSON 파일의 형식 또는 크기를 확인해 주세요.');
+  const fixed=new ScheduleStorage.GithubStore({...config,branch:commit.sha},client.request),files={};let cursor=0,failure=null;
+  try{await Promise.all(Array.from({length:Math.min(4,list.length)},async()=>{while(!failure&&cursor<list.length){const item=list[cursor++];try{const f=await fixed.get(item.path);if(f.sha!==item.sha)throw Error('원격 파일 버전이 서로 다릅니다.');files[item.path]={sha:f.sha,data:f.data}}catch(e){failure??=e}}}));if(failure)throw failure;nativeFromFiles(files);return{owner:config.owner,repo:config.repo,branch:config.branch||'main',commit:commit.sha,files}}finally{fixed.invalidate()}
+ }
+ class OfflineWorkspace{
+  constructor(record){this.key=record.key;this.offline=true;this.record=copy(record);this.loaded=true;this.closed=false;this.envelope={state:this.record.state,baseline:{},queue:[],groups:[]};this.lock=Promise.resolve();this.client={get:async path=>{const f=this.record.recovery?.repository?.files?.[path];if(!f)throw Error('오프라인 백업에 없는 파일입니다.');return copy(f)}}}
+  async save(next){const value=copy(next);validateState(value);const task=async()=>{if(this.closed)throw Error('종료된 오프라인 작업공간입니다.');const r={...this.record,state:value,updatedAt:new Date().toISOString()};await atomic([[this.key,r]]);this.record=r;this.envelope.state=value;return copy(value)};const p=this.lock.then(task,task);this.lock=p.catch(()=>{});return p}
+  async flush(){} async open(){return copy(this.envelope.state)} close(){this.closed=true}
+ }
+ return{FORMAT,VERSION,SELECTED,LIMIT,safe,validateState,validate,parse,create,nativeFromFiles,entries,atomic,importPlan,remote,OfflineWorkspace,offlineKey};
+})();
+
+const backupSession={running:false,restoreError:false};
+function backupAllowed(){if(typeof shareViewSession!=='undefined'&&shareViewSession.active)throw Error('조회 공유 화면에서는 백업과 가져오기를 사용할 수 없습니다.');if(typeof AppAccess!=='undefined'&&!AppAccess.unlocked)throw Error('앱 잠금을 해제한 뒤 백업과 가져오기를 사용해 주세요.')}
+async function backupSnapshot(remote=false){
+ backupAllowed();const current=workspace,scope=sheetScope();if(connectionOpening)throw Error('자료 불러오기가 끝난 뒤 백업해 주세요.');
+ if(current?.flushing)await current.flushing;if(current?.lock)await current.lock;
+ const localEntries=await ScheduleBackup.entries(scope),byKey=new Map(localEntries.map(e=>[e.key,e]));
+ for(const g of sheetRegistry.values())if(g.scope===scope&&(g.dirty||g.closedDraft))byKey.set('sheet.v1:'+g.key,{key:'sheet.v1:'+g.key,value:{schema:1,scope,month:g.month,version:g.revision||0,draft:C.clone(g.closedDraft||g.draft)}});
+ let preferences=null;if(typeof viewPreferenceCapture==='function'){viewPreferenceCapture();const raw=viewPreferenceState.records.get(scope)?.data;preferences=raw?viewPreferenceClean(raw,scope):null}
+ let repository=current?.offline?current.record.recovery?.repository||null:null;
+ if(remote){if(!current||current.offline||current.pendingMigration)throw Error('직접 연결된 GitHub 원장이 필요합니다. 기기 백업은 연결 없이 사용할 수 있습니다.');repository=await ScheduleBackup.remote(current.client)}
+ if(workspace!==current||scope!==sheetScope())throw Error('작업공간이 바뀌어 백업을 중단했습니다.');
+ const deviceSnapshot=C.clone(state),snapshot=C.clone(deviceSnapshot);if(repository&&!remote){const archived=ScheduleBackup.nativeFromFiles(repository.files).archive;for(const a of archived)if(!snapshot.archive.some(x=>x.name===a.name))snapshot.archive.push(a)}
+ const recoveryEntries=await ScheduleBackup.entries(scope,{recovery:true});
+ backupAllowed();if(workspace!==current||scope!==sheetScope())throw Error('작업공간이 바뀌어 백업을 중단했습니다.');
+ return ScheduleBackup.create({state:remote?ScheduleBackup.nativeFromFiles(repository.files):snapshot,deviceState:deviceSnapshot,scope,envelope:current&&!current.offline?current.envelope:null,entries:[...byKey.values()],recoveryEntries,preferences,repository,recovery:current?.offline?current.record.recovery:null,primary:remote?'github':'device'});
+}
+async function backupBusy(action){backupAllowed();if(backupSession.running||busy||connectionOpening)throw Error('진행 중인 저장·불러오기가 끝난 뒤 다시 눌러 주세요.');const current=workspace,oldBusy=busy,oldResolving=current?.resolving;backupSession.running=true;busy=true;if(current)current.resolving=true;try{return await action()}finally{if(current)current.resolving=oldResolving;busy=oldBusy;backupSession.running=false;if(workspace!==current)render()}}
+function backupHydrate(record){
+ const previous=workspace;workspace=new ScheduleBackup.OfflineWorkspace(record);state=workspace.envelope.state;previous?.close();localReadError='';connectionOpening=null;connectionPreview=null;month='';page='settings';booting=false;
+ if(typeof viewPreferenceClean==='function'&&record.preferences){const pref=viewPreferenceClean({...record.preferences,scope:record.key},record.key);viewPreferenceState.records.set(record.key,{data:pref,saved:JSON.stringify(pref),navApplied:false,page:null})}
+ setStatus('오프라인 작업공간 · 이 기기에만 저장 · 자동 전송 없음');render();
+}
+async function backupImportFile(file){
+ if(!file)return;return backupBusy(async()=>{
+  if(file.size>ScheduleBackup.LIMIT)throw Error('120MB 이하의 JSON 백업 파일을 선택해 주세요.');const b=ScheduleBackup.parse(await file.text());
+  const rowCount=Object.values(b.state.months).reduce((n,m)=>n+m.rows.length,0),pending=b.device.envelope?.queue?.length||0;
+  if(!confirm((b.coverage?.primary==='github'?'GitHub 최신 원장':'기기 작업본')+' · 월 '+Object.keys(b.state.months).length+'개 · 생산 '+rowCount+'행 · 초안 '+b.device.entries.length+'개 · 이전 전송대기 '+pending+'건\n새 오프라인 작업공간으로 열까요? 현재 자료와 연결은 별도 보존되며 이전 전송대기는 자동 전송하지 않습니다.'+(b.coverage?.primary==='github'?' 기기 초안은 따로 보관하며 연결·백업에서 선택해 열 수 있습니다.':'')))return false;
+  const before=await backupSnapshot(false),plan=ScheduleBackup.importPlan(b,crypto.randomUUID(),before);
+  // Keep the old workspace's latest memory-only drafts available there too.
+  backupAllowed();await ScheduleBackup.atomic([...before.device.entries.map(e=>[e.key,e.value]),...plan.pairs]);backupHydrate(plan.record);toast('검증한 백업을 새 오프라인 작업공간으로 열었습니다. 기존 자료와 전송대기는 그대로 보관했습니다.');return true;
+ });
+}
+async function backupAction(action){
+ if(action==='restoreBackupDevice'){backupAllowed();const source=workspace?.offline&&workspace.record.recovery?.source;if(!source?.state)throw Error('별도로 보관된 기기 작업본이 없습니다.');const b=ScheduleBackup.create({state:source.state,scope:source.scope,envelope:source.envelope,entries:source.entries,recoveryEntries:source.recoveryEntries||[],preferences:source.preferences,repository:workspace.record.recovery.repository,recovery:source.recovery}),text=JSON.stringify(b);return backupImportFile({size:text.length,text:async()=>text})}
+ if(action==='importBackup'){backupAllowed();const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=()=>backupImportFile(input.files?.[0]).catch(e=>toast(e.message));input.click();return true}
+ if(action==='export'||action==='remoteBackup'){await backupBusy(async()=>{const b=await backupSnapshot(action==='remoteBackup');download(JSON.stringify(b,null,2),'조형_'+(action==='remoteBackup'?'전체':'기기')+'_JSON백업_'+today()+'.json','application/json');toast((action==='remoteBackup'?'원격 전체 JSON과 기기 변경':'기기 원장과 미저장 초안')+'을 백업했습니다. 접근 정보는 제외했습니다.')});return true}
+ if(action==='leaveOffline'){if(!workspace?.offline&&!backupSession.restoreError)return true;await backupBusy(async()=>{const before=workspace?.offline?await backupSnapshot(false):null;await ScheduleBackup.atomic([...(before?before.device.entries.map(e=>[e.key,e.value]):[]),...(before?[['backup.v1:exit:'+crypto.randomUUID(),before]]:[]),[ScheduleBackup.SELECTED,null]]);workspace?.close();workspace=null;state=null;month='';localReadError='';backupSession.restoreError=false;booting=true;await backupRestoreBefore();render()});return true}
+ return false;
+}
+const backupActionBefore=enhancedAction;
+enhancedAction=async function(action,...args){if(['export','remoteBackup','importBackup','leaveOffline','restoreBackupDevice'].includes(action))return backupAction(action);if(workspace?.offline&&['migrate','resolveRemote','import'].includes(action))throw Error('오프라인 자료는 자동 이전하지 않습니다. 기존 연결로 돌아간 뒤 별도 절차로 진행해 주세요.');return backupActionBefore.call(this,action,...args)};
+const backupNativeBefore=nativeAction;
+nativeAction=async function(action,...args){if(workspace?.offline&&['connect','retry','refresh','remoteBackup','migrate'].includes(action))throw Error('먼저 기존 연결로 돌아가 주세요. 오프라인 변경은 GitHub에 자동 반영되지 않습니다.');if(action==='remoteBackup')return backupAction(action);return backupNativeBefore.call(this,action,...args)};
+const backupRestoreBefore=restoreConnection;
+restoreConnection=async function(...args){
+ let selected;try{selected=await S.localGet(ScheduleBackup.SELECTED)}catch(e){backupSession.restoreError=true;localReadError=e.message;booting=false;ensureLocalState();setStatus('작업공간 선택 읽기 실패 · 기존자료 유지');render();return}
+ if(selected){try{if(selected.schema!==1||!ScheduleBackup.offlineKey(selected.key))throw Error('작업공간 선택 정보가 올바르지 않습니다.');const record=await S.localGet(selected.key);if(record?.kind!=='offline-workspace'||record.key!==selected.key)throw Error('오프라인 보관자료가 없습니다.');ScheduleBackup.validateState(ScheduleBackup.safe(record.state,{reject:true}));backupSession.restoreError=false;backupHydrate(record);return}catch(e){backupSession.restoreError=true;localReadError=e.message;booting=false;ensureLocalState();setStatus('오프라인 자료 읽기 실패 · 기존자료 유지');render();return}}
+ return backupRestoreBefore.apply(this,args);
+};
+const backupIlboCheckBefore=ilboCheck;
+ilboCheck=async function(...args){if(workspace?.offline)return;return backupIlboCheckBefore.apply(this,args)};
+const backupIlboStatusBefore=ilboRenderStatus;
+ilboRenderStatus=function(...args){if(workspace?.offline){document.querySelector('#ilboSyncStatus')?.remove();return}return backupIlboStatusBefore.apply(this,args)};
+const backupNoticeBefore=localNotice;
+localNotice=function(){if(workspace?.offline)return '<div class="notice blue" role="status"><b>오프라인 작업공간</b> · 이 기기에만 저장합니다. 현장 자동연동과 GitHub 전송은 멈춰 있습니다. 연결·백업에서 기존 연결로 돌아갈 수 있습니다.</div>';return backupNoticeBefore()};
+
 // Only manual connection settings require the screen password. Restoring an
 // existing connection and background data synchronization do not use this gate.
 const managementConnectionGate=ScheduleConnectionGate.create();
+// Access controls are supplied by the common app gate. Keep their mount visible
+// even on an unconnected device; connection credentials remain inside details.
+const connectionViewBefore=connectionView;
+connectionView=function(...args){
+ const offline=!!workspace?.offline,restoreError=typeof backupSession!=='undefined'&&backupSession.restoreError;
+ let html=connectionViewBefore.apply(this,args);
+ html=html.replace('웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.','관리 입력은 GitHub 직접 연결, 다른 사람의 조회는 별도 공유 서버를 사용합니다. JSON 백업은 연결 없이 보관하고 열 수 있습니다.');
+ html=html.replace('GitHub 전체자료 백업','GitHub 전체 JSON 백업').replace('기기 보관자료 내려받기','기기 원장·초안 JSON 백업');
+ html=html.replace(/<button\b[^>]*data-action="(?:export|remoteBackup)"[^>]*>[\s\S]*?<\/button>/g,'');
+ if(offline)html=html.replace(/<button\b([^>]*data-action="(?:connect|retry|refresh|migrate|import)"[^>]*)>/g,'<button $1 disabled>');
+ html=html.replace('<h2>최초 이전 · 복구</h2>','<h2>기존 엑셀 최초 이전</h2>');
+ const extra='<section class="card" data-backup-settings><h2>JSON 백업 · 오프라인 복구</h2><p>월 원장·마감 스냅샷·변경 이력·기준정보와 이 기기의 미저장 초안, 전송대기를 따로 보관합니다. GitHub 전체 백업에는 원본 시트와 추가 JSON 파일도 포함합니다.</p><div class="actions"><button type="button" data-action="export">기기 원장·초안 백업</button><button type="button" data-action="remoteBackup" '+(!workspace||offline?'disabled':'')+'>GitHub 전체 JSON 백업</button><button type="button" data-action="importBackup">JSON 백업 가져오기</button>'+(offline?'<button type="button" data-action="leaveOffline">기존 연결로 돌아가기</button>':'')+'</div><p class="footerNote">가져오기는 전체 검증 후 새 오프라인 작업공간으로 열립니다. 현재 자료·연결·초안을 덮어쓰지 않으며, 이전 전송대기는 확인용으로 보관하고 자동 재전송하지 않습니다. 접근 토큰·로그인 정보와 다른 기기의 미전송 자료는 포함하지 않습니다. 기기에 없는 원본 시트는 전체 GitHub 백업에서 받을 수 있습니다.</p>'+(offline?'<p class="notice blue">현재 오프라인 복구본을 사용 중입니다. 변경 내용은 이 기기에만 저장됩니다. 온라인 원장으로 자동 합치지 않습니다.</p>':'')+'</section><section class="card" data-access-settings></section>';
+ const pending=workspace?.offline?workspace.record?.recovery?.source?.envelope?.queue?.length||0:0;
+ const deviceCopy=offline&&workspace.record?.recovery?.coverage?.primary==='github'&&workspace.record.recovery.source?.state;
+ return html+extra+(deviceCopy?'<section class="card"><h3>GitHub 최신 원장으로 복구됨</h3><p>백업 시점의 기기 원장과 미저장 초안은 따로 보관했습니다. 필요한 경우 아래 버튼으로 그 작업본을 또 다른 오프라인 공간에 열 수 있습니다.</p><button type="button" data-action="restoreBackupDevice">이전 기기 초안 포함 복구본 열기</button></section>':'')+(pending?'<section class="card"><h3>이전 기기 전송대기 '+Number(pending)+'건 보관</h3><p>원래 기준본·변경본·전송 그룹은 백업에 별도로 남아 있습니다. 복구본에서 GitHub로 자동 전송하지 않습니다. 원래 기기의 연결에서 전송 결과를 확인해 주세요.</p></section>':'')+(restoreError?'<section class="card"><p>오프라인 선택 정보를 열지 못했습니다. 보관 파일은 지우지 않고 기존 연결로 돌아갈 수 있습니다.</p><button type="button" data-action="leaveOffline">기존 연결로 돌아가기</button></section>':'');
+};
 const connectionWorkspaceSettingsBefore=workspaceSettings;
 workspaceSettings=function(main){
  if(typeof shareViewSession!=='undefined'&&shareViewSession.active)return;
  connectionWorkspaceSettingsBefore(main);const details=main.querySelector('.workspaceConnection');if(!details)return;
  if(!details.querySelector('[data-share-admin-launch]')){
   const area=document.createElement('section'),title=document.createElement('h3'),note=document.createElement('p'),button=document.createElement('button');
-  area.className='connectionShareEntry';title.textContent='생산관리 조회 공유';note.textContent='별도 관리 화면에서 토큰 없는 조회 링크를 만들거나 사용을 중지합니다. 현재 기기의 저장된 관리 연결을 확인해 새 창으로 전달합니다.';
+  area.className='connectionShareEntry';title.textContent='조회 공유 서버';note.textContent='별도 관리 화면에서 조회 전용 링크를 만들거나 중지합니다. 받는 사람은 GitHub 토큰 없이 조회만 하며, 이 화면의 직접 GitHub 연결은 관리자의 입력·저장에 사용합니다.';
   button.type='button';button.textContent='조회 링크 관리';button.setAttribute('data-share-admin-launch','');
-  button.addEventListener('click',()=>{if(typeof shareAdminLaunch==='function')shareAdminLaunch();else toast('공유 관리 기능을 준비하지 못했습니다. 화면을 새로 열어 주세요.')});area.append(title,note,button);details.append(area);
+  button.addEventListener('click',()=>{if(typeof workspace!=='undefined'&&workspace?.offline){toast('기존 관리 연결로 돌아간 뒤 조회 링크를 관리해 주세요.');return}if(typeof shareAdminLaunch==='function')shareAdminLaunch();else toast('공유 관리 기능을 준비하지 못했습니다. 화면을 새로 열어 주세요.')});area.append(title,note,button);details.append(area);
  }
  const summary=details.querySelector('summary');details.open=managementConnectionGate.unlocked;
  const label=()=>{summary.textContent=(managementConnectionGate.unlocked?'GitHub 저장소 연결 설정':'🔒 GitHub 저장소 연결 설정 · 비밀번호');};label();
@@ -4089,6 +4316,7 @@ function shareViewReadWarnings(payload){
 }
 function shareViewAllowed(element){
  if(!element)return true;
+ if(element.closest?.('#appAccess,dialog.accessChange'))return true;
  const data=element.dataset||{};
  if(data.page!==undefined)return shareViewPages.has(data.page);
  if(data.action!==undefined)return shareViewActions.has(data.action);
@@ -4122,13 +4350,13 @@ function shareViewPaint(root=document){
  }finally{shareViewSession.painting=false}
 }
 function shareViewCapture(event){
- if(!shareViewSession.active)return;
+ if(!shareViewSession.active||event.target?.closest?.('#appAccess,dialog.accessChange'))return;
  const target=event.target?.closest?.('button,[role="button"],input,select,textarea,[contenteditable]');
  const forbidden=target&&!shareViewAllowed(target)||event.type==='submit'||event.type==='drop'||event.type==='keydown'&&(event.ctrlKey||event.metaKey)&&String(event.key).toLowerCase()==='s';
  if(forbidden){event.preventDefault();event.stopImmediatePropagation();if(event.type==='click')toast(shareViewMessage)}
 }
 async function shareViewLoad(){
- if(!shareViewSession.active)return;
+ if(!shareViewSession.active||(globalThis.AppAccess&&!AppAccess.unlocked))return;
  const sequence=++shareViewSession.sequence;shareViewSession.controller?.abort();const controller=new AbortController();shareViewSession.controller=controller;
  shareViewSession.loading=true;shareViewSession.error='';shareViewSession.warnings=[];state=null;booting=true;connectionStatus='공유 자료 읽는 중…';render();
  try{
@@ -4186,6 +4414,7 @@ if(shareViewSession.active){
  };
  for(const type of ['click','input','change','beforeinput','paste','submit','drop','keydown'])document.addEventListener(type,shareViewCapture,true);
  window.addEventListener('hashchange',()=>{if(shareViewSession.active)shareViewLoad()});
+ window.addEventListener('production:login',e=>{if(!e.detail?.initial)shareViewLoad()});
  // Local grid refresh and mounted fullscreen tools can create new controls
  // without a full app render. Paint only added elements, never status text.
  if(typeof MutationObserver==='function'){
@@ -4287,6 +4516,6 @@ if(new URLSearchParams(String(location.hash||'').replace(/^#/,'' )).has('shareSe
  window.addEventListener('hashchange',()=>{shareSetupState.version++;if(shareSetupState.running)managementConnectionGate.lock()});
 }
 
-render();restoreConnection().catch(e=>toast('시작 화면 오류: '+e.message));window.addEventListener('online',()=>workspace?.flush());setInterval(()=>{if(workspace?.envelope.queue.length)workspace.flush()},30000);
+AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);
 })();
 </script></body></html>
