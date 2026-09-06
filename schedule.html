@@ -3887,6 +3887,199 @@ const connectionNativeActionBefore=nativeAction;
 nativeAction=async function(action,...args){if(action==='connect'&&!managementConnectionGate.unlocked)throw Error('연결 설정의 비밀번호를 먼저 입력해 주세요.');return connectionNativeActionBefore.call(this,action,...args)};
 document.addEventListener('click',event=>{if(event.target.closest?.('[data-action="checkConnection"]')&&!managementConnectionGate.unlocked){event.preventDefault();event.stopImmediatePropagation();toast('연결 설정의 비밀번호를 먼저 입력해 주세요.')}},true);
 
+// Install last, inside app.js and before its first render/restoreConnection.
+// The server enforces read-only authorization. These guards also keep shared
+// data away from this device's manager connection, cache and editor drafts.
+class ShareViewReadError extends Error{}
+const shareViewOrigin='https://parkjkk-production-view.silver-hippo-4598.chatgpt.site';
+const shareViewPages=new Set(['daily','schedule','stock','audit','report','master','home']);
+const shareViewActions=new Set([...shareViewPages,'csvDaily','csvStock','csvSchedule','csvReport','reportPrint','history','dryCalc']);
+const shareViewPlanCommands=new Set(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection']);
+const shareViewFields='#monthSel,#search,#pgWorker,#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#secondaryAuditSelect,#secondaryLedgerSearch,#secondaryStockHideZero,[data-sheet-search],[data-sheet-view],[data-sheet-advanced],[data-sheet-new-date],[data-ledger-month],.workspaceFocusTableSelect,#dryEnd,#dryExclude';
+const shareViewButtons='[data-share-refresh],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-ledger-csv],[data-ledger-stock-csv],[data-pg-column-date],[data-pg-clear-date],[data-pg-select],[data-pg-history],[data-pg-dry-key],[data-completion-close],#runDry,#closeDry,#cancelReview';
+const shareViewMessage='공유 화면은 조회 전용입니다. 자료를 입력하거나 저장할 수 없습니다.';
+const shareViewPresent=hash=>new URLSearchParams(String(hash||'').replace(/^#/,'' )).has('view');
+function shareViewParse(hash){
+ const params=new URLSearchParams(String(hash||'').replace(/^#/,''));
+ if(!params.has('view'))return null;
+ const encoded=params.get('view');
+ if(params.getAll('view').length!==1||!encoded||encoded.length>2048||!/^[A-Za-z0-9_-]+$/.test(encoded))throw new ShareViewReadError('올바른 조회 공유링크를 다시 열어 주세요.');
+ let value;try{value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-encoded.length%4)%4)),c=>c.charCodeAt(0))))}catch{throw new ShareViewReadError('올바른 조회 공유링크를 다시 열어 주세요.')}
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['server','key'].includes(k))||value.server!==shareViewOrigin||typeof value.key!=='string'||!/^[A-Za-z0-9_-]{32,256}$/.test(value.key))throw new ShareViewReadError('허용된 조회 공유링크가 아닙니다. 관리자에게 새 링크를 요청해 주세요.');
+ return{server:value.server,key:value.key};
+}
+function shareViewValidate(payload){
+ const object=x=>!!x&&typeof x==='object'&&!Array.isArray(x),s=payload?.state;
+ if(payload?.schema!==1||typeof payload.updatedAt!=='string'||!Number.isFinite(Date.parse(payload.updatedAt))||!object(s)||s.schema!==1||s.app!=='johyeong-schedule'||!object(s.months))throw new ShareViewReadError('공유 자료 형식을 확인하지 못했습니다. 관리자에게 확인해 주세요.');
+ for(const key of ['products','workers','memos','counts','locations','scheduleRows','scheduleHistory','scheduleDryHistory','archive','changes'])if(!Array.isArray(s[key]))throw new ShareViewReadError('공유 자료가 일부 누락되어 표시를 보류했습니다.');
+ if(!object(s.calendar)||!Array.isArray(s.calendar.factory)||!Array.isArray(s.calendar.workers)||s.workers.some(x=>typeof x!=='string'))throw new ShareViewReadError('공유 기준자료를 확인하지 못했습니다.');
+ const months=Object.entries(s.months);if(!months.length||months.length>1200)throw new ShareViewReadError('조회할 월자료가 없습니다. 관리자에게 확인해 주세요.');
+ for(const [key,value]of months){
+  if(!/^(?:19|20|21)\d{2}-(?:0[1-9]|1[0-2])$/.test(key)||!object(value)||value.id!==key||typeof value.closed!=='boolean')throw new ShareViewReadError('공유 월자료 형식을 확인하지 못했습니다.');
+  for(const field of ['rows','issues','stocks','plans','jobs','history','auditSessions','plaster'])if(!Array.isArray(value[field]))throw new ShareViewReadError('공유 월자료가 일부 누락되어 표시를 보류했습니다.');
+ }
+ // Reject authorization/configuration accidentally included by a server change.
+ // Ordinary business keys, source IDs and immutable history remain untouched.
+ const stack=[s];let count=0;
+ while(stack.length){const item=stack.pop();if(++count>500000)throw new ShareViewReadError('공유 자료가 너무 커서 표시를 보류했습니다.');if(!item||typeof item!=='object')continue;for(const [key,value]of Object.entries(item)){if(['__proto__','prototype','constructor'].includes(key)||/^(?:token|githubtoken|accesstoken|refreshtoken|authorization|password|secret|sharekey|connectionconfig)$/i.test(key))throw new ShareViewReadError('공유 자료에 허용되지 않은 설정이 있어 표시를 보류했습니다.');if(value&&typeof value==='object')stack.push(value)}}
+ return JSON.parse(JSON.stringify(s));
+}
+function shareViewReadWarnings(payload){
+ if(payload.warnings===undefined)return[];
+ if(!Array.isArray(payload.warnings)||payload.warnings.length>1000||payload.warnings.some(value=>typeof value!=='string'||value.length>2000))throw new ShareViewReadError('공유 자료의 확인 안내를 읽지 못했습니다. 관리자에게 확인해 주세요.');
+ return payload.warnings.map(value=>value.trim()).filter(Boolean);
+}
+function shareViewAllowed(element){
+ if(!element)return true;
+ const data=element.dataset||{};
+ if(data.page!==undefined)return shareViewPages.has(data.page);
+ if(data.action!==undefined)return shareViewActions.has(data.action);
+ if(data.pgCommand!==undefined)return shareViewPlanCommands.has(data.pgCommand);
+ if(data.sheetCommand!==undefined)return data.sheetCommand==='select';
+ if(data.sheetViewCommand!==undefined)return ['productionDay','productionReset','productionCompletion'].includes(data.sheetViewCommand);
+ if(element.matches?.('input,select,textarea'))return element.matches(shareViewFields);
+ if(element.matches?.('button,[role="button"]'))return element.matches(shareViewButtons);
+ return true;
+}
+const shareViewSession={active:shareViewPresent(location.hash),sequence:0,controller:null,error:'',updatedAt:'',warnings:[],loading:false,observer:null,painting:false};
+function shareViewRenderWarnings(){
+ const warnings=state?shareViewSession.warnings:[],previous=document.querySelector('[data-share-warnings]');
+ if(!warnings.length){previous?.remove();return}
+ const host=document.querySelector('#planGridSurface.pgFocused')||document.querySelector('#main');if(!host)return;
+ const signature=JSON.stringify(warnings);let notice=previous;
+ if(!notice){notice=document.createElement('details');notice.dataset.shareWarnings='';notice.setAttribute('role','alert');notice.setAttribute('aria-label','공유 자료 확인 안내');notice.style.cssText='box-sizing:border-box;flex:none;order:-2;min-width:0;max-width:100%;margin:4px 0;padding:6px 10px;border:1px solid #d9a84a;border-left:4px solid #c58a20;border-radius:6px;background:#fff5db;color:#68400b;font-size:12px;line-height:1.5';notice.style.setProperty('display','block','important')}
+ if(notice._shareWarningSignature!==signature){notice._shareWarningSignature=signature;notice.innerHTML='<summary style="cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700">⚠ 자료 확인 '+warnings.length+'건 · '+esc(warnings[0])+'</summary><div style="max-height:160px;overflow:auto"><p style="margin:6px 0">관리자에게 아래 반영 상태를 확인해 주세요.</p><ul style="margin:6px 0;padding-left:20px">'+warnings.map(value=>'<li>'+esc(value)+'</li>').join('')+'</ul></div>'}
+ if(notice.parentElement!==host)host.prepend(notice);
+}
+function shareViewNoWrite(){throw new ShareViewReadError(shareViewMessage)}
+function shareViewPaint(root=document){
+ if(!shareViewSession.active||shareViewSession.painting)return;shareViewSession.painting=true;
+ try{
+  root.querySelectorAll('button,[role="button"],input,select,textarea,[contenteditable]').forEach(el=>{
+   if(el.matches('[contenteditable]')){el.setAttribute('contenteditable','false');return}
+   if(!shareViewAllowed(el)){if(!el.disabled)el.disabled=true;if(el.matches('button,[role="button"]')&&!el.hidden)el.hidden=true;return}
+   if(el.matches('[data-sheet-new-date]'))el.disabled=false;
+  });
+  const file=document.querySelector('#file');if(file){file.disabled=true;file.onchange=null}
+ }finally{shareViewSession.painting=false}
+}
+function shareViewCapture(event){
+ if(!shareViewSession.active)return;
+ const target=event.target?.closest?.('button,[role="button"],input,select,textarea,[contenteditable]');
+ const forbidden=target&&!shareViewAllowed(target)||event.type==='submit'||event.type==='drop'||event.type==='keydown'&&(event.ctrlKey||event.metaKey)&&String(event.key).toLowerCase()==='s';
+ if(forbidden){event.preventDefault();event.stopImmediatePropagation();if(event.type==='click')toast(shareViewMessage)}
+}
+async function shareViewLoad(){
+ if(!shareViewSession.active)return;
+ const sequence=++shareViewSession.sequence;shareViewSession.controller?.abort();const controller=new AbortController();shareViewSession.controller=controller;
+ shareViewSession.loading=true;shareViewSession.error='';shareViewSession.warnings=[];state=null;booting=true;connectionStatus='공유 자료 읽는 중…';render();
+ try{
+  const config=shareViewParse(location.hash);if(!config)throw new ShareViewReadError('조회 공유링크를 다시 열어 주세요.');
+  const response=await fetch(config.server+'/api/view',{method:'GET',headers:{Authorization:'Bearer '+config.key},credentials:'omit',redirect:'error',referrerPolicy:'no-referrer',cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw new ShareViewReadError(response.status===401||response.status===403?'공유링크가 만료되었거나 해제되었습니다. 관리자에게 새 링크를 요청해 주세요.':'공유 자료를 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+  const text=await response.text();if(text.length>25*1024*1024)throw new ShareViewReadError('공유 자료가 너무 커서 표시를 보류했습니다.');
+  let payload;try{payload=JSON.parse(text)}catch{throw new ShareViewReadError('공유 자료 응답을 확인하지 못했습니다.')}
+  const loaded=shareViewValidate(payload),warnings=shareViewReadWarnings(payload);if(sequence!==shareViewSession.sequence||controller.signal.aborted)return;
+  state=loaded;shareViewSession.updatedAt=payload.updatedAt;shareViewSession.warnings=warnings;workspace.envelope.state=state;
+  if(!state.months[month])month=state.months[today().slice(0,7)]?today().slice(0,7):Object.keys(state.months).sort().at(-1);
+  connectionStatus='공유 · 조회 전용 · '+new Date(payload.updatedAt).toLocaleString('ko-KR')+(warnings.length?' · 자료 확인 '+warnings.length+'건':'');
+ }catch(error){
+  if(sequence!==shareViewSession.sequence||controller.signal.aborted)return;
+  // Never display fetch/parse exception text: it can contain the bearer URL.
+  shareViewSession.error=error instanceof TypeError?'서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.':error instanceof ShareViewReadError?error.message:'공유 자료를 표시하지 못했습니다. 다시 시도해 주세요.';
+  state=null;workspace.envelope.state=null;sheetRegistry.clear();connectionStatus='공유 자료 조회 보류';
+ }finally{if(sequence===shareViewSession.sequence){shareViewSession.loading=false;booting=false;render()}}
+}
+if(shareViewSession.active){
+ // No native Workspace/GithubStore is created, and no manager namespace is read.
+ workspace={key:'shared-view',readonly:true,closed:true,pendingMigration:false,envelope:{state:null,queue:[],groups:[],baseline:{}},save:shareViewNoWrite,initialize:shareViewNoWrite,useRemote:shareViewNoWrite,open:shareViewLoad,flush:async()=>{},close(){}};
+ S.localGet=async()=>null;S.localSet=async()=>shareViewNoWrite();
+ connect=async()=>shareViewNoWrite();persist=async()=>shareViewNoWrite();ensureLocalState=shareViewNoWrite;
+ restoreConnection=shareViewLoad;
+ nativeAction=async action=>action==='refresh'?shareViewLoad():shareViewNoWrite();
+ const shareViewEnhancedBefore=enhancedAction;
+ enhancedAction=async function(action,...args){if(!shareViewActions.has(action))return shareViewNoWrite();return shareViewEnhancedBefore.call(this,action,...args)};
+ entry=shareViewNoWrite;nativeForm=shareViewNoWrite;jobDialog=shareViewNoWrite;calendarDialog=shareViewNoWrite;
+ const shareViewReviewBefore=reviewDialog;
+ reviewDialog=function(title,html){shareViewReviewBefore(title,html,'조회 전용',shareViewNoWrite);const confirm=document.querySelector('#confirmReview');if(confirm){confirm.disabled=true;confirm.hidden=true}shareViewPaint(document.querySelector('#dialog')||document)};
+ connectionView=settingsView=()=>'<section class="card"><h1>공유 · 조회 전용</h1><p>'+shareViewMessage+'</p></section>';
+ bindIlboIntegrationUI=()=>{};ilboCheck=async()=>{};
+ const shareViewGridBefore=sheetGrid;
+ sheetGrid=function(id,spec){return shareViewGridBefore(id,{...spec,readonly:true,readonlyLabel:'공유 · 조회 전용',hint:shareViewMessage,addRow:null,allowDelete:false,commit:shareViewNoWrite})};
+ SheetEditor.prototype.load=async function(){this.loaded=true;this.loading=false;this.update();this.spec.onChange?.(this)};
+ SheetEditor.prototype.locked=()=>true;SheetEditor.prototype.queueDraft=async()=>shareViewNoWrite();SheetEditor.prototype.changed=shareViewNoWrite;
+ const shareViewUpdateBefore=SheetEditor.prototype.update;
+ SheetEditor.prototype.update=function(...args){const result=shareViewUpdateBefore.apply(this,args);const host=this.host();if(host)shareViewPaint(host);return result};
+ productionProgressBasis=g=>state?.months[g.month]?.closed?g.month+' 마감 당시 누적':today()+' 오늘까지 실제 누적';
+ if(typeof pgSaveState==='function'){const shareViewPlanStatusBefore=pgSaveState;pgSaveState=function(g){return{...shareViewPlanStatusBefore(g),disabled:true,label:'공유 · 조회 전용'}}}
+ // Preference listeners already exist. Keep their in-memory presentation state,
+ // but never let their captured pagehide handler see a persistent write queue.
+ const shareViewPreferenceBefore=viewPreferenceRecord;
+ viewPreferenceRecord=function(){const scope=viewPreferenceScope();if(!viewPreferenceState.records.has(scope)){const data=viewPreferenceClean(null,scope);viewPreferenceState.records.set(scope,{data,saved:JSON.stringify(data),navApplied:false,page:null})}return shareViewPreferenceBefore()};
+ viewPreferenceQueue=function(data){const entry=viewPreferenceState.records.get(data.scope);if(entry){entry.data=viewPreferenceClean(data,data.scope);entry.saved=JSON.stringify(entry.data)}viewPreferenceState.pending.clear()};
+ viewPreferenceFlush=function(){if(viewPreferenceState.timer)clearTimeout(viewPreferenceState.timer);viewPreferenceState.timer=0;viewPreferenceState.pending.clear()};
+ const shareViewRenderBefore=render;
+ render=function(){
+  if(!shareViewPages.has(page))page='daily';shareViewRenderBefore();document.body.classList.add('shareView');
+  if(!state){const main=document.querySelector('#main');main.innerHTML='<section class="card" role="status"><h1>공유 · 조회 전용</h1><p>'+esc(shareViewSession.error||'공유 자료를 읽고 있습니다.')+'</p>'+(shareViewSession.loading?'':'<button data-share-refresh>다시 불러오기</button>')+'</section>'}
+  const top=document.querySelector('.top .actions');if(top&&!top.querySelector('[data-share-refresh]')){const button=document.createElement('button');button.dataset.shareRefresh='';button.textContent='새로 읽기';top.prepend(button)}
+  document.querySelectorAll('[data-share-refresh]').forEach(button=>{button.onclick=()=>shareViewLoad();button.disabled=shareViewSession.loading});
+  shareViewRenderWarnings();shareViewPaint();
+ };
+ for(const type of ['click','input','change','beforeinput','paste','submit','drop','keydown'])document.addEventListener(type,shareViewCapture,true);
+ window.addEventListener('hashchange',()=>{if(shareViewSession.active)shareViewLoad()});
+ // Local grid refresh and mounted fullscreen tools can create new controls
+ // without a full app render. Paint only added elements, never status text.
+ if(typeof MutationObserver==='function'){
+  shareViewSession.observer=new MutationObserver(records=>{let elements=false;for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1){elements=true;shareViewPaint(node.parentElement||document)}if(elements)shareViewRenderWarnings()});
+  shareViewSession.observer.observe(document.body,{childList:true,subtree:true});
+ }
+ shareViewPaint();
+}
+
+// One-time, explicitly password-approved handoff from this manager device to
+// the fixed sharing administrator. No token is added to markup or a URL.
+const shareSetupOrigin='https://parkjkk-production-view.silver-hippo-4598.chatgpt.site';
+function shareSetupParse(hash){
+ const params=new URLSearchParams(String(hash||'').replace(/^#/,''));if(!params.has('shareSetup'))return null;
+ if(params.has('view')||params.getAll('shareSetup').length!==1)throw Error('공유 설정 링크를 다시 열어 주세요.');
+ const encoded=params.get('shareSetup');if(!encoded||encoded.length>2048||!/^[A-Za-z0-9_-]+$/.test(encoded))throw Error('공유 설정 링크를 다시 열어 주세요.');
+ let config;try{config=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(encoded.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-encoded.length%4)%4)),c=>c.charCodeAt(0))))}catch{throw Error('공유 설정 링크를 다시 열어 주세요.')}
+ if(!config||typeof config!=='object'||Array.isArray(config)||Object.keys(config).some(k=>!['server','nonce'].includes(k))||config.server!==shareSetupOrigin||typeof config.nonce!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.nonce))throw Error('허용된 공유 설정 링크가 아닙니다.');
+ return{server:config.server,nonce:config.nonce};
+}
+const shareSetupState={running:false,finished:false,version:0};
+async function shareSetupStart(){
+ if(shareSetupState.running||shareSetupState.finished||typeof shareViewSession!=='undefined'&&shareViewSession.active)return;
+ let request;try{request=shareSetupParse(location.hash)}catch{toast('공유 설정 링크를 확인하지 못했습니다. 공유 관리 화면에서 다시 열어 주세요.');return}if(!request)return;
+ const opener=window.opener,hash=location.hash,version=++shareSetupState.version;
+ if(!opener||opener.closed){toast('공유 관리 화면에서 연결 가져오기를 다시 눌러 주세요.');return}
+ shareSetupState.running=true;
+ try{
+  // Existing render wrappers relock settings on navigation. Use the settings
+  // page in this separate window so background renders do not cancel the gate.
+  page='settings';render();managementConnectionGate.lock();
+  toast('비밀번호 확인 후 이 기기의 관리 저장소 연결을 공유 관리 화면에 전달합니다.');
+  const approved=await managementConnectionGate.request();
+  if(!approved||version!==shareSetupState.version||hash!==location.hash||window.opener!==opener||opener.closed||page!=='settings')return;
+  let saved,token;try{saved=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null');token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')}catch{toast('이 기기의 저장된 연결을 읽지 못했습니다. 연결 설정을 먼저 확인해 주세요.');return}
+  const allowed=config=>config?.owner==='parkjkk'&&config.repo==='schedule-data'&&(config.branch||'main')==='main';
+  if(!allowed(saved)||workspace?.config&&!allowed(workspace.config)){toast('관리용 schedule-data 저장소에 연결된 기기에서 다시 진행해 주세요.');return}
+  if(typeof token!=='string'||!token.trim()){toast('이 기기에 저장된 관리 연결이 없습니다. 연결 설정을 먼저 완료해 주세요.');return}
+  // targetOrigin prevents delivery if the opener navigated to another site.
+  opener.postMessage({type:'schedule-share-connection',nonce:request.nonce,token},request.server);
+  token=null;shareSetupState.finished=true;
+  try{history.replaceState(null,'',location.pathname+location.search)}catch{}
+  toast('연결 정보를 공유 관리 화면에 전달했습니다. 그 화면에서 연결 결과를 확인해 주세요.');
+ }catch{toast('연결 정보를 전달하지 못했습니다. 공유 관리 화면에서 다시 시도해 주세요.')}
+ finally{shareSetupState.running=false;managementConnectionGate.lock()}
+}
+if(new URLSearchParams(String(location.hash||'').replace(/^#/,'' )).has('shareSetup')&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)){
+ const shareSetupRestoreBefore=restoreConnection;
+ restoreConnection=async function(...args){const result=await shareSetupRestoreBefore.apply(this,args);if(!booting)await shareSetupStart();return result};
+ window.addEventListener('hashchange',()=>{shareSetupState.version++;if(shareSetupState.running)managementConnectionGate.lock()});
+}
+
 render();restoreConnection().catch(e=>toast('시작 화면 오류: '+e.message));window.addEventListener('online',()=>workspace?.flush());setInterval(()=>{if(workspace?.envelope.queue.length)workspace.flush()},30000);
 })();
 </script></body></html>
