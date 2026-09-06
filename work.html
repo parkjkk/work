@@ -1684,6 +1684,7 @@ async function loadProductCatalog(background=false){
   if(epoch!==storeEpoch||seq!==productCatalogRead)return;
   renderProductCatalogNote();$$('#prodBlocks .pb').forEach(refreshProductChips);
   if(S.tab==='input')renderInput();
+  if(S.tab==='sheet')renderSheet();
   if(S.tab==='month'&&lastDraw&&`${lastDraw.y}-${pad2(lastDraw.m)}`===S.month)drawMonth(lastDraw.days,lastDraw.y,lastDraw.m);
 }
 
@@ -3225,7 +3226,7 @@ function sheetPage(dateStr, rows, showWorkerFirst){
   </div>`;
 }
 function rowsHash(){
-  const s = JSON.stringify(orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.product,r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.b1,r.b2,r.remark]));
+  const s = JSON.stringify(orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.b1,r.b2,r.remark]));
   let h = 0; for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h;
 }
 function renderSheet(){
@@ -3235,7 +3236,7 @@ function renderSheet(){
   const wrap = $('#sheetwrap');
   wrap.classList.toggle('stale', stale);
   wrap.dataset.msg = S.loading ? '최신 내용 불러오는 중…' : '이 날짜 기록을 불러오지 못했습니다 — ↻ 다시 시도';
-  const rows = stale ? [] : orderRows(S.rows.filter(r => !isRest(r))).map(r => ({...r, product: r.off ? offLabel(r) : r.product}));   /* 복사본에만 _showW를 붙임(원본 오염 방지) · 휴무는 인쇄 안 함 · 케이스 교체는 제품명 칸에 표시 */
+  const rows = stale ? [] : orderRows(S.rows.filter(r => !isRest(r))).map(r => ({...r, product: r.off ? offLabel(r) : fieldProductName(r)}));   /* 인쇄 표시명·_showW는 복사본에만 적용 · 원장/연동 서명 유지 · 케이스 교체 사유 보존 */
   rows.forEach((r,i) => { r._showW = i===0 || rows[i-1].worker!==r.worker; });
   const pi = $('#pageInfo');
   if(pi){ const pg = Math.max(1, Math.ceil(rows.length/SHEET_ROWS)); pi.innerHTML = stale ? '' : ` · 기록 ${rows.length}건 → ${pg>1 ? `<b style="color:var(--warn)">${pg}장</b>` : '1장'}`; }
@@ -3491,7 +3492,7 @@ function renderPrintChecks(){
       const reasons=[];
       if(r.prod===''||r.prod==null)reasons.push('생산량 미입력');
       if([...CHECK_KEYS.map(k=>r[k]),r.gasa].some(v=>v==='△'||v==='Ⅹ') && !String(r.remark||'').trim()) reasons.push('△·Ⅹ 사유 없음');
-      if(reasons.length)checks.push({text:`${r.worker} · ${r.product}: ${reasons.join(', ')} — 수정`,action:()=>openEntry(r)});
+      if(reasons.length)checks.push({text:`${r.worker} · ${fieldProductName(r)}: ${reasons.join(', ')} — 수정`,action:()=>openEntry(r)});
     });
   }
   $('#printChecks summary').textContent=checks.length?`인쇄 전 확인 · ${checks.length}개 항목`:'인쇄 전 확인 · 미작성·입력 누락 경고 없음';
@@ -3505,7 +3506,7 @@ function copyMonthTSV(){
   const clean = v => String(v ?? '').replace(/[\t\n\r]/g, ' ');
   Object.keys(monthData).sort().forEach(ds => {
     const rows = monthData[ds]; if(!Array.isArray(rows)) return;
-    orderRows(rows).forEach(r => lines.push([ds, r.worker, r.hours, r.product, r.plan, r.prod, r.scrapKg, r.defQty, r.defPart,
+    orderRows(rows).forEach(r => lines.push([ds, r.worker, r.hours, r.off?r.product:fieldProductName(r), r.plan, r.prod, r.scrapKg, r.defQty, r.defPart,
       r.gasa, r.cs, r.gap, r.inlet, r.face, r.bubble, r.b1, r.b2, r.remark, offLabel(r)].map(clean).join('\t')));
   });
   const text = lines.join('\n');
