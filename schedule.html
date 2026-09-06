@@ -4076,7 +4076,10 @@ async function shareSetupStart(){
 }
 if(new URLSearchParams(String(location.hash||'').replace(/^#/,'' )).has('shareSetup')&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)){
  const shareSetupRestoreBefore=restoreConnection;
- restoreConnection=async function(...args){const result=await shareSetupRestoreBefore.apply(this,args);if(!booting)await shareSetupStart();return result};
+ // A cached manager can finish booting even when its GitHub read fails. The
+ // sharing server checks the approved credential independently; retain the
+ // original restore result/rejection after the optional handoff settles.
+ restoreConnection=async function(...args){try{return await shareSetupRestoreBefore.apply(this,args)}finally{if(!booting)await shareSetupStart()}};
  window.addEventListener('hashchange',()=>{shareSetupState.version++;if(shareSetupState.running)managementConnectionGate.lock()});
 }
 
