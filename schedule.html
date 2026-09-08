@@ -3544,7 +3544,7 @@ async function pgReconcileReservationDraft(g){
  if(!g||g.locked()||g.loading||g.saving)throw Error('작업조건을 읽거나 저장하는 동안은 전환할 수 없습니다.');
  const retired=pgRetiredDraftJobs(g.draft);if(!retired.length)return false;
  const original=g.draft,signature=JSON.stringify(original),source=state,scope=g.scope,key=g.key,owner=g.month,ids=new Set(retired.map(r=>r.id));
- const active=()=>state===source&&sheetScope()===scope&&month===owner&&page==='schedule'&&g.key===key&&g.draft===original&&JSON.stringify(g.draft)===signature;
+ const active=()=>!g.spec.readonly&&(!globalThis.AppAccess||AppAccess.unlocked)&&state===source&&sheetScope()===scope&&month===owner&&page==='schedule'&&g.key===key&&g.draft===original&&JSON.stringify(g.draft)===signature;
  g.saving=true;g.update();let archiveKey='';
  try{
   await g.writeQueue;if(!active())throw Error('작업 월이나 초안이 바뀌었습니다. 기존 초안을 유지했습니다.');
