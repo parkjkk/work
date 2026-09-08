@@ -136,8 +136,19 @@ function planSync(state,snapshot,options={}){
   }
   return row?.deleted?{code:'target-deleted'}:{row,initial};
  };
+ const bindingBases=new WeakMap();
+ const bindingChanged=row=>{
+  if(!bindingBases.has(row)){
+   const si=row.sourceIntegration,month=locate(si.key).find(link=>link.row===row)?.m;
+   const prior=(month?.history||[]).findLast(event=>event.type==='ilbo-sync'&&event.after?.id===row.id&&event.after.sourceIntegration?.key===si.key&&event.after.sourceIntegration?.targetHash===si.targetHash);
+   bindingBases.set(row,prior?{known:true,value:clean(prior.after.jobId)||null}:{known:false});
+  }
+  const base=bindingBases.get(row);return base.known&&!same(base.value,clean(row.jobId)||null);
+ };
+ const productBasis=value=>{const name=clean(value),id=ix.names.get(name)?.id;return id?['id',id]:['name',name]};
+ const basisSame=(key,a,b)=>key==='product'?same(productBasis(a),productBasis(b)):same(a,b);
  const mergeFields=(row,values,initial)=>{
-  const baseline=row?.sourceIntegration?.baseline,patch={},conflicts=[];
+  const baseline=row?.sourceIntegration?.baseline,patch={},conflicts=[];let review=null;
   for(const [key,value]of Object.entries(values)){
    if(baseline){
     if(own(baseline,key)&&same(value,baseline[key]))continue;
@@ -147,7 +158,32 @@ function planSync(state,snapshot,options={}){
    }else if(initial&&options.initialConflict!=='source'&&!same(row[key],value)){conflicts.push(key);continue}
    patch[key]=value;
   }
-  return{patch,conflicts};
+  if(baseline){
+   // A split is meaningful only for its total, worker, product and job. Different
+   // fields can conflict even when a regular cell-by-cell merge would succeed.
+   const basis=['date','worker','product','pours'];
+   const sourceSplit=own(values,'machineActuals')&&!same(values.machineActuals,baseline.machineActuals)&&!same(values.machineActuals,row.machineActuals);
+   const targetSplit=!same(row.machineActuals,baseline.machineActuals)&&(!own(values,'machineActuals')||!same(row.machineActuals,values.machineActuals));
+   const targetBasis=basis.some(key=>own(baseline,key)&&!basisSame(key,row[key],baseline[key])&&(!own(values,key)||!basisSame(key,row[key],values[key])))||sourceSplit&&bindingChanged(row);
+   const sourceBasis=basis.some(key=>own(values,key)&&own(baseline,key)&&!basisSame(key,values[key],baseline[key])&&!basisSame(key,row[key],values[key]));
+   if((sourceSplit&&targetBasis||targetSplit&&sourceBasis)&&!conflicts.includes('machineActuals'))conflicts.push('machineActuals');
+  }
+  if(row&&own(patch,'product')&&!basisSame('product',row.product,patch.product)){
+   const product=ix.names.get(clean(patch.product)),units={},basis={productId:product?.id,productRev:product?.rev??null};
+   // Catalog-linked units follow an explicit product correction. Recorded/manual
+   // units belong to the original product and need review instead of reassignment.
+   for(const [field,key]of [['plaster','kg'],['cases','cases']]){
+    if(row.unitSources?.[field]!=='catalog'){
+     if(row[field]!=null&&row[field]!==''){if(!conflicts.includes(field))conflicts.push(field);review='product-unit-review'}
+     continue;
+    }
+    let value=null;try{value=number(product?.[key],key)}catch{}
+    if(value===null||product?.catalogReview?.status==='needs-review'){if(!conflicts.includes(field))conflicts.push(field);review='product-unit-review';continue}
+    units[field]=value;basis[key]=value;
+   }
+   if(!review){Object.assign(patch,units);if(Object.keys(units).length)patch.unitCatalogBasis={...row.unitCatalogBasis,...basis};}
+  }
+  return{patch,conflicts,review};
  };
  for(const c of prepared.filter(c=>!c.attendance)){
   c.match=matchProduction(c);
@@ -197,8 +233,8 @@ function planSync(state,snapshot,options={}){
    row={id:'ilbo:'+hash(c.key).slice(0,24),rev:0,date:c.date,worker:c.values.worker,product:c.p.name,lot:'',hours:null,plan:null,pours:null,cases:c.p.cases??null,waterRatio:c.p.waterRatio??null,plaster:c.p.kg??null,defectUnit:null,defectCount:null,defectPart:'',unitSources:{cases:'catalog',plaster:'catalog'},explicit:{day:true,worker:true,hours:own(c.values,'hours')&&c.values.hours!==null,pours:true,lot:false},source:'work.html'};
   }
   claimed.add(row.id);
-  const baseline=row.sourceIntegration?.baseline,{patch,conflicts}=mergeFields(row,c.values,initial);
-  if(conflicts.length){issue(initial?'initial-field-conflict':'target-source-conflict',c,{fields:conflicts});continue}
+  const baseline=row.sourceIntegration?.baseline,{patch,conflicts,review}=mergeFields(row,c.values,initial);
+  if(conflicts.length){issue(review||(initial?'initial-field-conflict':'target-source-conflict'),c,{fields:conflicts});continue}
   const nextBaseline={...(baseline||{}),...clone(c.values)};
   if(before?.sourceIntegration&&same(nextBaseline,baseline)&&same(patch,{})&&before.sourceIntegration.sourceHash===hash(c.raw))continue;
   Object.assign(row,patch);row.rev=(row.rev||0)+1;
