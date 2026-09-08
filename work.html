@@ -1977,13 +1977,14 @@ function monthRunOrder(run){
   const e=run?.managed,product=run?fieldProductName(e||run):'';
   if(!run||run.ambiguous||e&&(!e.jobId||e.produced===null))return {rank:3,date:'',product,label:'연결 확인 필요'};
   if(e?e.complete:run.end)return {rank:1,date:(e?e.completedAt:run.end)||'',product,label:'생산 종료'};
-  return (e?e.produced:run.made)>0?{rank:0,date:'',product,label:'생산중'}:{rank:2,date:'',product,label:'생산 대기'};
+  const rawPercent=e?e.percent:run.plan>0?run.made/run.plan*100:null,percent=Number.isFinite(rawPercent)?rawPercent:null;
+  return (e?e.produced:run.made)>0?{rank:0,date:'',product,percent,label:'생산중'}:{rank:2,date:'',product,label:'생산 대기'};
 }
-function compareMonthProduction(a,b){return a.rank-b.rank||(a.rank===1?b.date.localeCompare(a.date):0)||a.product.localeCompare(b.product,'ko',{numeric:true});}
+function compareMonthProduction(a,b){return a.rank-b.rank||(a.rank===0?(b.percent??-1)-(a.percent??-1):a.rank===1?b.date.localeCompare(a.date):0)||a.product.localeCompare(b.product,'ko',{numeric:true});}
 function groupedMonthOrder(groups){
   const result=new Map();
   for(const [product,items]of groups){
-    const active=items.find(x=>x.rank===0),incomplete=items.filter(x=>x.rank!==1);
+    const active=items.filter(x=>x.rank===0).sort(compareMonthProduction)[0],incomplete=items.filter(x=>x.rank!==1);
     const chosen=active||(incomplete.length?incomplete.sort((a,b)=>b.rank-a.rank)[0]:[...items].sort(compareMonthProduction)[0]);
     result.set(product,{...chosen,product});
   }
@@ -3880,7 +3881,7 @@ function drawMonth(rawDays, y, m){
   const body = $('#monBody');
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
-    `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">생산중 먼저 · 생산 종료는 최근 종료일순 · 대기·확인 항목은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}</div>${showManaged?wrapT(renderManagedProgressTable(days,managedMonth)):''}<div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
+    `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">생산중은 진행률 높은 순 · 종료는 최근 종료일순 · 대기·확인은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}<br>같은 제품의 생산중 작업이 여러 개면 가장 높은 진행률 기준 · 진행률 미상은 생산중 목록 끝에 표시</div>${showManaged?wrapT(renderManagedProgressTable(days,managedMonth)):''}<div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
     `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
   body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
   body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
