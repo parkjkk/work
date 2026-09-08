@@ -9,10 +9,22 @@ const clean=x=>String(x??'').trim();
 function iso(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(+d)&&d.toISOString().slice(0,10)===s}
 function number(x,label){if(x===''||x==null)return null;if(typeof x!=='number'&&typeof x!=='string'||!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(String(x).trim()))throw Error('Invalid numeric field: '+label);const n=Number(x);if(!Number.isFinite(n)||n<0)throw Error('Invalid nonnegative field: '+label);return n}
 function workingHours(value){const hours=number(value,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');return hours}
+function machineName(value){if(typeof value!=='string')throw Error('Invalid machine');let name=value.trim();const numeric=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(numeric){const n=Number(numeric[1]);if(!Number.isSafeInteger(n))throw Error('Invalid machine number');name=String(n)+'호'}if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name))throw Error('Invalid machine name');return name}
+function routingValue(value){
+ const bad=()=>{const e=Error('Invalid schedule routing');e.code='invalid-schedule-routing';throw e};
+ if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!['sequential','parallel'].includes(value.mode)||typeof value.group!=='string'||!Number.isInteger(value.lane)||value.lane<1||value.lane>20||!Number.isInteger(value.order)||value.order<1||value.order>50)bad();
+ const group=value.group.trim();if(group.length>120||group!==''&&!(/^[1-9]\d*$/.test(group)&&Number.isSafeInteger(Number(group)))&&!/^manual:[A-Za-z0-9_.:-]+$/.test(group))bad();
+ return{schema:1,mode:value.mode,group,lane:value.lane,order:value.order};
+}
+function machineActuals(value,production){
+ if(value===null)return null;
+ if(!Array.isArray(value)||value.length>50)throw Error('Invalid machine actuals');const names=new Set(),result=value.map(m=>{if(!m||typeof m!=='object'||Array.isArray(m))throw Error('Invalid machine actual');const name=machineName(m.name),qty=number(m.qty,'actual machine quantity');if(names.has(name)||qty===null)throw Error('Invalid machine actual quantity or duplicate machine');names.add(name);return{name,qty}}),total=number(production,'prod');
+ if(total===null||Math.abs(result.reduce((sum,m)=>sum+m.qty,0)-total)>1e-6+1e-12)throw Error('Machine actual total disagrees with production');return result;
+}
 function scheduleConditions(value){
  if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!Array.isArray(value.machines)||value.machines.length>50)throw Error('Invalid schedule conditions');
- const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||typeof m.name!=='string')throw Error('Invalid machine');let name=m.name.trim();const numeric=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(numeric){const n=Number(numeric[1]);if(!Number.isSafeInteger(n))throw Error('Invalid machine number');name=String(n)+'호'}if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||names.has(name))throw Error('Invalid machine name');names.add(name);return{name,qty:number(m.qty,'machine quantity')}}),daily=number(value.daily,'daily');
- if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');return{schema:1,machines,daily};
+ const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||Array.isArray(m))throw Error('Invalid machine');const name=machineName(m.name);if(names.has(name))throw Error('Duplicate machine');names.add(name);const result={name,qty:number(m.qty,'machine quantity')};if(own(m,'daily')){result.daily=number(m.daily,'machine daily');if(result.daily!==null&&result.daily<=0)throw Error('Invalid machine daily capacity')}return result}),daily=number(value.daily,'daily');
+ if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');return{schema:1,machines,daily,...(own(value,'routing')?{routing:routingValue(value.routing)}:{})};
 }
 function completionValue(value){
  if(value===null)return null;
@@ -93,7 +105,10 @@ function planSync(state,snapshot,options={}){
     values.productionPlanQty=q;
    }
    if(own(raw,'scheduleConditions')){
-    try{values.fieldScheduleConditions=scheduleConditions(raw.scheduleConditions)}catch{issue('invalid-schedule-conditions',ctx);continue}
+    try{values.fieldScheduleConditions=scheduleConditions(raw.scheduleConditions)}catch(e){issue(e.code||'invalid-schedule-conditions',ctx);continue}
+   }
+   if(own(raw,'machineActuals')){
+    try{values.machineActuals=machineActuals(raw.machineActuals,raw.prod)}catch{issue('invalid-machine-actuals',ctx);continue}
    }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
@@ -138,8 +153,11 @@ function planSync(state,snapshot,options={}){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
   const row=c.match.row;
-  if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>({...m,qty:m.qty??prior.machines?.find(x=>x.name===m.name)?.qty??null}));v.daily??=prior.daily??null}if(!v.machines.length&&v.daily==null)delete c.values.fieldScheduleConditions}
+  if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>{const old=prior.machines?.find(x=>x.name===m.name),daily=m.daily??old?.daily;return{...m,qty:m.qty??old?.qty??null,...(daily!=null?{daily}:{})}});v.daily??=prior.daily??null;if(!own(v,'routing')&&own(prior,'routing'))v.routing=clone(prior.routing)}if(!v.machines.length&&v.daily==null&&!own(v,'routing'))delete c.values.fieldScheduleConditions}
   if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
+  // A legacy client may omit the optional split while changing total production.
+  // Preserve the split and hold an incompatible edit instead of inventing an allocation.
+  if(row&&!c.match.code){const merged=mergeFields(row,c.values,c.match.initial);if(!merged.conflicts.length){const candidate={...row,...merged.patch};if(candidate.machineActuals!=null)try{machineActuals(candidate.machineActuals,candidate.pours)}catch{c.match.code='invalid-machine-actuals'}}}
  }
  const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&si.targetHash===hash(rowBody(row))};
  // Assign time only to a row that can be merged. A retained clock row must not
@@ -188,7 +206,7 @@ function planSync(state,snapshot,options={}){
   const targetEdited=!!before?.sourceIntegration?.targetEdited||!!(before?.sourceIntegration&&before.sourceIntegration.targetHash!==hash(rowBody(before)));
   // The engine owns baseline. User edits must leave it intact for three-way merge.
   row.sourceIntegration={...(row.sourceIntegration||{}),schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:nextBaseline,sourceProduct:clean(c.raw.sourceProduct||c.raw.product),productId:c.p.id,sourceCreatedAt:c.raw.ts||null,sourceUpdatedAt:c.raw.t||null,...(targetEdited?{targetEdited:true}:{})};
-  const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field]))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
+  const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily','routing'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field]))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
   row.sourceIntegration.targetHash=hash(rowBody(row));
   if(!before){m.rows.push(row);links.set(c.key,[{m,row}]);report.counts.added++;history(m,'add',null,row,c)}else if(initial){links.set(c.key,[{m,row}]);report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
  }

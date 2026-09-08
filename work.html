@@ -299,11 +299,19 @@ details.defect[open]{border-style:solid; border-color:var(--bad); background:var
 .pb-schedule-head,.pb-machine-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:7px;align-items:center}
 .pb-schedule-head{margin-top:10px;font-size:12px;color:var(--ink-dim)}
 .pb-machine-row{margin-top:6px}.pb-machine-row input{width:100%;min-width:0;height:44px;padding:7px 9px}
-.pb-machine-row button,.pb-machine-add{min-height:40px;padding:7px 10px;border:1px solid var(--line-in);border-radius:8px;background:var(--surface);color:var(--ink)}
-.pb-machine-row button{height:44px;padding:4px}.pb-machine-add{margin-top:8px}
+.pb-machine-row button,.pb-machine-add,.pb-route-button{min-height:40px;padding:7px 10px;border:1px solid var(--line-in);border-radius:8px;background:var(--surface);color:var(--ink)}
+.pb-machine-row button{height:44px;padding:4px}.pb-machine-add,.pb-route-button{margin-top:8px}
 .pb-schedule-daily-label{display:block;font-size:13px;margin-top:12px}.pb-schedule-daily-label input{width:100%;height:44px;margin-top:6px}
-.pb-schedule-note{font-size:12px;line-height:1.55;overflow-wrap:anywhere;color:var(--ink-dim);margin-top:8px}
+.pb-schedule-note,.pb-route-connection{font-size:12px;line-height:1.55;overflow-wrap:anywhere;color:var(--ink-dim);margin-top:8px}
 .pb-schedule-note.warn{color:var(--bad)}
+.pb-machine-extra{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px;padding-bottom:8px;border-bottom:1px solid var(--line-in)}
+.pb-machine-extra label,.pb-routing label{display:block;min-width:0;font-size:12px;color:var(--ink-dim)}
+.pb-machine-extra input,.pb-routing input,.pb-routing select{box-sizing:border-box;min-width:0;width:100%;height:44px;margin-top:4px}
+.pb-machine-row [hidden],.pb-schedule [hidden]{display:none!important}
+.pb-routing{margin-top:12px;border-top:1px solid var(--line-in);padding-top:10px}.pb-routing>summary{font-size:13px}
+.pb-routing-fields,.pb-route-position{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.pb-route-position{grid-template-columns:1fr 1fr}.pb-routing-fields>.pb-route-wide{grid-column:1/-1}
+.pb-route-builder{margin-top:8px;padding:8px;border:1px solid var(--line-in);border-radius:8px}.pb-route-candidate{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:end;margin:8px 0}.pb-route-candidate .pb-route-pick{display:flex;align-items:center;gap:6px;overflow-wrap:anywhere}.pb-route-candidate input[type=checkbox]{width:18px;height:18px;flex:none}
+.pb-actual-toggle{display:flex;align-items:center;gap:7px;margin:12px 0 4px;min-height:40px;font-size:13px}.pb-actual-toggle input{width:18px;height:18px}.pb-actual-status{font-size:12px;line-height:1.55;color:var(--ink-dim);margin-top:5px}
 @media(min-width:720px){.chk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.seg button{min-height:54px}.seg button .status-word{font-size:12px}}
 .chk .ck-hint{font-size:12.5px; color:var(--ink-dim); font-weight:400}
 .recent-btn{
@@ -1642,21 +1650,27 @@ function updateNetBanner(){
 }
 /* ---- 아웃박스: 저장 실패분을 기기에 보관했다가 자동 재전송 ---- */
 function outboxAll(){ return LS.get('ilbo.outbox', []); }
-function schedulePart(value,key){return key==='machines'?value?.machines||[]:value?.daily??null;}
+function schedulePart(value,key){return key==='machines'?value?.machines||[]:value?.[key]??null;}
+function ownFieldState(row,key){return Object.prototype.hasOwnProperty.call(row||{},key)?{present:true,value:row[key]}:{present:false};}
 function mergeScheduleChanges(rows,newRows,edits={},strict=true){
-  return newRows.map(row=>{const edit=edits[row.id];if(!edit||!row.scheduleConditions)return row;
-    const current=rows.find(r=>r.id===row.id)?.scheduleConditions,result={...(current||{}),schema:1,machines:schedulePart(current,'machines'),daily:schedulePart(current,'daily')};
-    for(const key of edit.fields||[]){if(!['machines','daily'].includes(key))continue;const wanted=schedulePart(row.scheduleConditions,key),latest=schedulePart(current,key),before=schedulePart(edit.before,key);
-      if(strict&&progressStable(latest)!==progressStable(before)&&progressStable(latest)!==progressStable(wanted)){const e=Error(`다른 기기에서 ${row.product||'이 품목'}의 ${key==='machines'?'호기 배정':'하루 조수'}를 변경했습니다. 두 값을 확인한 뒤 다시 저장해 주세요.`);e.scheduleConflict={rowId:row.id,field:key,latest:current?JSON.parse(JSON.stringify(current)):null};throw e;}
-      result[key]=key==='machines'?wanted.map(m=>({...m,qty:m.qty??latest.find(x=>x.name===m.name)?.qty??null})):wanted;
-    }return{...row,scheduleConditions:result};
+  return newRows.map(row=>{const edit=edits[row.id];if(!edit)return row;
+    const currentRow=rows.find(r=>r.id===row.id),current=currentRow?.scheduleConditions,result={...(current||{}),schema:1,machines:schedulePart(current,'machines'),daily:schedulePart(current,'daily')},next={...row};
+    const conflict=(key)=>{const names={machines:'호기 배정',daily:'하루 조수',routing:'생산 방식·묶음',machineActuals:'호기별 오늘 실적'},e=Error(`다른 기기에서 ${row.product||'이 품목'}의 ${names[key]}를 변경했습니다. 두 값을 확인한 뒤 다시 저장해 주세요.`);e.scheduleConflict={rowId:row.id,field:key,latest:current?JSON.parse(JSON.stringify(current)):null,latestActuals:ownFieldState(currentRow,'machineActuals'),latestProd:currentRow?.prod??''};throw e;};
+    for(const key of edit.fields||[]){if(!['machines','daily','routing'].includes(key)||!row.scheduleConditions)continue;const wanted=schedulePart(row.scheduleConditions,key),latest=schedulePart(current,key),before=schedulePart(edit.before,key);
+      if(strict&&progressStable(latest)!==progressStable(before)&&progressStable(latest)!==progressStable(wanted))conflict(key);
+      result[key]=key==='machines'?wanted.map(m=>{const old=latest.find(x=>x.name===m.name);return{...old,...m,qty:m.qty??old?.qty??null,...(!Object.prototype.hasOwnProperty.call(m,'daily')&&old?.daily!==undefined?{daily:old.daily}:{})};}):wanted;
+    }
+    if(row.scheduleConditions)next.scheduleConditions=result;
+    if((edit.fields||[]).includes('machineActuals')){const latest=ownFieldState(currentRow,'machineActuals'),wanted=ownFieldState(row,'machineActuals');if(strict&&progressStable(latest)!==progressStable(edit.beforeActuals||{present:false})&&progressStable(latest)!==progressStable(wanted))conflict('machineActuals');}
+    else if(edit.guardActuals&&progressStable(ownFieldState(currentRow,'machineActuals'))!==progressStable(edit.beforeActuals)){next.prod=currentRow?.prod??'';delete next.machineActuals;}
+    return next;
   });
 }
 function queuedScheduleChanges(date,rows,edits={}){
-  const nextEdits=JSON.parse(JSON.stringify(edits)),nextRows=rows.map(row=>{let pending=null,prior=null;for(const item of outboxAll())if(item.date===date){const p=item.rows?.find(r=>r.id===row.id);if(p?.scheduleConditions)pending=p;const e=item.scheduleEdits?.[row.id];if(e)prior=e;}
-    if(nextEdits[row.id]?.discard){const next={...row};delete next.scheduleConditions;delete nextEdits[row.id];return next;}
-    if(!pending)return row;const next={...row,scheduleConditions:row.scheduleConditions||pending.scheduleConditions},incoming=nextEdits[row.id];
-    if(prior){if(!incoming)nextEdits[row.id]=JSON.parse(JSON.stringify(prior));else if(!incoming.reviewed){const before={...(incoming.before||{})};for(const key of prior.fields||[])before[key]=schedulePart(prior.before,key);nextEdits[row.id]={schema:1,before,fields:[...new Set([...(prior.fields||[]),...(incoming.fields||[])])]};}}
+  const nextEdits=JSON.parse(JSON.stringify(edits)),nextRows=rows.map(row=>{let pending=null,prior=null;for(const item of outboxAll())if(item.date===date){const p=item.rows?.find(r=>r.id===row.id);if(p&&(p.scheduleConditions||Object.prototype.hasOwnProperty.call(p,'machineActuals')))pending=p;const e=item.scheduleEdits?.[row.id];if(e)prior=e;}
+    if(nextEdits[row.id]?.discard){const next={...row},incoming={...nextEdits[row.id]};delete next.scheduleConditions;delete incoming.discard;incoming.fields=(incoming.fields||[]).filter(key=>key==='machineActuals');if(pending&&Object.prototype.hasOwnProperty.call(pending,'machineActuals')&&!Object.prototype.hasOwnProperty.call(next,'machineActuals')){next.machineActuals=pending.machineActuals;if(prior?.fields?.includes('machineActuals')){incoming.beforeActuals=prior.beforeActuals;incoming.fields=['machineActuals'];}}if(incoming.fields.length||incoming.guardActuals)nextEdits[row.id]=incoming;else delete nextEdits[row.id];return next;}
+    if(!pending)return row;const next={...row},incoming=nextEdits[row.id];if(!next.scheduleConditions&&pending.scheduleConditions)next.scheduleConditions=pending.scheduleConditions;if(!Object.prototype.hasOwnProperty.call(next,'machineActuals')&&Object.prototype.hasOwnProperty.call(pending,'machineActuals'))next.machineActuals=pending.machineActuals;
+    if(prior){if(!incoming)nextEdits[row.id]=JSON.parse(JSON.stringify(prior));else if(!incoming.reviewed){const before={...(incoming.before||{})};for(const key of prior.fields||[])if(key!=='machineActuals')before[key]=schedulePart(prior.before,key);nextEdits[row.id]={...prior,...incoming,schema:1,before,fields:[...new Set([...(prior.fields||[]),...(incoming.fields||[])])],...((prior.fields||[]).includes('machineActuals')?{beforeActuals:prior.beforeActuals}:{})};}}
     return next;});return{rows:nextRows,edits:nextEdits};
 }
 function pruneScheduleQueueMeta(item){if(!item.scheduleEdits&&!item.scheduleConflict)return item;const ids=new Set((item.rows||[]).map(r=>r.id)),next={...item};if(item.scheduleEdits)next.scheduleEdits=Object.fromEntries(Object.entries(item.scheduleEdits).filter(([id])=>ids.has(id)));if(item.scheduleConflict&&!ids.has(item.scheduleConflict.rowId))delete next.scheduleConflict;return next;}
@@ -1808,7 +1822,7 @@ async function loadProductCatalog(background=false){
 }
 
 /* PRODUCTION_PROGRESS_PROJECTION_START */
-const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions'];
+const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions','machineActuals'];
 function progressSourceFields(row){return Object.fromEntries(PROGRESS_SOURCE_FIELDS.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,row[k]]));}
 function progressStable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
 function parseProductionProgress(value){
@@ -2591,11 +2605,25 @@ function blockHTML(){
     <summary>일정 조건 · 호기 / 하루 조수 <span class="pb-schedule-summary">선택 입력</span></summary>
     <span class="hint">실제 작업의 호기와 예상 속도를 생산일정표에 반영합니다. 변경할 때만 입력하고, 비워둔 항목은 기존 조건을 유지합니다.</span>
     <div class="pb-schedule-reference" hidden></div><div class="pb-schedule-conflict" hidden role="alert"></div>
+    <details class="pb-routing"><summary>생산 방식 · 여러 품목 묶기</summary>
+      <div class="pb-routing-fields">
+        <label class="pb-route-wide">이 품목의 여러 호기<select class="f-input pb-route-mode"><option value="">기존 방식 유지</option><option value="sequential">차례로 생산 (순차)</option><option value="parallel">함께 생산 (동시)</option></select></label>
+        <details class="pb-route-wide pb-route-id"><summary>기존 일정의 묶음 번호 연결</summary><label>관리 일정의 묶음 번호<input class="f-input pb-route-group" placeholder="새 묶음은 아래 버튼으로 연결하세요" maxlength="160"></label></details>
+        <label>생산줄<input class="f-input pb-route-lane" inputmode="numeric" value="1" aria-label="생산줄"></label>
+        <label>줄 안의 순서<input class="f-input pb-route-order" inputmode="numeric" value="1" aria-label="줄 안의 순서"></label>
+      </div>
+      <button type="button" class="pb-route-button pb-route-link">이 화면의 품목을 묶기</button> <button type="button" class="pb-route-button pb-route-unlink">개별 순차 생산으로</button>
+      <div class="pb-route-connection" role="status"></div>
+      <div class="pb-route-builder" hidden></div>
+      <span class="hint">같은 생산줄은 순서대로, 다른 생산줄은 함께 진행합니다. 예: A→C는 1번 줄의 1·2번, B는 2번 줄의 1번입니다.</span>
+    </details>
+    <label class="pb-actual-toggle"><input type="checkbox" class="pb-use-machine-actuals">오늘 실적을 호기별로 입력</label>
+    <div class="pb-actual-status" role="status">오늘 총수량만 입력해도 됩니다. 호기별 실적은 임의로 나누지 않습니다.</div>
     <div class="pb-schedule-head"><span>호기</span><span>호기별 계획 (조)</span><span></span></div>
     <div class="pb-machines"></div>
     <button type="button" class="pb-machine-add">+ 호기 추가</button>
     <label class="pb-schedule-daily-label">예상 하루 생산 (조)<input class="f-input pb-schedule-daily" inputmode="decimal" placeholder="예: 5 · 종료일 계산용" aria-label="예상 하루 생산 조수"></label>
-    <span class="hint">오늘 만든 수량은 위 생산량에 입력합니다. 이 칸은 앞으로 하루에 생산할 조수이며, 체크한 휴일을 제외해 종료일을 계산합니다.</span>
+    <span class="hint pb-capacity-hint">오늘 만든 수량은 위 생산량에 입력합니다. 이 칸은 앞으로 하루에 생산할 조수이며, 체크한 휴일을 제외해 종료일을 계산합니다.</span>
     <div class="pb-schedule-note pb-schedule-main-note" role="status"></div>
   </details>
   <details class="defect pb-defect">
@@ -2669,7 +2697,7 @@ function syncQuickProducts(){
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
     row.querySelector('small').textContent=manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
     if(document.activeElement!==input) input.value=qty.value;
-    input.placeholder=qty.placeholder;input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
+    input.placeholder=qty.placeholder;input.readOnly=qty.readOnly;input.title=qty.readOnly?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
     el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
   });
 }
@@ -2729,8 +2757,8 @@ function updateDefSummary(el){
     ? `불량 입력됨: ${q||'?'}개${s ? ' · '+s+'kg' : ''}${pt ? ' · '+pt : ''}`
     : '불량 있음 (석고량·수량·부위)';
 }
-const scheduleFormBaselines=new WeakMap(),scheduleFormOriginals=new WeakMap(),scheduleReviewedForms=new WeakSet(),scheduleReferences=new WeakMap(),scheduleDiscardForms=new WeakSet();
-function scheduleDescription(value){return(value?.machines||[]).map(m=>m.name+(m.qty!=null?' '+r2(m.qty)+'조':'')).concat(value?.daily>0?['하루 '+r2(value.daily)+'조']:[]).join(' · ')||'미입력';}
+const scheduleFormBaselines=new WeakMap(),scheduleFormOriginals=new WeakMap(),scheduleReviewedForms=new WeakSet(),scheduleReferences=new WeakMap(),scheduleDiscardForms=new WeakSet(),machineActualBaselines=new WeakMap(),machineActualSignatures=new WeakMap();
+function scheduleDescription(value){return(value?.machines||[]).map(m=>m.name+(m.qty!=null?' '+r2(m.qty)+'조':'')+(m.daily>0?' (하루 '+r2(m.daily)+'조)':'')).concat(value?.daily>0?['전체 하루 '+r2(value.daily)+'조']:[],value?.routing?[value.routing.mode==='parallel'?'동시 생산':'순차 생산',...(value.routing.group?[`${value.routing.lane}번 줄 · ${value.routing.order}번째`]:[])]:[]).join(' · ')||'미입력';}
 function fieldScheduleReference(el){
   if(el.querySelector('.pb-planmode').value==='start')return null;
   const worker=$('#fWorker').value.trim(),product=el.querySelector('.pb-product').value,previous=S.rows.find(r=>r.id===el.dataset.rid),progress=S.progress;
@@ -2738,8 +2766,8 @@ function fieldScheduleReference(el){
   const key=previous?progress.byRecord[S.date+'#'+previous.id]?.phase:progress.byWorkerProduct?.[JSON.stringify([worker,fieldProductName(product)])],phase=progress.phases[key];if(!phase||phase.ambiguous||(!previous&&phase.end)||phase.worker!==worker||fieldProductIdentity(phase.product)!==fieldProductIdentity(product))return null;
   const days={...(S.progressDays||{}),...dayCache,[S.date]:S.rows},values={schema:1,machines:[],daily:null};let date=null,cached=false;
   for(const [recordKey,reference]of Object.entries(progress.byRecord).filter(([id,r])=>id.slice(0,10)<=S.date&&r.phase===key).sort((a,b)=>a[0].slice(0,10).localeCompare(b[0].slice(0,10)))){const ds=recordKey.slice(0,10),rows=days[ds],row=Array.isArray(rows)?rows.find(r=>r.id===recordKey.slice(11)):reference.source;if(!row||progressStable(reference.source)!==progressStable(progressSourceFields(row)))return null;if(!row.scheduleConditions)continue;
-    try{const v=normalizeScheduleInput(row.scheduleConditions);if(!v)continue;if(v.machines.length)values.machines=v.machines.map(m=>({...m,qty:m.qty??values.machines.find(x=>x.name===m.name)?.qty??null}));if(v.daily!==null)values.daily=v.daily;date=ds;if(!Array.isArray(rows))cached=true;}catch{}
-  }return date&&(values.machines.length||values.daily!==null)?{value:values,date,cached}:null;
+    try{const v=normalizeScheduleInput(row.scheduleConditions);if(!v)continue;if(v.machines.length)values.machines=v.machines.map(m=>({...m,qty:m.qty??values.machines.find(x=>x.name===m.name)?.qty??null}));if(v.daily!==null)values.daily=v.daily;if(v.routing)values.routing=v.routing;date=ds;if(!Array.isArray(rows))cached=true;}catch{}
+  }return date&&(values.machines.length||values.daily!==null||values.routing)?{value:values,date,cached}:null;
 }
 function updateScheduleReference(el){
   const host=el.querySelector('.pb-schedule-reference');if(!host)return;const reference=fieldScheduleReference(el);scheduleReferences.set(el,reference);host.hidden=!reference;
@@ -2747,48 +2775,90 @@ function updateScheduleReference(el){
 }
 function showScheduleConflict(el,conflict){
   const host=el.querySelector('.pb-schedule-conflict');host.hidden=false;el.querySelector('.pb-schedule').open=true;expandProduct(el,true);
+  if(conflict.field==='machineActuals'){
+    const describe=v=>Array.isArray(v)?v.map(m=>`${m.name} ${r2(m.qty)}조`).join(' · '):'호기별 기록 없음',mine=machineActualFormValue(el),latest=conflict.latestActuals||{present:false};
+    host.innerHTML=`<div class="pb-schedule-note warn">다른 기기의 오늘 실적: <b>${esc(describe(latest.value))}</b> · 총 ${esc(conflict.latestProd)}조<br>입력한 오늘 실적: <b>${esc(describe(mine))}</b><br>사용할 실적을 선택한 뒤 다시 저장하세요. 다른 입력은 유지됩니다.</div><button type="button" class="pb-machine-add" data-choice="latest">다른 기기 조건 사용</button> <button type="button" class="pb-machine-add" data-choice="mine">입력한 조건 사용</button>`;
+    host.querySelectorAll('button').forEach(button=>button.onclick=()=>{machineActualBaselines.set(el,latest);scheduleReviewedForms.add(el);if(button.dataset.choice==='latest'){restoreMachineActualForm(el,latest.value,{baseline:false});el.querySelector('.pb-prod').value=conflict.latestProd??'';}machineActualSignatures.set(el,'reviewed');host.hidden=true;syncQuickProducts();saveDraft();});return;
+  }
   host.innerHTML=`<div class="pb-schedule-note warn">다른 기기의 현재 조건: <b>${esc(scheduleDescription(conflict.latest))}</b><br>입력한 조건: <b>${esc(scheduleDescription(normalizeScheduleInput(scheduleFormValues(el))))}</b><br>수량·검사 입력은 유지됩니다. 사용할 조건을 선택한 뒤 일보를 다시 저장하세요.</div><button type="button" class="pb-machine-add" data-choice="latest">다른 기기 조건 사용</button> <button type="button" class="pb-machine-add" data-choice="mine">입력한 조건 사용</button>`;
-  host.querySelectorAll('button').forEach(button=>button.onclick=()=>{scheduleFormOriginals.set(el,conflict.latest);scheduleReviewedForms.add(el);if(button.dataset.choice==='latest'){restoreScheduleForm(el,conflict.latest,{baseline:false});if(!normalizeScheduleInput(scheduleFormValues(el)))scheduleDiscardForms.add(el);}else scheduleDiscardForms.delete(el);scheduleFormBaselines.set(el,scheduleFormSignature({machines:[],daily:''}));host.hidden=true;saveDraft();});
+  host.querySelectorAll('button').forEach(button=>button.onclick=()=>{scheduleFormOriginals.set(el,conflict.latest);scheduleReviewedForms.add(el);let discard=false;if(button.dataset.choice==='latest'){restoreScheduleForm(el,conflict.latest,{baseline:false});discard=!normalizeScheduleInput(conflict.latest||{machines:[],daily:null});if(discard)scheduleDiscardForms.add(el);}else scheduleDiscardForms.delete(el);scheduleFormBaselines.set(el,scheduleFormSignature(discard?scheduleFormValues(el):{machines:[],daily:''}));host.hidden=true;saveDraft();});
 }
-function scheduleFormValues(el){return{machines:[...el.querySelectorAll('.pb-machine-row')].map(row=>({name:row.querySelector('.pb-machine-name').value,qty:row.querySelector('.pb-machine-qty').value})),daily:el.querySelector('.pb-schedule-daily').value};}
-function scheduleFormSignature(value){return JSON.stringify({machines:(value.machines||[]).map(m=>({name:String(m.name??'').trim(),qty:String(m.qty??'').trim()})).filter(m=>m.name||m.qty),daily:String(value.daily??'').trim()});}
+function scheduleFormValues(el){const mode=el.querySelector('.pb-route-mode').value;return{machines:[...el.querySelectorAll('.pb-machine-row')].map(row=>({name:row.querySelector('.pb-machine-name').value,qty:row.querySelector('.pb-machine-qty').value,...(row.querySelector('.pb-machine-daily').value.trim()?{daily:row.querySelector('.pb-machine-daily').value}:{})})),daily:el.querySelector('.pb-schedule-daily').value,...(mode?{routing:{schema:1,mode,group:el.querySelector('.pb-route-group').value,lane:el.querySelector('.pb-route-lane').value,order:el.querySelector('.pb-route-order').value}}:{})};}
+function scheduleFormSignature(value){return JSON.stringify({machines:(value.machines||[]).map(m=>({name:String(m.name??'').trim(),qty:String(m.qty??'').trim(),...(m.daily!==undefined?{daily:String(m.daily??'').trim()}:{})})).filter(m=>m.name||m.qty||m.daily),daily:String(value.daily??'').trim(),...(value.routing?{routing:{schema:1,mode:value.routing.mode,group:String(value.routing.group??'').trim(),lane:String(value.routing.lane??1),order:String(value.routing.order??1)}}:{})});}
+function normalizeScheduleMachineName(raw,fail,index){let name=String(raw??'').trim().replace(/\s+/g,' ');if(name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^[-+]\d/.test(name))fail('호기는 60자 이내의 이름 또는 번호로 입력하세요.','name',index);const numeric=name.match(/^(\d+)\s*(?:호(?:기)?)?$/);if(numeric){if(!Number.isSafeInteger(Number(numeric[1])))fail('호기 번호를 확인해 주세요.','name',index);name=Number(numeric[1])+'호';}return name;}
 function normalizeScheduleInput(value){
   const fail=(message,key,index)=>{const e=Error(message);e.scheduleKey=key;e.machineIndex=index;throw e;};
   const number=(raw,key,index,positive=false)=>{const text=String(raw??'').trim().replace(/,/g,'');if(!text)return null;if(!/^\d+(?:\.\d+)?$/.test(text)||!Number.isFinite(Number(text))||(positive&&Number(text)<=0))fail(positive?'예상 하루 생산은 0보다 큰 숫자로 입력하세요.':'호기별 계획은 0 이상의 숫자로 입력하세요.',key,index);return Number(text);};
   const seen=new Set(),machines=[];
   if((value.machines||[]).length>50)fail('호기는 최대 50개까지 입력할 수 있습니다.','name',49);
-  (value.machines||[]).forEach((m,index)=>{let name=String(m.name??'').trim().replace(/\s+/g,' ');const qty=number(m.qty,'qty',index);if(!name){if(qty!==null)fail('배정할 호기를 입력하세요.','name',index);return;}
-    if(name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^[-+]\d/.test(name))fail('호기는 60자 이내의 이름 또는 번호로 입력하세요.','name',index);
-    const numeric=name.match(/^(\d+)\s*(?:호(?:기)?)?$/);if(numeric){if(!Number.isSafeInteger(Number(numeric[1])))fail('호기 번호를 확인해 주세요.','name',index);name=Number(numeric[1])+'호';}
-    if(seen.has(name))fail('같은 호기가 중복되었습니다. 한 줄에 합쳐 입력하세요.','name',index);seen.add(name);machines.push({name,qty});
+  (value.machines||[]).forEach((m,index)=>{const name=normalizeScheduleMachineName(m.name,fail,index),qty=number(m.qty,'qty',index),daily=number(m.daily,'machineDaily',index,true);if(!name){if(qty!==null||daily!==null)fail('배정할 호기를 입력하세요.','name',index);return;}
+    if(seen.has(name))fail('같은 호기가 중복되었습니다. 한 줄에 합쳐 입력하세요.','name',index);seen.add(name);machines.push({name,qty,...(daily!==null?{daily}:{})});
   });
-  const daily=number(value.daily,'daily',null,true);return machines.length||daily!==null?{schema:1,machines,daily}:null;
+  let routing;if(value.routing){const r=value.routing,group=String(r.group??'').trim(),lane=Number(r.lane),order=Number(r.order);if(r.schema!==1||!['sequential','parallel'].includes(r.mode))fail('순차 또는 동시 생산을 선택하세요.','routing');if(group.length>160||/[\x00-\x1f\x7f]/.test(group))fail('묶음 번호는 160자 이내로 입력하세요.','routing');if(!Number.isInteger(lane)||lane<1||lane>20||!Number.isInteger(order)||order<1||order>50)fail('생산줄은 1~20, 순서는 1~50으로 입력하세요.','routing');routing={schema:1,mode:r.mode,group,lane,order};}
+  const daily=number(value.daily,'daily',null,true);return machines.length||daily!==null||routing?{schema:1,machines,daily,...(routing?{routing}:{})}:null;
 }
 function addScheduleMachine(el,value={}){
-  const row=document.createElement('div');row.className='pb-machine-row';row.innerHTML='<input class="f-input pb-machine-name" placeholder="예: 13" aria-label="일정 호기" autocomplete="off"><input class="f-input pb-machine-qty" inputmode="decimal" placeholder="미입력 가능" aria-label="호기별 계획 조수"><button type="button" title="이 호기 입력 빼기" aria-label="호기 입력 빼기">×</button>';
-  row.querySelector('.pb-machine-name').value=value.name??'';row.querySelector('.pb-machine-qty').value=value.qty??'';el.querySelector('.pb-machines').appendChild(row);
-  row.querySelector('button').onclick=()=>{row.remove();if(!el.querySelector('.pb-machine-row'))addScheduleMachine(el);updateScheduleSummary(el);syncQuickProducts();saveDraft();};return row;
+  const row=document.createElement('div');row.className='pb-machine-row';row.innerHTML='<input class="f-input pb-machine-name" placeholder="예: 13" aria-label="일정 호기" autocomplete="off"><input class="f-input pb-machine-qty" inputmode="decimal" placeholder="미입력 가능" aria-label="호기별 계획 조수"><button type="button" title="이 호기 입력 빼기" aria-label="호기 입력 빼기">×</button><div class="pb-machine-extra"><label class="pb-machine-speed-label" hidden>이 호기 예상 하루 (조)<input class="f-input pb-machine-daily" inputmode="decimal" aria-label="호기별 예상 하루 조수" placeholder="예: 2"></label><label class="pb-machine-actual-label" hidden>이 호기 오늘 생산 (조)<input class="f-input pb-machine-actual" inputmode="decimal" aria-label="호기별 오늘 생산 조수" placeholder="실제 수량만 입력"></label></div>';
+  row.querySelector('.pb-machine-name').value=value.name??'';row.querySelector('.pb-machine-qty').value=value.qty??'';row.querySelector('.pb-machine-daily').value=value.daily??'';el.querySelector('.pb-machines').appendChild(row);
+  row.querySelector('button').onclick=()=>{row.remove();if(!el.querySelector('.pb-machine-row'))addScheduleMachine(el);updateMachineActualUI(el);updateScheduleSummary(el);syncQuickProducts();saveDraft();};return row;
 }
 function restoreScheduleForm(el,value=null,{baseline=true}={}){
-  el.querySelector('.pb-machines').innerHTML='';const machines=Array.isArray(value?.machines)?value.machines:[];(machines.length?machines:[{},{}]).forEach(m=>addScheduleMachine(el,m));el.querySelector('.pb-schedule-daily').value=value?.daily??'';
-  if(baseline){scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));scheduleFormOriginals.set(el,value?JSON.parse(JSON.stringify(value)):null);}updateScheduleSummary(el);
+  const actuals=el.querySelector('.pb-use-machine-actuals').checked?machineActualDraftValue(el):null;el.querySelector('.pb-machines').innerHTML='';const machines=Array.isArray(value?.machines)?value.machines:[];(machines.length?machines:[{},{}]).forEach(m=>addScheduleMachine(el,m));el.querySelector('.pb-schedule-daily').value=value?.daily??'';
+  el.querySelector('.pb-route-mode').value=value?.routing?.mode||'';el.querySelector('.pb-route-group').value=value?.routing?.group||'';el.querySelector('.pb-route-lane').value=value?.routing?.lane??1;el.querySelector('.pb-route-order').value=value?.routing?.order??1;
+  if(actuals)restoreMachineActualForm(el,actuals,{baseline:false});if(baseline){scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));scheduleFormOriginals.set(el,value?JSON.parse(JSON.stringify(value)):null);}updateMachineActualUI(el);updateScheduleSummary(el);
 }
+function machineActualDraftValue(el){return[...el.querySelectorAll('.pb-machine-row')].map(row=>({name:row.querySelector('.pb-machine-name').value,qty:row.querySelector('.pb-machine-actual').value}));}
+function machineActualFormValue(el){
+  if(!el.querySelector('.pb-use-machine-actuals').checked)return null;const seen=new Set(),out=[];
+  const fail=(msg,key,index)=>{const e=Error(msg);e.scheduleKey=key;e.machineIndex=index;throw e;};
+  machineActualDraftValue(el).forEach((m,index)=>{const text=String(m.qty??'').trim().replace(/,/g,'');if(!text)return;const name=normalizeScheduleMachineName(m.name,fail,index);if(!name)fail('오늘 실적을 기록할 호기를 입력하세요.','name',index);if(seen.has(name))fail('오늘 실적의 호기가 중복되었습니다.','name',index);if(!/^\d+(?:\.\d+)?$/.test(text)||!Number.isFinite(Number(text)))fail('호기별 오늘 생산은 0 이상의 숫자로 입력하세요.','actual',index);seen.add(name);out.push({name,qty:Number(text)});});
+  if(!out.length)fail('오늘 생산한 호기의 실적을 입력하세요. 생산이 없으면 0을 입력할 수 있습니다.','actual',0);if(!Number.isFinite(out.reduce((sum,m)=>sum+m.qty,0)))fail('호기별 오늘 실적의 합계를 확인해 주세요.','actual',0);return out;
+}
+function machineActualFormSignature(el){return JSON.stringify({enabled:el.querySelector('.pb-use-machine-actuals').checked,rows:machineActualDraftValue(el).filter(m=>String(m.qty??'').trim()!=='')});}
+function restoreMachineActualForm(el,value,{baseline=true,present=value!==undefined}={}){
+  const active=Array.isArray(value);el.querySelector('.pb-use-machine-actuals').checked=active;
+  el.querySelectorAll('.pb-machine-actual').forEach(input=>input.value='');
+  if(active)value.forEach(m=>{const key=String(m.name??'').trim(),row=[...el.querySelectorAll('.pb-machine-row')].find(row=>{try{return normalizeScheduleMachineName(row.querySelector('.pb-machine-name').value,()=>{},0)===key;}catch{return false;}})||addScheduleMachine(el,{name:m.name});row.querySelector('.pb-machine-actual').value=m.qty??'';});
+  if(baseline){machineActualBaselines.set(el,present?{present:true,value:JSON.parse(JSON.stringify(value))}:{present:false});machineActualSignatures.set(el,machineActualFormSignature(el));}updateMachineActualUI(el);
+}
+function updateMachineActualUI(el){
+  const use=el.querySelector('.pb-use-machine-actuals').checked,parallel=el.querySelector('.pb-route-mode').value==='parallel',prod=el.querySelector('.pb-prod');
+  el.querySelectorAll('.pb-machine-row').forEach(row=>{const speed=parallel||!!row.querySelector('.pb-machine-daily').value;row.querySelector('.pb-machine-speed-label').hidden=!speed;row.querySelector('.pb-machine-actual-label').hidden=!use;row.querySelector('.pb-machine-extra').hidden=!speed&&!use;});
+  prod.readOnly=use;el.querySelectorAll('.pb-pm,.pb-pp').forEach(b=>b.disabled=use);el.querySelector('.pb-schedule-daily').disabled=parallel;
+  el.querySelector('.pb-schedule-daily-label').hidden=parallel;el.querySelector('.pb-capacity-hint').textContent=parallel?'각 호기의 예상 하루 조수로 종료일을 계산합니다. 실제 생산은 오늘 실적을 따르며 전체 수량을 호기별로 나누지 않습니다.':'예상 하루 생산은 종료일 계산용입니다. 오늘 만든 수량과 구분하며, 체크한 휴일만 생산일에서 제외합니다.';
+  el.querySelector('.pb-route-connection').textContent=el.querySelector('.pb-route-group').value.trim()?`묶음 연결됨 · ${el.querySelector('.pb-route-lane').value}번 생산줄 · ${el.querySelector('.pb-route-order').value}번째`:'다른 품목과 묶지 않은 개별 일정입니다.';
+  const status=el.querySelector('.pb-actual-status');if(use){try{const rows=machineActualFormValue(el),total=rows.reduce((sum,m)=>sum+m.qty,0);if(!Number.isFinite(total))throw Error('호기별 실적의 합계를 확인해 주세요.');prod.value=String(Math.round(total*1e8)/1e8);status.textContent=`오늘 총생산 ${r2(total)}조 · 호기별 직접 입력값의 합계입니다. 빈 호기의 실적은 추정하지 않습니다.`;}catch(e){status.textContent=e.message;}}
+  else status.textContent='오늘 총수량만 입력해도 됩니다. 호기별 실적은 임의로 나누지 않습니다.';
+}
+function collectMachineActualFields(el){
+  const changed=machineActualFormSignature(el)!==machineActualSignatures.get(el);if(!changed)return{};const value=machineActualFormValue(el);return value||machineActualBaselines.get(el)?.present||machineActualSignatures.get(el)==='reviewed'?{machineActuals:value}:{};
+}
+function openRoutingBuilder(el){
+  const host=el.querySelector('.pb-route-builder'),els=[...$('#prodBlocks').children].filter(p=>p.querySelector('.pb-product').value.trim());
+  if(els.length<2){toast('다른 품목을 추가한 뒤 함께 묶을 수 있습니다.');return;}host.hidden=false;
+  host.innerHTML='<div class="pb-schedule-note">함께 계획할 품목을 체크하세요. 같은 줄은 차례대로, 다른 줄은 함께 생산합니다.</div>'+els.map((p,i)=>{const v=scheduleFormValues(p).routing;return`<div class="pb-route-candidate" data-rid="${esc(p.dataset.rid)}"><label class="pb-route-pick"><input type="checkbox" checked><span>${esc(p.querySelector('.pb-product').value)}</span></label><label>생산줄<input class="f-input route-lane" inputmode="numeric" value="${esc(v?.group?v.lane:1)}"></label><label>순서<input class="f-input route-order" inputmode="numeric" value="${esc(v?.group?v.order:i+1)}"></label></div>`;}).join('')+'<button type="button" class="pb-machine-add pb-route-apply">선택 품목을 한 묶음으로</button> <button type="button" class="pb-machine-add pb-route-close">닫기</button><div class="pb-schedule-note warn pb-route-error" role="alert"></div>';
+  host.querySelector('.pb-route-close').onclick=()=>host.hidden=true;
+  host.querySelector('.pb-route-apply').onclick=()=>{const selected=[...host.querySelectorAll('.pb-route-candidate')].filter(r=>r.querySelector('input[type=checkbox]').checked),seen=new Set(),group=el.querySelector('.pb-route-group').value.trim()||'manual:field:'+uid(),targets=[];try{if(selected.length<2)throw Error('함께 묶을 품목을 2개 이상 체크하세요.');for(const candidate of selected){const target=els.find(p=>p.dataset.rid===candidate.dataset.rid),routing=normalizeScheduleInput({machines:[],daily:null,routing:{schema:1,mode:target.querySelector('.pb-route-mode').value||'sequential',group,lane:candidate.querySelector('.route-lane').value,order:candidate.querySelector('.route-order').value}}).routing,key=routing.lane+'#'+routing.order;if(seen.has(key))throw Error('같은 생산줄의 순서가 겹칩니다. 차례로 생산할 품목의 순서를 다르게 입력하세요.');seen.add(key);targets.push({target,routing});}}catch(e){host.querySelector('.pb-route-error').textContent=e.message;return;}
+    targets.forEach(({target,routing})=>{target.querySelector('.pb-route-mode').value=routing.mode;target.querySelector('.pb-route-group').value=routing.group;target.querySelector('.pb-route-lane').value=routing.lane;target.querySelector('.pb-route-order').value=routing.order;updateMachineActualUI(target);updateScheduleSummary(target);});host.hidden=true;syncQuickProducts();saveDraft();toast('생산줄과 순서를 입력폼에 적용했습니다. 일보 저장을 눌러 반영하세요.');};
+}
+function validateRoutingPositions(datas,els){const seen=new Map();for(let i=0;i<datas.length;i++){const id=els[i].dataset.rid,old=S.rows.find(r=>r.id===id),r=datas[i].scheduleConditions?.routing||old?.scheduleConditions?.routing;if(!r?.group)continue;const key=r.group+'#'+r.lane+'#'+r.order;if(seen.has(key)){fieldErr(els[i].querySelector('.pb-route-order'),`제품 ${i+1}: 같은 묶음의 ${r.lane}번 생산줄 ${r.order}번째가 중복되었습니다. 순서를 구분하세요.`);return false;}seen.set(key,id);}return true;}
 function updateScheduleSummary(el){
   const values=scheduleFormValues(el),summary=el.querySelector('.pb-schedule-summary'),note=el.querySelector('.pb-schedule-main-note');let data;
   try{data=normalizeScheduleInput(values);}catch(e){summary.textContent='입력 확인';note.classList.add('warn');note.textContent=e.message;return;}
-  summary.textContent=data?data.machines.map(m=>m.name+(m.qty!==null?' '+r2(m.qty)+'조':'')).concat(data.daily!==null?['하루 '+r2(data.daily)+'조']:[]).join(' · '):scheduleReferences.get(el)?'이전 현장 조건 있음':'선택 입력';
+  summary.textContent=data?scheduleDescription(data):scheduleReferences.get(el)?'이전 현장 조건 있음':'선택 입력';
   const plan=Number(el.querySelector('.pb-plan').value)||Number(el.dataset.productionPlanQty),allocated=(data?.machines||[]).reduce((n,m)=>n+(m.qty??0),0),partial=data?.machines.some(m=>m.qty===null),different=plan>0&&data?.machines.length&&(partial||Math.abs(allocated-plan)>0.000001);
-  note.classList.toggle('warn',!!different);note.textContent=different?`시작 계획 ${r2(plan)}조 · 호기 배정 ${r2(allocated)}조${partial?' (미입력 호기 있음)':''}. 차이는 자동으로 나누지 않습니다. 배정 조수를 확인해 주세요.`:data?'일보 저장 시 일정 조건도 함께 반영됩니다. 생산 시작·계속·종료 상태는 위 선택을 따릅니다.':'입력하지 않아도 저장할 수 있습니다. 기존 조건을 지우거나 오늘 생산량을 바꾸지 않습니다.';
+  const missingSpeed=data?.routing?.mode==='parallel'&&data.machines.some(m=>!(m.daily>0));note.classList.toggle('warn',!!different||!!missingSpeed);note.textContent=different?`시작 계획 ${r2(plan)}조 · 호기 배정 ${r2(allocated)}조${partial?' (미입력 호기 있음)':''}. 차이는 자동으로 나누지 않습니다. 배정 조수를 확인해 주세요.`:missingSpeed?'동시 생산의 종료일을 계산하려면 각 호기의 예상 하루 조수를 입력하세요. 전체 하루 조수를 임의로 나누지 않습니다.':data?'일보 저장 시 일정 조건도 함께 반영됩니다. 생산 시작·계속·종료 상태는 위 선택을 따릅니다.':'입력하지 않아도 저장할 수 있습니다. 기존 조건을 지우거나 오늘 생산량을 바꾸지 않습니다.';
 }
 function collectScheduleFields(el){
   const values=scheduleFormValues(el);if(scheduleFormSignature(values)===scheduleFormBaselines.get(el))return{};
   const result=normalizeScheduleInput(values);return result?{scheduleConditions:result}:{};
 }
 function collectScheduleEdit(el,payload){
-  if(scheduleDiscardForms.has(el)&&!payload?.scheduleConditions)return{schema:1,discard:true};
-  if(!payload?.scheduleConditions)return null;const base=JSON.parse(scheduleFormBaselines.get(el)||'{"machines":[],"daily":""}'),value=JSON.parse(scheduleFormSignature(scheduleFormValues(el))),fields=[];
-  for(const key of['machines','daily'])if(progressStable(value[key])!==progressStable(base[key])&&(key==='machines'?payload.scheduleConditions.machines.length:payload.scheduleConditions.daily!==null))fields.push(key);
-  return fields.length?{schema:1,before:scheduleFormOriginals.get(el)||null,fields,...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
+  const discard=scheduleDiscardForms.has(el)&&!payload?.scheduleConditions;
+  const base=JSON.parse(scheduleFormBaselines.get(el)||'{"machines":[],"daily":""}'),value=JSON.parse(scheduleFormSignature(scheduleFormValues(el))),fields=[];
+  if(payload?.scheduleConditions)for(const key of['machines','daily','routing'])if(progressStable(value[key])!==progressStable(base[key])&&(key==='machines'?payload.scheduleConditions.machines.length:key==='routing'?payload.scheduleConditions.routing:payload.scheduleConditions.daily!==null))fields.push(key);
+  const beforeActuals=machineActualBaselines.get(el)||{present:false},guardActuals=Array.isArray(beforeActuals.value);if(Object.prototype.hasOwnProperty.call(payload||{},'machineActuals'))fields.push('machineActuals');
+  return fields.length||guardActuals||discard?{schema:1,before:scheduleFormOriginals.get(el)||null,fields,...(discard?{discard:true}:{}),...(guardActuals||fields.includes('machineActuals')?{beforeActuals,guardActuals}:{}),...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
 }
 function addBlock(row){
   const el = document.createElement('div'); el.className = 'pb';
@@ -2796,8 +2866,14 @@ function addBlock(row){
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
   restoreScheduleForm(el,row?.scheduleConditions);
-  el.querySelector('.pb-machine-add').onclick=()=>{if(el.querySelectorAll('.pb-machine-row').length>=50){toast('호기는 최대 50개까지 입력할 수 있습니다.');return;}addScheduleMachine(el).querySelector('input').focus();saveDraft();};
-  el.querySelector('.pb-schedule').addEventListener('input',()=>{updateScheduleSummary(el);saveDraft();});
+  restoreMachineActualForm(el,row?.machineActuals,{present:Object.prototype.hasOwnProperty.call(row||{},'machineActuals')});scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));
+  el.querySelector('.pb-schedule > .pb-machine-add').onclick=()=>{if(el.querySelectorAll('.pb-machine-row').length>=50){toast('호기는 최대 50개까지 입력할 수 있습니다.');return;}addScheduleMachine(el).querySelector('input').focus();updateMachineActualUI(el);saveDraft();};
+  el.querySelector('.pb-schedule').addEventListener('input',()=>{updateMachineActualUI(el);updateScheduleSummary(el);saveDraft();});
+  el.querySelector('.pb-use-machine-actuals').onchange=()=>{updateMachineActualUI(el);syncQuickProducts();saveDraft();};
+  el.querySelector('.pb-route-mode').onchange=()=>{updateMachineActualUI(el);updateScheduleSummary(el);saveDraft();};
+  ['.pb-route-group','.pb-route-lane','.pb-route-order'].forEach(selector=>el.querySelector(selector).addEventListener('input',()=>{if(!el.querySelector('.pb-route-mode').value)el.querySelector('.pb-route-mode').value='sequential';updateMachineActualUI(el);updateScheduleSummary(el);}));
+  el.querySelector('.pb-route-link').onclick=()=>openRoutingBuilder(el);
+  el.querySelector('.pb-route-unlink').onclick=()=>{el.querySelector('.pb-route-mode').value='sequential';el.querySelector('.pb-route-group').value='';el.querySelector('.pb-route-lane').value='1';el.querySelector('.pb-route-order').value='1';updateMachineActualUI(el);updateScheduleSummary(el);saveDraft();};
   el.querySelector('.pb-toggle').onclick=()=>expandProduct(el,el.querySelector('.pb-body').hidden);
   /* 최근 14개를 먼저 표시하고, 검색은 관리 품목 전체와 별칭을 사용한다. */
   const prodIn = el.querySelector('.pb-product');
@@ -2883,6 +2959,7 @@ function addBlock(row){
   updateBlockNeed(el);
   updateProdProg(el);
   syncPlanMode(el);
+  updateMachineActualUI(el);
   updateScheduleSummary(el);
   renumberBlocks();
   const conflict=outboxAll().find(i=>i.date===S.date&&i.scheduleConflict?.rowId===el.dataset.rid)?.scheduleConflict;if(conflict)showScheduleConflict(el,conflict);
@@ -2993,15 +3070,17 @@ function collectBlock(el, i){
   let completion;
   try{completion=completionFields(previous,{end:pzSel,modeChanged:el.dataset.planModeChanged==='1',reason:el.querySelector('.pb-completion-reason').value,note:el.querySelector('.pb-completion-note').value,stockQty:el.querySelector('.pb-completion-stock').value,preservedPlan:el.dataset.productionPlanQty});}
   catch(e){fieldErr(el.querySelector('.pb-completion-reason'),`제품 ${i+1}: ${e.message}`);return null;}
+  let machineFields;try{machineFields=collectMachineActualFields(el);if(el.querySelector('.pb-use-machine-actuals').checked)machineActualFormValue(el);updateMachineActualUI(el);}catch(e){fieldErr(el.querySelectorAll('.pb-machine-actual')[e.machineIndex??0]||el.querySelector('.pb-prod'),`제품 ${i+1}: ${e.message}`);return null;}
   const prod = numField(el, 'pb-prod', '생산량', i);     if(!prod.ok) return null;
   const scrap = numField(el, 'pb-scrap', '불량석고량', i); if(!scrap.ok) return null;
   const defq = numField(el, 'pb-defqty', '불량수량', i);  if(!defq.ok) return null;
-  let scheduleFields;try{scheduleFields=collectScheduleFields(el);}catch(e){const machine=el.querySelectorAll('.pb-machine-row')[e.machineIndex??0],inp=e.scheduleKey==='daily'?el.querySelector('.pb-schedule-daily'):machine?.querySelector(e.scheduleKey==='qty'?'.pb-machine-qty':'.pb-machine-name');fieldErr(inp||el.querySelector('.pb-schedule-daily'),`제품 ${i+1}: ${e.message}`);return null;}
+  let scheduleFields;try{scheduleFields=collectScheduleFields(el);}catch(e){const machine=el.querySelectorAll('.pb-machine-row')[e.machineIndex??0],inp=e.scheduleKey==='routing'?el.querySelector('.pb-route-order'):e.scheduleKey==='daily'?el.querySelector('.pb-schedule-daily'):machine?.querySelector(e.scheduleKey==='qty'?'.pb-machine-qty':e.scheduleKey==='machineDaily'?'.pb-machine-daily':'.pb-machine-name');if(e.scheduleKey==='routing')el.querySelector('.pb-routing').open=true;fieldErr(inp||el.querySelector('.pb-schedule-daily'),`제품 ${i+1}: ${e.message}`);return null;}
   return {
     ...productFields,
     ...planFields,
     ...completion,
     ...scheduleFields,
+    ...machineFields,
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -3098,6 +3177,7 @@ function formSnapshot(){
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
       sc:scheduleFormValues(el),sb:scheduleFormBaselines.get(el),so:scheduleFormOriginals.get(el),sr:scheduleReviewedForms.has(el),sd:scheduleDiscardForms.has(el),
+      ma:{enabled:el.querySelector('.pb-use-machine-actuals').checked,rows:machineActualDraftValue(el)},mb:machineActualBaselines.get(el),ms:machineActualSignatures.get(el),
       ...(legacyInspectionDrafts.get(el)||{}),
       r: el.querySelector('.pb-remark').value
     }))
@@ -3226,6 +3306,7 @@ function restoreForm(snap){
     el.querySelector('.pb-completion-reason').value=b.cr||'';el.querySelector('.pb-completion-stock').value=b.cq??'';el.querySelector('.pb-completion-note').value=b.cn||'';
     el.querySelector('.pb-prod').value = b.pr || '';
     if(b.sc){restoreScheduleForm(el,b.sc,{baseline:false});if(typeof b.sb==='string')scheduleFormBaselines.set(el,b.sb);if(Object.prototype.hasOwnProperty.call(b,'so'))scheduleFormOriginals.set(el,b.so);if(b.sr)scheduleReviewedForms.add(el);if(b.sd)scheduleDiscardForms.add(el);}
+    if(b.ma){restoreMachineActualForm(el,b.ma.enabled?b.ma.rows:null,{baseline:false});if(b.mb)machineActualBaselines.set(el,b.mb);if(typeof b.ms==='string')machineActualSignatures.set(el,b.ms);}
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));
@@ -3310,6 +3391,7 @@ async function saveEntry(){
     if(!d) return;
     datas.push(d);
   }
+  if(!validateRoutingPositions(datas,els))return;
   /* 생산량이 빈 제품 → 실수인지 한 번 확인 (0이면 0을 입력) */
   const noQty = datas.map((d,i) => ({d,i})).filter(x => x.d.prod === '');
   if(noQty.length){
@@ -4040,7 +4122,7 @@ function validateFieldBackup(input){
   if(typeof packet.local!=='object'||Array.isArray(packet.local))throw new Error('기기 보관분 형식이 올바르지 않습니다.');
   if(packet.local.outbox!==undefined&&!Array.isArray(packet.local.outbox))throw new Error('전송 대기 목록이 올바르지 않습니다.');
   for(const item of packet.local.outbox||[]){if(!fieldDate(item.date))throw new Error('전송 대기 날짜가 올바르지 않습니다.');fieldBackupRows(item.rows||[]);if(item.removeIds!==undefined&&(!Array.isArray(item.removeIds)||item.removeIds.some(x=>typeof x!=='string')))throw new Error('삭제 예약 목록이 올바르지 않습니다.');}
-  for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length||edit.fields.length>2||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');}}
+  for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length&&!edit.guardActuals||edit.fields.length>4||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily','routing','machineActuals'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');if((edit.guardActuals||edit.fields?.includes('machineActuals'))&&(!edit.beforeActuals||typeof edit.beforeActuals.present!=='boolean'))throw new Error('호기별 실적의 변경 기준이 손상되었습니다.');}}
   for(const key of ['drafts','printed','presetsRetry'])if(packet.local[key]!==undefined&&(!packet.local[key]||typeof packet.local[key]!=='object'||Array.isArray(packet.local[key])))throw new Error('초안·인쇄·명단 보관분 형식이 올바르지 않습니다.');
   for(const date of Object.keys(packet.local.printed||{}))if(!fieldDate(date))throw new Error('인쇄 보관분 날짜가 올바르지 않습니다.');
   return packet;
