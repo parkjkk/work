@@ -1615,8 +1615,10 @@ function updateNetBanner(){
   }
   if(pending && driver.mode === 'gh'){
     show('send');
-    b.innerHTML = `📤 저장 대기 ${pending}건 — 연결되면 자동 전송됩니다. <button id="netSend">지금 전송</button>`;
-    b.querySelector('#netSend').onclick = () => outboxFlush();
+    const conflict=outboxAll().find(i=>i.scheduleConflict);
+    b.innerHTML = conflict?`일정 조건 변경 확인 필요 · ${esc(conflict.date)} 기록은 기기에 보관 중입니다. <button id="netResolveSchedule">조건 비교하고 저장</button>`:`📤 저장 대기 ${pending}건 — 연결되면 자동 전송됩니다. <button id="netSend">지금 전송</button>`;
+    if(conflict)b.querySelector('#netResolveSchedule').onclick=async()=>{const epoch=storeEpoch;S.date=conflict.date;renderDate();await refreshDay(false,true);if(epoch!==storeEpoch||S.date!==conflict.date)return;const row=S.rows.find(r=>r.id===conflict.scheduleConflict.rowId);if(row)openEntry(row);};
+    else b.querySelector('#netSend').onclick = () => outboxFlush();
     return;
   }
   const dl = tokenDaysLeft();
@@ -1640,12 +1642,31 @@ function updateNetBanner(){
 }
 /* ---- 아웃박스: 저장 실패분을 기기에 보관했다가 자동 재전송 ---- */
 function outboxAll(){ return LS.get('ilbo.outbox', []); }
-function outboxPush(date, rows, align, removeIds){
+function schedulePart(value,key){return key==='machines'?value?.machines||[]:value?.daily??null;}
+function mergeScheduleChanges(rows,newRows,edits={},strict=true){
+  return newRows.map(row=>{const edit=edits[row.id];if(!edit||!row.scheduleConditions)return row;
+    const current=rows.find(r=>r.id===row.id)?.scheduleConditions,result={...(current||{}),schema:1,machines:schedulePart(current,'machines'),daily:schedulePart(current,'daily')};
+    for(const key of edit.fields||[]){if(!['machines','daily'].includes(key))continue;const wanted=schedulePart(row.scheduleConditions,key),latest=schedulePart(current,key),before=schedulePart(edit.before,key);
+      if(strict&&progressStable(latest)!==progressStable(before)&&progressStable(latest)!==progressStable(wanted)){const e=Error(`다른 기기에서 ${row.product||'이 품목'}의 ${key==='machines'?'호기 배정':'하루 조수'}를 변경했습니다. 두 값을 확인한 뒤 다시 저장해 주세요.`);e.scheduleConflict={rowId:row.id,field:key,latest:current?JSON.parse(JSON.stringify(current)):null};throw e;}
+      result[key]=key==='machines'?wanted.map(m=>({...m,qty:m.qty??latest.find(x=>x.name===m.name)?.qty??null})):wanted;
+    }return{...row,scheduleConditions:result};
+  });
+}
+function queuedScheduleChanges(date,rows,edits={}){
+  const nextEdits=JSON.parse(JSON.stringify(edits)),nextRows=rows.map(row=>{let pending=null,prior=null;for(const item of outboxAll())if(item.date===date){const p=item.rows?.find(r=>r.id===row.id);if(p?.scheduleConditions)pending=p;const e=item.scheduleEdits?.[row.id];if(e)prior=e;}
+    if(nextEdits[row.id]?.discard){const next={...row};delete next.scheduleConditions;delete nextEdits[row.id];return next;}
+    if(!pending)return row;const next={...row,scheduleConditions:row.scheduleConditions||pending.scheduleConditions},incoming=nextEdits[row.id];
+    if(prior){if(!incoming)nextEdits[row.id]=JSON.parse(JSON.stringify(prior));else if(!incoming.reviewed){const before={...(incoming.before||{})};for(const key of prior.fields||[])before[key]=schedulePart(prior.before,key);nextEdits[row.id]={schema:1,before,fields:[...new Set([...(prior.fields||[]),...(incoming.fields||[])])]};}}
+    return next;});return{rows:nextRows,edits:nextEdits};
+}
+function pruneScheduleQueueMeta(item){if(!item.scheduleEdits&&!item.scheduleConflict)return item;const ids=new Set((item.rows||[]).map(r=>r.id)),next={...item};if(item.scheduleEdits)next.scheduleEdits=Object.fromEntries(Object.entries(item.scheduleEdits).filter(([id])=>ids.has(id)));if(item.scheduleConflict&&!ids.has(item.scheduleConflict.rowId))delete next.scheduleConflict;return next;}
+function outboxPush(date, rows, align, removeIds, scheduleEdits={}){
+  const combined=queuedScheduleChanges(date,rows||[],scheduleEdits);rows=combined.rows;scheduleEdits=combined.edits;
   const ids = new Set([...(rows||[]).map(r=>r.id), ...(removeIds||[])]);
   const ob = outboxAll().map(i=> i.date!==date ? i : {...i,
     rows:(i.rows||[]).filter(r=>!ids.has(r.id)), removeIds:(i.removeIds||[]).filter(id=>!ids.has(id))
-  }).filter(i=>(i.rows||[]).length || (i.removeIds||[]).length);
-  ob.push({qid:uid(), date, rows: rows||[], align, removeIds: removeIds||[], t: Date.now()});
+  }).filter(i=>(i.rows||[]).length || (i.removeIds||[]).length).map(pruneScheduleQueueMeta);
+  ob.push({qid:uid(), date, rows: rows||[], align, removeIds: removeIds||[], t: Date.now(),...(Object.keys(scheduleEdits).length?{scheduleEdits}:{})});
   const ok = LS.set('ilbo.outbox', ob);
   if(!ok) toast('⚠ 기기 저장 공간이 부족해 보관하지 못했습니다 — 공간을 비우고 다시 저장해 주세요');
   updateNetBanner();
@@ -1657,7 +1678,7 @@ function outboxPrune(date, ids, align){
   const ob = outboxAll().map(i => i.date !== date ? i : {...i,
     rows: (i.rows||[]).filter(r => !idSet.has(r.id)), removeIds:(i.removeIds||[]).filter(id=>!idSet.has(id)),
     align: align && i.align && i.align.worker===align.worker ? align : i.align})
-    .filter(i => (i.rows||[]).length || (i.removeIds||[]).length);
+    .filter(i => (i.rows||[]).length || (i.removeIds||[]).length).map(pruneScheduleQueueMeta);
   if(!LS.set('ilbo.outbox', ob)) throw new Error('서버에는 반영했지만 기기 전송대기를 정리하지 못했습니다. 저장공간 확인 후 다시 시도하세요.');
   updateNetBanner();
 }
@@ -1688,7 +1709,7 @@ async function outboxFlush(){
         /* 재시도마다 보관분을 다시 읽음 — 전송 중 사용자가 고치거나 지운 내용이 되돌아가지 않게 */
         const cur = outboxAll().find(x => queueKey(x) === key) || {rows:[], removeIds:[]};
         sent = cur.rows || [];
-        let out = mergeRows(rows, sent, cur.align);
+        let out = mergeRows(rows, mergeScheduleChanges(rows,sent,cur.scheduleEdits), cur.align);
         const rm = new Set(cur.removeIds || []);
         if(rm.size) out = out.filter(r => !rm.has(r.id));
         return out;
@@ -1700,7 +1721,7 @@ async function outboxFlush(){
     }
     if(sentAny) toast(outboxAll().length ? '기록을 전송했습니다 — 남은 기록도 이어서 전송합니다' : '보관해 둔 기록을 모두 전송했습니다');
     refreshDay(true, true);
-  }catch(e){ /* 다음 기회에 재시도 */ }
+  }catch(e){if(epoch===storeEpoch&&e.scheduleConflict){const conflict=e.scheduleConflict;LS.set('ilbo.outbox',outboxAll().map(i=>i.rows?.some(r=>r.id===conflict.rowId)?{...i,scheduleConflict:conflict}:i));toast(e.message);} /* 보관분은 그대로 유지 */ }
   finally{ flushing = false; updateNetBanner(); }
 }
 
@@ -1899,7 +1920,7 @@ function pendingRemovedFor(date){
 function pendingApply(date, rows){
   let out = rows;
   outboxAll().filter(i => i.date === date).forEach(i => {
-    out = mergeRows(out, i.rows || [], i.align);
+    out = mergeRows(out, mergeScheduleChanges(out,i.rows||[],i.scheduleEdits,false), i.align);
     const rm = new Set(i.removeIds || []);
     if(rm.size) out = out.filter(r => !rm.has(r.id));
   });
@@ -2048,10 +2069,11 @@ function mergeRows(rows, newRows, align){
   if(align && align.worker) out = out.map(r => r.worker === align.worker ? {...r, hours: align.hours} : r);
   return out;
 }
-async function upsertRows(newRows, align, label){
+async function upsertRows(newRows, align, label, scheduleEdits={}){
   const epoch = storeEpoch, drv = driver;
   const date = S.date;   /* 저장 중 날짜를 옮겨도 원래 날짜에 기록·반영 */
-  const rows = await drv.mutateDay(date, rows => mergeRows(rows, newRows, align), label);
+  const combined=drv.offline?{rows:newRows,edits:scheduleEdits}:queuedScheduleChanges(date,newRows,scheduleEdits);
+  const rows = await drv.mutateDay(date, rows => mergeRows(rows, mergeScheduleChanges(rows,combined.rows,combined.edits), align), label);
   assertContext(epoch);
   if(drv.mode==='gh'||drv.offline) outboxPrune(date, newRows.map(r => r.id), align);
   updatePresetsFrom(newRows);
@@ -2389,6 +2411,7 @@ function planBadge(r){
   return '<span class="badge on">생산중</span>';
 }
 function updateProdProg(el){
+  if(typeof updateScheduleReference==='function')updateScheduleReference(el);
   const box = el.querySelector('.pb-prog'); if(!box) return;
   let pn = el.querySelector('.pb-product').value.trim();
   if(!S.productCatalog) pn = legacyProductName(pn);
@@ -2567,12 +2590,13 @@ function blockHTML(){
   <details class="pb-schedule">
     <summary>일정 조건 · 호기 / 하루 조수 <span class="pb-schedule-summary">선택 입력</span></summary>
     <span class="hint">실제 작업의 호기와 예상 속도를 생산일정표에 반영합니다. 변경할 때만 입력하고, 비워둔 항목은 기존 조건을 유지합니다.</span>
+    <div class="pb-schedule-reference" hidden></div><div class="pb-schedule-conflict" hidden role="alert"></div>
     <div class="pb-schedule-head"><span>호기</span><span>호기별 계획 (조)</span><span></span></div>
     <div class="pb-machines"></div>
     <button type="button" class="pb-machine-add">+ 호기 추가</button>
     <label class="pb-schedule-daily-label">예상 하루 생산 (조)<input class="f-input pb-schedule-daily" inputmode="decimal" placeholder="예: 5 · 종료일 계산용" aria-label="예상 하루 생산 조수"></label>
     <span class="hint">오늘 만든 수량은 위 생산량에 입력합니다. 이 칸은 앞으로 하루에 생산할 조수이며, 체크한 휴일을 제외해 종료일을 계산합니다.</span>
-    <div class="pb-schedule-note" role="status"></div>
+    <div class="pb-schedule-note pb-schedule-main-note" role="status"></div>
   </details>
   <details class="defect pb-defect">
     <summary><span class="df-sum">불량 있음 (석고량·수량·부위)</span></summary>
@@ -2603,6 +2627,7 @@ function blockHTML(){
 }
 function expandProduct(el, open=true){
   if(!el) return;
+  if(!open&&el.querySelector('.pb-schedule-conflict:not([hidden])'))open=true;
   el.querySelector('.pb-body').hidden=!open;
   el.querySelector('.pb-toggle').setAttribute('aria-expanded',String(open));
 }
@@ -2704,7 +2729,27 @@ function updateDefSummary(el){
     ? `불량 입력됨: ${q||'?'}개${s ? ' · '+s+'kg' : ''}${pt ? ' · '+pt : ''}`
     : '불량 있음 (석고량·수량·부위)';
 }
-const scheduleFormBaselines=new WeakMap();
+const scheduleFormBaselines=new WeakMap(),scheduleFormOriginals=new WeakMap(),scheduleReviewedForms=new WeakSet(),scheduleReferences=new WeakMap(),scheduleDiscardForms=new WeakSet();
+function scheduleDescription(value){return(value?.machines||[]).map(m=>m.name+(m.qty!=null?' '+r2(m.qty)+'조':'')).concat(value?.daily>0?['하루 '+r2(value.daily)+'조']:[]).join(' · ')||'미입력';}
+function fieldScheduleReference(el){
+  if(el.querySelector('.pb-planmode').value==='start')return null;
+  const worker=$('#fWorker').value.trim(),product=el.querySelector('.pb-product').value,previous=S.rows.find(r=>r.id===el.dataset.rid),progress=S.progress;
+  if(!product||!validLocalProgress(progress)||!progress.phases||!progress.byRecord)return null;
+  const key=previous?progress.byRecord[S.date+'#'+previous.id]?.phase:progress.byWorkerProduct?.[JSON.stringify([worker,fieldProductName(product)])],phase=progress.phases[key];if(!phase||phase.ambiguous||(!previous&&phase.end)||phase.worker!==worker||fieldProductIdentity(phase.product)!==fieldProductIdentity(product))return null;
+  const days={...(S.progressDays||{}),...dayCache,[S.date]:S.rows},values={schema:1,machines:[],daily:null};let date=null,cached=false;
+  for(const [recordKey,reference]of Object.entries(progress.byRecord).filter(([id,r])=>id.slice(0,10)<=S.date&&r.phase===key).sort((a,b)=>a[0].slice(0,10).localeCompare(b[0].slice(0,10)))){const ds=recordKey.slice(0,10),rows=days[ds],row=Array.isArray(rows)?rows.find(r=>r.id===recordKey.slice(11)):reference.source;if(!row||progressStable(reference.source)!==progressStable(progressSourceFields(row)))return null;if(!row.scheduleConditions)continue;
+    try{const v=normalizeScheduleInput(row.scheduleConditions);if(!v)continue;if(v.machines.length)values.machines=v.machines.map(m=>({...m,qty:m.qty??values.machines.find(x=>x.name===m.name)?.qty??null}));if(v.daily!==null)values.daily=v.daily;date=ds;if(!Array.isArray(rows))cached=true;}catch{}
+  }return date&&(values.machines.length||values.daily!==null)?{value:values,date,cached}:null;
+}
+function updateScheduleReference(el){
+  const host=el.querySelector('.pb-schedule-reference');if(!host)return;const reference=fieldScheduleReference(el);scheduleReferences.set(el,reference);host.hidden=!reference;
+  if(reference){host.innerHTML=`<div class="pb-schedule-note">이 작업의 이전 현장 조건 · ${esc(fmtMD(reference.date))}${reference.cached?' · 기기 보관분':''}<br><b>${esc(scheduleDescription(reference.value))}</b><br>현장 기록 참고값입니다. 입력하지 않으면 관리에 저장된 조건을 유지합니다.</div><button type="button" class="pb-machine-add pb-load-schedule">이전 조건 불러와 수정</button>`;host.querySelector('button').onclick=()=>{const latest=fieldScheduleReference(el);if(!latest)return;restoreScheduleForm(el,latest.value,{baseline:false});el.querySelector('.pb-schedule').open=true;syncQuickProducts();saveDraft();};}else host.innerHTML='';updateScheduleSummary(el);
+}
+function showScheduleConflict(el,conflict){
+  const host=el.querySelector('.pb-schedule-conflict');host.hidden=false;el.querySelector('.pb-schedule').open=true;expandProduct(el,true);
+  host.innerHTML=`<div class="pb-schedule-note warn">다른 기기의 현재 조건: <b>${esc(scheduleDescription(conflict.latest))}</b><br>입력한 조건: <b>${esc(scheduleDescription(normalizeScheduleInput(scheduleFormValues(el))))}</b><br>수량·검사 입력은 유지됩니다. 사용할 조건을 선택한 뒤 일보를 다시 저장하세요.</div><button type="button" class="pb-machine-add" data-choice="latest">다른 기기 조건 사용</button> <button type="button" class="pb-machine-add" data-choice="mine">입력한 조건 사용</button>`;
+  host.querySelectorAll('button').forEach(button=>button.onclick=()=>{scheduleFormOriginals.set(el,conflict.latest);scheduleReviewedForms.add(el);if(button.dataset.choice==='latest'){restoreScheduleForm(el,conflict.latest,{baseline:false});if(!normalizeScheduleInput(scheduleFormValues(el)))scheduleDiscardForms.add(el);}else scheduleDiscardForms.delete(el);scheduleFormBaselines.set(el,scheduleFormSignature({machines:[],daily:''}));host.hidden=true;saveDraft();});
+}
 function scheduleFormValues(el){return{machines:[...el.querySelectorAll('.pb-machine-row')].map(row=>({name:row.querySelector('.pb-machine-name').value,qty:row.querySelector('.pb-machine-qty').value})),daily:el.querySelector('.pb-schedule-daily').value};}
 function scheduleFormSignature(value){return JSON.stringify({machines:(value.machines||[]).map(m=>({name:String(m.name??'').trim(),qty:String(m.qty??'').trim()})).filter(m=>m.name||m.qty),daily:String(value.daily??'').trim()});}
 function normalizeScheduleInput(value){
@@ -2726,18 +2771,24 @@ function addScheduleMachine(el,value={}){
 }
 function restoreScheduleForm(el,value=null,{baseline=true}={}){
   el.querySelector('.pb-machines').innerHTML='';const machines=Array.isArray(value?.machines)?value.machines:[];(machines.length?machines:[{},{}]).forEach(m=>addScheduleMachine(el,m));el.querySelector('.pb-schedule-daily').value=value?.daily??'';
-  if(baseline)scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));updateScheduleSummary(el);
+  if(baseline){scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));scheduleFormOriginals.set(el,value?JSON.parse(JSON.stringify(value)):null);}updateScheduleSummary(el);
 }
 function updateScheduleSummary(el){
-  const values=scheduleFormValues(el),summary=el.querySelector('.pb-schedule-summary'),note=el.querySelector('.pb-schedule-note');let data;
+  const values=scheduleFormValues(el),summary=el.querySelector('.pb-schedule-summary'),note=el.querySelector('.pb-schedule-main-note');let data;
   try{data=normalizeScheduleInput(values);}catch(e){summary.textContent='입력 확인';note.classList.add('warn');note.textContent=e.message;return;}
-  summary.textContent=data?data.machines.map(m=>m.name+(m.qty!==null?' '+r2(m.qty)+'조':'')).concat(data.daily!==null?['하루 '+r2(data.daily)+'조']:[]).join(' · '):'선택 입력';
+  summary.textContent=data?data.machines.map(m=>m.name+(m.qty!==null?' '+r2(m.qty)+'조':'')).concat(data.daily!==null?['하루 '+r2(data.daily)+'조']:[]).join(' · '):scheduleReferences.get(el)?'이전 현장 조건 있음':'선택 입력';
   const plan=Number(el.querySelector('.pb-plan').value)||Number(el.dataset.productionPlanQty),allocated=(data?.machines||[]).reduce((n,m)=>n+(m.qty??0),0),partial=data?.machines.some(m=>m.qty===null),different=plan>0&&data?.machines.length&&(partial||Math.abs(allocated-plan)>0.000001);
   note.classList.toggle('warn',!!different);note.textContent=different?`시작 계획 ${r2(plan)}조 · 호기 배정 ${r2(allocated)}조${partial?' (미입력 호기 있음)':''}. 차이는 자동으로 나누지 않습니다. 배정 조수를 확인해 주세요.`:data?'일보 저장 시 일정 조건도 함께 반영됩니다. 생산 시작·계속·종료 상태는 위 선택을 따릅니다.':'입력하지 않아도 저장할 수 있습니다. 기존 조건을 지우거나 오늘 생산량을 바꾸지 않습니다.';
 }
 function collectScheduleFields(el){
   const values=scheduleFormValues(el);if(scheduleFormSignature(values)===scheduleFormBaselines.get(el))return{};
   const result=normalizeScheduleInput(values);return result?{scheduleConditions:result}:{};
+}
+function collectScheduleEdit(el,payload){
+  if(scheduleDiscardForms.has(el)&&!payload?.scheduleConditions)return{schema:1,discard:true};
+  if(!payload?.scheduleConditions)return null;const base=JSON.parse(scheduleFormBaselines.get(el)||'{"machines":[],"daily":""}'),value=JSON.parse(scheduleFormSignature(scheduleFormValues(el))),fields=[];
+  for(const key of['machines','daily'])if(progressStable(value[key])!==progressStable(base[key])&&(key==='machines'?payload.scheduleConditions.machines.length:payload.scheduleConditions.daily!==null))fields.push(key);
+  return fields.length?{schema:1,before:scheduleFormOriginals.get(el)||null,fields,...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
 }
 function addBlock(row){
   const el = document.createElement('div'); el.className = 'pb';
@@ -2796,7 +2847,7 @@ function addBlock(row){
       if(!pz.classList.contains('sel')) pz.click();
       if(!pz.classList.contains('sel')) e.target.value=planEl.value?'start':'continue';
     }else{applyPz(false);if(desired==='continue')planEl.value='';else if(!planEl.value&&Number(el.dataset.productionPlanQty)>0)planEl.value=el.dataset.productionPlanQty;e.target.value=desired;el.dataset.planModeChanged='1';}
-    syncPlanMode(el);saveDraft();
+    syncPlanMode(el);updateScheduleReference(el);saveDraft();
   };
   planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); updateScheduleSummary(el); });
   el.querySelector('.pb-completion-reason').onchange=()=>{syncCompletionControls(el);saveDraft();};
@@ -2834,6 +2885,7 @@ function addBlock(row){
   syncPlanMode(el);
   updateScheduleSummary(el);
   renumberBlocks();
+  const conflict=outboxAll().find(i=>i.date===S.date&&i.scheduleConflict?.rowId===el.dataset.rid)?.scheduleConflict;if(conflict)showScheduleConflict(el,conflict);
   return el;
 }
 /* 칸 바로 아래에 빨간 글씨로 이유 표시 — 토스트가 키보드에 가려져도 보이게 */
@@ -2986,6 +3038,7 @@ async function loadDayCached(date){
 }
 let recentSeq = 0;
 async function updateRecentBtn(auto){
+  $$('#prodBlocks .pb').forEach(updateProdProg);
   auto = auto === true;   /* change 이벤트 객체가 넘어오는 경우 방지 */
   const box = $('#recentLoad');
   if(S.entryMode === 'case'){ box.hidden = true; box.innerHTML = ''; return; }
@@ -3044,7 +3097,7 @@ function formSnapshot(){
       pr: el.querySelector('.pb-prod').value, s: el.querySelector('.pb-scrap').value,
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
-      sc:scheduleFormValues(el),sb:scheduleFormBaselines.get(el),
+      sc:scheduleFormValues(el),sb:scheduleFormBaselines.get(el),so:scheduleFormOriginals.get(el),sr:scheduleReviewedForms.has(el),sd:scheduleDiscardForms.has(el),
       ...(legacyInspectionDrafts.get(el)||{}),
       r: el.querySelector('.pb-remark').value
     }))
@@ -3172,7 +3225,7 @@ function restoreForm(snap){
     if(b.pq)el.dataset.productionPlanQty=b.pq;
     el.querySelector('.pb-completion-reason').value=b.cr||'';el.querySelector('.pb-completion-stock').value=b.cq??'';el.querySelector('.pb-completion-note').value=b.cn||'';
     el.querySelector('.pb-prod').value = b.pr || '';
-    if(b.sc){restoreScheduleForm(el,b.sc,{baseline:false});if(typeof b.sb==='string')scheduleFormBaselines.set(el,b.sb);}
+    if(b.sc){restoreScheduleForm(el,b.sc,{baseline:false});if(typeof b.sb==='string')scheduleFormBaselines.set(el,b.sb);if(Object.prototype.hasOwnProperty.call(b,'so'))scheduleFormOriginals.set(el,b.so);if(b.sr)scheduleReviewedForms.add(el);if(b.sd)scheduleDiscardForms.add(el);}
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));
@@ -3297,6 +3350,7 @@ async function saveEntry(){
     /* 폼이 제공한 필드만 갱신한다. 숨긴 항목·확장 필드는 mutateDay의 최신 원행에 남긴다. */
     return {id,worker,hours,...d,ts:previous?previous.ts:base+i,t:base};
   });
+  const scheduleEdits=Object.fromEntries(els.map((el,i)=>[el.dataset.rid,collectScheduleEdit(el,datas[i])]).filter(([,edit])=>edit));
   const align = {worker, hours};
   /* 내 이름은 처음 한 번만 자동 학습 — 남의 기록을 고치거나 대신 입력해도 내 이름이 바뀌지 않게 */
   if(!S.me.worker){ S.me = {worker, hours: hours || 10}; LS.set('ilbo.me', S.me); }
@@ -3304,7 +3358,7 @@ async function saveEntry(){
   const btn = $('#entrySave'); btn.disabled = true; btn.textContent = '저장 중…';
   const saveDate = S.date;   /* 저장 중 날짜를 옮겨도 원래 날짜 기준 */
   try{
-    await upsertRows(newRows, align, `${worker} ${newRows.length}건`);
+    await upsertRows(newRows, align, `${worker} ${newRows.length}건`,scheduleEdits);
     LS.set('ilbo.guideDone', true);   /* 한 번 저장한 기기에는 첫 안내 카드를 더 보이지 않음 */
     if(!finishEntrySave()) return;
     const dd = parseDate(saveDate);
@@ -3312,9 +3366,10 @@ async function saveEntry(){
     toast(lab + (newRows.length>1 ? `${newRows.length}개 제품 저장됨` : '저장되었습니다'));
   }catch(e){
     if(epoch!==storeEpoch){ toast(e.message); return; }
+    if(e.scheduleConflict){const el=els.find(el=>el.dataset.rid===e.scheduleConflict.rowId);if(el)showScheduleConflict(el,e.scheduleConflict);}
     if(driver.mode === 'gh' && e.isNetwork){
       /* 연결 불가: 기기에 보관 후 자동 전송 (화면에는 바로 반영) */
-      if(!outboxPush(saveDate, newRows, align)){
+      if(!outboxPush(saveDate, newRows, align,undefined,scheduleEdits)){
         /* 보관조차 못 했으면 폼·임시저장을 유지해 입력이 사라지지 않게 */
         const ee = $('#entryErr'); ee.hidden = false;
         ee.textContent = '기기 저장 공간이 부족해 보관하지 못했습니다 — 공간을 비우고 [저장]을 다시 눌러주세요';
@@ -3985,6 +4040,7 @@ function validateFieldBackup(input){
   if(typeof packet.local!=='object'||Array.isArray(packet.local))throw new Error('기기 보관분 형식이 올바르지 않습니다.');
   if(packet.local.outbox!==undefined&&!Array.isArray(packet.local.outbox))throw new Error('전송 대기 목록이 올바르지 않습니다.');
   for(const item of packet.local.outbox||[]){if(!fieldDate(item.date))throw new Error('전송 대기 날짜가 올바르지 않습니다.');fieldBackupRows(item.rows||[]);if(item.removeIds!==undefined&&(!Array.isArray(item.removeIds)||item.removeIds.some(x=>typeof x!=='string')))throw new Error('삭제 예약 목록이 올바르지 않습니다.');}
+  for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length||edit.fields.length>2||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');}}
   for(const key of ['drafts','printed','presetsRetry'])if(packet.local[key]!==undefined&&(!packet.local[key]||typeof packet.local[key]!=='object'||Array.isArray(packet.local[key])))throw new Error('초안·인쇄·명단 보관분 형식이 올바르지 않습니다.');
   for(const date of Object.keys(packet.local.printed||{}))if(!fieldDate(date))throw new Error('인쇄 보관분 날짜가 올바르지 않습니다.');
   return packet;

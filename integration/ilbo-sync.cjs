@@ -138,7 +138,7 @@ function planSync(state,snapshot,options={}){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
   const row=c.match.row;
-  if(row?.fieldScheduleConditions&&c.values.fieldScheduleConditions){const prior=row.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>({...m,qty:m.qty??prior.machines?.find(x=>x.name===m.name)?.qty??null}));v.daily??=prior.daily??null}
+  if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>({...m,qty:m.qty??prior.machines?.find(x=>x.name===m.name)?.qty??null}));v.daily??=prior.daily??null}if(!v.machines.length&&v.daily==null)delete c.values.fieldScheduleConditions}
   if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
  }
  const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&si.targetHash===hash(rowBody(row))};
@@ -188,6 +188,7 @@ function planSync(state,snapshot,options={}){
   const targetEdited=!!before?.sourceIntegration?.targetEdited||!!(before?.sourceIntegration&&before.sourceIntegration.targetHash!==hash(rowBody(before)));
   // The engine owns baseline. User edits must leave it intact for three-way merge.
   row.sourceIntegration={...(row.sourceIntegration||{}),schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:nextBaseline,sourceProduct:clean(c.raw.sourceProduct||c.raw.product),productId:c.p.id,sourceCreatedAt:c.raw.ts||null,sourceUpdatedAt:c.raw.t||null,...(targetEdited?{targetEdited:true}:{})};
+  const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field]))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
   row.sourceIntegration.targetHash=hash(rowBody(row));
   if(!before){m.rows.push(row);links.set(c.key,[{m,row}]);report.counts.added++;history(m,'add',null,row,c)}else if(initial){links.set(c.key,[{m,row}]);report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
  }
