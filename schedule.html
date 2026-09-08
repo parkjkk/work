@@ -3707,7 +3707,7 @@ function pgApplyDisplay(){
  for(const [command,label,pressed]of controls){const selector='[data-pg-command="'+command+'"]',buttons=root.querySelectorAll?.(selector)||[root.querySelector(selector)].filter(Boolean);for(const button of buttons){button.textContent=label;button.setAttribute('aria-pressed',String(!!pressed))}}
  pgSyncWorkerFilter();const active=root.querySelector('#pgActiveOnly');if(active)active.checked=!!v.activeOnly;root.querySelector('[data-pg-command="calendar-tools"]')?.setAttribute('aria-expanded',String(!!v.calendarExpanded));pgQueueReflow();
 }
-function pgSetFocus(enabled){const v=pgView();if(enabled&&!v.focus){v.scrollBeforeFocus=window.scrollY||0;v.fit=true;v.compact=true;v.overview=true;v.calendarExpanded=false;v.focusTools=false}v.focus=!!enabled;pgApplyDisplay();if(!enabled)window.scrollTo(0,v.scrollBeforeFocus||0)}
+function pgSetFocus(enabled){const v=pgView();if(enabled&&!v.focus)v.scrollBeforeFocus=window.scrollY||0;v.focus=!!enabled;pgApplyDisplay();if(!enabled)window.scrollTo(0,v.scrollBeforeFocus||0)}
 function pgDisconnectView(){
  pgResizeObserver?.disconnect();pgResizeObserver=null;if(pgResizeFrame){cancelAnimationFrame(pgResizeFrame);pgResizeFrame=0}
  if(pgEscapeHandler)document.removeEventListener('keydown',pgEscapeHandler);pgEscapeHandler=null;
@@ -5016,7 +5016,7 @@ const viewPreferencePages=['daily','schedule','stock','audit','report','master',
 const viewPreferenceFocusPages=['daily','stock','audit','master','report'];
 const viewPreferenceDetails=['.pgViewOptions','.pgGuide','.pgPattern','.sheetHelp','.managementHelp','.moDefinitions','.ledgerMonthSummary','.top .mobileTools','.sheetToolbar .mobileTools','#ilboSyncStatus>.mobileTools'];
 const viewPreferenceScheduleFlags=['twoMonths','focus','fit','compact','overview','activeOnly','calendarExpanded','focusTools'];
-const viewPreferenceState={scope:null,records:new Map(),pending:new Map(),timer:0,rendering:0,applying:false,grids:new WeakSet(),plans:new WeakSet(),stocks:new WeakSet(),forms:new WeakSet(),userNavigation:false,userMonth:false,warningShown:false};
+const viewPreferenceState={scope:null,records:new Map(),pending:new Map(),captures:new Set(),activePlan:null,timer:0,rendering:0,applying:false,grids:new WeakSet(),plans:new WeakSet(),stocks:new WeakSet(),forms:new WeakSet(),userNavigation:false,userMonth:false,warningShown:false};
 const viewPreferenceObject=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const viewPreferenceText=value=>typeof value==='string'?value.slice(0,200):'';
 const viewPreferenceMonth=value=>typeof value==='string'&&/^(?:19|20|21)\d{2}-(?:0[1-9]|1[0-2])$/.test(value);
@@ -5092,7 +5092,7 @@ function viewPreferenceRestoreGrid(g){
  if(g.id==='production'){const p=data.months[g.month]?.production||{};if(p.groupDate)g.groupDate=p.groupDate;if(typeof p.productionFocus==='boolean'&&p.groupDate)g.productionFocus=p.productionFocus}
 }
 function viewPreferenceRestorePlan(v){
- if(viewPreferenceState.plans.has(v))return v;viewPreferenceState.plans.add(v);
+ if(viewPreferenceState.plans.has(v)&&viewPreferenceState.activePlan===v)return v;viewPreferenceState.plans.add(v);viewPreferenceState.activePlan=v;
  const data=viewPreferenceRecord().data,values={...data.schedule,...data.months[month]?.schedule};values.workerSelection=pgWorkerSelection(values);delete values.worker;Object.assign(v,values);return v;
 }
 function viewPreferenceRestoreStock(v){
@@ -5167,11 +5167,13 @@ function viewPreferenceEvent(event){
  const scope=viewPreferenceScope(),navigation=!!node.closest?.('[data-page]')||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action),monthChoice=node.id==='monthSel';
  if(navigation)viewPreferenceState.navigationEvent=true;
  if(typeof booting!=='undefined'&&booting){if(navigation)viewPreferenceState.userNavigation=true;if(monthChoice)viewPreferenceState.userMonth=true}
- setTimeout(()=>{if(scope===viewPreferenceScope())viewPreferenceCapture({monthChoice,navigation})},0);
+ const capture={scope,monthChoice,navigation};viewPreferenceState.captures.add(capture);setTimeout(()=>viewPreferenceRunCapture(capture),0);
 }
+function viewPreferenceRunCapture(capture){if(!viewPreferenceState.captures.delete(capture))return;if(capture.scope===viewPreferenceScope())viewPreferenceCapture(capture)}
+function viewPreferenceClose(){for(const capture of viewPreferenceState.captures)viewPreferenceRunCapture(capture);viewPreferenceFlush()}
 for(const type of['click','change','input','keydown'])document.addEventListener(type,viewPreferenceEvent,true);
-window.addEventListener('pagehide',viewPreferenceFlush);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')viewPreferenceFlush()});
+window.addEventListener('pagehide',viewPreferenceClose);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')viewPreferenceClose()});
 
 // Recovery packages keep native documents and pending edits separate. An import
 // creates a new device workspace; it never replays another device's outbox.
