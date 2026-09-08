@@ -8,6 +8,7 @@ const hash=x=>crypto.createHash('sha256').update(stable(x)).digest('hex');
 const clean=x=>String(x??'').trim();
 function iso(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(+d)&&d.toISOString().slice(0,10)===s}
 function number(x,label){if(x===''||x==null)return null;if(typeof x!=='number'&&typeof x!=='string'||!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(String(x).trim()))throw Error('Invalid numeric field: '+label);const n=Number(x);if(!Number.isFinite(n)||n<0)throw Error('Invalid nonnegative field: '+label);return n}
+function workingHours(value){const hours=number(value,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');return hours}
 function completionValue(value){
  if(value===null)return null;
  if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||!(value.stockQty===null||typeof value.stockQty==='number'&&Number.isFinite(value.stockQty)&&value.stockQty>=0)||value.reason!=='stock'&&value.stockQty!==null)throw Error('Invalid production completion');
@@ -56,11 +57,16 @@ function planSync(state,snapshot,options={}){
  const issue=(code,ctx,extra={})=>{report.issues.push({code,path:ctx.path,id:ctx.id||ctx.raw?.id,date:ctx.date||ctx.path?.match(/\d{4}-\d{2}-\d{2}/)?.[0]||'',worker:clean(ctx.raw?.worker||ctx.worker),sourceProduct:clean(ctx.raw?.sourceProduct||ctx.raw?.product||ctx.sourceProduct),...extra});report.counts.held++};
  const integrationKey=(path,id)=>snapshot.repo+'/'+path+'#'+id;
  const history=(month,type,before,after,ctx)=>{month.history=month.history||[];const event={type:'ilbo-sync',action:type,at:now,sourceRepo:snapshot.repo,sourcePath:ctx.path,sourceId:ctx.raw?.id||ctx.id,sourceCommit:snapshot.commit,before:before?clone(before):null,after:after?clone(after):null};event.id='ilbo-history:'+hash({type,before,after,path:ctx.path,id:event.sourceId});if(!month.history.some(e=>e.id===event.id))month.history.push(event);touched.add(month.id)};
- const locate=key=>Object.values(next.months).flatMap(m=>m.rows.map(row=>({m,row}))).filter(x=>x.row.sourceIntegration?.key===key);
+ const links=new Map(),attendanceLinks=new Set();
+ for(const m of Object.values(next.months)){
+  for(const row of m.rows){const key=row.sourceIntegration?.key;if(key){if(!links.has(key))links.set(key,[]);links.get(key).push({m,row})}}
+  for(const row of m.fieldAttendance||[])if(row.sourceIntegration?.key)attendanceLinks.add(row.sourceIntegration.key);
+ }
+ const locate=key=>links.get(key)||[];
  // Validate the full source before returning any changes.
  for(const f of files)for(const raw of f.rows){
   const ctx={...f,raw,id:raw.id,key:integrationKey(f.path,raw.id)},month=f.date.slice(0,7);seenKeys.add(ctx.key);
-  if(raw.off){prepared.push({...ctx,month,attendance:true});continue}
+  if(raw.off){try{prepared.push({...ctx,month,attendance:true,hours:workingHours(raw.hours)})}catch{issue('invalid-source-number',ctx)}continue}
   if(!clean(raw.product)&&!raw.productId){issue('missing-product',ctx);continue}
   let p;try{p=ix.resolve(raw)}catch{issue('product-id-name-conflict',ctx);continue}if(!p){issue('unknown-product',ctx);continue}
   const values={date:f.date,worker:clean(raw.worker),product:p.name};
@@ -83,22 +89,62 @@ function planSync(state,snapshot,options={}){
    }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
-   const hours=number(raw.hours,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');
+   const hours=workingHours(raw.hours);
    const details=detailOf(raw);if(Object.keys(details).length)values.fieldDetails=details;
    prepared.push({...ctx,month,p,values,hours,group:f.date+'\0'+values.worker});
   }catch{issue('invalid-source-number',ctx)}
  }
- // One working-time value per worker/day. Keep the existing first clock row when possible.
+ const sourceMatches=new Map();for(const c of prepared.filter(c=>!c.attendance)){const key=c.group+'\0'+c.p.id;sourceMatches.set(key,(sourceMatches.get(key)||0)+1)}
+ const matchProduction=c=>{
+  const m=next.months[c.month],matches=locate(c.key);
+  if(m?.closed)return{code:'closed-month'};
+  if(targetDeleted.has(c.key)&&!matches.length)return{code:'target-deleted'};
+  if(attendanceLinks.has(c.key))return{code:'source-record-kind-changed'};
+  if(!matches.length&&sourceMatches.get(c.group+'\0'+c.p.id)>1)return{code:'multiple-source-match'};
+  if(!matches.length&&!own(c.values,'pours'))return{code:'missing-production-quantity'};
+  if(matches.length>1)return{code:'duplicate-source-link'};
+  if(matches[0]&&matches[0].m.id!==c.month)return{code:'source-month-moved'};
+  let row=matches[0]?.row,initial=false;
+  if(!row){
+   const candidates=(m?.rows||[]).filter(r=>!r.deleted&&r.date===c.date&&r.worker===c.values.worker&&ix.names.get(clean(r.product))?.id===c.p.id&&!r.sourceIntegration);
+   if(candidates.length>1)return{code:'multiple-existing-rows'};
+   row=candidates[0];initial=!!row;
+   if(row&&!same(row.pours,c.values.pours)&&options.initialConflict!=='source')return{code:'initial-quantity-conflict'};
+  }
+  return row?.deleted?{code:'target-deleted'}:{row,initial};
+ };
+ const mergeFields=(row,values,initial)=>{
+  const baseline=row?.sourceIntegration?.baseline,patch={},conflicts=[];
+  for(const [key,value]of Object.entries(values)){
+   if(baseline){
+    if(own(baseline,key)&&same(value,baseline[key]))continue;
+    if(same(row[key],value))continue;
+    if(own(baseline,key)&&!same(row[key],baseline[key])){conflicts.push(key);continue}
+    if(!own(baseline,key)&&row[key]!=null&&row[key]!==''&&!same(row[key],value)){conflicts.push(key);continue}
+   }else if(initial&&options.initialConflict!=='source'&&!same(row[key],value)){conflicts.push(key);continue}
+   patch[key]=value;
+  }
+  return{patch,conflicts};
+ };
+ for(const c of prepared.filter(c=>!c.attendance)){
+  c.match=matchProduction(c);
+  // A blank first field report must not hide a recorded legacy defect amount.
+  const row=c.match.row;if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
+ }
+ const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&si.targetHash===hash(rowBody(row))};
+ // Assign time only to a row that can be merged. A retained clock row must not
+ // donate its hours before source deletion has actually become eligible.
  const groups=new Map();for(const c of prepared.filter(c=>!c.attendance)){if(!groups.has(c.group))groups.set(c.group,[]);groups.get(c.group).push(c)}
  for(const cs of groups.values()){
   const hours=[...new Set(cs.map(c=>c.hours).filter(x=>x!==null))];if(hours.length>1){for(const c of cs)issue('inconsistent-worker-hours',c);continue}
   if(!hours.length)continue;
   const current=(next.months[cs[0].month]?.rows||[]).filter(r=>r.date===cs[0].date&&r.worker===cs[0].values.worker&&!r.deleted);
-  const clock=current.find(r=>r.hours!==null&&r.hours!==''&&r.hours!==undefined)||current[0];
-  const owner=cs.find(c=>clock&&(clock.sourceIntegration?.key===c.key||clock.product===c.p.name))||cs[0];
+  const candidates=cs.filter(c=>!c.match.code&&!mergeFields(c.match.row,c.values,c.match.initial).conflicts.length);
+  const clocks=current.filter(r=>r.hours!==null&&r.hours!==''&&r.hours!==undefined),clock=clocks[0]||current[0];
+  const retained=clocks.some(r=>!candidates.some(c=>c.match.row===r)&&!canDeleteSourceRow(r));
+  const owner=retained?null:candidates.find(c=>c.match.row===clock)||candidates[0];
   for(const c of cs)c.values.hours=c===owner?hours[0]:null;
  }
- const sourceMatches=new Map();for(const c of prepared.filter(c=>!c.attendance)){const key=c.group+'\0'+c.p.id;sourceMatches.set(key,(sourceMatches.get(key)||0)+1)}
  for(const c of prepared){
   let m=next.months[c.month];if(m?.closed){issue('closed-month',c);continue}
   if(targetDeleted.has(c.key)&&!locate(c.key).length){issue('target-deleted',c);continue}
@@ -109,40 +155,21 @@ function planSync(state,snapshot,options={}){
   if(!m){m=next.months[c.month]=newMonth(c.month);touched.add(c.month)}
   if(c.attendance){
    const rows=m.fieldAttendance||(m.fieldAttendance=[]),matches=rows.filter(r=>r.sourceIntegration?.key===c.key);if(matches.length>1){issue('duplicate-attendance-link',c);continue}
-   const values={date:c.date,worker:clean(c.raw.worker),offKind:clean(c.raw.offKind)||'휴무',hours:number(c.raw.hours,'attendance-hours'),details:detailOf(c.raw)},prev=matches[0];
+   const values={date:c.date,worker:clean(c.raw.worker),offKind:clean(c.raw.offKind)||'휴무',hours:c.hours,details:detailOf(c.raw)},prev=matches[0];
    const old=prev?clone(prev):null;if(prev&&same(values,prev.sourceIntegration.baseline))continue;
    if(prev&&Object.entries(prev.sourceIntegration.baseline).some(([k,v])=>!same(prev[k],v))){issue('attendance-conflict',c);continue}
    const row=prev||{id:'ilbo-attendance:'+hash(c.key).slice(0,24),rev:0};Object.assign(row,values);row.rev=(row.rev||0)+1;row.sourceIntegration={schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:clone(values)};row.sourceIntegration.targetHash=hash(rowBody(row));if(!prev)rows.push(row);history(m,prev?'attendance-update':'attendance-add',old,row,c);report.counts.attendance++;continue;
   }
-  const matches=locate(c.key);if(matches.length>1){issue('duplicate-source-link',c);continue}
-  let row=matches[0]?.row,initial=false;
-  if(matches[0]&&matches[0].m.id!==m.id){issue('source-month-moved',c);continue}
-  if(!row){
-   const candidates=m.rows.filter(r=>!r.deleted&&r.date===c.date&&r.worker===c.values.worker&&ix.names.get(clean(r.product))?.id===c.p.id&&!r.sourceIntegration);
-   if(candidates.length>1){issue('multiple-existing-rows',c);continue}
-   row=candidates[0];initial=!!row;
-   if(row&&claimed.has(row.id)){issue('multiple-source-match',c);continue}
-   if(row&&!same(row.pours,c.values.pours)&&options.initialConflict!=='source'){issue('initial-quantity-conflict',c);continue}
-  }
-  if(row?.deleted){issue('target-deleted',c);continue}
+  if(c.match.code){issue(c.match.code,c);continue}
+  let {row,initial}=c.match;
+  if(row&&claimed.has(row.id)){issue('multiple-source-match',c);continue}
   const before=row?clone(row):null;
-  // A blank first field report must not hide a recorded legacy defect amount.
-  if(before)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
   if(!row){
    if(!own(c.values,'pours')){issue('missing-production-quantity',c);continue}
    row={id:'ilbo:'+hash(c.key).slice(0,24),rev:0,date:c.date,worker:c.values.worker,product:c.p.name,lot:'',hours:null,plan:null,pours:null,cases:c.p.cases??null,waterRatio:c.p.waterRatio??null,plaster:c.p.kg??null,defectUnit:null,defectCount:null,defectPart:'',unitSources:{cases:'catalog',plaster:'catalog'},explicit:{day:true,worker:true,hours:own(c.values,'hours')&&c.values.hours!==null,pours:true,lot:false},source:'work.html'};
   }
   claimed.add(row.id);
-  const baseline=row.sourceIntegration?.baseline,patch={},conflicts=[];
-  for(const [key,value]of Object.entries(c.values)){
-   if(baseline){
-    if(own(baseline,key)&&same(value,baseline[key]))continue;
-    if(same(row[key],value))continue;
-    if(own(baseline,key)&&!same(row[key],baseline[key])){conflicts.push(key);continue}
-    if(!own(baseline,key)&&row[key]!=null&&row[key]!==''&&!same(row[key],value)){conflicts.push(key);continue}
-   }else if(initial&&options.initialConflict!=='source'&&!same(row[key],value)){conflicts.push(key);continue}
-   patch[key]=value;
-  }
+  const baseline=row.sourceIntegration?.baseline,{patch,conflicts}=mergeFields(row,c.values,initial);
   if(conflicts.length){issue(initial?'initial-field-conflict':'target-source-conflict',c,{fields:conflicts});continue}
   const nextBaseline={...(baseline||{}),...clone(c.values)};
   if(before?.sourceIntegration&&same(nextBaseline,baseline)&&same(patch,{})&&before.sourceIntegration.sourceHash===hash(c.raw))continue;
@@ -152,7 +179,7 @@ function planSync(state,snapshot,options={}){
   // The engine owns baseline. User edits must leave it intact for three-way merge.
   row.sourceIntegration={...(row.sourceIntegration||{}),schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:nextBaseline,sourceProduct:clean(c.raw.sourceProduct||c.raw.product),productId:c.p.id,sourceCreatedAt:c.raw.ts||null,sourceUpdatedAt:c.raw.t||null,...(targetEdited?{targetEdited:true}:{})};
   row.sourceIntegration.targetHash=hash(rowBody(row));
-  if(!before){m.rows.push(row);report.counts.added++;history(m,'add',null,row,c)}else if(initial){report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
+  if(!before){m.rows.push(row);links.set(c.key,[{m,row}]);report.counts.added++;history(m,'add',null,row,c)}else if(initial){links.set(c.key,[{m,row}]);report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
  }
  // Absence is meaningful only inside a successfully read full day file.
  for(const m of Object.values(next.months))for(const field of['rows','fieldAttendance'])for(const row of[...(m[field]||[])]){

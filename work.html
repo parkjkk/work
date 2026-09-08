@@ -591,7 +591,7 @@ async function fieldSettings(cfg){
  document.body.append(d);d.showModal();d.querySelector('[data-field-close]').focus();run(async()=>{await list();if(current()){d.querySelector('[data-field-tools]').hidden=false;d.querySelector('[data-field-token] input').focus()}});
 }
 function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(!adminReady()){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren();continue}if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
-root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED')lock(j.error)}return r};
+root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
  el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){if(version===lockVersion)message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
@@ -617,7 +617,6 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
  ready.then(run);
 }};
 })(globalThis);
-
 </script><!-- APP_ACCESS_END --></head>
 <body>
 
@@ -1158,6 +1157,7 @@ async function ghFetch(url, opts={}, ms=15000){
 function ghDriver(cfg){
   const epoch = storeEpoch;
   const dayReads = new Map();
+  let directoryRead = null;
   const base = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/`;
   const bridge=bridgeConfig(cfg);
   const H = bridge ? {'Authorization':'Bearer '+cfg.bridgeKey} : { 'Authorization':'Bearer '+cfg.token, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
@@ -1191,7 +1191,31 @@ function ghDriver(cfg){
     S.authError = false;
     const j = await r.json();
     assertContext(epoch);
-    return {json: JSON.parse(b64d(j.content||'') || 'null'), sha: j.sha};
+    if(typeof j?.content!=='string'||!j.content.trim())throw new Error('서버 파일의 내용을 받지 못했습니다. 기존 자료를 빈 기록으로 바꾸지 않았습니다.');
+    const json=JSON.parse(b64d(j.content));
+    if(json===null)throw new Error('서버 파일이 비어 있습니다. 관리자에게 자료 확인을 요청해 주세요.');
+    return {json, sha: j.sha};
+  }
+  function dayRows(json){
+    if(json===null)return [];   /* 실제 404인 새 날짜만 빈 기록으로 시작 */
+    if(typeof json!=='object'||Array.isArray(json)||!Array.isArray(json.rows)||json.rows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))throw new Error('일보 자료 형식이 올바르지 않습니다. 기존 자료를 덮지 않고 저장을 중단했습니다.');
+    return json.rows;
+  }
+  function readDirectory(){
+    assertContext(epoch);
+    if(directoryRead)return directoryRead;
+    const task=(async()=>{
+      const r=await ghFetch(readUrl('data'),{headers:H,cache:'no-store'});
+      assertContext(epoch);authCheck(r);
+      if(r.status===404)return [];
+      if(!r.ok)throw new Error('GitHub 목록 실패 ('+r.status+')');
+      const list=await r.json();assertContext(epoch);
+      if(!Array.isArray(list))throw new Error('일보 파일 목록의 형식이 올바르지 않습니다. 빈 현황으로 대신하지 않았습니다.');
+      return list;
+    })();
+    directoryRead=task;
+    task.finally(()=>{if(directoryRead===task)directoryRead=null;}).catch(()=>{});
+    return task;
   }
   async function putFile(path, obj, sha, msg){
     assertContext(epoch);
@@ -1262,18 +1286,18 @@ function ghDriver(cfg){
       assertContext(epoch);
       if(dayReads.has(date)) return dayReads.get(date);
       const task = (async () => {
-        const t0 = Date.now();
+        const revision = dayMeta[date]?.revision || 0;
         const {json, sha} = await getFile('data/'+date+'.json');
         assertContext(epoch);
-        const rows = (json && json.rows) || [];
-        return noteDay(date, rows, sha, t0) ? rows : (dayCache[date] || rows);
+        const rows = dayRows(json);
+        return noteDay(date, rows, sha, revision) ? rows : (dayCache[date] || rows);
       })();
       dayReads.set(date,task);
       task.finally(()=>{ if(dayReads.get(date)===task) dayReads.delete(date); }).catch(()=>{});
       return task;
     },
     async mutateDay(date, fn, label){
-      const next = await mutateJson('data/'+date+'.json', j => ({...(j&&typeof j==='object'&&!Array.isArray(j)?j:{}),rows: fn((j&&j.rows)||[])}), '일보 '+date + (label ? ' · '+label : ''));
+      const next = await mutateJson('data/'+date+'.json', j => ({...(j||{}),rows: fn(dayRows(j))}), '일보 '+date + (label ? ' · '+label : ''));
       assertContext(epoch); dayReads.delete(date);
       noteDay(date, next.rows, null);   /* sha 미상 → 다음 월 조회 때 그 날만 한 번 다시 받음 */
       return next.rows;
@@ -1305,13 +1329,8 @@ function ghDriver(cfg){
     },
     async monthDays(ym){
       assertContext(epoch);
-      const r = await ghFetch(readUrl('data'), {headers:H, cache:'no-store'});
-      assertContext(epoch);
-      authCheck(r);
-      if(r.status===404) return {};
-      if(!r.ok) throw new Error('GitHub 목록 실패 ('+r.status+')');
-      const list = await r.json();
-      const files = (Array.isArray(list)?list:[]).filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name));
+      const list = await readDirectory();
+      const files = list.filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f.name));
       let targets;   /* [{date, sha}] */
       if((Array.isArray(list) ? list.length : 0) >= 1000){
         /* 디렉터리 목록은 1000개까지만 오므로(약 4년치) 그 뒤로는 날짜를 직접 열거해 조회 */
@@ -1472,11 +1491,12 @@ let driver = localDriver;
 const dayCache = {};
 const dayMeta = {};
 const monthCache = {};
-function noteDay(date, rows, sha, startedAt){
+function noteDay(date, rows, sha, readRevision){
   const m = dayMeta[date];
-  if(startedAt && m && m.w && m.w > startedAt) return false;   /* 읽기 시작 뒤에 저장이 있었으면 늦은 응답으로 덮지 않음 */
+  const revision=m?.revision || 0;
+  if(readRevision!==undefined && revision!==readRevision) return false;   /* 순번 비교: 같은 밀리초·시계 역행에도 저장 뒤의 늦은 조회를 버림 */
   dayCache[date] = rows;
-  dayMeta[date] = {sha: sha || null, t: Date.now(), w: startedAt ? ((m && m.w) || 0) : Date.now()};   /* w = 마지막 저장 시각 */
+  dayMeta[date] = {sha: sha || null, t: Date.now(), revision: readRevision===undefined ? revision+1 : revision};
   LS.set('ilbo.cache.'+date, rows);              /* 오프라인 대비 최신본 보관 */
   const mc = monthCache[date.slice(0,7)];
   if(mc) mc.days[date] = rows;                     /* 현황 탭 캐시도 같이 최신화 */
@@ -1675,7 +1695,11 @@ function refreshProductChips(el){
   const input=el.querySelector('.pb-product'),host=el.querySelector('.pb-prodchips');if(!input||!host)return;
   input.placeholder=S.productCatalog?'관리 품명 또는 등록된 별칭 검색':'예: CC267B';
   host.innerHTML=prodsListAll().map((p,i)=>`<button type="button" class="chip" data-p="${esc(p)}"${i>=14?' hidden':''}>${esc(p)}</button>`).join('');
-  const show=()=>{const q=productNameKey(input.value).toLocaleUpperCase();host.querySelectorAll('.chip').forEach((c,i)=>{const item=catalogProduct(S.productCatalog,c.dataset.p),aliases=S.productCatalog?.aliases.filter(a=>a.productId===item?.id).map(a=>productNameKey(a.name))||[];c.hidden=q?![productNameKey(c.dataset.p),...aliases].some(n=>n.toLocaleUpperCase().includes(q)):i>=14;});};
+  /* 목록이 바뀔 때 검색어를 한 번 준비한다. 키 입력마다 품목×별칭을 다시 훑지 않는다. */
+  const byName=new Map((S.productCatalog?.products||[]).map(p=>[productNameKey(p.name),p.id])),aliasesById=new Map();
+  for(const a of S.productCatalog?.aliases||[]){if(!aliasesById.has(a.productId))aliasesById.set(a.productId,[]);aliasesById.get(a.productId).push(productNameKey(a.name).toLocaleUpperCase());}
+  const choices=[...host.querySelectorAll('.chip')].map(c=>({button:c,terms:[productNameKey(c.dataset.p).toLocaleUpperCase(),...(aliasesById.get(byName.get(productNameKey(c.dataset.p)))||[])]}));
+  const show=()=>{const q=productNameKey(input.value).toLocaleUpperCase();choices.forEach(({button,terms},i)=>{button.hidden=q?!terms.some(n=>n.includes(q)):i>=14;});};
   host.querySelectorAll('.chip').forEach(button=>{
     button.onclick=()=>{input.value=button.dataset.p;show();updateProdProg(el);syncQuickProducts();const qty=el.querySelector('.pb-prod');qty.scrollIntoView({block:'center'});qty.focus();};
     if(!S.productCatalog)bindLongPress(button,()=>{if(removePreset('products',button.dataset.p))button.remove();});
@@ -2135,10 +2159,14 @@ function renderMeChips(){
   renderMissing();   /* 이름 목록이 바뀌면 미작성 표시도 갱신 */
 }
 function marksOf(r){
-  const items = [['가사',r.gasa],['상태',r.cs],['틈새',r.gap],['주입구',r.inlet],['제품면',r.face],['기포',r.bubble]];
+  const items = [['가사',r.gasa],['CASE',r.cs],['틈새',r.gap],['주입구',r.inlet],['손질',r.face],['기포',r.bubble]];
   const bad = items.filter(([k,v]) => v==='△' || v==='Ⅹ');
-  if(!bad.length) return `<span class="ok">검사 ○</span>`;
-  return bad.map(([k,v]) => `<span class="${v==='Ⅹ'?'mB':'mW'}">${esc(k)}${esc(v)}</span>`).join('');
+  if(items.every(([,v])=>v==='○')) return `<span class="ok">검사 양호</span>`;
+  const missing=items.filter(([,v])=>!String(v??'').trim()).length;
+  const other=items.filter(([,v])=>String(v??'').trim()&&!['○','△','Ⅹ'].includes(v));
+  return bad.map(([k,v]) => `<span class="${v==='Ⅹ'?'mB':'mW'}">${esc(k)}${esc(v)}</span>`).join('')+
+    other.map(([k,v])=>`<span>${esc(k)} ${esc(v)}${k==='가사'?'':' · 확인 필요'}</span>`).join('')+
+    (missing?`<span>미입력 ${missing}항목</span>`:'');
 }
 /* 오늘 아직 일보를 안 쓴 사람 (자주쓰는 이름 목록 기준) */
 function missingWorkers(){
@@ -3072,6 +3100,7 @@ async function saveEntry(){
   const hoursRaw = $('#fHours').value.trim();
   if(hoursRaw !== '' && !/^\d+(\.\d+)?$/.test(hoursRaw)){ fieldErr($('#fHours'), '작업시간이 숫자가 아닙니다'); return; }
   const hours = numOr(hoursRaw, '');
+  if(hours!==''&&(!Number.isFinite(hours)||hours<0||hours>24)){fieldErr($('#fHours'),'하루 작업시간은 0~24시간으로 입력하세요');return;}
   if(S.entryMode === 'case'){
     /* 케이스 교체: 제품 없이 작업시간만 저장 */
     if(hours === ''){ fieldErr($('#fHours'), '케이스 교체한 작업시간을 입력하세요'); return; }
@@ -4006,7 +4035,7 @@ function init(){
     finally{$('#entrySave').disabled=false;$('#entryDel').disabled=false;}
   };
   $('#hrMinus').onclick = () => { $('#fHours').value = Math.max(0, (numOr($('#fHours').value,0)||0)-0.5); };
-  $('#hrPlus').onclick = () => { $('#fHours').value = (numOr($('#fHours').value,0)||0)+0.5; };
+  $('#hrPlus').onclick = () => { $('#fHours').value = Math.min(24,(numOr($('#fHours').value,0)||0)+0.5); };
   $('#addProdBlock').onclick = () => {
     const el = addBlock(null);
     el.scrollIntoView({behavior:'smooth', block:'start'});
