@@ -2714,7 +2714,7 @@ function normalizeScheduleInput(value){
   if((value.machines||[]).length>50)fail('호기는 최대 50개까지 입력할 수 있습니다.','name',49);
   (value.machines||[]).forEach((m,index)=>{let name=String(m.name??'').trim().replace(/\s+/g,' ');const qty=number(m.qty,'qty',index);if(!name){if(qty!==null)fail('배정할 호기를 입력하세요.','name',index);return;}
     if(name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^[-+]\d/.test(name))fail('호기는 60자 이내의 이름 또는 번호로 입력하세요.','name',index);
-    const numeric=name.match(/^(\d+)\s*호?$/);if(numeric){if(!Number.isSafeInteger(Number(numeric[1])))fail('호기 번호를 확인해 주세요.','name',index);name=Number(numeric[1])+'호';}
+    const numeric=name.match(/^(\d+)\s*(?:호(?:기)?)?$/);if(numeric){if(!Number.isSafeInteger(Number(numeric[1])))fail('호기 번호를 확인해 주세요.','name',index);name=Number(numeric[1])+'호';}
     if(seen.has(name))fail('같은 호기가 중복되었습니다. 한 줄에 합쳐 입력하세요.','name',index);seen.add(name);machines.push({name,qty});
   });
   const daily=number(value.daily,'daily',null,true);return machines.length||daily!==null?{schema:1,machines,daily}:null;

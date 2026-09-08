@@ -11,7 +11,7 @@ function number(x,label){if(x===''||x==null)return null;if(typeof x!=='number'&&
 function workingHours(value){const hours=number(value,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');return hours}
 function scheduleConditions(value){
  if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!Array.isArray(value.machines)||value.machines.length>50)throw Error('Invalid schedule conditions');
- const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||typeof m.name!=='string')throw Error('Invalid machine');let name=m.name.trim();const numeric=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(numeric)name=String(Number(numeric[1]))+'호';if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||names.has(name))throw Error('Invalid machine name');names.add(name);return{name,qty:number(m.qty,'machine quantity')}}),daily=number(value.daily,'daily');
+ const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||typeof m.name!=='string')throw Error('Invalid machine');let name=m.name.trim();const numeric=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(numeric){const n=Number(numeric[1]);if(!Number.isSafeInteger(n))throw Error('Invalid machine number');name=String(n)+'호'}if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||names.has(name))throw Error('Invalid machine name');names.add(name);return{name,qty:number(m.qty,'machine quantity')}}),daily=number(value.daily,'daily');
  if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');return{schema:1,machines,daily};
 }
 function completionValue(value){
