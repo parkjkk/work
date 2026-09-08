@@ -331,6 +331,10 @@ details.defect[open]{border-style:solid; border-color:var(--bad); background:var
   background:var(--accent-soft);
 }
 textarea.f-input{width:100%; padding:12px; border-radius:11px; border:1.5px solid var(--line-in); background:var(--surface); font-size:16px; min-height:64px; resize:vertical}
+#entryRoutingTools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:14px 0 4px;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+#entryRouting{min-height:44px;padding:10px 14px;border:1px solid var(--accent);border-radius:9px;background:var(--accent-soft);color:var(--accent-ink);font-size:14px;font-weight:700}
+#entryRoutingNote{flex:1 1 170px;font-size:12px;line-height:1.6;color:var(--ink-dim)}
+@media print{#entryRoutingTools{display:none!important}}
 textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
 .ov-actions{
   position:fixed; left:0; right:0; bottom:0; z-index:6; background:var(--surface);
@@ -725,6 +729,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
     <div id="quickProducts" hidden></div>
+    <div id="entryRoutingTools"><button type="button" id="entryRouting">생산순서·동시배치</button><span id="entryRoutingNote" role="status">같은 줄은 차례로 · 다른 줄은 함께 생산</span></div>
     <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
     <div id="prodBlocks"></div>
     <button type="button" id="addProdBlock">＋ 같은 작업자 제품 추가</button>
@@ -2833,6 +2838,14 @@ function updateMachineActualUI(el){
 function collectMachineActualFields(el){
   const changed=machineActualFormSignature(el)!==machineActualSignatures.get(el);if(!changed)return{};const value=machineActualFormValue(el);return value||machineActualBaselines.get(el)?.present||machineActualSignatures.get(el)==='reviewed'?{machineActuals:value}:{};
 }
+function openEntryRouting(){
+  if(S.entryMode==='case'||!$('#entryOv').classList.contains('open'))return;
+  const els=[...$('#prodBlocks').children].filter(p=>p.querySelector('.pb-product').value.trim()),note=$('#entryRoutingNote');
+  if(els.length<2){note.textContent='같은 작업자의 제품명을 2개 이상 추가한 뒤 눌러 주세요.';$('#addProdBlock').scrollIntoView({block:'nearest'});return;}
+  note.textContent='같은 줄은 차례로 · 다른 줄은 함께 생산';
+  const first=els[0];expandProduct(first);first.querySelector('.pb-schedule').open=true;first.querySelector('.pb-routing').open=true;openRoutingBuilder(first);
+  const host=first.querySelector('.pb-route-builder');host.scrollIntoView({block:'start'});host.querySelector('.pb-route-pick input')?.focus({preventScroll:true});
+}
 function openRoutingBuilder(el){
   const host=el.querySelector('.pb-route-builder'),els=[...$('#prodBlocks').children].filter(p=>p.querySelector('.pb-product').value.trim());
   if(els.length<2){toast('다른 품목을 추가한 뒤 함께 묶을 수 있습니다.');return;}host.hidden=false;
@@ -3191,6 +3204,7 @@ function openEntry(row, presetName, mode){
   renderProductCatalogNote();
   const isCase = S.entryMode === 'case';
   $('#prodBlocks').hidden = isCase; $('#addProdBlock').hidden = isCase; $('#caseNote').hidden = !isCase;
+  $('#entryRoutingTools').hidden=isCase;$('#entryRoutingNote').textContent='같은 줄은 차례로 · 다른 줄은 함께 생산';
   S.draftKey = undefined; S.draftOwn = false;
   S.editId = row ? row.id : null;
   S.caseRowId = row ? row.id : uid();
@@ -4260,6 +4274,7 @@ function init(){
   $('#addBtn').onclick = () => openEntry(null);
   $('#entryClose').onclick = () => requestCloseEntry(false);
   $('#entrySave').onclick = saveEntry;
+  $('#entryRouting').onclick = openEntryRouting;
   $('#fWorker').addEventListener('change', () => {$('#entryWorkerLabel').textContent=$('#fWorker').value||'선택 안 됨';updateRecentBtn(false);});
   $('#entryOv').addEventListener('input', saveDraft);
   ['#fWorker','#fHours'].forEach(sel => $(sel).addEventListener('input', e => {   /* 이름·시간 칸의 오류 표시도 입력하면 사라지게 */
