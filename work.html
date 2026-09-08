@@ -900,6 +900,49 @@ function b64d(s){ const bin=atob(String(s).replace(/\s/g,'')); const b=new Uint8
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now()+'-'+Math.random().toString(36).slice(2));
 const numOr = (v, alt='') => { const s=String(v??'').trim(); if(s==='') return alt; const n=Number(s); return isNaN(n) ? alt : n; };
 
+/* PRODUCT_ORDER_SHARED_START */
+(function(root,factory){
+  'use strict';
+  const api=factory();
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.ProductOrder=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(){
+  'use strict';
+  // Presentation only: never assign a report category or change a product name.
+  const GROUPS=Object.freeze([
+    {code:'CC',rank:0,label:'원피스 바디·림'},
+    {code:'CL',rank:1,label:'세면기'},
+    {code:'CT',rank:2,label:'탱크'},
+    {code:'TC',rank:3,label:'쌍뚜껑'},
+    {code:'OTHER',rank:4,label:'기타·부속'}
+  ].map(Object.freeze));
+  const groups=new Map(GROUPS.map(group=>[group.code,group]));
+  const collator=new Intl.Collator('ko',{numeric:true,sensitivity:'base'});
+  const nameOf=value=>String(value&&typeof value==='object'?value.name??'':value??'').trim();
+  function groupProduct(value){
+    const prefix=/^(CC|CL|CT|TC)(?=\d|[\s._-]|$)/i.exec(nameOf(value));
+    return groups.get(prefix?.[1].toUpperCase())||GROUPS[4];
+  }
+  function sortKey(value){
+    const name=nameOf(value),group=groupProduct(name),compact=name.toUpperCase().replace(/[\s._-]+/g,'');
+    if(group.code==='CC'){
+      const body=compact.slice(2),pair=/^(.+)([BR])$/.exec(body);
+      if(pair&&/\d/.test(pair[1]))return{name,group,model:pair[1],part:pair[2]==='B'?1:2,compact};
+      return{name,group,model:body,part:0,compact};
+    }
+    return{name,group,model:compact,part:0,compact};
+  }
+  function compareProducts(a,b){
+    const x=sortKey(a),y=sortKey(b);
+    if(!x.name||!y.name)return x.name?-1:y.name?1:0;
+    return x.group.rank-y.group.rank||collator.compare(x.model,y.model)||x.part-y.part||
+      collator.compare(x.compact,y.compact)||collator.compare(x.name,y.name)||
+      (x.name<y.name?-1:x.name>y.name?1:0);
+  }
+  return Object.freeze({GROUPS,groupProduct,compareProducts});
+});
+/* PRODUCT_ORDER_SHARED_END */
+
 /* PRODUCT_CATALOG_START — 관리 품목은 읽기 전용이며 원본 일보를 재작성하지 않는다. */
 function productNameKey(value){
   return String(value??'').trim();
@@ -952,7 +995,7 @@ function validLocalProgress(progress,catalog=S.productCatalog){
 function catalogProductNames(catalog,recent=[]){
   if(!catalog)return [...new Set(recent.map(n=>legacyProductName(n&&typeof n==='object'?n.product:n)).filter(Boolean))].slice(0,40);
   const prioritized=recent.map(n=>fieldProduct(catalog,n)).filter(p=>p?.active).map(p=>p.name);
-  return [...new Set([...prioritized,...catalog.products.filter(p=>p.active).map(p=>p.name)])];
+  return [...new Set([...prioritized,...catalog.products.filter(p=>p.active).map(p=>p.name).sort(ProductOrder.compareProducts)])];
 }
 function resolveFieldProduct(catalog,input,previous){
   const entered=String(input??'').trim(),key=productNameKey(entered),same=previous&&key===productNameKey(previous.product);

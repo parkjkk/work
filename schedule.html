@@ -250,6 +250,8 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 @media(max-width:700px){.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"]){display:block!important;grid-column:1/-1}.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"])::before{display:block;padding:4px 8px}.stockMemoEditor textarea[data-cell="memo"]{min-height:68px;font-size:16px!important}.stockMemoEditor .sheetToolbar>.actions{width:100%}.stockMemoEditor [data-sheet-command="save"]{flex:1;min-height:40px}}
 
 .stockMemoHelp{margin-top:12px;color:#60788d;font-size:.78rem;line-height:1.6}.stockMemoHelp>summary{cursor:pointer;font-weight:600}.stockMemoHelp p{margin:7px 0}.stockMemoHelp>summary:focus-visible{outline:3px solid #77adcc;outline-offset:2px}
+.stockMemoEditor .stockCategoryRow>th{position:static!important;text-align:left!important;background:#e8edf6!important;color:#30456b;padding:8px 10px;border-top:1px solid #c5d2e6;font-size:12px;white-space:normal}.stockCategoryRow span{margin-left:10px;color:#617594;font-weight:400}.stockMemoEditor .stockProductName{display:block}.stockMemoEditor .stockProductionBadge{display:inline-block;margin-top:4px;padding:2px 6px;border:1px solid #79bbac;border-radius:5px;background:#e4f5ef;color:#126551;font-size:11px;font-weight:700;line-height:1.4;white-space:nowrap}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>td,.stockMemoEditor .inputSheet>tbody>tr.stockProducing>th{background:#f0f9f5}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>[data-result="product"]{box-shadow:inset 3px 0 #209576}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){min-height:48px;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;vertical-align:top}.stockMemoEditor td:has(textarea){vertical-align:top}
+@media(max-width:700px){body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockCategoryRow>th{display:block;width:100%;min-width:0;padding:9px 12px}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){font-size:16px!important;min-height:48px}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked>tbody>tr.stockProducing{border-color:#7bb6a6;background:#f0f9f5}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockProductionBadge{margin-left:6px;margin-top:0}}
 
 /* Keep the working sheets and management entry visible at every screen width. */
 .sheetWorkspace>header{height:58px;padding:0 18px}
@@ -1384,6 +1386,47 @@ function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[
 root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
+
+(function(root,factory){
+  'use strict';
+  const api=factory();
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.ProductOrder=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(){
+  'use strict';
+  // Presentation only: never assign a report category or change a product name.
+  const GROUPS=Object.freeze([
+    {code:'CC',rank:0,label:'원피스 바디·림'},
+    {code:'CL',rank:1,label:'세면기'},
+    {code:'CT',rank:2,label:'탱크'},
+    {code:'TC',rank:3,label:'쌍뚜껑'},
+    {code:'OTHER',rank:4,label:'기타·부속'}
+  ].map(Object.freeze));
+  const groups=new Map(GROUPS.map(group=>[group.code,group]));
+  const collator=new Intl.Collator('ko',{numeric:true,sensitivity:'base'});
+  const nameOf=value=>String(value&&typeof value==='object'?value.name??'':value??'').trim();
+  function groupProduct(value){
+    const prefix=/^(CC|CL|CT|TC)(?=\d|[\s._-]|$)/i.exec(nameOf(value));
+    return groups.get(prefix?.[1].toUpperCase())||GROUPS[4];
+  }
+  function sortKey(value){
+    const name=nameOf(value),group=groupProduct(name),compact=name.toUpperCase().replace(/[\s._-]+/g,'');
+    if(group.code==='CC'){
+      const body=compact.slice(2),pair=/^(.+)([BR])$/.exec(body);
+      if(pair&&/\d/.test(pair[1]))return{name,group,model:pair[1],part:pair[2]==='B'?1:2,compact};
+      return{name,group,model:body,part:0,compact};
+    }
+    return{name,group,model:compact,part:0,compact};
+  }
+  function compareProducts(a,b){
+    const x=sortKey(a),y=sortKey(b);
+    if(!x.name||!y.name)return x.name?-1:y.name?1:0;
+    return x.group.rank-y.group.rank||collator.compare(x.model,y.model)||x.part-y.part||
+      collator.compare(x.compact,y.compact)||collator.compare(x.name,y.name)||
+      (x.name<y.name?-1:x.name>y.name?1:0);
+  }
+  return Object.freeze({GROUPS,groupProduct,compareProducts});
+});
 </script><script>(function(root){'use strict';
 async function unzip(buffer){const data=new Uint8Array(buffer),view=new DataView(buffer);let end=-1;for(let p=data.length-22;p>=Math.max(0,data.length-65557);p--){if(view.getUint32(p,true)===0x06054b50){end=p;break}}if(end<0)throw Error('올바른 Excel ZIP 파일이 아닙니다.');let ptr=view.getUint32(end+16,true),entries={};const n=view.getUint16(end+10,true),dec=new TextDecoder();for(let i=0;i<n;i++){if(view.getUint32(ptr,true)!==0x02014b50)throw Error('Excel 파일 목록이 손상되었습니다.');let mode=view.getUint16(ptr+10,true),size=view.getUint32(ptr+20,true),raw=view.getUint32(ptr+24,true),nl=view.getUint16(ptr+28,true),ex=view.getUint16(ptr+30,true),cm=view.getUint16(ptr+32,true),pos=view.getUint32(ptr+42,true),name=dec.decode(data.slice(ptr+46,ptr+46+nl));ptr+=46+nl+ex+cm;if(!/^(xl\/(workbook\.xml|_rels\/workbook\.xml.rels|sharedStrings\.xml|styles\.xml|worksheets\/sheet\d+\.xml))$/.test(name))continue;if(raw>60000000)throw Error('시트 크기가 읽기 한도를 넘었습니다.');const start=pos+30+view.getUint16(pos+26,true)+view.getUint16(pos+28,true);let bytes=data.slice(start,start+size);if(mode===8){try{bytes=new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer())}catch(e){throw Error('이 브라우저는 Excel 읽기를 지원하지 않습니다. 최신 Chrome 또는 Edge에서 열어 주세요.')}}else if(mode!==0)throw Error('지원하지 않는 Excel 압축 방식입니다.');entries[name]=dec.decode(bytes)}return entries}
 const parse=s=>{const d=new DOMParser().parseFromString(s,'application/xml');if(d.getElementsByTagName('parsererror').length)throw Error('Excel XML을 읽지 못했습니다.');return d};
@@ -1440,7 +1483,7 @@ class GithubStore{
 root.ScheduleStorage={localGet,localSet,mergeRecords,GithubStore,PREFIX};if(typeof module!=='undefined')module.exports=root.ScheduleStorage;
 })(globalThis);
 </script><script>(function(root){'use strict';const C=ScheduleCore,S=ScheduleStorage;
-const clone=C.clone,scope=c=>[c.owner,c.repo,c.branch||'main'].map(encodeURIComponent).join('/');
+const clone=C.clone,scope=c=>[c.owner,c.repo,c.branch||'main'].map(encodeURIComponent).join('/'),snapshotOwners=new WeakMap();
 function emptyState(){return{schema:1,app:'johyeong-schedule',source:'GitHub',sourceHash:'',importedAt:'',products:[],workers:[],months:{},memos:[],counts:[],locations:['조형 통로','조형 보관장','성형 본공장','성형 원피스',''],calendar:{factory:[],workers:[]},scheduleRows:[],scheduleHistory:[],scheduleDryHistory:[],archive:[],changes:[]}}
 function scheduleHistory(s){return clone(s.scheduleHistory?.length?s.scheduleHistory:C.savedSchedulePeriods(s.archive||[]))}
 function scheduleDryHistory(s){return clone(s.scheduleDryHistory?.length?s.scheduleDryHistory:C.savedScheduleDryMarkers?.(s.archive||[])||[])}
@@ -1531,6 +1574,24 @@ class Workspace{
    if(!q.base[0]?.closed)month.closed=false;loaded.state.months[key]=month;
    const error=unitSyncError(loaded.state,q.groupId);if(error)throw error;
   }
+ }
+ async readSnapshot({canApply}={}){
+  if(this.closed||this.pendingMigration||this.resolving||this.envelope.queue.length)throw Error('전송·복구를 마친 뒤 최신자료를 확인해 주세요.');
+  const before=this.envelope,signature=JSON.stringify(before),current=()=>!this.closed&&this.envelope===before&&JSON.stringify(this.envelope)===signature&&(!canApply||canApply());
+  if(!current())return null;await this.client.check();if(!current())return null;
+  const cat=await this.client.get('meta/catalog.json');if(!current())return null;
+  if(cat.data?.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');
+  const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':clone(cat.data.records)};
+  for(const result of await readMonths(this.client,months)){state.months[result.key]=result.month;baseline[result.path]=clone(result.records)}
+  if(!current())return null;const problem=unitSyncError(state);if(problem)throw problem;
+  const snapshot={state,baseline};snapshotOwners.set(snapshot,{owner:this,before,signature});return snapshot;
+ }
+ async adoptSnapshot(snapshot,{canApply}={}){
+  const proof=snapshotOwners.get(snapshot);if(!proof||proof.owner!==this)throw Error('현재 연결에서 확인한 최신자료가 아닙니다. 다시 불러와 주세요.');
+  const current=()=>!this.closed&&!this.pendingMigration&&!this.resolving&&!this.envelope.queue.length&&this.envelope===proof.before&&JSON.stringify(this.envelope)===proof.signature&&(!canApply||canApply());
+  if(!current())return null;const state=clone(snapshot.state),baseline=clone(snapshot.baseline),problem=unitSyncError(state);if(problem)throw problem;
+  let applied=false;const e=await this.mutate(e=>{e.state=state;e.baseline=baseline;applied=true},{canCommit:current});
+  if(!applied||e.state!==state)return null;snapshotOwners.delete(snapshot);this.loaded=true;this.empty=false;this.catalogBlocked=null;this.lastError=null;this.initialSyncStatus=null;this.status('GitHub 최신자료 · 입력 초안 유지');return e.state;
  }
  async open({canApply,includeSyncStatus=false}={}){
   this.initialSyncStatus=null;
@@ -1632,10 +1693,10 @@ function factory(s){return (s.calendar?.factory||[]).map(r=>typeof r==='string'?
 function holiday(s,worker,d){return(s.calendar?.workers||[]).some(r=>r.worker===worker&&r.date===d&&r.mark!==''&&!Number.isFinite(Number(r.mark)))}
 function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return Object.values(s.months).some(m=>m.rows.some(r=>r.worker===worker&&r.date===d&&r.pours>0));return !factory(s).includes(d)&&!holiday(s,worker,d)}
 function nextWork(s,w,d,today,force=null){for(let i=0;i<740;i++,d=add(d,1))if(work(s,w,d,today,force))return d;throw Error('2년 안에 작업 가능한 날짜가 없습니다.')}
-const manualCalendarPolicy='weekdays-v1';
-const manualUsesWeekdays=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
-function manualWork(s,worker,d){if(!C.iso(d))return false;const weekday=new Date(d+'T00:00:00Z').getUTCDay();return weekday>0&&weekday<6&&!factory(s).includes(d)&&!holiday(s,worker,d)}
-function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 평일이 없습니다.')}
+const manualCalendarPolicy='marked-holidays-v2';
+const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
+function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)}
+function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
 function machineQty(job){const a=clone(job.machines||[]),known=C.sum(a,x=>x.qty),missing=a.filter(x=>x.qty==null).length;if(missing){const q=Math.max(0,Math.ceil((job.totalPlan-known)/missing));for(const m of a)if(m.qty==null)m.qty=q}return a}
 function asOf(s,k){
  const m=s.months?.[k];if(!m)throw Error('계획 월자료가 없습니다.');const saved=C.iso(m.scheduleAsOf)?m.scheduleAsOf:null,original=!saved?C.scheduleSourceDate(s.archive||[]):null;
@@ -1732,11 +1793,11 @@ function history(s,start,end){
 }
 function schedule(s,k,requestedToday,options={}){const today=C.iso(options.asOf)?options.asOf:asOf(s,k),statusToday=C.iso(requestedToday)?requestedToday:today;if(s.months[k].closed&&s.months[k].closeSnapshot?.schedule)return clone(s.months[k].closeSnapshot.schedule);if(s.months[k].closed){const saved=history(s,k+'-01',add(add(k+'-01',32).slice(0,7)+'-01',-1));if(saved.length)return{jobs:jobs(s,k),rows:saved,warnings:[]};return{jobs:jobs(s,k),rows:(s.scheduleRows||[]).map(r=>({id:'archive:'+r.row,jobId:'',worker:r.cells[0],machine:r.cells[1],dry:C.serial(C.num(r.cells[3])),product:r.cells[4],qty:r.cells[5],start:C.serial(C.num(r.cells[7])),end:C.serial(C.num(r.cells[8])),status:r.cells[9],lot:r.cells[10],archived:true})).filter(r=>r.product&&r.start&&r.end&&r.start<=add(k+'-01',31)&&r.end>=k+'-01'),warnings:[]}}const raw=jobs(s,k),all=raw.filter(j=>!j.manual||j.manualSource==='timeline'||!raw.some(a=>!a.manual&&a.worker===j.worker&&a.product===j.product&&JSON.stringify(machineQty(a))===JSON.stringify(machineQty(j))&&a.start<=j.end)),output=[],warnings=[],groups=new Map();for(const j of all){const key=j.worker+'|'+(Number(j.group)>0||String(j.group).startsWith('manual:')?'group:'+j.group:'job:'+j.id);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(j)}const cursors={};const reservations=all.filter(j=>j.manual&&C.iso(j.start)&&C.iso(j.end));const list=[...groups.values()].sort((a,b)=>Number(b.every(j=>j.complete))-Number(a.every(j=>j.complete))||(a[0].start||'').localeCompare(b[0].start||''));
  for(const members of list){try{const active=members.filter(j=>!j.complete),leader=[...(active.length?active:members)].sort((a,b)=>((b.remaining/(b.daily||1))-(a.remaining/(a.daily||1)))||b.remaining-a.remaining||b.totalPlan-a.totalPlan)[0],w=leader.worker;const invalid=members.filter(j=>!j.worker||!j.start||!j.machines.length||!j.complete&&!(j.daily>0)&&!j.duration&&!j.end);if(invalid.length){for(const j of invalid)warnings.push({id:j.id,product:j.product,message:'작업자·시작일·하루 조수·호기 배치를 확인해 주세요.'});continue}let start=leader.previousStart||leader.firstActual||leader.start,end=leader.lastActual||start,used=[];if(!C.iso(start))throw Error('유효한 시작일이 필요합니다.');if(start.slice(0,7)>k&&!leader.manual){warnings.push({id:leader.id,product:leader.product,message:'다음달 이후 시작 예정입니다.'});continue}
- if(leader.manual&&!leader.firstActual&&!leader.complete){const weekdays=manualUsesWeekdays(leader),allowed=d=>weekdays?manualWork(s,w,d):!factory(s).includes(d)&&!holiday(s,w,d);start=leader.start;if(leader.duration&&!leader.end){if(leader.afterPrevious&&cursors[w]){start=add(cursors[w],1);for(let i=0;i<3;i++){start=weekdays?nextManualWork(s,w,start):nextWork(s,w,start,today);if(i<2)start=add(start,1)}}for(let d=start,n=0;used.length<leader.duration;d=add(d,1),n++){if(n>=740)throw Error('수기 기간이 너무 깁니다.');if(allowed(d))used.push(d)}if(weekdays)start=used[0];end=used.at(-1)}else{end=leader.end;if(!C.iso(end)||end<start)throw Error('수기 종료일은 시작일 이후의 날짜여야 합니다.');used=days(start,end).filter(allowed)}}
+ if(leader.manual&&!leader.firstActual&&!leader.complete){const calendarBased=manualUsesCalendar(leader),allowed=d=>calendarBased?manualWork(s,w,d):!factory(s).includes(d)&&!holiday(s,w,d);start=leader.start;if(leader.duration&&!leader.end){if(leader.afterPrevious&&cursors[w]){start=add(cursors[w],1);for(let i=0;i<3;i++){start=calendarBased?nextManualWork(s,w,start):nextWork(s,w,start,today);if(i<2)start=add(start,1)}}for(let d=start,n=0;used.length<leader.duration;d=add(d,1),n++){if(n>=740)throw Error('수기 기간이 너무 깁니다.');if(allowed(d))used.push(d)}if(calendarBased)start=used[0];end=used.at(-1)}else{end=leader.end;if(!C.iso(end)||end<start)throw Error('수기 종료일은 시작일 이후의 날짜여야 합니다.');used=days(start,end).filter(allowed)}}
  else if(leader.complete){end=leader.stoppedAt||leader.lastActual||start;used=days(start,end).filter(d=>work(s,w,d,today,start))}
  else{let produced=leader.carried?(leader.previousProduced||0):0;const dailyActual={};for(const r of leader.records)dailyActual[r.date]=(dailyActual[r.date]||0)+(r.pours||0);let d=start;if(!leader.firstActual&&cursors[w]&&start<=cursors[w])d=add(cursors[w],1);for(let i=0;i<740;i++,d=add(d,1)){if(d<=today){produced+=dailyActual[d]||0;if(work(s,w,d,today,leader.start))used.push(d)}else if(work(s,w,d,today,leader.start)){used.push(d);produced+=leader.daily}if(produced>=leader.totalPlan){end=d;break}if(i===739)throw Error('2년 안에 목표수량을 채우지 못합니다.')}if(!leader.firstActual)start=used[0]||start}
- if(!used.length&&!manualUsesWeekdays(leader))used=[start];const pacer=members.find(j=>j.machines.length>1),pacerQuant=pacer?machineQty(pacer):[],pacerEnds=[];if(pacer){let remaining=0;for(let i=pacerQuant.length-1;i>=0;i--){pacerEnds[i]=i===pacerQuant.length-1?used.length-1:Math.max(0,Math.min(used.length-1,Math.ceil(C.sum(pacerQuant,x=>x.qty)/(pacer.daily||1))-1-remaining));remaining+=Math.ceil(pacerQuant[i].qty/(pacer.daily||1))}}
- let wave=0;for(const j of members){const pendingManual=manualUsesWeekdays(j),manualDays=pendingManual?used.filter(d=>manualWork(s,j.worker,d)):null,reservationOnly=pendingManual&&!manualDays.length,fixedManualPeriod=pendingManual&&C.iso(leader.end);if(reservationOnly)warnings.push({id:j.id,product:j.product,message:'수기 기간에 작업 가능한 평일이 없습니다. 예약 기간은 보존하며 생산·건조일은 계산하지 않습니다.'});const alloc=machineQty(j),total=C.sum(alloc,x=>x.qty);if(Math.abs(total-j.totalPlan)>.00001)warnings.push({id:j.id,product:j.product,message:'호기 배정 '+total+'조 / 계획 '+j.totalPlan+'조. 수량을 확인해 주세요.'});let prior=0;for(let i=0;i<alloc.length;i++){let segStart=start,segEnd=end;if(j.complete){const events=(j.carried?Object.values(s.months).flatMap(m=>m.rows).filter(r=>r.worker===j.worker&&C.catalogName(s,r.product)===j.product&&r.date>=(j.previousStart||j.start)&&r.date<=(j.lastActual||end)):j.records).filter(r=>r.pours>0).sort((a,b)=>a.date.localeCompare(b.date));const before=C.sum(alloc.slice(0,i),x=>x.qty),target=C.sum(alloc.slice(0,i+1),x=>x.qty);if((j.stopped||j.ended)&&before>=j.produced)continue;let cumulative=0;segStart=j.previousStart||j.firstActual||j.start;segEnd=j.stoppedAt||j.lastActual||end;let begun=false;for(const event of events){cumulative+=event.pours;if(!begun&&cumulative>before){segStart=event.date;begun=true}if(cumulative>=target){segEnd=event.date;break}}if(i===alloc.length-1)segEnd=j.stoppedAt||j.lastActual||end}else if(pendingManual){if(!reservationOnly){const fraction=C.sum(alloc.slice(0,i+1),x=>x.qty)/(total||1),idx=i===alloc.length-1?manualDays.length-1:Math.max(0,Math.min(manualDays.length-1,Math.ceil(manualDays.length*fraction)-1));segStart=manualDays[Math.min(prior,manualDays.length-1)];segEnd=fixedManualPeriod&&i===alloc.length-1?end:manualDays[idx];prior=idx+1}}else if(j.manual){const fraction=C.sum(alloc.slice(0,i+1),x=>x.qty)/(total||1);const idx=i===alloc.length-1?used.length-1:Math.max(0,Math.ceil(used.length*fraction)-1);segStart=used[Math.min(prior,used.length-1)];segEnd=i===alloc.length-1?end:used[idx];prior=idx+1}else if(alloc.length>1){const later=C.sum(alloc.slice(i+1),x=>Math.ceil(x.qty/(j.daily||1)));const idx=i===alloc.length-1?used.length-1:Math.max(0,Math.min(used.length-1,Math.ceil(total/(j.daily||1))-1-later));segStart=used[Math.min(prior,used.length-1)];segEnd=used[idx];prior=idx+1}else if(pacer&&j!==pacer){const wi=Math.min(wave++,pacerEnds.length-1),prev=wi? pacerEnds[wi-1]+1:0;segStart=used[Math.min(prev,used.length-1)];segEnd=used[Math.max(prev,Math.min(used.length-1,pacerEnds[wi]))];let delta=Math.ceil(alloc[0].qty/(j.daily||1))-Math.ceil(pacerQuant[wi].qty/(pacer.daily||1));while(delta>0){segEnd=nextWork(s,w,add(segEnd,1),today);delta--}while(delta<0&&segEnd>segStart){segEnd=add(segEnd,-1);if(work(s,w,segEnd,today))delta++}}
+ if(!used.length&&!manualUsesCalendar(leader))used=[start];const pacer=members.find(j=>j.machines.length>1),pacerQuant=pacer?machineQty(pacer):[],pacerEnds=[];if(pacer){let remaining=0;for(let i=pacerQuant.length-1;i>=0;i--){pacerEnds[i]=i===pacerQuant.length-1?used.length-1:Math.max(0,Math.min(used.length-1,Math.ceil(C.sum(pacerQuant,x=>x.qty)/(pacer.daily||1))-1-remaining));remaining+=Math.ceil(pacerQuant[i].qty/(pacer.daily||1))}}
+ let wave=0;for(const j of members){const pendingManual=manualUsesCalendar(j),manualDays=pendingManual?used.filter(d=>manualWork(s,j.worker,d)):null,reservationOnly=pendingManual&&!manualDays.length,fixedManualPeriod=pendingManual&&C.iso(leader.end);if(reservationOnly)warnings.push({id:j.id,product:j.product,message:'수기 기간에 작업 가능한 날짜이 없습니다. 예약 기간은 보존하며 생산·건조일은 계산하지 않습니다.'});const alloc=machineQty(j),total=C.sum(alloc,x=>x.qty);if(Math.abs(total-j.totalPlan)>.00001)warnings.push({id:j.id,product:j.product,message:'호기 배정 '+total+'조 / 계획 '+j.totalPlan+'조. 수량을 확인해 주세요.'});let prior=0;for(let i=0;i<alloc.length;i++){let segStart=start,segEnd=end;if(j.complete){const events=(j.carried?Object.values(s.months).flatMap(m=>m.rows).filter(r=>r.worker===j.worker&&C.catalogName(s,r.product)===j.product&&r.date>=(j.previousStart||j.start)&&r.date<=(j.lastActual||end)):j.records).filter(r=>r.pours>0).sort((a,b)=>a.date.localeCompare(b.date));const before=C.sum(alloc.slice(0,i),x=>x.qty),target=C.sum(alloc.slice(0,i+1),x=>x.qty);if((j.stopped||j.ended)&&before>=j.produced)continue;let cumulative=0;segStart=j.previousStart||j.firstActual||j.start;segEnd=j.stoppedAt||j.lastActual||end;let begun=false;for(const event of events){cumulative+=event.pours;if(!begun&&cumulative>before){segStart=event.date;begun=true}if(cumulative>=target){segEnd=event.date;break}}if(i===alloc.length-1)segEnd=j.stoppedAt||j.lastActual||end}else if(pendingManual){if(!reservationOnly){const fraction=C.sum(alloc.slice(0,i+1),x=>x.qty)/(total||1),idx=i===alloc.length-1?manualDays.length-1:Math.max(0,Math.min(manualDays.length-1,Math.ceil(manualDays.length*fraction)-1));segStart=manualDays[Math.min(prior,manualDays.length-1)];segEnd=fixedManualPeriod&&i===alloc.length-1?end:manualDays[idx];prior=idx+1}}else if(j.manual){const fraction=C.sum(alloc.slice(0,i+1),x=>x.qty)/(total||1);const idx=i===alloc.length-1?used.length-1:Math.max(0,Math.ceil(used.length*fraction)-1);segStart=used[Math.min(prior,used.length-1)];segEnd=i===alloc.length-1?end:used[idx];prior=idx+1}else if(alloc.length>1){const later=C.sum(alloc.slice(i+1),x=>Math.ceil(x.qty/(j.daily||1)));const idx=i===alloc.length-1?used.length-1:Math.max(0,Math.min(used.length-1,Math.ceil(total/(j.daily||1))-1-later));segStart=used[Math.min(prior,used.length-1)];segEnd=used[idx];prior=idx+1}else if(pacer&&j!==pacer){const wi=Math.min(wave++,pacerEnds.length-1),prev=wi? pacerEnds[wi-1]+1:0;segStart=used[Math.min(prev,used.length-1)];segEnd=used[Math.max(prev,Math.min(used.length-1,pacerEnds[wi]))];let delta=Math.ceil(alloc[0].qty/(j.daily||1))-Math.ceil(pacerQuant[wi].qty/(pacer.daily||1));while(delta>0){segEnd=nextWork(s,w,add(segEnd,1),today);delta--}while(delta<0&&segEnd>segStart){segEnd=add(segEnd,-1);if(work(s,w,segEnd,today))delta++}}
  const conflicts=reservations.filter(r=>r.id!==j.id&&r.worker===j.worker&&r.start<=segEnd&&r.end>=segStart&&!((r.product===j.product)&&JSON.stringify(r.machines)===JSON.stringify(j.machines)));if(!j.manual&&conflicts.length){const cap=conflicts.map(r=>r.start).sort()[0];if(cap<=segStart){warnings.push({id:j.id,product:j.product,message:'수기 예약과 시작일이 겹쳐 배치하지 못했습니다.'});continue}segEnd=add(cap,-1);warnings.push({id:j.id,product:j.product,message:'수기 예약 앞에서 기간을 제한했습니다. 계획수량은 보존됩니다.'})}
  const dry=reservationOnly?null:C.dryDate(segEnd,factory(s));output.push({...(pendingManual?{manualCalendarPolicy,manualWorkdays:manualDays.length,reservationOnly,fixedManualPeriod}:{}),id:j.id+':'+i,jobId:j.id,worker:j.worker,product:j.product,machine:alloc[i].name,qty:alloc[i].qty,start:segStart,end:segEnd,groupStart:start,groupEnd:end,requestedStart:leader.start,groupId:w+'|'+(Number(leader.group)>0||String(leader.group).startsWith('manual:')?'group:'+leader.group:'job:'+leader.id),dry,lot:j.lot,manual:!!j.manual,produced:j.produced,plan:j.totalPlan,remaining:j.remaining,status:j.stopped?'중단':j.complete?(statusToday>=dry?'건조 완료':'건조 중'):!j.firstActual?'미착수':'생산중',projected:!j.complete,description:j.legacyInput||'',source:j.sourceRowId?'생산일보':'웹 작업'})}}cursors[w]=!cursors[w]||cursors[w]<end?end:cursors[w]}
  catch(e){warnings.push({id:members[0].id,product:members.map(j=>j.product).join(', '),message:e.message})}}
@@ -1749,6 +1810,70 @@ function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isIntege
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
 root.SchedulePlanning={add,days,parseInput,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
+
+(function(root){'use strict';
+const text=value=>String(value??'').trim();
+function current(state,options={}){
+ const C=root.ScheduleCore,P=root.SchedulePlanning,asOf=options.asOf;
+ if(!C||!P)throw Error('생산 진행 계산을 불러오지 못했습니다.');
+ if(!C.iso(asOf))throw Error('생산 진행 기준일을 YYYY-MM-DD로 지정해 주세요.');
+ const lookup=C.catalogLookup(state),warnings=[],idCounts=new Map(),months={},invalidRows=new Set(),invalidJobs=new Set();
+ for(const product of state.products||[])if(text(product.id))idCounts.set(text(product.id),(idCounts.get(text(product.id))||0)+1);
+ const identity=name=>{try{const product=lookup.product(name),label=text(product?.name)||text(name),id=text(product?.id);if(!label||id&&idCounts.get(id)!==1)return null;return{key:id?'id:'+id:'name:'+label,productId:id||null,product:label}}catch{return null}};
+ // This is a calculation view only. Filter arrays without reordering the ledger
+ // and normalize numeric inputs before the existing planning runtime uses them.
+ for(const [key,month]of Object.entries(state.months||{})){
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key)||key>asOf.slice(0,7))continue;
+  const rows=(month.rows||[]).filter(row=>!row.deleted&&C.iso(row.date)&&row.date<=asOf).map(row=>{
+   const next={...row};for(const field of['plan','pours','productionPlanQty'])if(Object.prototype.hasOwnProperty.call(row,field)){const n=C.num(row[field]);if(row[field]!=null&&text(row[field])!==''&&(n==null||n<0))invalidRows.add(key+'\0'+row.id);next[field]=n;}
+   try{C.completionValue(row.productionCompletion)}catch{invalidRows.add(key+'\0'+row.id)}return next;
+  });
+  const jobs=(month.jobs||[]).map(job=>{const next={...job};for(const field of['plan','previousPlan','previousProduced'])if(Object.prototype.hasOwnProperty.call(job,field)){const n=C.num(job[field]);if(job[field]!=null&&text(job[field])!==''&&(n==null||n<0))invalidJobs.add(key+'\0'+job.id);next[field]=n;}if(C.iso(job.stoppedAt)&&job.stoppedAt>asOf)delete next.stoppedAt;return next;});
+  months[key]={...month,rows,jobs};
+ }
+ const view={...state,months},chains=new Map(),progressCache=new Map();
+ for(const key of Object.keys(months).sort()){
+  const month=months[key];let jobs;
+  try{jobs=month.closed&&month.closeSnapshot?.schedule?.jobs?month.closeSnapshot.schedule.jobs:P.jobs(view,key)}catch{warnings.push({code:'invalid-month-jobs',month:key});continue;}
+  for(const job of jobs){
+   const product=identity(job.product),origin=text(job.originId||job.id),worker=text(job.worker);
+   if(!product||!origin||!worker){warnings.push({code:'invalid-job-identity',month:key,jobId:job.id||null});continue;}
+   const chainKey=JSON.stringify([origin,worker,product.key]);if(!chains.has(chainKey))chains.set(chainKey,[]);
+   chains.get(chainKey).push({month:key,closed:!!month.closed,job,identity:product,worker,origin});
+  }
+ }
+ const activeJobs=[],byProduct=new Map();
+ for(const chain of chains.values()){
+  const latest=chain.at(-1),job=latest.job;
+  // A closed final member is historical; only an explicit later open carry can
+  // make that origin current again. Never infer a carry from the product name.
+  if(latest.closed)continue;
+  if(chain.filter(entry=>entry.month===latest.month).length!==1){warnings.push({code:'ambiguous-job',month:latest.month,jobId:job.id});continue;}
+  if(chain.some(entry=>!entry.closed&&(invalidJobs.has(entry.month+'\0'+entry.job.id)||(entry.job.records||[]).some(row=>invalidRows.has(entry.month+'\0'+row.id))))){warnings.push({code:'invalid-production',month:latest.month,jobId:job.id});continue;}
+  let progress=null,ambiguous=false;
+  for(const entry of [...chain].reverse()){
+   if(entry.closed||!(entry.job.records||[]).length)continue;
+   try{if(!progressCache.has(entry.month))progressCache.set(entry.month,P.dailyProgress(view,entry.month,{asOf}));}catch{ambiguous=true;break;}
+   const values=entry.job.records.map(row=>progressCache.get(entry.month).get(row.id));
+   if(values.some(value=>!value||value.jobId!==entry.job.id||value.warning)){ambiguous=true;break;}
+   progress=values[0];break;
+  }
+  if(ambiguous){warnings.push({code:'ambiguous-progress',month:latest.month,jobId:job.id});continue;}
+  // A carry with no new rows has no daily-map member. Its explicit carried
+  // quantity and remaining plan are the same inputs used by Planning.jobs.
+  const produced=C.num(progress?.produced??job.produced),plan=C.num(progress?.plan??job.totalPlan);
+  const stopped=progress?progress.reason==='stopped':!!job.stopped||!!job.stoppedAt;
+  const complete=progress?progress.complete===true:job.complete===true||job.ended===true;
+  if(!(produced>0&&plan>produced)||complete||stopped)continue;
+  const entry={id:job.id,originId:latest.origin,worker:latest.worker,...latest.identity,month:latest.month,asOf,produced,plan,remaining:plan-produced,carried:!!job.carried,manual:!!job.manual,lastRecordAt:progress?.lastRecordAt||job.lastActual||null};
+  activeJobs.push(entry);
+  if(!byProduct.has(entry.key))byProduct.set(entry.key,{key:entry.key,productId:entry.productId,product:entry.product,workers:[],jobs:[],count:0,produced:0,plan:0,remaining:0});
+  const group=byProduct.get(entry.key);group.jobs.push(entry);if(!group.workers.includes(entry.worker))group.workers.push(entry.worker);group.count++;group.produced+=produced;group.plan+=plan;group.remaining+=plan-produced;
+ }
+ return{asOf,activeJobs,byProduct,warnings,forProduct(name){const product=identity(name);return product?byProduct.get(product.key)||null:null}};
+}
+root.ScheduleStockStatus={current};if(typeof module!=='undefined')module.exports=root.ScheduleStockStatus;
+})(typeof globalThis!=='undefined'?globalThis:this);
 </script><script>(function(root){
 'use strict';
 const C=root.ScheduleCore;
@@ -2046,7 +2171,82 @@ function memoApply(state,draft){
  }
  return next;
 }
-root.ScheduleBatch={create,patch,add,addTemplate,templateActive,remove,restore,inspect,apply,dirty,blank,memoValue,memoPatch,memoInspect,memoApply};
+// Stock reference fields share the memo record, but each slot has its own edit/conflict.
+// Keep this draft separate from the production memo API and all dated ledger rows.
+const stockMetaFields={machineQty:{index:1,label:'호기·조수'},location:{index:2,label:'보관장소'}};
+function stockMetaError(product,field,message){const error=Error(message);error.product=product;error.field=field;return error}
+function stockMetaField(field){if(!own(stockMetaFields,field))throw stockMetaError('',String(field||''),'수정할 수 없는 재고 부가정보 항목입니다.');return stockMetaFields[field]}
+function stockMetaText(value,product,field){if(value==null)return'';if(!['string','number','boolean'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))throw stockMetaError(product,field,'재고 '+stockMetaField(field).label+'의 문자 형식을 확인해 주세요.');return String(value)}
+function stockMetaDraftEdits(draft){
+ if(!draft||typeof draft!=='object'||Array.isArray(draft))throw stockMetaError('','metadata','재고 부가정보 초안이 없습니다.');
+ if(draft.metadataEdits!=null&&!Array.isArray(draft.metadataEdits))throw stockMetaError('','metadata','재고 부가정보 초안 형식을 확인해 주세요.');
+ const edits=draft.metadataEdits||[];
+ if(own(draft,'baseStockMetadata')&&!Array.isArray(draft.baseStockMetadata)||edits.length&&!Array.isArray(draft.baseStockMetadata))throw stockMetaError('','metadata','재고 부가정보 편집의 기준자료가 없습니다. 기존 초안을 보존하고 기준을 다시 확인해 주세요.');
+ const seen=new Set();for(const edit of edits){
+  if(!edit||typeof edit!=='object'||Array.isArray(edit)||typeof edit.product!=='string'||!memoKey(edit.product))throw stockMetaError('','metadata','재고 부가정보 초안의 품명이 없습니다.');
+  const product=memoKey(edit.product);stockMetaField(edit.field);const key=JSON.stringify([product,edit.field]);
+  if(seen.has(key))throw stockMetaError(product,edit.field,product+'의 '+stockMetaField(edit.field).label+' 초안이 중복되어 확인이 필요합니다.');seen.add(key);
+  if(!own(edit,'value'))throw stockMetaError(product,edit.field,product+'의 재고 부가정보 입력값이 없습니다.');stockMetaText(edit.value,product,edit.field);
+  if(own(edit,'productId')&&(typeof edit.productId!=='string'||!edit.productId))throw stockMetaError(product,edit.field,product+'의 기준 품명 연결을 확인해 주세요.');
+ }
+ return edits;
+}
+function stockMetaCatalog(state,product,field){
+ const products=state?.products||[];if(!Array.isArray(products))throw stockMetaError(product,field,'기준 품명 목록을 확인해 주세요.');
+ const matches=products.filter(row=>memoKey(row?.name)===product);if(matches.length>1)throw stockMetaError(product,field,product+'의 기준 품명이 중복되어 확인이 필요합니다.');return matches[0];
+}
+function stockMetaValue(state,draft,product,field){
+ const spec=stockMetaField(field),key=memoKey(product);if(!key)return'';
+ const edits=stockMetaDraftEdits(draft||{}),current=memoFind(memoRows(state),key,'현재'),local=edits.find(edit=>memoKey(edit.product)===key&&edit.field===field);
+ return stockMetaText(local?local.value:current?.values?.[spec.index],key,field);
+}
+function stockMetaPatch(state,draft,product,fields){
+ const key=memoKey(product),edits=stockMetaDraftEdits(draft),rows=memoRows(state);
+ if(!key)throw stockMetaError(key,'metadata','재고 부가정보를 입력할 품명을 먼저 선택해 주세요.');
+ if(!fields||typeof fields!=='object'||Array.isArray(fields))throw stockMetaError(key,'metadata','재고 부가정보 입력 형식을 확인해 주세요.');
+ const entries=Object.entries(fields).map(([field,value])=>{stockMetaField(field);return[field,stockMetaText(value,key,field)]});
+ const current=memoFind(rows,key,'현재'),catalog=stockMetaCatalog(state,key,'metadata');
+ if(!current&&!catalog)throw stockMetaError(key,'metadata','등록된 품명 또는 기존 메모가 있는 품명을 선택해 주세요.');
+ const baseRows=Array.isArray(draft.baseStockMetadata)?draft.baseStockMetadata:clone(rows),base=memoFind(baseRows,key,'기준');let next=edits.map(clone);
+ for(const [field,value]of entries){
+  const previous=edits.find(edit=>memoKey(edit.product)===key&&edit.field===field),original=stockMetaText(base?.values?.[stockMetaFields[field].index],key,field);
+  next=next.filter(edit=>memoKey(edit.product)!==key||edit.field!==field);
+  if(value!==original){const productId=previous?.productId||(typeof catalog?.id==='string'&&catalog.id?catalog.id:null);next.push({product:key,field,value,...(productId?{productId}:{})})}
+ }
+ const changed=!equal(edits,next);if(!Array.isArray(draft.baseStockMetadata))draft.baseStockMetadata=baseRows;draft.metadataEdits=next;if(changed)draft.revision=(draft.revision||0)+1;return draft;
+}
+function stockMetaInspect(state,draft){
+ const errors=[],conflicts=[],changes=[],counts={changed:0},result={ok:false,errors,conflicts,counts,changes};
+ const fail=(product,field,message,conflict=false)=>{const error={id:'',field,product,message};errors.push(error);if(conflict)conflicts.push(error)};
+ let edits,rows;try{edits=stockMetaDraftEdits(draft);rows=memoRows(state)}catch(error){fail(error.product||'',error.field||'metadata',error.message);return result}
+ for(const edit of edits){const product=memoKey(edit.product),field=edit.field,spec=stockMetaFields[field];
+  try{
+   const base=memoFind(draft.baseStockMetadata,product,'기준'),current=memoFind(rows,product,'현재'),catalog=stockMetaCatalog(state,product,field),value=stockMetaText(edit.value,product,field),before=stockMetaText(base?.values?.[spec.index],product,field),now=stockMetaText(current?.values?.[spec.index],product,field),pending=value!==before&&value!==now;
+   if(pending)counts.changed++;
+   // A renamed record must not receive an old-name draft or create an orphan copy.
+   if(edit.productId){const identities=(state.products||[]).filter(row=>row?.id===edit.productId);if(identities.length!==1||memoKey(identities[0].name)!==product||catalog?.id!==edit.productId){if(!pending)counts.changed++;fail(product,field,product+'의 기준 품명 연결이 변경되었습니다. 기존 초안을 보존하고 새 품명을 확인해 주세요.',true);continue}}
+   if(base?.id){const identities=rows.filter(row=>row?.id===base.id);if(identities.length>1||identities.length&&memoKey(identities[0].product)!==product||current&&current.id!==base.id){if(!pending)counts.changed++;fail(product,field,product+'의 메모 원장 연결 또는 품명이 다른 곳에서 변경되었습니다. 최신값을 확인해 주세요.',true);continue}}
+   if(!current&&!catalog)throw stockMetaError(product,field,'등록된 품명 또는 기존 메모가 있는 품명을 선택해 주세요.');
+   if(value===before||value===now)continue;
+   if(base&&!current){fail(product,field,product+'의 메모 원장이 다른 곳에서 삭제되었습니다. 최신값을 확인해 주세요.',true);continue}
+   if(now!==before){fail(product,field,product+'의 '+spec.label+'가 다른 곳에서 변경되었습니다. 최신값을 확인해 주세요.',true);continue}
+   changes.push({product,field,value,before:current?clone(current):null});
+  }catch(error){fail(product,field,error.message)}
+ }
+ result.ok=!errors.length;return result;
+}
+function stockMetaApply(state,draft){
+ const check=stockMetaInspect(state,draft);if(!check.ok){const first=check.errors[0],error=stockMetaError(first?.product||'',first?.field||'metadata',first?.message||'재고 부가정보를 확인해 주세요.');error.errors=check.errors;error.conflicts=check.conflicts;throw error}
+ const next=clone(state);if(!check.changes.length)return next;next.memos??=[];const grouped=new Map(),at=new Date().toISOString();for(const change of check.changes){if(!grouped.has(change.product))grouped.set(change.product,[]);grouped.get(change.product).push(change)}
+ for(const [product,edits]of grouped){
+  const index=next.memos.findIndex(row=>memoKey(row.product)===product),old=index<0?null:next.memos[index],values=old?.values?clone(old.values):['','','',null];for(const edit of edits)values[stockMetaFields[edit.field].index]=edit.value;
+  const proposedId='memo:'+product,id=old?.id||(next.memos.some(row=>row.id===proposedId)?C.id():proposedId),record={...(old||{}),id,product:old?.product??product,rev:(Number(old?.rev)||0)+1,values};
+  if(index<0)next.memos.push(record);else next.memos[index]=record;
+  next.changes??=[];next.changes.push({id:C.id(),at,kind:'catalog',type:'재고 부가정보 수정',product,fields:edits.map(edit=>edit.field),before:old?clone(old):null,after:clone(record),source:'재고표'});
+ }
+ return next;
+}
+root.ScheduleBatch={create,patch,add,addTemplate,templateActive,remove,restore,inspect,apply,dirty,blank,memoValue,memoPatch,memoInspect,memoApply,stockMetaValue,stockMetaPatch,stockMetaInspect,stockMetaApply};
 if(typeof module!=='undefined')module.exports=root.ScheduleBatch;
 })(globalThis);
 </script><script>(function(root){'use strict';
@@ -2118,7 +2318,7 @@ function enrich(s,book){s.calendar={factory:[],workers:[]};s.migrationWarnings=[
  const grid=book.sheets.find(x=>x.name==='생산일정(계획)'),styles=book.styles;if(grid&&styles){const year=C.num(C.val(grid,'D1')),leap=year%4===0&&(year%100!==0||year%400===0),day=column=>{const offset=column-6;if(offset<0||offset>365||!leap&&offset===59)return null;return P.add(year+'-01-01',offset-(!leap&&offset>59?1:0))};const fills=styles.fills.map(x=>{const rgb=/rgb="(?:FF)?([0-9a-f]{6})"/i.exec(x)?.[1];if(rgb)return rgb;if(/theme="9"/.test(x)&&/tint="-0\.499/.test(x))return '7B4B23';return''}),color=c=>fills[Number(styles.cellXfs[c?.s||0]?.fillId)]||'',yellow=c=>{const v=color(c);return v&&parseInt(v.slice(0,2),16)>=250&&parseInt(v.slice(2,4),16)>=245&&parseInt(v.slice(4),16)<=130},brown=c=>{const v=color(c);if(!v)return false;const [r,g,b]=[v.slice(0,2),v.slice(2,4),v.slice(4)].map(x=>parseInt(x,16));return r>=120&&r<=210&&g>=45&&g<=125&&b<=55&&r>g+35&&g>b+25};
  for(let col=6;col<=371;col++){const date=day(col);if(date&&yellow(grid.cells[C.col(col)+'3']))s.calendar.factory.push(date)}
  for(let row=3;row<=100;row+=6){const worker=C.text(C.val(grid,'D'+row));if(!worker)continue;for(let col=6;col<=371;col++){const date=day(col),mark=C.text(C.val(grid,C.col(col)+(row+1)));if(date&&mark&&C.num(mark)==null)s.calendar.workers.push({id:'legacy:holiday:'+row+':'+col,worker,date,mark})}
- for(let col=6;col<=371;col++){const address=C.col(col)+(row+2),cell=grid.cells[address];if(!brown(cell)||!C.text(cell?.v))continue;let last=col;while(last<371&&brown(grid.cells[C.col(last+1)+(row+2)])&&!C.text(C.val(grid,C.col(last+1)+(row+2))))last++;const start=day(col),end=day(last);if(!start||!end)continue;const raw=C.text(cell.v),segments=[...raw.matchAll(/(\d+(?:\.\d+)?)\s*호\s*([A-Za-z0-9가-힣\-]+)\s*(\d+(?:\.\d+)?)\s*조/g)].map(x=>({name:x[1]+'호',product:x[2],qty:+x[3]}));if(!segments.length){s.migrationWarnings.push({source:'생산일정(계획)!'+address,message:'수기 예약 문구 확인 필요'});continue}const duration=C.num(/(\d+)\s*일/.exec(raw)?.[1]),computed=P.days(start,end).filter(d=>P.manualWork(s,worker,d)).length,byProduct=new Map();for(const x of segments){if(!byProduct.has(x.product))byProduct.set(x.product,[]);byProduct.get(x.product).push({name:x.name,qty:x.qty})}const k=start.slice(0,7);if(!s.months[k])continue;for(const[product,machines]of byProduct){const id='manual:'+address+':'+product;s.months[k].jobs.push({id,originId:id,product,worker,start,end,plan:C.sum(machines,x=>x.qty),daily:computed>0?C.sum(machines,x=>x.qty)/computed:null,machines,manual:true,group:'manual:'+address,legacyInput:raw,rawDeclaredDays:duration,computedWorkdays:computed,computedWorkdayPolicy:P.manualCalendarPolicy,source:'생산일정(계획)!'+address})}if(duration&&duration!==computed)s.migrationWarnings.push({source:'생산일정(계획)!'+address,message:'수기 문구 '+duration+'일 / 주말·휴일 제외 기준 '+computed+'일. 원본 구간을 유지함'});col=last}
+ for(let col=6;col<=371;col++){const address=C.col(col)+(row+2),cell=grid.cells[address];if(!brown(cell)||!C.text(cell?.v))continue;let last=col;while(last<371&&brown(grid.cells[C.col(last+1)+(row+2)])&&!C.text(C.val(grid,C.col(last+1)+(row+2))))last++;const start=day(col),end=day(last);if(!start||!end)continue;const raw=C.text(cell.v),segments=[...raw.matchAll(/(\d+(?:\.\d+)?)\s*호\s*([A-Za-z0-9가-힣\-]+)\s*(\d+(?:\.\d+)?)\s*조/g)].map(x=>({name:x[1]+'호',product:x[2],qty:+x[3]}));if(!segments.length){s.migrationWarnings.push({source:'생산일정(계획)!'+address,message:'수기 예약 문구 확인 필요'});continue}const duration=C.num(/(\d+)\s*일/.exec(raw)?.[1]),computed=P.days(start,end).filter(d=>P.manualWork(s,worker,d)).length,byProduct=new Map();for(const x of segments){if(!byProduct.has(x.product))byProduct.set(x.product,[]);byProduct.get(x.product).push({name:x.name,qty:x.qty})}const k=start.slice(0,7);if(!s.months[k])continue;for(const[product,machines]of byProduct){const id='manual:'+address+':'+product;s.months[k].jobs.push({id,originId:id,product,worker,start,end,plan:C.sum(machines,x=>x.qty),daily:computed>0?C.sum(machines,x=>x.qty)/computed:null,machines,manual:true,group:'manual:'+address,legacyInput:raw,rawDeclaredDays:duration,computedWorkdays:computed,computedWorkdayPolicy:P.manualCalendarPolicy,source:'생산일정(계획)!'+address})}if(duration&&duration!==computed)s.migrationWarnings.push({source:'생산일정(계획)!'+address,message:'수기 문구 '+duration+'일 / 표시한 휴일 제외 기준 '+computed+'일. 원본 구간을 유지함'});col=last}
  }
  }
  const audit=book.sheets.find(x=>x.name==='몰드 실사');if(audit&&s.counts.length){const raw=C.text(C.val(audit,'B2')),key=Object.keys(s.months).find(k=>raw.includes(k)||raw.includes(Number(k.slice(5))+'월')&&!s.months[k].closed)||Object.keys(s.months).sort().at(-1);const date=C.num(C.val(audit,'E2'));s.months[key].auditSessions.push({id:'legacy:audit',rev:1,baseMonth:key,countedAt:date>30000?C.serial(date):key+'-01',status:'draft',source:'몰드 실사',locations:C.clone(s.locations),items:s.counts.map(r=>({id:r.id,product:r.product,book:r.book,counts:r.locations,raw:r.locations.map(x=>x==null?'':String(x)),note:r.note}))})}
@@ -2151,7 +2351,7 @@ function showArchive(){if(!state.archive.length){$('#archiveView').innerHTML='<p
 function csv(headers,rows,name){const safe=x=>{let s=String(x??'');if(/^[=+@-]/.test(s)&&isNaN(Number(s)))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'};download('\ufeff'+[headers,...rows].map(r=>r.map(safe).join(',')).join('\r\n'),name+'_'+month+'.csv','text/csv;charset=utf-8')}
 function download(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
 async function entry(existing){if(localReadError)throw Error('기기 보관자료를 읽지 못해 입력을 열 수 없습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');draftProducts=existing?[C.clone(existing)]:[{product:'',plan:null,pours:null,waterRatio:null,defectCount:null,defectUnit:null,defectPart:''}];const draftKey='draft:'+(workspace?.key||'migration-preview')+':'+month,saved=existing?null:await S.localGet(draftKey),last=existing?null:await S.localGet(draftKey+':last');if(saved?.products?.length)draftProducts=saved.products;const d=$('#dialog');d.innerHTML=`<h2>${existing?'생산기록 수정':'여러 품목 생산기록 입력'}</h2><div class="notice blue">날짜·작업자·근무시간·LOT를 한 번 입력하고 여러 품목을 함께 저장합니다. 네트워크가 끊기면 보관 후 다시 전송합니다.</div><div class="entryHead formGrid"><label>작업일<input type="date" id="entryDate" value="${esc(existing?.date||saved?.date||(today().startsWith(month)?today():month+'-01'))}"></label><label>작업자<select id="entryWorker"><option value="">선택</option>${state.workers.map(w=>`<option ${w===(existing?.worker||saved?.worker||last?.worker)?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>근무시간<input id="entryHours" type="number" step="0.25" min="0" value="${existing?.hours??saved?.hours??''}" placeholder="실제 근무시간"></label><label>석고 LOT<input id="entryLot" value="${esc(existing?.lot||saved?.lot||last?.lot||'')}"></label></div><div id="entryProducts"></div><div class="actions"><button id="addProduct" ${existing?'hidden':''}>+ 품목 추가</button></div><div class="actions" style="justify-content:flex-end;margin-top:24px"><button id="cancelEntry">취소</button><button id="saveEntry" class="primary">생산기록 저장</button></div>`;drawProducts();$('#cancelEntry').onclick=()=>d.close();$('#addProduct').onclick=()=>{readProducts();draftProducts.push({product:'',plan:null,pours:null});drawProducts()};$('#saveEntry').onclick=async()=>{if(busy)return;busy=true;try{readProducts();const next=C.clone(state),date=$('#entryDate').value,worker=$('#entryWorker').value,hours=C.num($('#entryHours').value),lot=$('#entryLot').value.trim(),batchId=C.id();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product);if(!p)throw Error('기준정보에 있는 품명을 선택해 주세요.');if(r.jobId){const j=P.jobs(state,month).find(j=>j.id===r.jobId);if(!j||j.worker!==worker||j.product!==r.product)throw Error('선택한 연결 작업의 작업자·품명이 입력과 다릅니다.');}C.updateDaily(next,month,{...r,date,worker,hours:i===0?hours:null,lot,plaster:existing&&existing.product===r.product?existing.plaster:p.kg,cases:existing&&existing.product===r.product?existing.cases:p.cases,explicit:existing?.explicit||{day:i===0,worker:i===0,hours:i===0&&hours!=null,pours:r.pours!=null,lot:i===0&&!!lot},batchId:existing?.batchId||batchId,source:r.source||'웹 입력'})});await persist(next,[month]);if(!existing){await S.localSet(draftKey,null);await S.localSet(draftKey+':last',{worker,lot})}d.close();render();toast('생산기록을 저장했습니다. 상단에서 GitHub 전송 상태를 확인할 수 있습니다.')}catch(e){toast(e.message)}finally{busy=false}};if(!existing)d.oninput=()=>{readProducts();S.localSet(draftKey,{date:$('#entryDate').value,worker:$('#entryWorker').value,hours:C.num($('#entryHours').value),lot:$('#entryLot').value,products:C.clone(draftProducts)}).catch(()=>toast('입력 초안 저장 공간을 확인해 주세요.'))};else d.oninput=null;d.showModal()}
-function drawProducts(){$('#entryProducts').innerHTML=draftProducts.map((r,i)=>`<div class="productEntry" data-product-index="${i}"><header><b>품목 ${i+1}</b>${draftProducts.length>1?`<button class="removeProduct" data-i="${i}">삭제</button>`:''}</header><div class="formGrid"><label class="wide">품명<select class="productName"><option value="">품명 선택</option>${state.products.map(p=>`<option value="${esc(p.name)}" ${p.name===r.product?'selected':''}>${esc(p.name)} · ${fmt(p.kg)}kg</option>`).join('')}</select></label><label class="wide">연결 작업<select class="jobRef"><option value="">배치 자동 연결</option>${P.jobs(state,month).filter(j=>!j.complete||j.id===r.jobId).map(j=>`<option value="${esc(j.id)}" ${j.id===r.jobId?'selected':''}>${esc(j.worker)} · ${esc(j.product)} · ${esc(j.start)}</option>`).join('')}</select></label><label>주입횟수 / 생산 조<input class="pours" type="number" min="0" step="0.5" value="${r.pours??''}"></label><label>작업 구분<select class="workMode"><option value="continue" ${r.plan==null?'selected':''}>계속 생산</option><option value="start" ${r.plan>0?'selected':''}>생산 시작</option><option value="end" ${r.plan===0?'selected':''}>종료·중단</option></select></label><label>시작 계획수량<input class="plan" type="number" min="1" step="0.5" value="${r.plan>0?r.plan:''}" ${r.plan>0?'':'disabled'}></label><label>혼수율 %<input class="ratio" type="number" step="0.1" min="0" value="${r.waterRatio??''}" placeholder="실제 입력값"></label><label>불량 개수<input class="defectCount" ${Object.hasOwn(r,'fieldDefQty')?'disabled title="현장일보에서 수정하는 불량 개수입니다."':''} type="number" min="0" step="1" value="${r.defectCount??''}"></label><label>불량 1개 석고 kg<input class="defectUnit" ${Object.hasOwn(r,'fieldScrapKg')?'disabled title="현장일보의 총불량 kg을 사용합니다. 현장일보에서 수정해 주세요."':''} type="number" min="0" step="0.1" value="${r.defectUnit??''}"></label><label class="full">불량 부위 / 비고<input class="defectPart" value="${esc(r.defectPart)}"></label></div><div class="output" data-calc="${i}">품명과 주입횟수를 입력하면 계산됩니다.</div></div>`).join('');document.querySelectorAll('.removeProduct').forEach(b=>b.onclick=()=>{readProducts();draftProducts.splice(+b.dataset.i,1);drawProducts()});document.querySelectorAll('.productEntry').forEach(e=>{e.querySelector('.workMode').onchange=()=>{e.querySelector('.plan').disabled=e.querySelector('.workMode').value!=='start';updateEntryOutput()};e.querySelectorAll('input,select').forEach(i=>i.addEventListener('input',updateEntryOutput))});updateEntryOutput()}
+function drawProducts(){$('#entryProducts').innerHTML=draftProducts.map((r,i)=>`<div class="productEntry" data-product-index="${i}"><header><b>품목 ${i+1}</b>${draftProducts.length>1?`<button class="removeProduct" data-i="${i}">삭제</button>`:''}</header><div class="formGrid"><label class="wide">품명<select class="productName"><option value="">품명 선택</option>${[...state.products].sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0).map(p=>`<option value="${esc(p.name)}" ${p.name===r.product?'selected':''}>${esc(p.name)} · ${fmt(p.kg)}kg</option>`).join('')}</select></label><label class="wide">연결 작업<select class="jobRef"><option value="">배치 자동 연결</option>${P.jobs(state,month).filter(j=>!j.complete||j.id===r.jobId).map(j=>`<option value="${esc(j.id)}" ${j.id===r.jobId?'selected':''}>${esc(j.worker)} · ${esc(j.product)} · ${esc(j.start)}</option>`).join('')}</select></label><label>주입횟수 / 생산 조<input class="pours" type="number" min="0" step="0.5" value="${r.pours??''}"></label><label>작업 구분<select class="workMode"><option value="continue" ${r.plan==null?'selected':''}>계속 생산</option><option value="start" ${r.plan>0?'selected':''}>생산 시작</option><option value="end" ${r.plan===0?'selected':''}>종료·중단</option></select></label><label>시작 계획수량<input class="plan" type="number" min="1" step="0.5" value="${r.plan>0?r.plan:''}" ${r.plan>0?'':'disabled'}></label><label>혼수율 %<input class="ratio" type="number" step="0.1" min="0" value="${r.waterRatio??''}" placeholder="실제 입력값"></label><label>불량 개수<input class="defectCount" ${Object.hasOwn(r,'fieldDefQty')?'disabled title="현장일보에서 수정하는 불량 개수입니다."':''} type="number" min="0" step="1" value="${r.defectCount??''}"></label><label>불량 1개 석고 kg<input class="defectUnit" ${Object.hasOwn(r,'fieldScrapKg')?'disabled title="현장일보의 총불량 kg을 사용합니다. 현장일보에서 수정해 주세요."':''} type="number" min="0" step="0.1" value="${r.defectUnit??''}"></label><label class="full">불량 부위 / 비고<input class="defectPart" value="${esc(r.defectPart)}"></label></div><div class="output" data-calc="${i}">품명과 주입횟수를 입력하면 계산됩니다.</div></div>`).join('');document.querySelectorAll('.removeProduct').forEach(b=>b.onclick=()=>{readProducts();draftProducts.splice(+b.dataset.i,1);drawProducts()});document.querySelectorAll('.productEntry').forEach(e=>{e.querySelector('.workMode').onchange=()=>{e.querySelector('.plan').disabled=e.querySelector('.workMode').value!=='start';updateEntryOutput()};e.querySelectorAll('input,select').forEach(i=>i.addEventListener('input',updateEntryOutput))});updateEntryOutput()}
 function readProducts(){document.querySelectorAll('.productEntry').forEach((e,i)=>{const mode=e.querySelector('.workMode').value;draftProducts[i]={...draftProducts[i],product:e.querySelector('.productName').value,jobId:e.querySelector('.jobRef').value||null,pours:C.num(e.querySelector('.pours').value),plan:mode==='end'?0:mode==='start'?C.num(e.querySelector('.plan').value):null,waterRatio:C.num(e.querySelector('.ratio').value),defectCount:C.num(e.querySelector('.defectCount').value),defectUnit:C.num(e.querySelector('.defectUnit').value),defectPart:e.querySelector('.defectPart').value.trim()};if(mode==='start'&&!(draftProducts[i].plan>0))draftProducts[i].missingPlan=true;else delete draftProducts[i].missingPlan})}
 function updateEntryOutput(){readProducts();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product),d=C.daily({...r,plaster:p?.kg,cases:p?.cases});document.querySelector(`[data-calc="${i}"]`).textContent=`생산 석고 ${fmt(d.plaster)} kg  ·  탈형 ${fmt(d.demould)}개  ·  물 ${fmt(d.water)} kg  ·  불량률 ${d.rate==null?'—':fmt(d.rate*100,2)+'%'}`})}
 function dryDialog(){const d=$('#dialog');d.oninput=null;d.innerHTML=`<h2>건조일 계산 확인</h2><p>생산 종료 다음날부터 10일을 셉니다. 주말과 작업자 ‘휴’는 포함하고 공장 전체 제외일만 뺍니다.</p><div class="formGrid"><label class="wide">생산 종료일<input id="dryEnd" type="date" value="${today()}"></label><label class="full">공장 제외일 · 한 줄에 하나<textarea id="dryExclude" placeholder="2026-09-15"></textarea></label></div><p id="dryResult" class="output"></p><div class="actions"><button id="runDry" class="primary">계산</button><button id="closeDry">닫기</button></div>`;$('#runDry').onclick=()=>{try{const excluded=$('#dryExclude').value.split(/\s+/).filter(Boolean);if(excluded.some(x=>!C.iso(x)))throw Error('제외일을 YYYY-MM-DD로 입력해 주세요.');$('#dryResult').textContent='건조 완료일 '+C.dryDate($('#dryEnd').value,excluded)}catch(e){toast(e.message)}};$('#closeDry').onclick=()=>d.close();d.showModal();$('#runDry').click()}
@@ -2203,7 +2403,7 @@ function showConflicts(){const area=$('#conflictList');if(!area||!workspace?.las
 // Injected inside app.js so every view shares the same workspace and selected month.
 const O=ScheduleOperations,P=SchedulePlanning;
 const btn=(a,label,id='',disabled=false)=>`<button data-action="${a}" data-id="${esc(id)}" ${disabled?'disabled':''}>${label}</button>`;
-const productOptions=()=>state.products.filter(r=>!r.inactive).map(r=>r.name);
+const productOptions=()=>state.products.filter(r=>!r.inactive).map(r=>r.name).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0);
 const activeAudit=()=>m().auditSessions?.at(-1)||null;
 function workerTable(){return `<details class="card"><summary>작업자별 생산성과 근무시간</summary><p class="footerNote">입력 근무시간과 보정 근무시간을 구분합니다. 이 표의 시간당 생산은 보정시간 기준입니다.</p><details class="sheetHelp"><summary>작업자 집계 기준</summary><p>입력 근무시간은 기록한 시간의 합입니다. 보정 근무시간은 원본의 1.5시간 공제·빈 시간 보완을 적용하며, 보정 생산 kg/h는 이 시간을 분모로 사용합니다. 주입주기는 명시된 작업자 행의 별도 원본 산식입니다. 종합현황의 시간당 생산은 입력 근무시간 기준입니다.</p></details>${table(['작업자','생산 조','생산 kg','작업일','입력 근무 h','보정 근무 h','보정 생산 kg/h','주입주기 h/회'],C.workerStats(state,month).map(r=>tr([td(esc(r.worker)),...[r.quantity,r.kg,r.workingDays,r.rawHours,r.adjustedHours,r.hourly,r.cycle].map(v=>td(fmt(v,2),'num'))])))}</details>`}
 function annualTable(){const year=month.slice(0,4),rows=Object.keys(state.months).filter(k=>k.startsWith(year)).sort().map(k=>({month:k,...O.report(state,k).totals,closed:state.months[k].closed}));return `<details class="card"><summary>${year}년 월별 집계</summary>${table(['월','생산 조','생산 kg','불량 kg','교체 조','실사용 kg','상태'],rows.map(r=>tr([td(r.month),...[r.production,r.kg,r.defectKg,r.replacement,r.actual].map(v=>td(fmt(v),'num')),td(r.closed?'마감 보관':'작업 중')])))}<p class="footerNote">각 월 원장 기준입니다. 마감 스냅샷이 있는 월은 그 당시 수치를 사용합니다.</p></details>`}
@@ -2243,7 +2443,7 @@ async function enhancedAction(a,b){const id=b.dataset.id;
  return false
 }
 function auditReview(mode){try{const a=activeAudit(),p=O.previewAudit(state,month,a,mode);reviewDialog('실사 반영 미리보기',`<p>${mode==='current'?'새 이월 = 실사 − 이달 생산 + 교체. 미실사는 건너뜁니다.':'실사량을 기초 이월로 넣습니다. 목록에 있는 미실사 품목은 0으로 반영합니다.'}</p>${table(['품명','현재 이월','실사','새 이월','확인'],p.rows.map(r=>tr([td(esc(r.product)),td(fmt(r.opening)),td(fmt(r.total)),td(fmt(r.after)),td(r.skip?'건너뜀':r.negative?'음수 이월 확인':r.total==null?'미실사 → 0':'반영')])))}<p class="footerNote">적용 후 실사 원본과 변경 전후 값을 보관합니다.</p>`,'검토한 값 반영',async()=>{const n=C.clone(state);O.applyAudit(n,month,a,p);await persist(n,[month]);toast('실사 결과를 이월에 반영했습니다.')})}catch(e){toast(e.message)}}
-function calendarDialog(){P.captureSourceBaseline?.(state);const d=$('#dialog');d.oninput=null;const cal=state.calendar||{factory:[],workers:[]};d.innerHTML=`<h2>작업일·공장 제외일</h2><div class="formGrid"><label class="wide">대상<select id="calWorker"><option value="">공장 전체 제외일</option>${state.workers.map(w=>`<option>${esc(w)}</option>`).join('')}</select></label><label>날짜<input type="date" id="calDate" value="${today()}"></label><label>휴무 표시<input id="calMark" value="휴"></label></div><p class="footerNote">노란 공장 휴일은 생산·건조 계산에서 제외합니다. 일반 작업자 휴일은 생산 작업일에만 적용하고 건조 10일 계산에는 넣지 않습니다. 수기 작업일수는 토·일도 제외합니다.</p><div class="actions"><button id="calAdd">추가·변경</button><button id="calRemove">해당 날짜 해제</button><label>연장 주수<input id="calWeeks" type="number" value="4" min="1" max="26" style="width:80px"></label><button id="calExtend">최근 4주 휴일패턴 연장</button><button id="calUndo">연장 되돌리기</button><button id="calClose">닫기</button></div><div id="calList"></div>`;const list=()=>{$('#calList').innerHTML=table(['날짜','대상','표시'],[...(state.calendar?.factory||[]).map(v=>({date:typeof v==='string'?v:v.date,worker:'공장 전체',mark:'건조 제외'})),...(state.calendar?.workers||[])].filter(r=>r.date.startsWith(month)).sort((a,b)=>a.date.localeCompare(b.date)).map(r=>tr([td(r.date),td(esc(r.worker)),td(esc(r.mark))])))};$('#calClose').onclick=()=>d.close();for(const action of['Add','Remove','Extend','Undo'])$('#cal'+action).onclick=async()=>{try{const date=$('#calDate').value,w=$('#calWorker').value,n=C.clone(state);if(!C.iso(date))throw Error('날짜를 확인해 주세요.');if(n.months[date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');n.calendar??={factory:[],workers:[]};if(action==='Extend'){if(!w)throw Error('작업자를 선택해 주세요.');P.extendHolidays(n,w,date,Number($('#calWeeks').value))}else if(action==='Undo')P.undoHolidays(n,date.slice(0,4));else if(w){n.calendar.workers=n.calendar.workers.filter(r=>!(r.worker===w&&r.date===date));if(action==='Add')n.calendar.workers.push({id:C.id(),worker:w,date,mark:$('#calMark').value})}else{n.calendar.factory=n.calendar.factory.filter(r=>(typeof r==='string'?r:r.date)!==date);if(action==='Add')n.calendar.factory.push(date)}await persist(n,[],true);list();render();toast('휴일과 예상 일정을 갱신했습니다.')}catch(e){toast(e.message)}};list();d.showModal()}
+function calendarDialog(){P.captureSourceBaseline?.(state);const d=$('#dialog');d.oninput=null;const cal=state.calendar||{factory:[],workers:[]};d.innerHTML=`<h2>작업일·공장 제외일</h2><div class="formGrid"><label class="wide">대상<select id="calWorker"><option value="">공장 전체 제외일</option>${state.workers.map(w=>`<option>${esc(w)}</option>`).join('')}</select></label><label>날짜<input type="date" id="calDate" value="${today()}"></label><label>휴무 표시<input id="calMark" value="휴"></label></div><p class="footerNote">노란 공장 휴일은 생산·건조 계산에서 제외합니다. 일반 작업자 휴일은 생산 작업일에만 적용하고 건조 10일 계산에는 넣지 않습니다. 토·일도 휴일 표시가 없으면 생산 작업일에 포함합니다.</p><div class="actions"><button id="calAdd">추가·변경</button><button id="calRemove">해당 날짜 해제</button><label>연장 주수<input id="calWeeks" type="number" value="4" min="1" max="26" style="width:80px"></label><button id="calExtend">최근 4주 휴일패턴 연장</button><button id="calUndo">연장 되돌리기</button><button id="calClose">닫기</button></div><div id="calList"></div>`;const list=()=>{$('#calList').innerHTML=table(['날짜','대상','표시'],[...(state.calendar?.factory||[]).map(v=>({date:typeof v==='string'?v:v.date,worker:'공장 전체',mark:'건조 제외'})),...(state.calendar?.workers||[])].filter(r=>r.date.startsWith(month)).sort((a,b)=>a.date.localeCompare(b.date)).map(r=>tr([td(r.date),td(esc(r.worker)),td(esc(r.mark))])))};$('#calClose').onclick=()=>d.close();for(const action of['Add','Remove','Extend','Undo'])$('#cal'+action).onclick=async()=>{try{const date=$('#calDate').value,w=$('#calWorker').value,n=C.clone(state);if(!C.iso(date))throw Error('날짜를 확인해 주세요.');if(n.months[date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');n.calendar??={factory:[],workers:[]};if(action==='Extend'){if(!w)throw Error('작업자를 선택해 주세요.');P.extendHolidays(n,w,date,Number($('#calWeeks').value))}else if(action==='Undo')P.undoHolidays(n,date.slice(0,4));else if(w){n.calendar.workers=n.calendar.workers.filter(r=>!(r.worker===w&&r.date===date));if(action==='Add')n.calendar.workers.push({id:C.id(),worker:w,date,mark:$('#calMark').value})}else{n.calendar.factory=n.calendar.factory.filter(r=>(typeof r==='string'?r:r.date)!==date);if(action==='Add')n.calendar.factory.push(date)}await persist(n,[],true);list();render();toast('휴일과 예상 일정을 갱신했습니다.')}catch(e){toast(e.message)}};list();d.showModal()}
 function printDoc(title,body,orientation='landscape'){document.querySelector('#printFrame')?.remove();const frame=document.createElement('iframe');frame.id='printFrame';frame.title=title;frame.style.cssText='position:fixed;left:-10000px;width:1100px;height:800px';document.body.append(frame);frame.srcdoc=`<!doctype html><html lang="ko"><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4 ${orientation};margin:9mm}body{font:11px 'Malgun Gothic',sans-serif;color:#000}h1{text-align:center;font-size:22px}h2{font-size:14px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #555;padding:4px;white-space:normal}th{background:#eee}.num{text-align:right}thead{display:table-header-group}tr{break-inside:avoid}.sheet{break-after:page}.sheet:last-child{break-after:auto}.countPrint{height:26px;min-width:70mm}.dailyPrint td{height:7mm}.dailyPrint{font-size:10px}p{line-height:1.5}</style><body>${body}</body></html>`;frame.onload=()=>{frame.contentWindow.focus();frame.contentWindow.print()}}
 function dailyPrint(v){const rows=m().rows.filter(r=>r.date===v.date&&r.worker===v.worker),chunks=[];for(let offset=0;offset<Math.max(1,rows.length);offset+=17){const items=rows.slice(offset,offset+17),fieldQuality=items.map(C.dailyQuality).filter(q=>q.fieldKg),recorded=fieldQuality.filter(q=>q.kg!=null),qualityNote=fieldQuality.length?'<p style="font-size:9px;margin:3px 0">이 쪽 현장일보 불량 총 kg(기록분): '+fmt(recorded.length?C.sum(recorded,q=>q.kg):null)+' kg · 미기록 '+(fieldQuality.length-recorded.length)+'행 · 불량 kg/개는 원문 단위만 표시합니다.</p>':'',out=Array.from({length:17},(_,i)=>{const r=items[i];return tr(r?[td(esc(r.product)),td(fmt(r.plan)),td(fmt(r.cases)),td(fmt(r.waterRatio)),td(fmt(r.plaster)),td(fmt(r.pours)),td(C.dailyQuality(r).fieldKg&&C.num(r.defectUnit)==null?'':fmt(r.defectUnit)),td(fmt(C.dailyQuality(r).count)),td(esc(r.defectPart)),td(esc(r.lot))]:Array.from({length:10},()=>td('')))});chunks.push(`<section class="sheet"><h1>조형 수기 생산일보</h1><p>작업일 ${esc(v.date)}　작업자 ${esc(v.worker)}　근무시간 ${fmt(C.sum(items,r=>r.hours))}시간</p><div class="dailyPrint">${table(['품명','계획 조','CASE','혼수율 %','석고 kg/조','주입 조','불량 kg/개','불량 개','불량 부위','LOT'],out)}</div>${qualityNote}<table><tr><th>석고 가사시간</th><td>　</td><th>CASE 상태</th><td>　</td><th>분동 1차 / 2차 %</th><td>　/　</td></tr><tr><th>몰드 간격 · PVC · 제품면 · 기포</th><td colspan="5">　</td></tr><tr><th>원인·조치·특이사항</th><td colspan="5">　</td></tr></table></section>`)}printDoc('수기 생산일보',chunks.join(''))}
 
@@ -2381,13 +2581,14 @@ function sheetGrid(id,spec){
    if(g.dirty&&!g.closedDraft)g.closedDraft=C.clone(g.draft);
    g.draft=g.fresh();
    if(g.closedDraft)g.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.';
-  }else if(!g.dirty&&!g.loading&&!g.saving&&!g.storageError)g.draft=g.fresh();
+  }else if(!g.dirty&&!g.loading&&!g.saving&&!g.storageError)g.draft=g.fresh();else g.reconcileDraft();
  }
  return `<section class="sheetEditor" data-sheet-id="${esc(id)}" data-sheet-key="${esc(key)}">${g.html()}</section>`;
 }
 class SheetEditor{
- constructor(id,key,spec){this.id=id;this.key=key;this.scope=sheetScope();this.month=month;this.spec=spec;this.loading=true;this.loaded=false;this.dirty=false;this.saving=false;this.storageError='';this.error='';this.search='';this.selected='';this.revealId='';this.groupDate=spec.grouping?.defaultValue||'';this.pasteOpen=false;this.advanced=false;this.draft=this.fresh();this.writeQueue=Promise.resolve();this.revision=0}
+ constructor(id,key,spec){this.id=id;this.key=key;this.scope=sheetScope();this.month=month;this.spec=spec;this.loading=true;this.loaded=false;this.dirty=false;this.saving=false;this.storageError='';this.error='';this.search='';this.selected='';this.revealId='';this.groupDate=spec.grouping?.defaultValue||'';this.pasteOpen=false;this.advanced=false;this.draft=this.fresh();this.writeQueue=Promise.resolve();this.revision=0;this.persistedDraft=undefined}
  fresh(){const d=this.spec.createDraft?this.spec.createDraft():{baseRows:C.clone(this.spec.rows||[]),rows:C.clone(this.spec.rows||[]),deleted:[],revision:0};d.deleted??=[];d.revision??=0;return d}
+ reconcileDraft(){if(!this.dirty||this.loading||this.saving||this.spec.readonly||!this.spec.reconcileDraft)return;try{this.draft=this.spec.reconcileDraft(this.draft)||this.draft}catch(e){this.error=e.message}}
  host(){return [...document.querySelectorAll('[data-sheet-id]')].find(h=>h.dataset.sheetKey===this.key)}
  watchTextareaWidth(host){
   const targets=[host.querySelector('.sheetViewport'),host.querySelector('.inputSheet')].filter(Boolean);
@@ -2422,8 +2623,8 @@ class SheetEditor{
  }
 
  status(){const info=this.inspect(),n=(info.counts.changed||0)+(info.counts.added||0)+(info.counts.deleted||0);return{info,n}}
- async load(){if(this.loaded)return;this.loaded=true;try{const saved=await S.localGet('sheet.v1:'+this.key);if(saved){if(saved.schema!==1||saved.scope!==this.scope||saved.month!==this.month||!Array.isArray(saved.draft?.rows)||!Array.isArray(saved.draft?.baseRows))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=saved.draft;this.error='저장 전 편집 내용을 복원했습니다.'}}}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.refresh();this.spec.onChange?.(this)}}
- queueDraft(){const snapshot=C.clone(this.draft),version=++this.revision;this.writeQueue=this.writeQueue.catch(()=>{}).then(()=>S.localSet('sheet.v1:'+this.key,{schema:1,scope:this.scope,month:this.month,version,draft:snapshot}));this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
+ async load(){if(this.loaded)return;this.loaded=true;try{const saved=await S.localGet('sheet.v1:'+this.key);this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(saved.schema!==1||saved.scope!==this.scope||saved.month!==this.month||!Array.isArray(saved.draft?.rows)||!Array.isArray(saved.draft?.baseRows))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=saved.draft;this.error='저장 전 편집 내용을 복원했습니다.'}}}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
+ queueDraft({compare=false}={}){const snapshot=C.clone(this.draft),version=++this.revision,record={schema:1,scope:this.scope,month:this.month,version,draft:snapshot};this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{await S.localSet('sheet.v1:'+this.key,record,compare?{expected:this.persistedDraft}:undefined);this.persistedDraft=C.clone(record)});this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
  changed(){this.draft.revision=(this.draft.revision||0)+1;this.dirty=true;this.error='';this.queueDraft();this.update();this.spec.onChange?.(this)}
  set(id,key,value){if(this.locked())return;const row=this.draft.rows.find(r=>r.id===id),column=this.spec.columns.find(c=>c.key===key);if(!row||column&&!this.editable(column,row))return;if(this.spec.patch)this.spec.patch(this.draft,id,{[key]:value});else row[key]=value;this.changed();if(this.spec.refreshOnFields?.includes(key)){this.revealId=id;this.refresh();this.focus(id,this.spec.focusAfterSet?.(key,row,this)||key)}}
  add(seed){if(this.locked()||!this.spec.addRow)return;const previous=this.draft.rows.filter(r=>!this.draft.deleted.some(d=>d.id===r.id)).at(-1);let row=seed||this.spec.addRow(previous);if(!row)return;row.id||=C.id();if(this.spec.add)row=this.spec.add(this.draft,row)||row;else this.draft.rows.push(row);this.selected=row.id;this.changed();this.refresh();this.focus(row.id,this.columns().find(c=>this.editable(c,row))?.key);return row}
@@ -2657,6 +2858,20 @@ function productionWorkerRows(rows,index,g){
   return group.rows.map((row,i)=>g.rowHTML(row,index++).replace(/<td class="calculated" data-result="workerGroup">[\s\S]*?<\/td>/,i===0?cell:'')).join('');
  }).join('');
 }
+// Keep edited rows and their old baseline intact so Batch still detects field and dependency conflicts.
+function productionRefreshDraft(latest,draft){
+ const current=latest?.months?.[draft.month];if(!current)throw Error('초안을 작성한 월이 최신 원장에 없습니다.');if(current.closed)throw Error('초안을 작성한 월이 마감되어 최신자료 합치기를 보류했습니다.');
+ const index=(rows,label)=>{if(!Array.isArray(rows))throw Error(label+' 형식을 확인해 주세요.');const map=new Map();for(const r of rows){if(!r?.id||map.has(r.id))throw Error(label+'의 행 ID가 없거나 중복됩니다.');map.set(r.id,r)}return map};
+ const base=index(draft.baseRows,'초안 기준자료'),local=index(draft.rows,'초안'),remote=index(current.rows,'최신 원장'),deleted=index(draft.deleted,'삭제표시');
+ for(const id of base.keys())if(!local.has(id))throw Error('초안 기준행이 빠져 있어 합치기를 보류했습니다.');
+ for(const id of deleted.keys())if(!local.has(id))throw Error('삭제할 초안 행을 찾지 못했습니다.');
+ const baseOrder=draft.rows.filter(r=>base.has(r.id)).map(r=>r.id);if(!sheetEqual(baseOrder,draft.baseRows.map(r=>r.id)))throw Error('초안의 기존 행 순서를 확인해 주세요.');
+ const next=C.clone(draft),rows=[],bases=new Map();
+ for(const row of draft.rows){const old=base.get(row.id),now=remote.get(row.id);if(old&&!deleted.has(row.id)&&sheetEqual(row,old)){if(now){rows.push(C.clone(now));bases.set(row.id,C.clone(now))}}else{rows.push(C.clone(row));if(old)bases.set(row.id,C.clone(old))}}
+ for(const row of current.rows)if(!local.has(row.id)){rows.push(C.clone(row));bases.set(row.id,C.clone(row))}
+ next.rows=rows;next.baseRows=rows.filter(r=>bases.has(r.id)).map(r=>bases.get(r.id));
+ if(sheetEqual(next,draft))return draft;next.revision=(draft.revision||0)+1;return next;
+}
 function productionTotals(g){
  const B=ScheduleBatch,deleted=new Set(g.draft.deleted.map(r=>r.id)),rows=g.draft.rows.filter(r=>!deleted.has(r.id)&&!B.blank(r)),days=new Map();
  for(const row of rows){if(!days.has(row.date))days.set(row.date,[]);days.get(row.date).push(row)}
@@ -2664,21 +2879,30 @@ function productionTotals(g){
  return{rows,days,pours:pours(rows),kg,day:date=>({count:days.get(date)?.length||0,pours:pours(days.get(date)||[])})};
 }
 function productionFilterRows(rows,g){return rows.filter(row=>row.id===g.revealId||(!g.productionFocus||row.date===g.groupDate)&&(!g.productionWorker||g.productionWorker==='__unassigned'?(!g.productionWorker||!row.worker):row.worker===g.productionWorker))}
+function productionViewStatus(g){
+ const deleted=new Set(g.draft.deleted.map(r=>r.id)),entered=g.draft.rows.filter(r=>!deleted.has(r.id)&&!ScheduleBatch.blank(r)),visible=new Set(g.visibleRows().map(r=>r.id)),date=today(),current=g.month===date.slice(0,7),todayRows=current?entered.filter(r=>r.date===date):[],todayHidden=todayRows.filter(r=>!visible.has(r.id)).length,shown=entered.filter(r=>visible.has(r.id)).length;
+ const conditions='날짜 '+(g.productionFocus?g.groupDate:'월 전체')+' · 작업자 '+(g.productionWorker==='__unassigned'?'미지정':g.productionWorker||'전체')+' · 검색 '+(g.search?'“'+g.search+'”':'없음');
+ const text='현재 보기: '+conditions+' · 월 입력 '+entered.length+'행 중 '+shown+'행 표시'+(current?(todayHidden?' · 오늘 입력 '+todayRows.length+'행 중 '+todayHidden+'행이 보기 조건으로 숨겨져 있습니다. 오늘 내역을 눌러 확인하세요.':' · 오늘 입력 '+todayRows.length+'행'+(todayRows.length?' 모두 표시':'')):'');
+ return{date,current,enteredCount:entered.length,shownCount:shown,todayCount:todayRows.length,todayHidden,text};
+}
 function productionViewHTML(g){
  const totals=productionTotals(g),last=Number(g.spec.grouping.max.slice(8)),workers=[...new Set([...state.workers,...g.draft.rows.map(r=>r.worker).filter(Boolean)])];
- return '<div class="productionProgressBasis"><strong>'+esc(productionProgressBasis(g))+'</strong> · 같은 작업의 날짜별 행은 같은 현재 진행률을 표시합니다.</div><div class="productionOverview"><div class="productionOverviewLine"><strong>'+Number(g.month.slice(5))+'월 전체</strong><span data-production-month-total>생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력</span><div class="productionViewControls"><label>작업자<select data-sheet-view="worker" aria-label="일보 작업자 보기"><option value="">전체</option>'+workers.map(worker=>'<option value="'+esc(worker)+'" '+(g.productionWorker===worker?'selected':'')+'>'+esc(worker)+'</option>').join('')+'<option value="__unassigned" '+(g.productionWorker==='__unassigned'?'selected':'')+'>미지정</option></select></label><label><input type="checkbox" data-sheet-view="focus" '+(g.productionFocus?'checked':'')+'>선택일만</label><button data-sheet-view-command="productionReset">월 전체 보기</button></div></div><div class="productionDateRail" aria-label="생산일보 날짜 선택">'+Array.from({length:last},(_,i)=>{const date=g.month+'-'+String(i+1).padStart(2,'0'),day=totals.day(date),dow=new Date(date+'T00:00:00Z').getUTCDay();return '<button data-sheet-view-command="productionDay" data-date="'+date+'" class="'+(dow===0||dow===6?'weekend ':'')+(day.count?'hasInput':'')+'" aria-pressed="'+String(!!g.productionFocus&&g.groupDate===date)+'" aria-label="'+date+' 일 전체 생산 '+fmt(day.pours)+'조 · 해당일 내역 보기"><b>'+(i+1)+'</b><small data-production-day-total="'+date+'">'+(day.count?fmt(day.pours):'·')+'</small></button>'}).join('')+'</div><div class="productionViewCaption"><span>날짜를 누르면 해당일만 표시 · 숫자는 일 전체 생산 조</span><span data-production-visible-count>표시 '+g.visibleRows().length+'행 / 월 전체 '+g.draft.rows.length+'행 · 저장은 월 전체 변경</span></div></div>';
+ return '<div class="productionProgressBasis"><strong>'+esc(productionProgressBasis(g))+'</strong> · 같은 작업의 날짜별 행은 같은 현재 진행률을 표시합니다.</div><div class="productionOverview"><div class="productionOverviewLine"><strong>'+Number(g.month.slice(5))+'월 전체</strong><span data-production-month-total>생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력</span><div class="productionViewControls"><label>작업자<select data-sheet-view="worker" aria-label="일보 작업자 보기"><option value="">전체</option>'+workers.map(worker=>'<option value="'+esc(worker)+'" '+(g.productionWorker===worker?'selected':'')+'>'+esc(worker)+'</option>').join('')+'<option value="__unassigned" '+(g.productionWorker==='__unassigned'?'selected':'')+'>미지정</option></select></label><label><input type="checkbox" data-sheet-view="focus" '+(g.productionFocus?'checked':'')+'>선택일만</label><button data-sheet-view-command="productionReset">월 전체 보기</button>'+(g.month===today().slice(0,7)?'<button data-sheet-view-command="productionToday">오늘 내역</button>':'')+'</div></div><div class="productionDateRail" aria-label="생산일보 날짜 선택">'+Array.from({length:last},(_,i)=>{const date=g.month+'-'+String(i+1).padStart(2,'0'),day=totals.day(date),dow=new Date(date+'T00:00:00Z').getUTCDay();return '<button data-sheet-view-command="productionDay" data-date="'+date+'" class="'+(dow===0||dow===6?'weekend ':'')+(day.count?'hasInput':'')+'" aria-pressed="'+String(!!g.productionFocus&&g.groupDate===date)+'" aria-label="'+date+' 일 전체 생산 '+fmt(day.pours)+'조 · 해당일 내역 보기"><b>'+(i+1)+'</b><small data-production-day-total="'+date+'">'+(day.count?fmt(day.pours):'·')+'</small></button>'}).join('')+'</div><div class="productionViewCaption"><span>날짜를 누르면 해당일만 표시 · 숫자는 일 전체 생산 조</span><span data-production-visible-count>표시 '+g.visibleRows().length+'행 / 월 전체 '+g.draft.rows.length+'행 · 저장은 월 전체 변경</span></div><div class="productionViewCaption" data-production-view-status role="status" style="display:block;overflow-wrap:anywhere">'+esc(productionViewStatus(g).text)+'</div></div>';
 }
 function productionUpdateView(g){
  const host=g.host();if(!host)return;const totals=productionTotals(g),summary=host.querySelector('[data-production-month-total]');if(summary)summary.textContent='생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력';
  const basis=host.querySelector('.productionProgressBasis strong');if(basis)basis.textContent=productionProgressBasis(g);
  for(const label of host.querySelectorAll('[data-production-day-total]')){const date=label.dataset.productionDayTotal,day=totals.day(date);label.textContent=day.count?fmt(day.pours):'·';const button=label.closest('button');button?.classList.toggle('hasInput',!!day.count);button?.setAttribute('aria-pressed',String(!!g.productionFocus&&g.groupDate===date));button?.setAttribute('aria-label',date+' 일 전체 생산 '+fmt(day.pours)+'조 · 해당일 내역 보기')}
+ const notice=host.querySelector('[data-production-view-status]');if(notice)notice.textContent=productionViewStatus(g).text;
  const count=host.querySelector('[data-production-visible-count]');if(count)count.textContent='표시 '+g.visibleRows().length+'행 / 월 전체 '+g.draft.rows.length+'행 · 저장은 월 전체 변경';
+ if(typeof ilboUpdateManualSummary==='function')ilboUpdateManualSummary();
 }
 function productionViewChange(field,value,g){
  if(field==='worker')g.productionWorker=value;if(field==='focus')g.productionFocus=!!value;g.revealId='';g.selected='';g.refresh();
 }
 function productionViewCommand(command,data,g){
  if(command==='productionCompletion'){productionCompletionDialog(g,data.id);return}
+ if(command==='productionToday'){const date=today();if(g.month!==date.slice(0,7))return;g.spec.grouping.validate(date);g.groupDate=date;g.productionFocus=true;g.productionWorker='';g.search='';g.revealId='';g.selected='';g.refresh();return}
  if(command==='productionReset'){g.productionWorker='';g.productionFocus=false;g.search='';g.revealId='';g.selected='';g.refresh();return}
  if(command==='productionDay'){g.spec.grouping.validate(data.date);g.groupDate=data.date;g.productionFocus=true;g.search='';g.revealId='';g.selected='';g.refresh();const row=g.host()?.querySelector('tr[data-group-row="'+data.date+'"]');row?.scrollIntoView({block:'nearest',inline:'nearest'})}
 }
@@ -2691,7 +2915,7 @@ function productionAddProduct(g,date,worker=''){
  const row=g.add(seed);if(row&&worker){g.draft.inputOverrides??={};g.draft.inputOverrides[row.id]??={};g.draft.inputOverrides[row.id].worker=true;g.queueDraft()}return row;
 }
 dailyView=function(){
- const key=month,scope=sheetScope(),B=ScheduleBatch,closed=m().closed,products=state.products.filter(p=>!p.inactive).map(p=>p.name),workers=state.workers;
+ const key=month,scope=sheetScope(),B=ScheduleBatch,closed=m().closed,products=state.products.filter(p=>!p.inactive).map(p=>p.name).sort(typeof ProductOrder!=='undefined'?ProductOrder.compareProducts:(a,b)=>a.localeCompare(b,'ko',{numeric:true})),workers=state.workers;
  const columns=[
   {key:'workerGroup',label:'작업자',width:74,hideCalcLabel:true,calc:r=>r.worker||'미지정'},
   {key:'date',label:'날짜',type:'date',width:132,advanced:true},
@@ -2733,7 +2957,7 @@ dailyView=function(){
    actions:(date,g)=>{const source=productionPreviousSource(g.draft,date,g.productionWorker);return '<button data-sheet-command="productionWorker" data-group="'+esc(date)+'">+ 작업자</button>'+(source?'<button data-sheet-command="productionPrevious" data-group="'+esc(date)+'">이전 입력일 구성</button>'+productionSourceHTML(source):'<span class="productionSourceEmpty">이전 입력일 없음</span>')},
    format:date=>{if(!C.iso(date))return '날짜 확인 필요';const d=new Date(date+'T00:00:00');return Number(date.slice(5,7))+'월 '+Number(date.slice(8))+'일 ('+['일','월','화','수','목','금','토'][d.getDay()]+')'},
    summary:rows=>{const entered=rows.filter(r=>!B.blank(r)),pending=rows.filter(r=>r.draftTemplate&&B.blank(r));return entered.length+'품목 · 생산 '+fmt(C.sum(entered.filter(r=>!C.catalogIdentity(state,r.product).includes('부속')),r=>r.pours))+'조'+(pending.length?' · 입력 대기 '+pending.length+'행':'')}},
-  createDraft:()=>{const draft=B.create(state,key,scope);draft.baseMemos=C.clone(state.memos||[]);return draft},
+  createDraft:()=>{const draft=B.create(state,key,scope);draft.baseMemos=C.clone(state.memos||[]);return draft},reconcileDraft:draft=>productionRefreshDraft(state,draft),
   patch:productionPatch,add:(draft,row)=>B.add(draft,row),addRow:closed?null:rowSeed,
   onCommand:(command,data,g)=>{if(command==='productionPrevious')productionUsePrevious(g,data.group);if(command==='productionProduct')productionAddProduct(g,data.group,data.worker||'');if(command==='productionWorker'){const empty=g.draft.rows.find(r=>r.date===data.group&&!r.worker&&!g.draft.baseRows.some(b=>b.id===r.id)&&!g.draft.deleted.some(d=>d.id===r.id));const row=empty||productionAddProduct(g,data.group,'');if(row){g.selected=row.id;g.revealId=row.id;g.refresh();const picker=g.host()?.querySelector('select[data-row="'+row.id+'"][data-cell="worker"]');if(picker)picker.focus();else g.focus(row.id,'worker')}}},
   inspect:productionInspect,
@@ -2915,7 +3139,7 @@ scheduleView=function(){
  return head('생산일정','작업조건과 휴일을 한 화면에서 바꾸고, 변경 저장으로 함께 반영합니다.',btn('csvSchedule','저장된 일정 내려받기')+btn('dryCalc','건조일 계산')+btn('undoJobs','직전 작업조건 저장 되돌리기','',m().closed))+
  `<div class="pgSurface" id="planGridSurface"><div class="pgFocusToolbar" aria-label="확대 일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">기본 화면으로</button><button data-pg-command="focus-tools" aria-expanded="${!!v.focusTools}">도구·설명</button></div><div class="pgTopActions" aria-label="일정 변경 저장 도구막대"><div class="actions"><button data-pg-command="add" ${m().closed?'disabled':''}>+ 생산량 기준 일정</button><button data-pg-command="manual" ${m().closed?'disabled':''}>+ 날짜 지정 일정</button><button data-pg-command="focus-conditions">작업 목록 편집</button></div><div class="pgSaveControls"><span id="pgSaveStatus" role="status" aria-live="polite">${m().closed?'마감 · 조회 전용':'변경 0건'}</span><button data-pg-command="save" id="pgSaveChanges" class="primary" disabled>일정 변경 저장</button></div></div>
  <section class="card pgCalendarPanel"><div class="toolbar pgTimelineToolbar"><div><h2>작업자별 생산일정</h2></div><div class="actions">${pgWorkerFilterHTML()}<label>표시 기간<select id="pgSpan"><option value="2" ${v.twoMonths&&!v.rangeStart?'selected':''}>이번달 + 다음달</option><option value="year" ${v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12'?'selected':''}>올해 전체</option><option value="custom" disabled ${v.rangeStart&&!(v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12')?'selected':''}>선택한 기간</option><option value="1" ${!v.twoMonths&&!v.rangeStart?'selected':''}>이번달</option></select></label><label>표 시작월<input type="month" id="pgRangeStart" value="${pgRangeInfo().first.slice(0,7)}"></label><label>표 종료월<input type="month" id="pgRangeEnd" value="${pgRangeInfo().last.slice(0,7)}"></label><button data-pg-command="today">오늘로 이동</button></div></div>
- <div class="pgDisplayTools" aria-label="일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">${v.focus?'기본 화면으로':'표 크게 보기'}</button><button data-pg-command="fit-width" aria-pressed="${!!v.fit}">${v.fit?'날짜 칸 넓히기':'화면 너비에 맞춤'}</button><details class="pgViewOptions"><summary>표 표시</summary><div><button data-pg-command="compact" aria-pressed="${!!v.compact}">${v.compact?'행 높이 늘리기':'행 높이 줄이기'}</button><button data-pg-command="overview" aria-pressed="${!!v.overview}">${v.overview?'휴일 행 보이기':'휴일 행 숨기기'}</button><label class="pgActiveFilter"><input type="checkbox" id="pgActiveOnly" ${v.activeOnly?'checked':''}>일정이 있는 작업자만</label></div></details><button data-pg-command="calendar-tools" aria-expanded="${!!v.calendarExpanded}" aria-controls="pgCalendarExtras">휴일 편집</button><details class="pgGuide"><summary>사용 방법</summary><div><p><b>일정 수정</b> 막대를 두 번 누르거나 Enter로 열기 · 끌어서 이동 · 양끝을 끌어 기간 변경. 모바일에서는 막대 선택 후 ‘선택 일정 수정’을 누르세요.</p><p><b>선택 해제</b> Esc · 날짜 머리글을 다시 누르면 해당 열의 강조가 해제됩니다.</p><p><b>기간 계산</b> 날짜 지정 일정은 토·일과 휴일을 작업일수에서 제외하지만, 막대는 주말까지 이어집니다. 건조일 계산은 노란 공장 휴일만 제외합니다.</p>
+ <div class="pgDisplayTools" aria-label="일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">${v.focus?'기본 화면으로':'표 크게 보기'}</button><button data-pg-command="fit-width" aria-pressed="${!!v.fit}">${v.fit?'날짜 칸 넓히기':'화면 너비에 맞춤'}</button><details class="pgViewOptions"><summary>표 표시</summary><div><button data-pg-command="compact" aria-pressed="${!!v.compact}">${v.compact?'행 높이 늘리기':'행 높이 줄이기'}</button><button data-pg-command="overview" aria-pressed="${!!v.overview}">${v.overview?'휴일 행 보이기':'휴일 행 숨기기'}</button><label class="pgActiveFilter"><input type="checkbox" id="pgActiveOnly" ${v.activeOnly?'checked':''}>일정이 있는 작업자만</label></div></details><button data-pg-command="calendar-tools" aria-expanded="${!!v.calendarExpanded}" aria-controls="pgCalendarExtras">휴일 편집</button><details class="pgGuide"><summary>사용 방법</summary><div><p><b>일정 수정</b> 막대를 두 번 누르거나 Enter로 열기 · 끌어서 이동 · 양끝을 끌어 기간 변경. 모바일에서는 막대 선택 후 ‘선택 일정 수정’을 누르세요.</p><p><b>선택 해제</b> Esc · 날짜 머리글을 다시 누르면 해당 열의 강조가 해제됩니다.</p><p><b>기간 계산</b> 생산 작업일수는 표시한 작업자·공장 휴일만 제외하며, 토·일도 휴일 표시가 없으면 포함합니다. 막대는 휴일을 가로질러 이어집니다. 건조일 계산은 노란 공장 휴일만 제외합니다.</p>
   <div class="pgBasis"><span id="pgBasisLabel">계산 기준 ${esc(P.asOf(state,month,today()))}</span><button data-pg-command="recalculate" ${m().closed?'disabled':''} title="입력하지 않은 기간의 생산을 임의로 추가하지 않고 오늘까지의 실적으로 다시 계산">오늘 기준 재계산</button><span>날짜만 지나도 계획이 밀리지 않습니다.</span></div>
  </div></details><span id="pgFitHint" class="subtle"></span></div>
  <div id="pgCalendarExtras" class="pgCalendarExtras">
@@ -3078,7 +3302,7 @@ function pgDetail(g,cachedJobs=null){
  area.innerHTML=`<div class="toolbar"><div><h2>${esc(row.product||'새 작업')} · ${esc(row.worker||'작업자 선택')}</h2><span class="subtle">${row.manual?'수기 예약':'자동 일정'} · 호기는 위에서 아래 순서로 배치합니다.</span></div><button data-pg-command="focus-selected">선택 행으로 이동</button></div>
  <div class="pgDetailStats" id="pgDetailStats"></div><div class="pgDetailColumns"><div><div class="pgMachineHead"><h3>호기별 배정</h3><button data-pg-command="machine-add" ${locked?'disabled':''}>+ 호기 추가</button></div><div class="tableWrap"><table class="pgMachines"><thead><tr><th>순서</th><th>호기 이름</th><th>배정 조수</th><th>순서·삭제</th></tr></thead><tbody>${(row.machines||[]).map((machine,i)=>`<tr><td>${i+1}</td><td><input data-pg-machine="${i}" data-pg-field="name" value="${esc(machine.name)}" list="pgMachineNames" aria-label="${i+1}번째 호기 이름" ${locked?'disabled':''}></td><td><input data-pg-machine="${i}" data-pg-field="qty" inputmode="decimal" value="${esc(machine.qty??'')}" placeholder="자동 배분" aria-label="${i+1}번째 호기 배정 조수" ${locked?'disabled':''}></td><td><div class="pgMachineActions"><button data-pg-command="machine-up" data-index="${i}" aria-label="${i+1}번째 호기 위로" ${locked||i===0?'disabled':''}>↑</button><button data-pg-command="machine-down" data-index="${i}" aria-label="${i+1}번째 호기 아래로" ${locked||i===row.machines.length-1?'disabled':''}>↓</button><button data-pg-command="machine-remove" data-index="${i}" aria-label="${i+1}번째 호기 삭제" ${locked?'disabled':''}>×</button></div></td></tr>`).join('')}</tbody></table></div><datalist id="pgMachineNames">${machines.map(name=>`<option value="${esc(name)}">`).join('')}</datalist><p class="footerNote">배정 조수를 비우면 기존 계산 규칙으로 남은 수량을 나눕니다. 합계와 계획 차이는 일정표에 표시됩니다.</p></div>
  <div class="pgConditionFields"><label>동시 생산 묶음<select data-pg-job-field="group" ${locked?'disabled':''}><option value="">개별 작업</option>${groups.map(group=>`<option value="${esc(group)}" ${String(group)===String(row.group)?'selected':''}>${esc(pgGroupName(group))}</option>`).join('')}</select></label><button data-pg-command="new-group" ${locked?'disabled':''}>이 작업으로 새 묶음 만들기</button><p class="footerNote">같은 작업자의 함께 만들 품목에 같은 묶음을 선택하세요. 호기 배정 순서는 각 작업에서 유지됩니다.</p>
- ${row.manual?`<label>수기 배치 방법<select data-pg-manual-mode ${locked||actual.firstActual?'disabled':''}><option value="dates" ${row.end?'selected':''}>시작·종료 날짜로 지정</option><option value="duration" ${!row.end&&!row.afterPrevious?'selected':''}>시작 날짜 + 작업일수</option><option value="after" ${!row.end&&row.afterPrevious?'selected':''}>앞 작업 뒤 2근무일 비우기</option></select></label><label>작업일수<input data-pg-job-field="duration" inputmode="numeric" value="${esc(row.duration??'')}" ${locked||actual.firstActual||row.end?'disabled':''}></label><p class="footerNote">종료 날짜는 위 표의 ‘수기 종료일’에서 입력합니다. 작업일수는 토·일과 작업자·공장 휴일을 제외합니다. 막대는 시작일부터 종료일까지 이어집니다.</p>`:''}
+ ${row.manual?`<label>수기 배치 방법<select data-pg-manual-mode ${locked||actual.firstActual?'disabled':''}><option value="dates" ${row.end?'selected':''}>시작·종료 날짜로 지정</option><option value="duration" ${!row.end&&!row.afterPrevious?'selected':''}>시작 날짜 + 작업일수</option><option value="after" ${!row.end&&row.afterPrevious?'selected':''}>앞 작업 뒤 2근무일 비우기</option></select></label><label>작업일수<input data-pg-job-field="duration" inputmode="numeric" value="${esc(row.duration??'')}" ${locked||actual.firstActual||row.end?'disabled':''}></label><p class="footerNote">종료 날짜는 위 표의 ‘수기 종료일’에서 입력합니다. 작업일수는 표시한 작업자·공장 휴일만 제외합니다. 토·일도 표시가 없으면 생산일입니다. 막대는 시작일부터 종료일까지 이어집니다.</p>`:''}
  <label>설정 중단일<input type="date" data-pg-job-field="stoppedAt" value="${esc(row.stoppedAt||'')}" ${locked?'disabled':''}></label><label>비고 · 중단 사유<input data-pg-job-field="note" value="${esc(row.note||'')}" ${locked?'disabled':''}></label>
  ${row.sourceRowId||actual.firstActual?'<p class="pgLinkedNote">생산기록이 연결되어 품명·작업자와 실적 날짜를 보호합니다. 원장 수정은 <button data-pg-command="open-daily">생산 입력에서 확인</button>하세요.</p>':''}</div></div>`;
  pgDetailMetrics(g);
@@ -3158,7 +3382,7 @@ function bindPlanGrid(){
 }
 
 // Main timetable editing. Inject after plan-grid.js in the shared app closure.
-const pgDirectState={session:null,g:null,root:null,escape:null,suppressUntil:0,touchPointers:new Map(),touchSuppressUntil:0,lastTouchAt:0};
+const pgDirectState={session:null,g:null,root:null,escape:null,suppressUntil:0,lastBarClick:null,touchPointers:new Map(),touchSuppressUntil:0,lastTouchAt:0};
 function pgDirectMobile(){return !!globalThis.matchMedia?.('(max-width: 720px)').matches}
 function pgDirectTouchPointer(event){return event.pointerType==='touch'||event.pointerType==='pen'}
 function pgDirectTouchMove(event){const touch=pgDirectState.touchPointers.get(event.pointerId);if(!touch)return false;if(Math.abs(event.clientX-touch.x)+Math.abs(event.clientY-touch.y)>8)touch.moved=true;return true}
@@ -3177,6 +3401,20 @@ function pgDirectAccess(g,id,sourceMonth,cachedJobs=null){
  }catch(e){return{ok:false,reason:e.message}}
 }
 function pgDirectPeriod(g,members,cachedRows=null){const rows=cachedRows||pgDraftResult(pgDirectSnapshot(g)).rows,ids=new Set(members.map(r=>r.id)),bars=rows.filter(r=>ids.has(r.jobId));const starts=(bars.length?bars.map(r=>r.groupStart||r.start):members.map(r=>r.start)).filter(C.iso).sort(),ends=(bars.length?bars.map(r=>r.groupEnd||r.end):members.map(r=>r.end)).filter(C.iso).sort();return{start:starts[0],end:ends.at(-1),requestedStart:bars.find(r=>C.iso(r.requestedStart))?.requestedStart||members[0]?.start,bars}}
+function pgDirectRatePeriod(g,members,selected,fields,period,endMode){
+ if(!selected.manual||members.some(r=>!r.manual)||!('daily'in fields)||endMode==='date')return null;
+ const daily=pgNumber(fields.daily);if(!(typeof daily==='number'&&Number.isFinite(daily)&&daily>0)||pgEqual(daily,pgNumber(selected.daily)))return null;
+ if(endMode!=='daily'&&'end'in fields&&!pgEqual(fields.end,selected.end))return null;
+ const start='start'in fields&&!pgEqual(fields.start,selected.start)?fields.start:period.start;if(!C.iso(start))pgError('start','유효한 시작일을 입력해 주세요.');
+ const snapshot={...state,calendar:g.draft.calendar||state.calendar},worker=fields.worker||selected.worker;let required=0,preservedEnd=start;
+ for(const member of members){const row=member.id===selected.id?{...member,...fields}:member,plan=pgNumber(row.plan),rate=pgNumber(row.daily);
+  if(!(typeof plan==='number'&&Number.isFinite(plan)&&plan>0))pgError('plan','계획 조수는 0보다 큰 숫자로 입력해 주세요.');
+  if(rate==null){const end=C.iso(row.end)?row.end:period.end;if(end>preservedEnd)preservedEnd=end;continue;}
+  if(!(typeof rate==='number'&&Number.isFinite(rate)&&rate>0))pgError('daily','하루 조수는 0보다 큰 숫자여야 합니다.');required=Math.max(required,Math.ceil(plan/rate));
+ }
+ let end=null,workdays=0;for(let d=start,n=0;n<740;d=P.add(d,1),n++){if(P.manualWork(snapshot,worker,d))workdays++;if(workdays>=required&&d>=preservedEnd){end=d;break}}
+ if(!end)pgError('end','하루 조수로 계산한 기간은 740일 이내여야 합니다.');return{start,end,workdays};
+}
 function pgDirectPrepare(g,command){
  if(g.locked()||m().closed)throw Error('읽기·저장 중이거나 마감된 일정은 수정할 수 없습니다.');
  const type=command.type;let changes=[],selectedId=command.id,notice='',conversionRequired=false,movePeriod=null;
@@ -3199,17 +3437,19 @@ function pgDirectPrepare(g,command){
    changes=members.map(r=>{const row={...pgClean(r),manual:true,manualSource:'timeline',start:period.start,end:period.end,[command.edge]:command.date,duration:null,afterPrevious:false};if(row.previousStart)row.previousStart=row.start;return row});
    if(conversionRequired)notice+=' 종료 기간을 직접 정하려면 이 묶음을 수기 계획으로 전환해야 합니다.';
   }else if(type==='edit'){
-   const fields=command.fields||{},allowed=['worker','product','start','end','plan','daily','machines','note','manual'],patch={};for(const key of allowed)if(key in fields)patch[key]=C.clone(fields[key]);
+   const fields=command.fields||{},allowed=['worker','product','start','end','plan','daily','machines','note','manual'],patch={};for(const key of allowed)if(key in fields)patch[key]=['plan','daily'].includes(key)?pgNumber(fields[key]):C.clone(fields[key]);
    if(selected.manual&&patch.manual===false)throw Error('수기 계획을 자동으로 바꾸려면 작업조건에서 변경해 주세요.');
-   const dateChange=['start','end'].some(key=>key in patch&&!pgEqual(patch[key],selected[key])),workerChange='worker'in patch&&patch.worker!==selected.worker,convert=patch.manual===true&&!selected.manual||'end'in patch&&!selected.manual&&!pgEqual(patch.end,selected.end);
+   const ratePeriod=pgDirectRatePeriod(g,members,selected,patch,period,command.endMode),dateChange=['start','end'].some(key=>key in patch&&!pgEqual(patch[key],selected[key])),workerChange='worker'in patch&&patch.worker!==selected.worker,convert=patch.manual===true&&!selected.manual||'end'in patch&&!selected.manual&&!pgEqual(patch.end,selected.end);
    if(workerChange&&members.some(r=>!r.manual||r.sourceRowId))throw Error('작업자 이동은 생산기록에 연결되지 않은 미착수 수기 계획만 가능합니다.');
    conversionRequired=convert&&command.convertToManual!==true;
-   changes=(dateChange||convert||workerChange?members:[selected]).map(r=>{
+   changes=(ratePeriod||dateChange||convert||workerChange?members:[selected]).map(r=>{
     const row=pgClean(r);if(r.id===selected.id)Object.assign(row,patch);
     if(dateChange||convert){if('start'in patch)row.start=P.add(r.start,Math.round((Date.parse(patch.start)-Date.parse(selected.start))/86400000));if('end'in patch)row.end=patch.end;if(convert){row.manual=true;row.start=patch.start||period.start;row.end=patch.end||period.end}if(row.manual){row.afterPrevious=false;row.duration=null}if(row.previousStart)row.previousStart=row.start}
     if(workerChange)row.worker=patch.worker;
+    if(ratePeriod){row.start=ratePeriod.start;row.end=ratePeriod.end;row.duration=null;row.afterPrevious=false;if(row.previousStart)row.previousStart=row.start;}
     if(row.manual)row.manualSource='timeline';return row;
    });
+   if(ratePeriod)notice+=' 시작일 유지 · '+ratePeriod.workdays+'작업일 → '+ratePeriod.end+' 종료';
   }else throw Error('지원하지 않는 일정표 편집입니다.');
  }
  for(const row of changes){row.plan=pgNumber(row.plan);row.daily=pgNumber(row.daily);row.machines=(row.machines||[]).map(r=>({name:String(r.name||'').trim(),qty:pgNumber(r.qty)}));pgValidate(row);if(row.manual&&(!C.iso(row.end)||row.end<row.start))pgError('end','수기 종료일은 시작일 이후여야 합니다.')}
@@ -3275,13 +3515,26 @@ function pgDirectOpenForm(){
  session.initialForm??=C.clone(session.form);pgDirectRenderForm(g);
 }
 function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;pgDirectOpenForm()}
+function pgDirectPreviewRate(g,field){
+ const s=pgDirectState.session,root=pgDirectState.root;if(!s?.form||s.command.type==='create')return;
+ if(field==='end'){s.endMode='date';s.rateNotice='직접 입력한 종료일을 적용합니다.';}
+ else if(field==='daily')s.endMode='daily';
+ if(s.endMode==='daily')try{const members=pgDirectMembers(g,s.command.id),selected=members.find(r=>r.id===s.command.id),period=pgDirectPeriod(g,members),computed=pgDirectRatePeriod(g,members,selected,s.form,period,'daily');
+  if(computed){s.form.start=computed.start;s.form.end=computed.end;s.rateNotice='시작일 유지 · '+computed.workdays+'작업일 → '+computed.end+' 종료';}
+  else if(field==='daily'&&pgEqual(pgNumber(s.form.daily),pgNumber(selected.daily))){s.form.end=s.initialForm.end;s.rateNotice='기존 하루 조수와 종료일을 유지합니다.';}
+  else s.rateNotice='하루 조는 0보다 큰 숫자로 입력하세요. 비우면 표시된 기간을 유지합니다.';
+  const error=root?.querySelector('.pgDirectError');if(error)error.textContent='';
+ }catch(e){const error=root?.querySelector('.pgDirectError');if(error)error.textContent=e.message;return;}
+ for(const key of['start','end']){const input=root?.querySelector('[data-pd-field="'+key+'"]');if(input&&input.value!==s.form[key])input.value=s.form[key]||'';}
+ const heading=root?.querySelector('.pgDirectHeading span');if(heading&&s.rateNotice)heading.textContent=s.rateNotice;
+}
 function pgDirectRenderForm(g){
  const session=pgDirectState.session,root=pgDirectState.root;if(!session||!session.form||!root)return;root.querySelectorAll('.pgDirectEditor').forEach(el=>el.remove());
  const value=session.form,creating=session.command.type==='create',row=pgDirectRow(value.worker||session.worker);
  const form=document.createElement('div');form.className='pgGridRow pgDirectEditor';const linked=!!value.sourceRowId,manual=creating||!!value.manual,scope=session.members.length?((session.members.length>1?'동시 '+session.members.length+'품목 · ':'')+session.members.reduce((n,r)=>n+r.machines.length,0)+'호기 함께 기간 변경'):'새 수기 계획';
- form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'수기 입력':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading"><strong>${esc(scope)}</strong><span>표 안에서 입력 · 적용 전 Esc로 취소</span></div><div class="pgDirectFields"><label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label><label>작업자<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>시작일<input type="date" data-pd-field="start" value="${esc(value.start||'')}"></label><label>${manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(value.end||'')}" ${manual?'':'disabled'}></label><label>계획 조<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label><label>${manual?'하루 조 · 선택':'하루 조'}<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" ${manual?'placeholder="기간으로 계획"':''}></label></div><div class="pgDirectMachines">${value.machines.map((machine,i)=>`<div><span>${i+1}</span><label>호기<input data-pd-machine="${i}" data-pd-key="name" value="${esc(machine.name||'')}" placeholder="예: 1호"></label><label>배정 조<input inputmode="decimal" data-pd-machine="${i}" data-pd-key="qty" value="${esc(machine.qty??'')}" placeholder="자동 배분"></label><button type="button" data-pd-action="remove-machine" data-index="${i}" aria-label="${i+1}번째 호기 삭제">×</button></div>`).join('')}<button type="button" data-pd-action="add-machine">+ 호기</button></div><div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 지정하는 수기 계획으로 전환</label>`:''}<span class="pgDirectError" role="status"></span><div><button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary">${session.conversion?'수기 전환 적용':'표에 적용'}</button></div></div></div>`;
+ form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'수기 입력':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading"><strong>${esc(scope)}</strong><span>하루 조 변경 시 종료일 계산 · 종료일 직접 수정 가능 · Esc로 취소</span></div><div class="pgDirectFields"><label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label><label>작업자<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>시작일<input type="date" data-pd-field="start" value="${esc(value.start||'')}"></label><label>${manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(value.end||'')}" ${manual?'':'disabled'}></label><label>계획 조<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label><label>하루 조<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" ${manual?'placeholder="기간 직접 지정 시 생략"':''}></label></div><div class="pgDirectMachines">${value.machines.map((machine,i)=>`<div><span>${i+1}</span><label>호기<input data-pd-machine="${i}" data-pd-key="name" value="${esc(machine.name||'')}" placeholder="예: 1호"></label><label>배정 조<input inputmode="decimal" data-pd-machine="${i}" data-pd-key="qty" value="${esc(machine.qty??'')}" placeholder="자동 배분"></label><button type="button" data-pd-action="remove-machine" data-index="${i}" aria-label="${i+1}번째 호기 삭제">×</button></div>`).join('')}<button type="button" data-pd-action="add-machine">+ 호기</button></div><div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 지정하는 수기 계획으로 전환</label>`:''}<span class="pgDirectError" role="status"></span><div><button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary">${session.conversion?'수기 전환 적용':'표에 적용'}</button></div></div></div>`;
  if(session.members.length>1)form.querySelector('.pgDirectFields').insertAdjacentHTML('afterbegin',`<label>편집 품목<select data-pd-member ${session.conversion?'disabled':''}>${session.members.map(r=>`<option value="${esc(r.id)}" ${r.id===session.command.id?'selected':''}>${esc(r.product)} · ${esc(r.machines.map(m=>m.name).join(', '))}</option>`).join('')}</select></label>`);
- if(session.notice)form.querySelector('.pgDirectHeading span').textContent=session.notice;
+ if(session.rateNotice||session.notice)form.querySelector('.pgDirectHeading span').textContent=session.rateNotice||session.notice;
  if(pgDirectMobile()||!row)root.append(form);else row.after(form);form.querySelectorAll('input,select,button').forEach(el=>{if(el.disabled)el.dataset.pdStaticLock='1';if(g.locked())el.disabled=true});form.querySelector('select:not(:disabled),input:not(:disabled)')?.focus({preventScroll:pgDirectMobile()});if(!pgDirectMobile())form.scrollIntoView({block:'nearest',inline:'nearest'});pgQueueReflow();
 }
 function pgDirectDecorate(g,preview){
@@ -3307,8 +3560,12 @@ function pgBindDirect(g){
  if(pgDirectState.touchPointers.size)pgDirectState.touchSuppressUntil=Date.now()+800;pgDirectState.touchPointers.clear();
  if(pgDirectState.escape)document.removeEventListener('keydown',pgDirectState.escape,true);
  pgDirectState.escape=e=>{if(e.key==='Escape'&&pgDirectState.session){e.preventDefault();e.stopImmediatePropagation();pgDirectCancel()}};document.addEventListener('keydown',pgDirectState.escape,true);
- root.addEventListener('click',e=>{if(Date.now()<pgDirectState.suppressUntil&&!e.target.closest('.pgDirectEditor')||Date.now()<pgDirectState.touchSuppressUntil&&e.target.closest('#pgTimeline')){e.preventDefault();e.stopImmediatePropagation();return}const bar=e.target.closest('[data-direct-job]');if(bar){e.preventDefault();e.stopImmediatePropagation();if(pgKeep(g.draft).some(r=>r.id===bar.dataset.directJob))g.select(bar.dataset.directJob);else toast('완료된 과거 일정입니다. 해당 월에서 상세를 확인할 수 있습니다.')}},true);
- root.ondblclick=e=>{const bar=e.target.closest('[data-direct-job]');if(!bar)return;if(pgDirectTouchPointer(e)||e.sourceCapabilities?.firesTouchEvents||Date.now()-pgDirectState.lastTouchAt<900){e.preventDefault();e.stopPropagation();return}try{pgDirectBegin(g,{mode:'edit',id:bar.dataset.directJob,sourceMonth:bar.dataset.pgMonth,lane:pgDirectLane(bar)})}catch(err){toast(err.message)}};
+ root.addEventListener('click',e=>{if(Date.now()<pgDirectState.suppressUntil&&!e.target.closest('.pgDirectEditor')||Date.now()<pgDirectState.touchSuppressUntil&&e.target.closest('#pgTimeline')){e.preventDefault();e.stopImmediatePropagation();return}
+  // Selecting a bar adds its summary above the timeline. The second native
+  // click may land on the holiday row after that reflow; retain its first target.
+  const prior=pgDirectState.lastBarClick;if(e.detail>1&&prior?.g===g&&Date.now()-prior.at<700&&Number.isFinite(e.clientX)&&Math.abs(e.clientX-prior.x)+Math.abs(e.clientY-prior.y)<8&&!pgDirectTouchPointer(e)&&!e.sourceCapabilities?.firesTouchEvents&&Date.now()-pgDirectState.lastTouchAt>=900){e.preventDefault();e.stopImmediatePropagation();pgDirectState.lastBarClick=null;pgDirectState.doubleEditUntil=Date.now()+350;try{pgDirectBegin(g,{mode:'edit',id:prior.id,sourceMonth:prior.month,lane:prior.lane})}catch(err){toast(err.message)}return;}
+  const bar=e.target.closest('[data-direct-job]');if(bar){e.preventDefault();e.stopImmediatePropagation();pgDirectState.lastBarClick={g,id:bar.dataset.directJob,month:bar.dataset.pgMonth,lane:pgDirectLane(bar),x:e.clientX,y:e.clientY,at:Date.now()};if(pgKeep(g.draft).some(r=>r.id===bar.dataset.directJob))g.select(bar.dataset.directJob);else toast('완료된 과거 일정입니다. 해당 월에서 상세를 확인할 수 있습니다.')}},true);
+ root.ondblclick=e=>{const bar=e.target.closest('[data-direct-job]');if(!bar||Date.now()<pgDirectState.doubleEditUntil)return;if(pgDirectTouchPointer(e)||e.sourceCapabilities?.firesTouchEvents||Date.now()-pgDirectState.lastTouchAt<900){e.preventDefault();e.stopPropagation();return}try{pgDirectBegin(g,{mode:'edit',id:bar.dataset.directJob,sourceMonth:bar.dataset.pgMonth,lane:pgDirectLane(bar)})}catch(err){toast(err.message)}};
  root.onpointerdown=e=>{
   if(pgDirectTouchPointer(e)){pgDirectState.lastTouchAt=Date.now();root.classList.add('pgDirectTouch');if(e.target.closest('.pgDirectEditor')||!e.target.closest('#pgTimeline'))return;if(pgDirectState.session&&pgDirectState.session.mode!=='edit')pgDirectCancel();const touch={x:e.clientX,y:e.clientY,moved:pgDirectState.touchPointers.size>0};for(const item of pgDirectState.touchPointers.values())item.moved=true;pgDirectState.touchPointers.set(e.pointerId,touch);return}
   root.classList.remove('pgDirectTouch');
@@ -3324,14 +3581,14 @@ function pgBindDirect(g){
   const bar=e.target.closest('[data-direct-job]'),cell=e.target.closest('[data-direct-date]');
   if(!bar&&!cell)return;try{if(cell&&e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();pgDirectBegin(g,{mode:'range',worker:cell.dataset.directWorker,start:cell.dataset.directDate,lane:pgDirectLane(cell)});pgDirectFinish();const session=pgDirectState.session;session.form.product=e.key;const input=root.querySelector('[data-pd-field=product]');if(input){input.value=e.key;input.focus()}return}if(e.key==='Enter'||e.key==='F2'){e.preventDefault();e.stopPropagation();pgDirectBegin(g,bar?{mode:'edit',id:bar.dataset.directJob,sourceMonth:bar.dataset.pgMonth,lane:pgDirectLane(bar)}:{mode:'range',worker:cell.dataset.directWorker,start:cell.dataset.directDate,lane:pgDirectLane(cell)});if(cell)pgDirectFinish()}else if(bar&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const days=e.key==='ArrowLeft'?-1:1;if(e.shiftKey){const access=pgDirectAccess(g,bar.dataset.directJob,bar.dataset.pgMonth);if(!access.ok)throw Error(access.reason);const period=pgDirectPeriod(g,access.members);pgDirectBegin(g,{mode:'resize',id:bar.dataset.directJob,edge:e.altKey?'start':'end',anchorDate:e.altKey?period.start:period.end,lane:pgDirectLane(bar)});pgDirectUpdate({date:P.add(e.altKey?period.start:period.end,days)});pgDirectFinish()}else{const access=pgDirectAccess(g,bar.dataset.directJob,bar.dataset.pgMonth);if(!access.ok)throw Error(access.reason);const period=pgDirectPeriod(g,access.members);pgDirectBegin(g,{mode:'move',id:bar.dataset.directJob,anchorDate:period.start,sourceMonth:bar.dataset.pgMonth,lane:pgDirectLane(bar)});pgDirectUpdate({date:P.add(period.start,days)});pgDirectFinish()}}}catch(err){toast(err.message)}
  });
- root.addEventListener('input',e=>{const session=pgDirectState.session,el=e.target;if(!session?.form||!el.closest('.pgDirectEditor')||g.locked())return;if(el.dataset.pdField)session.form[el.dataset.pdField]=['plan','daily'].includes(el.dataset.pdField)?pgNumber(el.value):el.value;if(el.hasAttribute('data-pd-machine'))session.form.machines[Number(el.dataset.pdMachine)][el.dataset.pdKey]=el.dataset.pdKey==='qty'?pgNumber(el.value):el.value});
+ root.addEventListener('input',e=>{const session=pgDirectState.session,el=e.target;if(!session?.form||!el.closest('.pgDirectEditor')||g.locked())return;if(el.dataset.pdField)session.form[el.dataset.pdField]=['plan','daily'].includes(el.dataset.pdField)?pgNumber(el.value):el.value;if(el.hasAttribute('data-pd-machine'))session.form.machines[Number(el.dataset.pdMachine)][el.dataset.pdKey]=el.dataset.pdKey==='qty'?pgNumber(el.value):el.value;if(['daily','end','start','plan','worker'].includes(el.dataset.pdField)&&!e.isComposing)pgDirectPreviewRate(g,el.dataset.pdField)});
  root.addEventListener('change',e=>{const s=pgDirectState.session;if(!s?.form||g.locked())return;if(e.target.hasAttribute('data-pd-member')){try{pgDirectSelectMember(g,e.target.value)}catch(err){e.target.value=s.command.id;const area=root.querySelector('.pgDirectError');if(area)area.textContent=err.message;else toast(err.message)}return}if(!e.target.hasAttribute('data-pd-manual'))return;s.form.manual=true;s.conversion=true;s.command.convertToManual=true;pgDirectRenderForm(g)});
  root.addEventListener('click',e=>{
   const button=e.target.closest('[data-pd-action]'),s=pgDirectState.session;if(!button||!s)return;e.preventDefault();e.stopPropagation();const action=button.dataset.pdAction;if(action==='cancel'){pgDirectCancel();return}if(g.locked())return;
   if(action==='add-machine'){s.form.machines.push({name:'',qty:null});pgDirectRenderForm(g);return}if(action==='remove-machine'){s.form.machines.splice(Number(button.dataset.index),1);pgDirectRenderForm(g);return}
   if(action==='apply')try{
    if(!pgEqual(s.baseRows,g.draft.rows))throw Error('표의 다른 변경이 있어 다시 선택해야 합니다. 지금 입력한 내용은 취소 전까지 유지됩니다.');
-   const command=s.command.type==='create'?{...s.command,...s.form,type:'create'}:{type:'edit',id:s.command.id,fields:s.form,convertToManual:s.conversion||s.command.convertToManual};
+   const command=s.command.type==='create'?{...s.command,...s.form,type:'create'}:{type:'edit',id:s.command.id,fields:s.form,endMode:s.endMode,convertToManual:s.conversion||s.command.convertToManual};
    // An automatic end shown for reference is not an explicit edit until conversion is selected.
    if(command.type==='edit'&&!command.fields.manual)delete command.fields.end;
    const prepared=pgDirectPrepare(g,command);if(prepared.conversionRequired)throw Error('수기 전환을 선택한 뒤 적용해 주세요.');pgDirectCancel();pgDirectApply(g,command);toast('일정표에 반영했습니다. 상단의 일정 변경 저장을 누르면 원장에 저장됩니다.');
@@ -3480,7 +3737,7 @@ function secondaryIssueGrid(key){
  const mm=state.months[key],validate=r=>secondaryValidateIssue(r,key);
  return sheetGrid('issue-ledger',{
   title:key+' 교체·불출 장부',rows:secondaryIssueRows(mm),readonly:mm.closed,
-  columns:[{key:'date',label:'날짜',type:'date',width:132},{key:'product',label:'품명',type:'text',options:state.products.map(p=>p.name),width:124},{key:'machine',label:'호기',width:68},{key:'replacement',label:'교체 조 · 재고 차감',type:'number',width:86},{key:'issued',label:'불출 조 · 별도 기록',type:'number',width:86},{key:'reason',label:'사유',width:180}],
+  columns:[{key:'date',label:'날짜',type:'date',width:132},{key:'product',label:'품명',type:'text',options:state.products.map(p=>p.name).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0),width:124},{key:'machine',label:'호기',width:68},{key:'replacement',label:'교체 조 · 재고 차감',type:'number',width:86},{key:'issued',label:'불출 조 · 별도 기록',type:'number',width:86},{key:'reason',label:'사유',width:180}],
   hint:'한 달의 기록을 표에서 함께 편집합니다. 교체 수량만 재고에서 차감하며 불출 수량은 별도 기록합니다.',
   addRow:previous=>({id:C.id(),date:previous?.date||(today().startsWith(key)?today():key+'-01'),product:'',machine:previous?.machine||'',replacement:null,issued:null,reason:''}),
   validateRow:validate,inspect:d=>secondaryInspect(d,validate),
@@ -3495,7 +3752,7 @@ function secondaryIssueGrid(key){
   }
  });
 }
-function secondaryStockRows(s,key,query='',hideZero=false){return C.inventory(s,key).filter(r=>(!query||r.product.includes(query))&&(!hideZero||r.current!==0))}
+function secondaryStockRows(s,key,query='',hideZero=false){return C.inventory(s,key).filter(r=>(!query||r.product.toLocaleLowerCase().includes(query.toLocaleLowerCase()))&&(!hideZero||r.current!==0)).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a.product,b.product)||0)}
 // Catalog memo drafts have one storage key per connection, independent of inventory month.
 const secondaryStockMemoId='stock-memos';
 const secondaryStockMemoKey=()=>sheetScope()+':catalog:'+secondaryStockMemoId;
@@ -3513,9 +3770,10 @@ function secondaryStockMemoProblem(product){
  return (state.products||[]).some(p=>secondaryText(p.name)===name)||(state.memos||[]).some(r=>secondaryText(r.product)===name)?'':'품명을 관리에 등록한 뒤 메모를 입력해 주세요.';
 }
 function secondaryStockMemoValue(product,draft={},strict=false){try{return ScheduleBatch.memoValue(state,draft,secondaryStockMemoProduct(product))}catch(e){if(strict)throw e;return e.message}}
+function secondaryStockMetadataValue(product,draft,field,strict=false){try{return ScheduleBatch.stockMetaValue(state,draft,secondaryStockMemoProduct(product),field)}catch(e){if(strict)throw e;return e.message}}
 function secondaryStockMemoInspect(draft){
- const result=ScheduleBatch.memoInspect(state,draft);
- result.errors=result.errors.map(e=>({...e,id:draft.rows.find(r=>secondaryStockMemoProduct(r.product)===e.product)?.id||'',field:'memo'}));
+ const result=ScheduleBatch.memoInspect(state,draft),metadata=ScheduleBatch.stockMetaInspect(state,draft);
+ result.errors=[...result.errors.map(e=>({...e,field:'memo'})),...metadata.errors].map(e=>({...e,id:draft.rows.find(r=>secondaryStockMemoProduct(r.product)===e.product)?.id||''}));result.counts.changed+=metadata.counts.changed;result.ok=result.ok&&metadata.ok;
  if(draft.deleted?.length||!secondarySame(draft.rows,draft.baseRows)){result.errors.push({id:'',field:'',message:'재고 수량과 품명은 이 메모표에서 변경하지 않습니다.'});result.ok=false}
  return result;
 }
@@ -3531,7 +3789,12 @@ class SecondaryStockMemoEditor extends SheetEditor{
   }}catch(e){this.storageError='메모 초안을 읽지 못했습니다: '+e.message}
   finally{this.loading=false;secondaryStockMemoSync(this);this.refresh();this.spec.onChange?.(this)}
  }
- html(){return super.html().replace('>변경 저장</button>','>메모 변경 저장</button>')}
+ rowNumber(id){return this.visibleRows().findIndex(r=>r.id===id)+1}
+ rowsHTML(rows){
+  if(!globalThis.ProductOrder)return rows.map((r,i)=>this.rowHTML(r,i)).join('');
+  let group='';const counts=new Map();for(const row of rows){const code=ProductOrder.groupProduct(row.product).code;counts.set(code,(counts.get(code)||0)+1)}
+  return rows.map((row,i)=>{const info=ProductOrder.groupProduct(row.product),heading=info.code===group?'':'<tr class="stockCategoryRow"><th scope="rowgroup" colspan="'+(this.columns().length+1)+'"><b>'+esc((info.code==='OTHER'?'':info.code+' · ')+info.label)+'</b><span>'+counts.get(info.code)+'품목</span></th></tr>';group=info.code;return heading+this.rowHTML(row,i)}).join('');
+ }
 }
 function secondaryStockMemoSync(g){
  // Add newly encountered product identities to both sides without changing any memo draft.
@@ -3539,20 +3802,20 @@ function secondaryStockMemoSync(g){
  for(const row of secondaryStockMemoNames(state))if(!g.draft.rows.some(r=>r.id===row.id)){g.draft.rows.push(C.clone(row));g.draft.baseRows.push(C.clone(row))}
 }
 function secondaryStockMemoGrid(key,rows){
- const current=new Map(rows.map(r=>[r.product,r])),shared=typeof shareViewSession!=='undefined'&&shareViewSession.active,quantity=(r,field)=>fmt(current.get(r.product)?.[field]);
- const spec={title:'품명 공용 메모',rows:secondaryStockMemoNames(state),readonly:!!shared,readonlyLabel:'공유 · 조회 전용',allowDelete:false,syncInputs:true,
+ const current=new Map(rows.map(r=>[r.product,r])),shared=typeof shareViewSession!=='undefined'&&shareViewSession.active,quantity=(r,field)=>fmt(current.get(r.product)?.[field]),activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()}),active=r=>activity?.forProduct(r.product);
+ const spec={title:'보관정보 · 품명 공용 메모',rows:secondaryStockMemoNames(state),readonly:!!shared,readonlyLabel:'공유 · 조회 전용',allowDelete:false,syncInputs:true,
   createDraft:()=>{const rows=secondaryStockMemoNames(state);return{baseRows:C.clone(rows),rows,deleted:[],revision:0}},
-  columns:[{key:'product',label:'품명',width:124,readonly:true},...['opening','production','deduction','current','kg'].map((field,i)=>({key:field,label:['이월','생산','교체 차감','현재고','kg'][i],width:74,hideCalcLabel:true,calc:r=>quantity(r,field),...(field==='current'?{html:r=>'<span'+(current.get(r.product)?.current<0?' class="diff"':'')+'>'+esc(quantity(r,field))+'</span>'}:{})})),
-   {key:'machineQty',label:'호기·조수',width:130,hideCalcLabel:true,calc:r=>(state.memos||[]).find(x=>secondaryText(x.product)===secondaryStockMemoProduct(r.product))?.values?.[1]||''},
-   {key:'location',label:'보관장소',width:116,hideCalcLabel:true,calc:r=>(state.memos||[]).find(x=>secondaryText(x.product)===secondaryStockMemoProduct(r.product))?.values?.[2]||''},
-   {key:'memo',label:'메모 · 품명 공통',type:'textarea',width:240,value:(r,d)=>secondaryStockMemoValue(r.product,d),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||'월이 바뀌어도 같은 품명에 계속 보관 · 모바일 Enter / PC Shift+Enter 줄바꿈'}],
+  rowClass:r=>active(r)?'stockProducing':'',rowTitle:r=>active(r)?'오늘 기준 생산 중 · '+active(r).workers.join(' · '):'',
+  columns:[{key:'product',label:'품명',width:128,hideCalcLabel:true,calc:r=>r.product,html:r=>'<span class="stockProductName">'+esc(r.product)+'</span>'+(active(r)?'<span class="stockProductionBadge" title="'+esc(active(r).workers.join(' · '))+'">생산 중</span>':'')},...['opening','production','deduction','current','kg'].map((field,i)=>({key:field,label:['이월','생산','교체 차감','현재고','kg'][i],width:62,hideCalcLabel:true,calc:r=>quantity(r,field),...(field==='current'?{html:r=>'<span'+(current.get(r.product)?.current<0?' class="diff"':'')+'>'+esc(quantity(r,field))+'</span>'}:{})})),
+   ...[{key:'machineQty',label:'호기·조수',width:124},{key:'location',label:'보관장소',width:110}].map(c=>({...c,type:'textarea',value:(r,d)=>secondaryStockMetadataValue(r.product,d,c.key),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||c.label+' 직접 수정 · 월과 관계없이 품명별로 보관'})),
+   {key:'memo',label:'메모 · 품명 공통',type:'textarea',width:290,value:(r,d)=>secondaryStockMemoValue(r.product,d),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||'월이 바뀌어도 같은 품명에 계속 보관 · 모바일 Enter / PC Shift+Enter 줄바꿈'}],
   view:{filter:rows=>rows.filter(r=>current.has(r.product)),pasteTargets:(rows,start,options,g)=>g.visibleRows()},
   orderRows:rows=>{const order=new Map([...current.keys()].map((name,i)=>[name,i]));return rows.sort((a,b)=>order.get(a.product)-order.get(b.product))},
-  patch:(draft,id,fields)=>{if(Object.keys(fields).some(k=>k!=='memo'))throw Error('품명 메모만 수정할 수 있습니다.');const row=draft.rows.find(r=>r.id===id);if(!row)throw Error('메모를 입력할 품명을 찾지 못했습니다.');ScheduleBatch.memoPatch(state,draft,secondaryStockMemoProduct(row.product),fields.memo)},
+  patch:(draft,id,fields)=>{if(Object.keys(fields).some(k=>!['memo','machineQty','location'].includes(k)))throw Error('보관정보와 품명 메모만 수정할 수 있습니다.');const row=draft.rows.find(r=>r.id===id);if(!row)throw Error('입력할 품명을 찾지 못했습니다.');const product=secondaryStockMemoProduct(row.product);if(Object.hasOwn(fields,'memo'))ScheduleBatch.memoPatch(state,draft,product,fields.memo);const metadata=Object.fromEntries(Object.entries(fields).filter(([k])=>k!=='memo'));if(Object.keys(metadata).length)ScheduleBatch.stockMetaPatch(state,draft,product,metadata)},
   inspect:secondaryStockMemoInspect,
-  hint:shared?'저장된 품명 공용 메모입니다.':'메모는 월과 관계없이 계속 보관됩니다. 입력은 기기 초안에 자동 보관하며 ‘메모 변경 저장’을 누르면 일보·관리에도 반영됩니다.',
-  summary:d=>{const count=d.memoEdits?.length||0;return'재고 수량은 조회 전용 · '+(count?'현재 검색에서 숨겨진 품명도 포함해 '+count+'개 메모 함께 저장':'저장된 공용 메모 표시')+' · CSV는 저장된 메모 기준'},
-  commit:async draft=>{if(shared||typeof shareViewSession!=='undefined'&&shareViewSession.active)throw Error('공유 화면은 조회 전용입니다.');const check=secondaryStockMemoInspect(draft);if(!check.ok)throw Error(check.errors[0].message);const next=ScheduleBatch.memoApply(state,draft);if(check.counts.changed){for(const change of next.changes.slice(state.changes?.length||0))if(change.type==='품명 메모 수정')change.source='재고표';await persist(next,[],true)}}
+  hint:shared?'저장된 보관정보·공용 메모입니다. 생산 중 표시는 '+today()+' 기준 저장 실적입니다.':'호기·조수, 보관장소, 메모를 직접 고친 뒤 변경 저장을 누르세요. 월과 관계없이 보관되며 관리표와 같은 값을 사용합니다. 생산 중은 '+today()+' 기준 저장 실적입니다.',
+  summary:d=>{const count=(d.memoEdits?.length||0)+(d.metadataEdits?.length||0);return'재고 수량은 조회 전용 · '+(count?'검색에서 숨겨진 품명도 포함해 '+count+'개 변경 함께 저장':'저장된 보관정보·공용 메모 표시')+' · CSV는 저장된 메모·보관정보 기준'},
+  commit:async draft=>{if(shared||typeof shareViewSession!=='undefined'&&shareViewSession.active)throw Error('공유 화면은 조회 전용입니다.');const check=secondaryStockMemoInspect(draft);if(!check.ok)throw Error(check.errors[0].message);const next=ScheduleBatch.stockMetaApply(ScheduleBatch.memoApply(state,draft),draft);if(check.counts.changed){for(const change of next.changes.slice(state.changes?.length||0))if(change.type==='품명 메모 수정')change.source='재고표';await persist(next,[],true)}}
  };
  const storageKey=secondaryStockMemoKey();let g=sheetRegistry.get(storageKey);
  if(!g){g=new SecondaryStockMemoEditor(secondaryStockMemoId,storageKey,spec);sheetRegistry.set(storageKey,g)}else{g.spec=spec;g.month=key;if(!g.dirty&&!g.loading&&!g.saving&&!g.storageError)g.draft=g.fresh();secondaryStockMemoSync(g)}
@@ -3560,7 +3823,7 @@ function secondaryStockMemoGrid(key,rows){
 }
 function secondaryStockTable(key){
  const view=secondaryLedgerPrefs(),rows=secondaryStockRows(state,key,filter,view.hideZeroStock);
- return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="표에 표시한 품목과 저장된 공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+secondaryStockMemoGrid(key,rows)+'<details class="stockMemoHelp"><summary>재고 계산·메모 보관 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 원장 근거를 확인해 주세요.</p><p>메모는 품명별 현재 공용값으로 보관합니다. 마감월에서도 메모를 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 내려받기는 저장된 메모를 사용합니다.</p></details></section>';
+ return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+secondaryStockMemoGrid(key,rows)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 원장 근거를 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p></details></section>';
 }
 stockView=function(){
  const key=month,view=secondaryLedgerPrefs();
@@ -3614,7 +3877,7 @@ function secondaryAuditGrid(a,key){
  const inspect=d=>{d=secondaryAuditDraft(d,a);const check=secondaryInspect(d,validate,true),seen=new Set();for(const row of d.rows){if(seen.has(row.product))check.errors.push({id:row.id,field:'product',message:'같은 품명이 이미 실사표에 있습니다.'});seen.add(row.product)}check.ok=!check.errors.length;return check};
  const application=O.auditApplication(state,a.id);
  return sheetGrid('audit-items:'+a.id,{title:'장소별 실사수량',rows:secondaryAuditRows(a),readonly:secondaryAuditLocked(a,key),readonlyLabel:application?application.month+(application.pending?' 전달 확인 대기':' 반영 완료')+' · 조회 전용':'마감 · 조회 전용',allowDelete:false,
-  columns:[{key:'product',label:'품명',width:124,options:state.products.map(p=>p.name),readonly:r=>existingIds.has(r.id)},{key:'book',label:'장부 조',width:64,calc:r=>fmt(existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0)},...a.locations.map((name,i)=>({key:'location'+i,label:name||'장소 '+(i+1),width:88})),{key:'total',label:'실사 합계',width:72,calc:r=>{try{return fmt(secondaryAuditTotal(r,a))}catch(e){return'입력 확인'}}},{key:'difference',label:'차이',width:70,calc:r=>{try{const n=secondaryAuditTotal(r,a),book=existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0;return n==null?'미실사':fmt(n-(book||0))}catch(e){return'입력 확인'}}},{key:'registration',label:'품목 확인',width:125,advanced:true,calc:r=>!r.product?'':state.products.some(p=>p.name===C.catalogName(state,r.product))?'등록됨':'관리 등록 필요'},{key:'note',label:'비고',width:130}],
+  columns:[{key:'product',label:'품명',width:124,options:state.products.map(p=>p.name).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0),readonly:r=>existingIds.has(r.id)},{key:'book',label:'장부 조',width:64,calc:r=>fmt(existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0)},...a.locations.map((name,i)=>({key:'location'+i,label:name||'장소 '+(i+1),width:88})),{key:'total',label:'실사 합계',width:72,calc:r=>{try{return fmt(secondaryAuditTotal(r,a))}catch(e){return'입력 확인'}}},{key:'difference',label:'차이',width:70,calc:r=>{try{const n=secondaryAuditTotal(r,a),book=existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0;return n==null?'미실사':fmt(n-(book||0))}catch(e){return'입력 확인'}}},{key:'registration',label:'품목 확인',width:125,advanced:true,calc:r=>!r.product?'':state.products.some(p=>p.name===C.catalogName(state,r.product))?'등록됨':'관리 등록 필요'},{key:'note',label:'비고',width:130}],
   hint:'빈칸은 미실사, 0은 확인한 수량 0입니다. 4+4+6처럼 입력할 수 있습니다. 목록 밖 품목도 기록한 뒤 관리에 등록하여 반영하세요.',
   addRow:()=>secondaryAuditNewRow(a),blank:r=>secondaryAuditBlank(r,a),inspect,validateRow:validate,
   summary:d=>{try{const totals=d.rows.map(r=>secondaryAuditTotal(r,a)),counted=totals.filter(n=>n!=null);return'실사 '+counted.length+' / '+totals.length+'품목 · 실사 합계 '+fmt(counted.reduce((x,y)=>x+y,0))+'조'}catch(e){return'수량 입력을 확인해 주세요.'}},
@@ -3645,7 +3908,9 @@ auditView=function(){
  return html;
 };
 const secondaryCategories=['바디','림','세면기','쌍뚜껑','탱크','스톨','부속·보형물·토수구'];
-const secondaryMasterText=['name','memo','machineQty','location','productNote','measured'];
+const secondaryMasterText=['name','productNote','measured'];
+const secondaryMasterSharedText=['memo','machineQty','location'];
+const secondarySharedText=value=>value==null?'':String(value);
 const secondaryMasterNumbers=['kg','cases','waterRatio','adjustedWaterRatio','target'];
 function secondaryMasterAliases(value,name=''){
  const values=value==null?[]:Array.isArray(value)?value:typeof value==='string'?value.split(/\r\n|\r|\n/):null;
@@ -3660,10 +3925,10 @@ function secondaryMasterAliasErrors(rows){
  }
  return errors;
 }
-function secondaryMasterRows(s){return secondaryInputRows(s.products.map(p=>{const memo=s.memos.find(x=>x.product===p.name);return{id:p.id,name:p.name,aliases:secondaryMasterAliases(p.aliases,p.name).join('\n'),kg:p.kg??null,cases:p.cases??null,waterRatio:p.waterRatio??null,adjustedWaterRatio:p.adjustedWaterRatio??null,measured:p.measured??'',category:p.category||O.group(C.catalogIdentity(s,p.name)),active:p.inactive?'사용중지':'사용',memo:memo?.values?.[0]??'',machineQty:memo?.values?.[1]??'',location:memo?.values?.[2]??'',target:memo?.values?.[3]??null,productNote:p.note??'',catalogReview:p.catalogReview?C.clone(p.catalogReview):null}}),secondaryMasterText,secondaryMasterNumbers)}
-function secondaryMasterBlank(r){return [...secondaryMasterText,...secondaryMasterNumbers,'aliases'].every(k=>r[k]==null||String(r[k]).trim()==='')}
+function secondaryMasterRows(s){return secondaryInputRows(s.products.map(p=>{const memo=s.memos.find(x=>x.product===p.name);return{id:p.id,name:p.name,aliases:secondaryMasterAliases(p.aliases,p.name).join('\n'),kg:p.kg??null,cases:p.cases??null,waterRatio:p.waterRatio??null,adjustedWaterRatio:p.adjustedWaterRatio??null,measured:p.measured??'',category:p.category||O.group(C.catalogIdentity(s,p.name)),active:p.inactive?'사용중지':'사용',memo:secondarySharedText(memo?.values?.[0]),machineQty:secondarySharedText(memo?.values?.[1]),location:secondarySharedText(memo?.values?.[2]),target:memo?.values?.[3]??null,productNote:p.note??'',catalogReview:p.catalogReview?C.clone(p.catalogReview):null}}),secondaryMasterText,secondaryMasterNumbers)}
+function secondaryMasterBlank(r){return [...secondaryMasterText,...secondaryMasterSharedText,...secondaryMasterNumbers,'aliases'].every(k=>r[k]==null||String(r[k]).trim()==='')}
 function secondaryMasterNew(){return{id:C.id(),name:'',aliases:'',kg:null,cases:null,waterRatio:null,adjustedWaterRatio:null,measured:'',category:'부속·보형물·토수구',active:'사용',memo:'',machineQty:'',location:'',target:null,productNote:'',catalogReview:null}}
-function secondaryMasterDraft(d){const draft=secondaryInputDraft(d,secondaryMasterText,secondaryMasterNumbers),base=new Set(draft.baseRows.map(r=>r.id));for(const row of draft.baseRows)row.aliases=secondaryMasterAliases(row.aliases,row.name).join('\n');for(const row of draft.rows)row.aliases=secondaryMasterEffectiveAliases(row).join('\n');draft.rows=draft.rows.filter(r=>base.has(r.id)||!secondaryMasterBlank(r));return draft}
+function secondaryMasterDraft(d){const draft=secondaryInputDraft(d,secondaryMasterText,secondaryMasterNumbers),base=new Set(draft.baseRows.map(r=>r.id));for(const row of [...draft.rows,...draft.baseRows])for(const key of secondaryMasterSharedText)row[key]=secondarySharedText(row[key]);for(const row of draft.baseRows)row.aliases=secondaryMasterAliases(row.aliases,row.name).join('\n');for(const row of draft.rows)row.aliases=secondaryMasterEffectiveAliases(row).join('\n');draft.rows=draft.rows.filter(r=>base.has(r.id)||!secondaryMasterBlank(r));return draft}
 function secondaryMasterCalc(row){try{const kg=secondaryNumber(row.kg,'kg','석고량'),ratio=secondaryNumber(row.waterRatio,'waterRatio','혼수율'),adjusted=secondaryNumber(row.adjustedWaterRatio,'adjustedWaterRatio','변경 혼수율'),water=kg==null||ratio==null?null:kg*ratio/100,requiredPlaster=water==null||adjusted==null||adjusted===0?null:water*100/adjusted;if(water!=null&&!Number.isFinite(water)||requiredPlaster!=null&&!Number.isFinite(requiredPlaster))throw Error('계산 범위를 넘었습니다.');return{water,requiredPlaster,error:''}}catch(e){return{water:null,requiredPlaster:null,error:e.message}}}
 function secondaryMasterStatus(row){if(row.catalogReview?.status==='needs-review')return'원본 중복 확인';if(row.kg==null||row.kg==='')return'석고량 입력 필요';if(row.cases==null||row.cases==='')return'케이스 수 입력 필요';return'등록됨'}
 function secondaryValidateMaster(r){
@@ -3686,7 +3951,8 @@ function secondaryMasterInspect(draft){
 function secondaryMasterGrid(){
  return sheetGrid('product-catalog',{title:'품명·석고 기준값',rows:secondaryMasterRows(state),allowDelete:false,blank:secondaryMasterBlank,
   createDraft:()=>{const rows=secondaryMasterRows(state);return{baseRows:C.clone(rows),rows:rows.length?C.clone(rows):Array.from({length:3},()=>secondaryMasterNew()),deleted:[],revision:0}},
-  columns:[{key:'name',label:'품명',width:124},{key:'aliases',label:'현장일보 다른 이름',type:'textarea',width:150,advanced:true,title:r=>'이름 변경 전 품명은 자동 보관됩니다. 추가로 연결할 과거 이름만 한 줄씩 입력 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'cases',label:'케이스 수',type:'number',width:64},{key:'kg',label:'석고량 kg/조',type:'number',width:88},{key:'waterRatio',label:'혼수율 %',type:'number',width:72},{key:'water',label:'물량 kg',width:80,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.water)}},{key:'adjustedWaterRatio',label:'변경 혼수율 %',type:'number',width:88},{key:'requiredPlaster',label:'필요 석고량 kg',width:96,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.requiredPlaster)}},{key:'measured',label:'실측 여부·기록',width:96},{key:'productNote',label:'특이사항',width:180,advanced:true},{key:'registration',label:'등록 상태',width:140,advanced:true,calc:secondaryMasterStatus},{key:'category',label:'보고서 구분',type:'select',options:secondaryCategories,width:166,advanced:true},{key:'location',label:'보관장소',width:162,advanced:true},{key:'machineQty',label:'호기·조수 메모',width:180,advanced:true},{key:'target',label:'목표재고 조',type:'number',width:122,advanced:true},{key:'memo',label:'품목 메모',type:'textarea',width:180,advanced:true,title:r=>'생산일보와 같은 품명 메모 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'active',label:'사용 상태',type:'select',options:['사용','사용중지'],width:122,advanced:true}],
+  orderRows:rows=>rows.sort((a,b)=>globalThis.ProductOrder?.compareProducts(a.name,b.name)||0),view:{pasteTargets:(rows,start,options,g)=>g.visibleRows()},
+  columns:[{key:'name',label:'품명',width:124},{key:'aliases',label:'현장일보 다른 이름',type:'textarea',width:150,advanced:true,title:r=>'이름 변경 전 품명은 자동 보관됩니다. 추가로 연결할 과거 이름만 한 줄씩 입력 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'cases',label:'케이스 수',type:'number',width:64},{key:'kg',label:'석고량 kg/조',type:'number',width:88},{key:'waterRatio',label:'혼수율 %',type:'number',width:72},{key:'water',label:'물량 kg',width:80,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.water)}},{key:'adjustedWaterRatio',label:'변경 혼수율 %',type:'number',width:88},{key:'requiredPlaster',label:'필요 석고량 kg',width:96,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.requiredPlaster)}},{key:'measured',label:'실측 여부·기록',width:96},{key:'productNote',label:'특이사항',width:180,advanced:true},{key:'registration',label:'등록 상태',width:140,advanced:true,calc:secondaryMasterStatus},{key:'category',label:'보고서 구분',type:'select',options:secondaryCategories,width:166,advanced:true},{key:'location',label:'보관장소',type:'textarea',width:162,advanced:true},{key:'machineQty',label:'호기·조수',type:'textarea',width:180,advanced:true},{key:'target',label:'목표재고 조',type:'number',width:122,advanced:true},{key:'memo',label:'품목 메모',type:'textarea',width:180,advanced:true,title:r=>'생산일보와 같은 품명 메모 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'active',label:'사용 상태',type:'select',options:['사용','사용중지'],width:122,advanced:true}],
   advancedLabel:'상세 열 · 다른 이름·특이사항·재고',
   rowClass:r=>r.name&&secondaryMasterStatus(r)!=='등록됨'?'managementNeedsInput':'',rowTitle:r=>r.name?secondaryMasterStatus(r):'',
   hint:'표에서 품명·기준값을 고친 뒤 변경 저장을 누르세요. 이름을 바꿔도 과거 일보는 자동으로 연결됩니다.',
@@ -3701,9 +3967,9 @@ function secondaryMasterGrid(){
    const next=C.clone(state),latestById=new Map(latest.map(r=>[r.id,r])),changes=[],renames=merged.flatMap(r=>{const old=state.products.find(p=>p.id===r.id),name=secondaryText(r.name);return old&&old.name!==name?[{id:r.id,from:old.name,to:name}]:[]});
    for(const row of merged){if(secondarySame(row,latestById.get(row.id)))continue;secondaryValidateMaster(row);const index=next.products.findIndex(p=>p.id===row.id),old=index<0?null:next.products[index],name=secondaryText(row.name),value={...(old||{}),id:row.id,name,aliases:secondaryMasterEffectiveAliases(row),...(old&&old.name!==name?{renameFrom:[...new Set([...(old.renameFrom||[]),old.name])],nameHistory:[...(old.nameHistory||[]),{from:old.name,to:name,at:new Date().toISOString()}]}:{}),kg:secondaryNumber(row.kg,'kg','석고 kg/조'),cases:secondaryNumber(row.cases,'cases','케이스 수'),waterRatio:secondaryNumber(row.waterRatio,'waterRatio','혼수율'),adjustedWaterRatio:secondaryNumber(row.adjustedWaterRatio,'adjustedWaterRatio','변경 혼수율'),measured:secondaryText(row.measured),catalogReview:row.catalogReview?C.clone(row.catalogReview):null,category:row.category,inactive:row.active==='사용중지',note:secondaryText(row.productNote),rev:(old?.rev||0)+1};
     if(index<0)next.products.push(value);else next.products[index]=value;
-    const memoIndex=next.memos.findIndex(x=>x.product===(old?.name||name)),oldMemo=memoIndex<0?null:next.memos[memoIndex],values=[secondaryText(row.memo),secondaryText(row.machineQty),secondaryText(row.location),secondaryNumber(row.target,'target','목표재고')];
+    const memoIndex=next.memos.findIndex(x=>x.product===(old?.name||name)),oldMemo=memoIndex<0?null:next.memos[memoIndex],values=oldMemo?.values?C.clone(oldMemo.values):['','','',null];for(const[field,index]of [['memo',0],['machineQty',1],['location',2],['target',3]])if(!secondarySame(row[field],latestById.get(row.id)?.[field]??(field==='target'?null:'')))values[index]=field==='target'?secondaryNumber(row.target,'target','목표재고'):secondarySharedText(row[field]);
     const memoChanged=['memo','machineQty','location','target'].some(k=>!secondarySame(row[k],latestById.get(row.id)?.[k]??(k==='target'?null:'')));
-    if(memoChanged&&(oldMemo||values.some(v=>v!=null&&v!==''))){const memo={...(oldMemo||{}),id:oldMemo?.id||'memo:'+name,product:old?.name||name,rev:(oldMemo?.rev||0)+1,values:[...values,...(oldMemo?.values?.slice(4)||[])]};if(memoIndex<0)next.memos.push(memo);else next.memos[memoIndex]=memo}
+    if(memoChanged&&(oldMemo||values.some(v=>v!=null&&v!==''))){const memo={...(oldMemo||{}),id:oldMemo?.id||'memo:'+name,product:old?.name||name,rev:(oldMemo?.rev||0)+1,values};if(memoIndex<0)next.memos.push(memo);else next.memos[memoIndex]=memo}
     changes.push({id:C.id(),at:new Date().toISOString(),kind:'catalog',type:'관리 기준값 일괄 입력',before:old?C.clone(old):null,after:C.clone(value),memoBefore:oldMemo?C.clone(oldMemo):null,memoAfter:C.clone(next.memos.find(x=>x.product===name)?.values??values)});
    }
    const renamedMonths=C.renameCatalogReferences(next,renames);next.changes??=[];next.changes.push(...changes);const keys=[...new Set([...renamedMonths,...C.refreshCatalogUnits(next)])];await persist(next,keys,true);
@@ -3743,7 +4009,7 @@ function secondaryBindLedger(){
  const search=document.querySelector('#secondaryLedgerSearch');if(search)search.oninput=()=>{const position=search.selectionStart;secondaryLedgerPrefs().query=search.value;render();const next=document.querySelector('#secondaryLedgerSearch');next?.focus();next?.setSelectionRange(position,position)};
  const exportButton=document.querySelector('[data-ledger-csv]');if(exportButton){const view=secondaryLedgerPrefs(),g=view.mode==='current'?sheetEditor('issue-ledger'):null;exportButton.disabled=!!(busy||g?.loading||g?.saving);exportButton.onclick=execute(()=>{const view=secondaryLedgerPrefs(),g=sheetEditor('issue-ledger');if(busy||view.mode==='current'&&(g?.loading||g?.saving))throw Error('표 준비나 저장이 끝난 뒤 내려받아 주세요.');const data=view.mode==='current'?secondaryLedgerCurrentData(month):secondaryLedgerData(state,month,view),out=secondaryLedgerCsv(data);csv(out.headers,out.rows,out.name)})}
  const hideZero=document.querySelector('#secondaryStockHideZero');if(hideZero){hideZero.disabled=!!busy;hideZero.onchange=execute(()=>secondaryLedgerChange({hideZeroStock:hideZero.checked}))}
-  const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{const rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock);csv(['품명','이월','생산','교체 차감','현재고','kg','메모 · 품명 공통 (저장값)'],rows.map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.kg,secondaryStockMemoValue(r.product,{},true)]),'재고표')});
+  const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{const rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock);const activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()});csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+today()+')','메모 · 품명 공통 (저장값)'],rows.map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',secondaryStockMemoValue(r.product,{},true)]),'재고표')});
 }
 
 (function(root){'use strict';
@@ -3891,7 +4157,7 @@ function workspaceSettings(main){
 }
 function workspaceDailyActions(top){
  const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')&&!el.hasAttribute('data-workspace-primary')):[];if(!buttons.length)return;
- const menu=document.createElement('div'),toggle=document.createElement('button'),items=document.createElement('div');menu.className='workspaceMore';toggle.type='button';toggle.textContent=page==='schedule'?'내보내기·계산':'인쇄·더 보기';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','workspaceDailyMore');items.id='workspaceDailyMore';items.className='workspaceMoreItems';actions.append(menu);menu.append(toggle,items);items.append(...buttons);
+ const menu=document.createElement('div'),toggle=document.createElement('button'),items=document.createElement('div');menu.className='workspaceMore';toggle.type='button';toggle.textContent=page==='schedule'?'내보내기·계산':'인쇄·연동';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','workspaceDailyMore');items.id='workspaceDailyMore';items.className='workspaceMoreItems';actions.append(menu);menu.append(toggle,items);items.append(...buttons);
  toggle.onclick=()=>{const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))};items.addEventListener('click',e=>{if(e.target.closest('button')){menu.classList.remove('open');toggle.setAttribute('aria-expanded','false')}});
 }
 function bindWorkspaceUI(){
@@ -3913,7 +4179,7 @@ window.addEventListener('keydown',e=>{if(e.key==='Escape'&&workspaceScreen.focus
 document.addEventListener?.('click',e=>{const s=workspaceFocusScreen.session;if(s&&!s.options.hidden&&!s.options.contains(e.target)&&!s.toggle.contains(e.target)&&!e.target.closest('dialog'))workspaceFocusOptions(false)});
 
 // Trusted application automation synchronizes the private ledgers; shared worker tokens stay separate.
-let ilboStatus=null,ilboStatusScope='',ilboStatusClient=null,ilboAppliedRevision='',ilboRefreshRun=null,ilboRefreshPending=false,ilboStatusError='',ilboInitialClient=null;
+let ilboStatus=null,ilboStatusScope='',ilboStatusClient=null,ilboAppliedRevision='',ilboRefreshRun=null,ilboRefreshPending=false,ilboStatusError='',ilboInitialClient=null,ilboManualChecked=null;
 const ilboIssueMessages={
  'missing-product':'품명이 비어 있습니다. 현장일보에서 품명을 선택해 주세요.',
  'unknown-product':'관리에 등록되지 않은 품명입니다. 관리에서 기준품명 또는 현장일보 다른 이름을 등록해 주세요.',
@@ -3942,7 +4208,7 @@ const ilboIssueMessages={
 };
 function ilboEnsureScope(){
  const client=workspace||null,key=client?.key||'';if(ilboStatusClient===client&&ilboStatusScope===key)return false;
- ilboStatusClient=client;ilboStatusScope=key;ilboStatus=null;ilboAppliedRevision='';ilboRefreshRun=null;ilboRefreshPending=false;ilboStatusError='';ilboInitialClient=null;return true;
+ ilboStatusClient=client;ilboStatusScope=key;ilboStatus=null;ilboAppliedRevision='';ilboRefreshRun=null;ilboRefreshPending=false;ilboStatusError='';ilboInitialClient=null;ilboManualChecked=null;return true;
 }
 function ilboIssueInfo(issue){
  const dateFromPath=/(?:^|\/)data\/(\d{4}-\d{2}-\d{2})\.json$/.exec(String(issue.path||''))?.[1]||'',rows=Object.values(state?.months||{}).flatMap(m=>[...(m.rows||[]),...(m.fieldAttendance||[])]),linked=issue.id&&issue.path?rows.find(r=>r.sourceIntegration?.id===issue.id&&r.sourceIntegration?.path===issue.path):null;
@@ -3953,17 +4219,67 @@ function ilboIssueInfo(issue){
 function ilboHasEdits(){return busy||booting||!!localReadError||!!$('#dialog')?.open||[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&(g.dirty||g.saving||g.loading))||!!workspace?.envelope?.queue?.length||!!workspace?.resolving}
 function ilboConnectionLoading(){return typeof connectionOpening!=='undefined'&&!!connectionOpening}
 function ilboCanRefresh(client){return workspace===client&&!client.closed&&!client.pendingMigration&&!ilboHasEdits()&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')}
+function ilboManualSummary(){
+ const date=typeof today==='function'?today():'';if(!ilboManualChecked||ilboManualChecked.state!==state||ilboManualChecked.date!==date||!C.iso(date))return'';
+ const rows=(state.months?.[date.slice(0,7)]?.rows||[]).filter(r=>r.date===date&&r.sourceIntegration?.id);let text='최신자료 확인 완료 · 관리 원장의 오늘('+date+') 현장 연결 기록 '+rows.length+'행.';
+ if(page==='daily'&&typeof month==='string'){
+  if(month!==date.slice(0,7))text+=' 현재 '+month+'월을 보고 있습니다.';
+  else if(typeof sheetEditor==='function'){const g=sheetEditor('production');if(g){const visible=new Set(g.visibleRows().map(r=>r.id)),deleted=new Set(g.draft.deleted.map(r=>r.id)),hidden=rows.filter(r=>!deleted.has(r.id)&&!visible.has(r.id)).length;if(hidden)text+=' '+hidden+'행이 보기 조건으로 숨겨져 있습니다. 오늘 내역을 눌러 확인하세요.'}}
+ }return text;
+}
+function ilboUpdateManualSummary(){
+ const node=$('#ilboSyncStatus')?.querySelector?.('[data-ilbo-manual-result]');if(!node)return;
+ const text=ilboManualSummary();if(node.textContent!==text)node.textContent=text;if(node.hidden!==!text)node.hidden=!text;
+}
+function ilboDraftMergeBlock(client){
+ if(!client||workspace!==client||client.closed||client.pendingMigration||typeof client.readSnapshot!=='function'||typeof client.adoptSnapshot!=='function')return '관리 저장소 연결을 확인해 주세요.';
+ if(busy||booting||localReadError||ilboRefreshRun||ilboConnectionLoading()||$('#dialog')?.open)return '진행 중인 작업을 마친 뒤 다시 확인해 주세요.';
+ if(client.envelope?.queue?.length||client.resolving)return '전송 대기·복구를 마친 뒤 최신자료를 합쳐 주세요.';
+ const grids=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope());
+ if(grids.some(g=>g.loading||g.saving||g.storageError))return '초안 읽기·저장 상태를 먼저 확인해 주세요.';
+ if(grids.some(g=>g.dirty&&g.id!=='production'))return '다른 표의 미저장 작업을 마친 뒤 생산일보 최신자료를 합쳐 주세요.';
+ if(!grids.some(g=>g.dirty&&g.id==='production'))return '최신자료 확인을 눌러 주세요.';
+ return '';
+}
+async function ilboMergeDrafts(){
+ ilboEnsureScope();const client=workspace,blocked=ilboDraftMergeBlock(client);if(blocked){toast(blocked);return}
+ const before=state,entries=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty).map(g=>({g,signature:JSON.stringify(g.draft),revision:g.revision,draft:C.clone(g.draft)}));
+ const run={client,scope:client.key,page,month,merge:true,cancelled:false,adopted:false};ilboRefreshRun=run;ilboManualChecked=null;busy=true;ilboStatusError='';
+ const current=()=>workspace===client&&!client.closed&&ilboStatusClient===client&&ilboRefreshRun===run&&client.key===run.scope&&page===run.page&&month===run.month&&!run.cancelled;
+ const stable=()=>current()&&state===before&&!client.envelope?.queue?.length&&!client.resolving&&!localReadError&&!$('#dialog')?.open&&entries.every(({g,signature,revision})=>g.dirty&&!g.saving&&!g.loading&&!g.storageError&&g.revision===revision&&JSON.stringify(g.draft)===signature)&&![...sheetRegistry.values()].some(g=>g.scope===run.scope&&(g.saving||g.loading||g.dirty&&g.id!=='production'));
+ let applied=false;
+ try{
+  ilboRenderStatus();for(const {g}of entries)g.update();
+  // A durable original draft makes a failed later draft write recoverable from the adopted ledger.
+  for(const entry of entries){if(!stable())throw Error('context-changed');const writing=entry.g.queueDraft({compare:true});entry.revision=entry.g.revision;await writing;if(!stable())throw Error('context-changed')}
+  const snapshot=await client.readSnapshot({canApply:stable});if(!snapshot||!stable())throw Error('context-changed');
+  for(const entry of entries)entry.next=productionRefreshDraft(snapshot.state,entry.draft);
+  const next=await client.adoptSnapshot(snapshot,{canApply:stable});if(!next||!stable())throw Error('context-changed');
+  state=next;applied=true;run.adopted=true;ilboRefreshPending=false;ilboManualChecked={state,date:typeof today==='function'?today():''};
+  for(const entry of entries){entry.g.draft=entry.next;entry.g.error='최신 원장을 합쳤습니다. 미저장 입력은 그대로 보관 중입니다.'}
+  for(const {g}of entries){await g.queueDraft({compare:true});if(!current())break}
+  if(current()){const conflicts=entries.reduce((n,{g})=>n+(g.inspect().conflicts?.length||0),0);toast('초안을 유지하고 최신자료를 합쳤습니다.'+(conflicts?' 동시 수정 '+conflicts+'건을 확인한 뒤 저장해 주세요.':' 입력 내용은 변경 저장을 눌러야 원장에 저장됩니다.'))}
+ }catch(e){
+  if(workspace===client&&ilboRefreshRun===run){ilboStatusError=applied&&e.code==='DEVICE_CONFLICT'?'다른 창에서 초안이 바뀌었습니다. 이 화면의 입력을 유지하고 있으며 다른 창의 초안을 덮지 않았습니다. 이 화면을 닫지 말고 두 초안을 확인해 주세요.':applied?'최신 원장은 불러왔지만 보완한 초안을 기기에 보관하지 못했습니다. 원래 초안은 보존되어 있으며 다시 열면 최신 원장과 함께 복원됩니다.':run.cancelled?'최신자료 합치기를 취소했습니다. 원장과 기존 초안은 그대로입니다.':e.message==='context-changed'?'불러오는 중 입력·연결이 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':e.code==='DEVICE_CONFLICT'?'다른 창에서 기기자료가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':'최신자료를 합치지 못했습니다. 기존 초안은 그대로 보존했습니다. '+(['CATALOG_UNIT_SYNC'].includes(e.code)?e.message:'연결·기기 저장 상태와 마감 여부를 확인해 주세요.');toast(ilboStatusError)}
+ }finally{busy=false;if(ilboRefreshRun===run){ilboRefreshRun=null;if(workspace===client){if(applied)render();else for(const {g}of entries)g.update();ilboRenderStatus()}}}
+}
 function ilboRenderStatus(){
  ilboEnsureScope();const main=$('#main');if(!main||!['daily','schedule','master','settings'].includes(page)||!workspace&&page!=='settings')return;
  let box=$('#ilboSyncStatus');if(!box){box=document.createElement('section');box.id='ilboSyncStatus';box.className='notice blue';const anchor=main.querySelector('.top');if(anchor)anchor.after(box);else main.prepend(box)}
  const report=ilboStatus,issues=report?.issues||[],quality=report?.qualityWarnings||[],stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'';
- box.innerHTML='<div class="toolbar"><span><b>현장일보 연동</b> · '+(workspace?(when?'저장소 반영 '+esc(when):'자동 반영 상태를 확인 중입니다.'):'관리 저장소에 연결하면 현장일보가 자동 반영됩니다.')+(issues.length?' · 미반영 '+issues.length+'건':'')+(quality.length?' · 원자료 확인 '+quality.length+'건':'')+'</span>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>최신자료 확인</button>':'')+'</div>'+(ilboStatusError?'<p>'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>최신자료 확인이 대기 중입니다. 편집 내용을 저장하거나 취소한 뒤 최신자료 확인을 눌러 주세요.</p>':'')+(page==='settings'?'<p>현장 기록은 별도 일보 저장소에서 가져옵니다. 관리 품명과 다른 이름은 관리 탭에서 연결합니다. 자동 연동은 약 5분 간격으로 실행되며 GitHub 처리 상황에 따라 늦어질 수 있습니다.</p>':'')+(issues.length&&['settings','master'].includes(page)?'<details><summary>미반영 기록 확인</summary>'+table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])}))+'</details>':'');
+ box.innerHTML='<div class="toolbar"><span><b>현장일보 연동</b> · '+(workspace?(when?'저장소 반영 '+esc(when):'자동 반영 상태를 확인 중입니다.'):'관리 저장소에 연결하면 현장일보가 자동 반영됩니다.')+(issues.length?' · 미반영 '+issues.length+'건':'')+(quality.length?' · 원자료 확인 '+quality.length+'건':'')+'</span>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>최신자료 확인</button>':'')+'</div>'+(ilboStatusError?'<p>'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>작성 중인 내용이 있어 최신자료 반영을 보류했습니다. 생산일보는 초안을 유지하고 최신자료 합치기를 사용할 수 있습니다.</p>':'')+(page==='settings'?'<p>현장 기록은 별도 일보 저장소에서 가져옵니다. 관리 품명과 다른 이름은 관리 탭에서 연결합니다. 자동 연동은 약 5분 간격으로 실행되며 GitHub 처리 상황에 따라 늦어질 수 있습니다.</p>':'')+(issues.length&&['settings','master'].includes(page)?'<details><summary>미반영 기록 확인</summary>'+table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])}))+'</details>':'');
  if(quality.length)box.innerHTML+='<details><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
+ const manualSummary=ilboManualSummary();if(manualSummary)box.innerHTML+='<p data-ilbo-manual-result>'+esc(manualSummary)+'</p>';
+ if(workspace&&page==='daily'&&[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty)){
+  const blocked=ilboDraftMergeBlock(workspace);box.innerHTML+='<div class="toolbar"><button id="ilboMergeDrafts" '+(blocked?'disabled':'')+'>초안 유지하고 최신자료 합치기</button><span>작성 중인 입력을 유지하고 새 현장 기록을 가져옵니다.</span></div>'+(blocked&&!ilboRefreshRun?'<p>'+esc(blocked)+'</p>':'');
+ }
+ if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted)box.innerHTML+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
  const button=$('#ilboRefreshNow');if(button)button.onclick=()=>ilboCheck(true);
+ const merge=$('#ilboMergeDrafts');if(merge)merge.onclick=()=>ilboMergeDrafts();const cancel=$('#ilboMergeCancel');if(cancel)cancel.onclick=()=>{if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted){ilboRefreshRun.cancelled=true;ilboRenderStatus()}};
 }
 async function ilboCheck(manual=false){
  ilboEnsureScope();const client=workspace;if(!client||client.pendingMigration||client.closed||ilboRefreshRun||document.hidden||booting||ilboConnectionLoading()||!state)return;
- const run={client,scope:client.key};ilboInitialClient=client;ilboRefreshRun=run;ilboRenderStatus();const current=()=>workspace===client&&ilboStatusClient===client&&client.key===run.scope&&ilboStatusScope===run.scope&&ilboRefreshRun===run;
+ const run={client,scope:client.key};if(manual)ilboManualChecked=null;ilboInitialClient=client;ilboRefreshRun=run;ilboRenderStatus();const current=()=>workspace===client&&ilboStatusClient===client&&client.key===run.scope&&ilboStatusScope===run.scope&&ilboRefreshRun===run;
  try{
   const seed=!manual&&client.initialSyncStatus?.state===state&&client.envelope.state===state&&!client.envelope.queue.length?client.initialSyncStatus:null;
   const result=seed?seed.result:await client.client.get('meta/ilbo-sync.json',true);if(!current())return;if(seed)client.initialSyncStatus=null;
@@ -3976,9 +4292,9 @@ async function ilboCheck(manual=false){
   if(manual||revision&&revision!==ilboAppliedRevision){
    if(ilboCanRefresh(client)){
     const next=await client.open({canApply:()=>ilboCanRefresh(client)});if(!current())return;
-    if(next&&ilboCanRefresh(client)){state=next;ilboAppliedRevision=revision;ilboRefreshPending=false;render();if(manual)toast('GitHub 최신자료를 확인했습니다.')}
+    if(next&&ilboCanRefresh(client)){state=next;ilboAppliedRevision=revision;ilboRefreshPending=false;if(manual)ilboManualChecked={state,date:typeof today==='function'?today():''};render();if(manual)toast(ilboManualSummary()||'GitHub 최신자료를 확인했습니다.')}
     else ilboRefreshPending=true;
-   }else{ilboRefreshPending=true;if(manual)toast('편집 내용을 먼저 저장해 주세요. 미저장 내용은 그대로 보관되어 있습니다.')}
+   }else{ilboRefreshPending=true;if(manual)toast([...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty)?'미저장 입력을 유지하려면 초안 유지하고 최신자료 합치기를 눌러 주세요.':'편집 내용을 먼저 저장해 주세요. 미저장 내용은 그대로 보관되어 있습니다.')}
   }
  }catch(e){if(current()){ilboStatusError=e.message==='invalid-sync-report'?'자동 연동 결과의 형식을 확인하지 못했습니다. 관리 저장소의 연동 실행 결과를 확인해 주세요.':'GitHub 연동 상태를 읽지 못했습니다. 연결·백업에서 접근 권한과 연결 상태를 확인해 주세요.';if(manual)toast(ilboStatusError)}}finally{if(current()){ilboRefreshRun=null;ilboRenderStatus()}}
 }
@@ -4312,7 +4628,7 @@ mobileRefresh=function(...args){const result=viewPreferenceMobileBefore.apply(th
 function viewPreferenceEvent(event){
  if(viewPreferenceState.applying||viewPreferenceState.rendering||typeof busy!=='undefined'&&busy||event.target?.closest?.('dialog')||event.target?.disabled)return;
  const node=event.target,click=event.type==='click',change=event.type==='change',input=event.type==='input',key=event.type==='keydown';let allowed=false;
- if(click)allowed=!!node.closest?.('[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers]')||['productionDay','productionReset'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
+ if(click)allowed=!!node.closest?.('[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers]')||['productionDay','productionReset','productionToday'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
  if(change)allowed=!!node.matches?.('#monthSel,[data-sheet-advanced],[data-sheet-view],[data-sheet-new-date],#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgCalTarget,#pgCalStart,#pgCalEnd,#pgCalMode,#pgWeeks,#secondaryAuditSelect,[data-ledger-month],#secondaryStockHideZero,.workspaceFocusTableSelect');
  if(input)allowed=!!node.matches?.('[data-sheet-search],#search,#secondaryLedgerSearch');
  const summary=node.closest?.('summary');if((click||key&&['Enter',' '].includes(event.key))&&summary&&viewPreferenceDetails.some(selector=>summary.parentNode?.matches?.(selector)))allowed=true;
@@ -4641,7 +4957,7 @@ function shareViewAllowed(element){
  if(data.pgCommand!==undefined)return shareViewPlanCommands.has(data.pgCommand);
  if(data.pgWorkers!==undefined)return ['all','none'].includes(data.pgWorkers);
  if(data.sheetCommand!==undefined)return data.sheetCommand==='select';
- if(data.sheetViewCommand!==undefined)return ['productionDay','productionReset','productionCompletion'].includes(data.sheetViewCommand);
+ if(data.sheetViewCommand!==undefined)return ['productionDay','productionReset','productionToday','productionCompletion'].includes(data.sheetViewCommand);
  if(element.matches?.('input,select,textarea'))return element.matches(shareViewFields);
  if(element.matches?.('button,[role="button"]'))return element.matches(shareViewButtons);
  return true;
