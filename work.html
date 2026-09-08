@@ -990,7 +990,7 @@ function fieldProductIdentity(value,catalog=S.productCatalog){
 }
 function progressCatalogRevision(catalog=S.productCatalog){return catalog?.revision||'legacy';}
 function validLocalProgress(progress,catalog=S.productCatalog){
-  return progress?.policyVersion==='completion-catalog-2'&&progress.catalogRevision===progressCatalogRevision(catalog);
+  return progress?.policyVersion==='completion-worker-phase-3'&&progress.catalogRevision===progressCatalogRevision(catalog);
 }
 function catalogProductNames(catalog,recent=[]){
   if(!catalog)return [...new Set(recent.map(n=>legacyProductName(n&&typeof n==='object'?n.product:n)).filter(Boolean))].slice(0,40);
@@ -2318,37 +2318,49 @@ function renderGuide(){
 }
 /* ── 기물 진행 상황: 시작일(계획>0 기록)부터 누적 생산을 세어 '생산 종료(0)'까지 — 달이 바뀌어도 이어짐 ── */
 function computeProgress(daysMap,asOf=todayStr(),catalog=S.productCatalog){
-  const runs = Object.create(null);
+  const runs = Object.create(null), phases=Object.create(null), byRecord=Object.create(null), byWorkerProduct=Object.create(null), products=new Map(), starts=new Map();let phase=0;
   Object.keys(daysMap).filter(d => d<=asOf&&Array.isArray(daysMap[d])).sort().forEach(ds => {
     orderRows(daysMap[ds]).forEach(r => {
       if(r.off || !r.product) return;
       const pn = fieldProductName(r,catalog);
       const preserved=r.productionPlanQty,plan = String(r.plan)==='0'&&typeof preserved==='number'&&Number.isFinite(preserved)&&preserved>0?preserved:numOr(r.plan, '');
-      let run = runs[pn];
+      const worker=String(r.worker||'').trim(),key=JSON.stringify([worker,pn]);let run=phases[byWorkerProduct[key]];
+      const fresh=()=>{const id=String(++phase);byWorkerProduct[key]=id;return phases[id]={plan:null,start:ds,made:0,days:0,end:null,last:null,worker,product:pn};};
       if(plan !== '' && plan > 0){
-        /* 같은 날 두 사람이 계획을 적어도 런은 하나(먼저 적은 계획 유지) — 다른 날의 새 계획 = 새 시작 */
-        if(run && !run.end && run.start === ds){ if(!run.plan) run.plan = plan; }
-        else run = runs[pn] = {plan, start: ds, made: 0, days: 0, end: null, last: null};
-      }else if(!run || (run.end && run.end !== ds)){
-        run = runs[pn] = {plan: null, start: ds, made: 0, days: 0, end: null, last: null};   /* 계획 없이 생산(또는 종료 후 재생산) */
+        // Source worker and explicit starts delimit work; never share one worker's target with another.
+        if(run && !run.end && run.start === ds && r.planIntent!=='start'){ if(!run.plan) run.plan = plan; }
+        else {run=fresh();run.plan=plan;}
+        if(r.planIntent==='start'){const startKey=key+'\0'+ds,list=starts.get(startKey)||[];list.push(run);starts.set(startKey,list);}
+      }else if(!run || run.end){
+        run=fresh();   /* 종료 이후 실적은 종료된 작업에 더하지 않습니다. */
       }
       run.made += Number(r.prod) || 0;
       if(run.last !== ds){ run.days++; run.last = ds; }
       if(String(r.plan) === '0'||r.productionCompletion&&['stock','plan-change','other'].includes(r.productionCompletion.reason)){run.end=ds;run.completion=r.productionCompletion||null;}
+      if(r.id)byRecord[ds+'#'+r.id]={phase:byWorkerProduct[key],source:progressSourceFields(r)};
+      if(!products.has(pn))products.set(pn,new Set());products.get(pn).add(key);
     });
   });
+  for(const list of starts.values())if(list.length>1)for(const run of list){run.ambiguous=true;run.warning='같은 작업자·품목의 시작 기록이 같은 날 여러 개입니다. 관리 앱에서 연결 작업을 확인해 주세요.';}
+  for(const [pn,keys]of products){const current=[...keys].map(key=>phases[byWorkerProduct[key]]);runs[pn]=current.length===1?current[0]:{plan:null,made:null,start:null,end:null,last:null,ambiguous:true,warning:'여러 작업자가 생산한 품목입니다. 작업자별 기록에서 진행을 확인해 주세요.'};}
+  Object.defineProperties(runs,{_phases:{value:phases},_byRecord:{value:byRecord},_byWorkerProduct:{value:byWorkerProduct}});
   return runs;
 }
 const fmtMD = ds => { if(!ds) return '—'; const d = parseDate(ds); return Number.isNaN(d.getTime())?'—':`${d.getMonth()+1}/${d.getDate()}`; };
-function progOf(product){
+function progOf(product,worker=typeof product==='object'?product?.worker:null,date=S.date){
   const bp = validLocalProgress(S.progress)&&S.progress.byProduct; if(!bp || !product) return null;
   const name=fieldProductName(product);
+  if(worker!=null&&S.progress.phases&&S.progress.byWorkerProduct){
+    if(typeof product==='object'&&product.id){const record=S.progress.byRecord?.[date+'#'+product.id];return record&&progressStable(record.source)===progressStable(progressSourceFields(product))?S.progress.phases[record.phase]||null:null;}
+    return S.progress.phases[S.progress.byWorkerProduct[JSON.stringify([String(worker).trim(),name])]]||null;
+  }
   if(Object.prototype.hasOwnProperty.call(bp,name))return bp[name];
   const legacy=legacyProductName(name);
   return !S.productCatalog&&Object.prototype.hasOwnProperty.call(bp,legacy)?bp[legacy]:null;
 }
 function progText(pr){
   if(!pr) return null;
+  if(pr.ambiguous)return{state:'warning',pct:null,remain:null,unproduced:null};
   if(pr.managed){const e=pr.managed;return{state:e.complete?'end':e.produced===null||!e.jobId?'warning':e.plan===null?'noplan':'on',pct:e.percent===null?null:r2(e.percent),remain:e.remaining,unproduced:e.unproduced};}
   if(pr.end) return {state:'end', pct: pr.plan ? Math.round(pr.made / pr.plan * 100) : null, remain: 0,unproduced:pr.plan?Math.max(0,pr.plan-pr.made):null};
   if(!pr.plan) return {state:'noplan', pct: null, remain: null};
@@ -2357,10 +2369,11 @@ function progText(pr){
 }
 function planBadge(r){
   const managed=recordProjectedProgress(r);
-  if(managed){const e=managed.managed,state=e.complete?'관리 확인 · 생산 종료':e.jobId?'생산중':'연결 확인 필요';return `<span class="badge ${e.complete?'end':'on'}" title="${esc(progressSourceNote())}">${state}${e.produced===null?'':` · 실제 ${r2(e.produced)} / ${e.plan===null?'계획 미기록':r2(e.plan)}조${e.percent===null?'':' · '+r2(e.percent)+'%'}`}${e.complete&&e.reason?' · '+esc(productionCompletionLabel(managed.completion)):''}</span>`;}
+  if(managed){const e=managed.managed,state=e.complete?'관리 확인 · 생산 종료':e.jobId?'생산중':'연결 확인 필요';return `<span class="badge ${e.complete?'end':!e.jobId?'plan':'on'}" title="${esc(progressSourceNote())}">${state}${e.produced===null?'':` · 실제 ${r2(e.produced)} / ${e.plan===null?'계획 미기록':r2(e.plan)}조${e.percent===null?'':' · '+r2(e.percent)+'%'}`}${e.complete&&e.reason?' · '+esc(productionCompletionLabel(managed.completion)):''}${e.warning?' · '+esc(e.warning):''}</span>`;}
+  const pr = progOf(r), t = progText(pr);
+  if(t?.state==='warning')return `<span class="badge plan" title="${esc(pr.warning)}">작업 연결 확인 필요</span>`;
   if(String(r.plan) === '0'||r.productionCompletion) return `<span class="badge end">생산 종료${r.productionCompletion?' · '+esc(productionCompletionLabel(r.productionCompletion)):''}</span>`;
   if(r.plan !== '' && r.plan != null) return `<span class="badge plan">생산 시작 · 계획 ${esc(r.plan)}조</span>`;
-  const pr = progOf(r), t = progText(pr);
   if(t && t.state === 'on') return `<span class="badge on" title="${fmtMD(pr.start)} 시작 · 계획 ${r2(pr.plan)}조 중 ${r2(pr.made)}조 · 남은 ${r2(t.remain)}조">생산중 ${r2(pr.made)}/${r2(pr.plan)}조 · ${t.pct}%</span>`;
   return '<span class="badge on">생산중</span>';
 }
@@ -2369,17 +2382,17 @@ function updateProdProg(el){
   let pn = el.querySelector('.pb-product').value.trim();
   if(!S.productCatalog) pn = legacyProductName(pn);
   const previous=S.rows.find(r=>r.id===el.dataset.rid);
-  const sameProduct=previous&&fieldProductIdentity(pn)===fieldProductIdentity(previous);
+  const worker=$('#fWorker').value.trim(),sameProduct=previous&&String(previous.worker||'').trim()===worker&&fieldProductIdentity(pn)===fieldProductIdentity(previous);
   if(!previous){
-    const references=knownManagedRuns(pn,$('#fWorker').value.replace(/\s+/g,''));
+    const references=knownManagedRuns(pn,worker);
     if(references.length){box.innerHTML=`<b>저장된 연결 작업 참고</b> · 현재 입력은 아직 연결 전${references.map(run=>{const e=run.managed;return `<br>${esc(fieldProductName(e))} · 실제 ${e.produced===null?'—':r2(e.produced)} / 계획 ${e.plan===null?'미기록':r2(e.plan)}조${e.percent===null?'':' ('+r2(e.percent)+'%)'} · <b>${e.complete?'생산 종료':'생산중'}</b>${run.completion?' · '+esc(productionCompletionLabel(run.completion)):''}`;}).join('')}<br><small>${esc(progressSourceNote())} · 읽기 전용</small>`;box.hidden=false;return;}
   }
-  const pr = pn ? (sameProduct&&recordProjectedProgress(previous)||progOf(pn)) : null, t = progText(pr);
+  const pr = pn ? (sameProduct&&recordProjectedProgress(previous)||progOf(sameProduct?previous:pn,worker)) : null, t = progText(pr);
   if(!t){ box.hidden = true; box.innerHTML = ''; return; }
   let html;
   if(t.state === 'on') html = `📦 <b>${esc(pn)}</b> 계획 ${r2(pr.plan)}조 · 누적 ${r2(pr.made)}조 (${t.pct}%) · 남은 <b>${r2(t.remain)}조</b>${pr.start?` <span style="color:var(--ink-faint)">· ${fmtMD(pr.start)} 시작</span>`:''}${t.remain ? '' : ' — 계획 달성! 더 만들지 않으면 <b>생산 종료</b>'}<span class="bar"><i style="width:${Math.min(100, t.pct)}%"></i></span>`;
   else if(t.state === 'end') html = `📦 <b>${esc(pn)}</b> ${fmtMD(pr.end)} 생산 종료 · 실제 누적 <b>${r2(pr.made)}</b>${pr.plan?' / 계획 '+r2(pr.plan):''}조${t.pct!==null?' ('+t.pct+'%)':''}${t.unproduced?' · 계획 대비 미생산 '+r2(t.unproduced)+'조':''}${pr.completion?'<br>'+esc(productionCompletionLabel(pr.completion)):''} — 새로 시작하면 계획수량을 적으세요`;
-  else if(t.state==='warning')html=`📦 <b>${esc(pn)}</b> ${esc(pr.managed.warning||'관리 앱에서 작업 연결을 확인해 주세요.')} · 누적 생산 계산 보류`;
+  else if(t.state==='warning')html=`📦 <b>${esc(pn)}</b> ${esc(pr.managed?.warning||pr.warning||'관리 앱에서 작업 연결을 확인해 주세요.')} · 누적 생산 계산 보류`;
   else html = `📦 <b>${esc(pn)}</b> 누적 ${r2(pr.made)}조${pr.start?' ('+fmtMD(pr.start)+'부터)':''} · 계획수량이 기록되지 않은 기물`;
   html+=`<br><small>${esc(progressSourceNote(pr.managed?S.productionProgress:null))}${pr.managed?' · 읽기 전용':''}</small>`;
   if(pr.managed?.warning&&t.state!=='warning')html+=`<br><small>${esc(pr.managed.warning)}</small>`;
@@ -2421,13 +2434,13 @@ async function ensureProgress(opt){
     /* 창의 앞쪽 두 달에서 계획 없이 시작된 진행 중 기물 = 시작일(계획)이 창 밖일 수 있음 → 한 달씩 더 (최대 6달, 한 달 쉬어도 이어짐) */
     while(!opt.quick && span < 6){
       const oldest2 = [ymBack(span - 1), ymBack(span - 2)];
-      if(!Object.values(runs).some(r => r.plan === null && !r.end && oldest2.includes(String(r.start).slice(0,7)))) break;
+      if(!Object.values(runs._phases).some(r => r.plan === null && !r.end && oldest2.includes(String(r.start).slice(0,7)))) break;
       if(!(await loadMonth(ymBack(span)))) break;
       span++; inject(); runs = computeProgress(all);
     }
     assertContext(epoch);
     if(!opt.quick) S.progressSpan = span;
-    S.progress = {policyVersion:'completion-catalog-2',catalogRevision:progressCatalogRevision(),computedAt: (opt.quick && validLocalProgress(S.progress)) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct: runs};
+    S.progress = {policyVersion:'completion-worker-phase-3',catalogRevision:progressCatalogRevision(),computedAt: (opt.quick && validLocalProgress(S.progress)) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct:runs,phases:runs._phases,byRecord:runs._byRecord,byWorkerProduct:runs._byWorkerProduct};
     S.progressDays=all;
     if(!hadErr) LS.set('ilbo.progress', S.progress);   /* 불러오기 실패가 섞인 결과는 보관하지 않음(다음에 다시 계산) */
     if(S.tab === 'input') renderInput();
@@ -3519,7 +3532,7 @@ function drawMonth(rawDays, y, m){
   ${anyFail ? `<div class="empty-note" style="padding:10px">⚠ 일부 날짜를 불러오지 못했습니다. ↻ 새로고침 후 다시 확인하세요.</div>` : ''}`;
 
   /* ── 제품별: 기물 진행 상황(시작일부터 누적, 달을 넘어 이어짐) + 이번 달 실적 ── */
-  const stOrder = {on:0, noplan:1, end:2, none:3};
+  const stOrder = {warning:0, on:1, noplan:2, end:3, none:4};
   const showManaged = `${y}-${pad2(m)}`===todayStr().slice(0,7)&&!!S.productionProgress;
   const showProg = `${y}-${pad2(m)}` === todayStr().slice(0,7)&&!showManaged;   /* 관리 자료가 있으면 연결 작업별로, 없으면 현장 기록으로 계산 */
   const pInfo = n => { if(!showProg) return {pr:null, t:null, st:'none'}; const pr = progOf(n); const t = progText(pr); return {pr, t, st: t ? t.state : 'none'}; };
@@ -3531,11 +3544,11 @@ function drawMonth(rawDays, y, m){
   const pTable = pNames.length ? `<table class="mon product-focus">
       <thead><tr><th>제품 · 상태</th><th>${showProg?'누적 / 계획(조)':'생산 기록일'}</th><th>${showProg?'남은(조)':'불량(개)'}</th><th>이달 생산(조)</th><th class="desktop-col">최근 기록</th><th class="desktop-col">불량석고(kg)</th></tr></thead>
       <tbody>${pNames.map(n => { const p = prodStat[n] || {days:new Set(), prod:0, def:0, scrap:0}; const {pr, t, st} = pInfo(n);
-        const stCell = st==='on' ? '<b style="color:var(--good)">생산중</b>' : st==='end' ? '<span style="color:var(--ink-dim)">종료</span>' : st==='noplan' ? '<span style="color:var(--warn)" title="시작일에 계획수량을 적지 않은 기물">계획 미기록</span>' : '';
+        const stCell = st==='warning'?`<span style="color:var(--warn)" title="${esc(pr.warning)}">작업별 확인 필요</span>`:st==='on' ? '<b style="color:var(--good)">생산중</b>' : st==='end' ? '<span style="color:var(--ink-dim)">종료</span>' : st==='noplan' ? '<span style="color:var(--warn)" title="시작일에 계획수량을 적지 않은 기물">계획 미기록</span>' : '';
         const ach = t && t.pct !== null ? t.pct : null;
         return `<tr>
         <td class="d"><button class="product-link" data-product="${esc(n)}">${esc(n)} ›</button><small>${stCell}</small></td>
-        <td>${!showProg?p.days.size+'일':pr?`${r2(pr.made)} / ${pr.plan?r2(pr.plan):'미기록'}${ach===null?'':`<small>${ach}%${bar(Math.min(100,ach),100)}</small>`}`:'계산 대기'}</td>
+        <td>${!showProg?p.days.size+'일':st==='warning'?'작업자별 기록 확인':pr?`${r2(pr.made)} / ${pr.plan?r2(pr.plan):'미기록'}${ach===null?'':`<small>${ach}%${bar(Math.min(100,ach),100)}</small>`}`:'계산 대기'}</td>
         <td>${!showProg?r2(p.def):st==='on'?(t.remain?r2(t.remain):'<b style="color:var(--good)">달성</b>'):'—'}</td>
         <td><b>${r2(p.prod)}</b></td><td class="desktop-col">${fmtMD(pr?.last || [...p.days].sort().at(-1) || '')}</td><td class="desktop-col">${r2(p.scrap)}</td></tr>`; }).join('')}</tbody>
       <tfoot><tr><td class="d">이달 합계</td><td></td><td>${showProg?'':r2(td)}</td><td>${r2(tp)}</td><td class="desktop-col"></td><td class="desktop-col">${r2(ts)}</td></tr></tfoot>
