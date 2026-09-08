@@ -275,34 +275,32 @@ details.defect summary{cursor:pointer; font-size:14.5px; color:var(--ink-dim); l
 details.defect summary::before{content:'▸'; transition:.15s}
 details.defect[open] summary::before{transform:rotate(90deg)}
 details.defect[open]{border-style:solid; border-color:var(--bad); background:var(--surface)}
-.chk-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+.chk-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;align-items:stretch}
 .chk{
-  background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:8px 9px;
+  min-width:0;background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:10px 8px;
 }
-.chk.gasa{grid-column:1 / -1}
-.chk .ck-name{font-size:13.5px; color:var(--ink-dim); margin-bottom:5px}
-.seg{display:flex; gap:5px}
+.chk .ck-name{font-size:13.5px;font-weight:700; color:var(--ink); margin-bottom:8px;min-height:20px}
+.seg{display:flex; gap:4px}
 .seg button{
-  flex:1; height:44px; border-radius:9px; background:var(--surface2); border:1.5px solid var(--line);
-  font-size:18px; color:var(--ink-dim); touch-action:manipulation;
+  flex:1;min-width:0;min-height:50px;padding:5px 1px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:9px; background:var(--surface2); border:1.5px solid var(--line);
+  font-size:18px;line-height:1.05;color:var(--ink-dim);touch-action:manipulation;
 }
+.seg button .status-word{font-size:11px;white-space:nowrap}
 .seg button.sel[data-v="○"]{background:var(--good-soft); border-color:var(--good); color:var(--good); font-weight:700}
 .seg button.sel[data-v="△"]{background:var(--warn-soft); border-color:var(--warn); color:var(--warn); font-weight:700}
 .seg button.sel[data-v="Ⅹ"]{background:var(--bad-soft); border-color:var(--bad); color:var(--bad); font-weight:700}
-.gasa-row{display:flex; gap:6px; align-items:stretch}
-.gasa-row input{width:0; flex:1; height:44px; text-align:center; background:var(--surface); border:1.5px solid var(--line-in); border-radius:9px}
-.gasa-row button{width:44px; height:44px; border-radius:9px; background:var(--surface2); border:1.5px solid var(--line); font-size:16px; color:var(--ink-dim)}
+.gasa-custom{margin-top:8px;font-size:12px;color:var(--ink-dim)}
+.gasa-custom summary{cursor:pointer;min-height:36px;padding:8px 0;overflow-wrap:anywhere}
+.gasa-custom label{display:block;font-size:12px;line-height:1.45}
+.gasa-custom input{width:100%;height:44px;margin-top:6px;padding:5px 8px;background:var(--surface);border:1.5px solid var(--line-in);border-radius:9px}
+@media(min-width:720px){.chk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.seg button{min-height:54px}.seg button .status-word{font-size:12px}}
 .chk .ck-hint{font-size:12.5px; color:var(--ink-dim); font-weight:400}
-.bd-row{display:flex; gap:6px; align-items:stretch}
-.bd-row input{width:0; flex:1; height:44px; text-align:center; background:var(--surface); border:1.5px solid var(--line-in); border-radius:9px}
 .recent-btn{
   width:100%; margin-top:8px; padding:11px 12px; border-radius:11px; text-align:left;
   border:1.5px dashed var(--good); color:var(--good); background:var(--good-soft);
   font-size:14.5px; font-weight:700;
 }
 .recent-btn span{font-weight:400; font-size:12.5px}
-.bd-row button{width:44px; border-radius:9px; background:var(--surface2); border:1.5px solid var(--line); font-size:15px; color:var(--ink-dim)}
-.bd-lbl{align-self:center; width:24px; flex:none; font-size:12.5px; color:var(--ink-dim)}
 .notice-card{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink); font-weight:700; font-size:15px; line-height:1.5}
 .pb{border:1.5px solid var(--line); border-radius:14px; background:var(--surface); padding:12px; margin-top:14px; box-shadow:var(--shadow)}
 .pb-head{display:flex; align-items:center; margin-bottom:2px}
@@ -692,7 +690,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 <div class="overlay" id="entryOv" role="dialog" aria-modal="true" aria-labelledby="entryTitle">
   <div class="ov-head"><b id="entryTitle" tabindex="-1">기록 추가</b><button class="x" id="entryClose" aria-label="닫기">✕</button></div>
   <div class="ov-body">
-    <div id="draftBar" class="warnbar info" hidden>📝 작성하다 만 내용을 불러왔습니다 <button type="button" id="draftClear">비우고 새로 쓰기</button></div>
+    <div id="draftBar" class="warnbar info" hidden>📝 작성하다 만 내용을 불러왔습니다 <button type="button" id="draftClear">임시작성 비우기</button></div>
     <details id="workerDetails"><summary>작업자 <b id="entryWorkerLabel"></b> · 이름 변경</summary>
     <div class="f-label">작업자 <span class="req">*</span></div>
     <input class="f-input" id="fWorker" placeholder="이름" autocomplete="off">
@@ -711,11 +709,11 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div id="quickProducts" hidden></div>
     <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
     <div id="prodBlocks"></div>
-    <button type="button" id="addProdBlock">＋ 제품 추가 (같은 작업자)</button>
+    <button type="button" id="addProdBlock">＋ 같은 작업자 제품 추가</button>
     <div id="entryErr" role="alert" hidden></div>
   </div>
   <div class="ov-actions">
-    <button class="del" id="entryDel" style="display:none">삭제</button>
+    <button class="del" id="entryDel" style="display:none">기록 삭제</button>
     <button class="save" id="entrySave">일보 저장</button>
   </div>
 </div>
@@ -1958,7 +1956,12 @@ function mergeRows(rows, newRows, align){
   newRows.forEach(nr => {
     if(isRest(nr) && out.some(r => !r.off && r.worker === nr.worker && r.id !== nr.id)) return;   /* 이미 생산 기록이 있으면 늦게 온 휴무는 버림 */
     const i = out.findIndex(r => r.id === nr.id);
-    if(i >= 0) out[i] = {...out[i],...nr}; else out.push(nr);
+    if(i >= 0){
+      const current=out[i],next={...current,...nr};
+      /* 제거한 입력은 기존행의 최신 값과 필드 부재를 그대로 보존한다. 구버전 초안의 값은 새 행에만 복구한다. */
+      for(const key of ['b1','b2']){if(Object.prototype.hasOwnProperty.call(current,key))next[key]=current[key];else delete next[key];}
+      out[i]=next;
+    }else out.push(nr);
   });
   /* 실제 기록이 들어오면 같은 사람의 '휴무' 표시는 자동 해제 — 오터치 휴무가 남아 이중 집계되지 않게 */
   const wrote = new Set(newRows.filter(r => !r.off && r.worker).map(r => r.worker));
@@ -2161,7 +2164,7 @@ async function markDayOff(name, kind){
   if(!confirm(msg)) return;
   const date = S.date;
   const row = {id: uid(), worker: name, off: true, offKind: kind, hours: rest ? '' : DEFAULT_HOURS, product:'', plan:'', prod:'', scrapKg:'', defQty:'', defPart:'',
-    gasa:'', cs:'', gap:'', inlet:'', face:'', bubble:'', b1:'', b2:'', remark:'', ts: Date.now()};
+    gasa:'', cs:'', gap:'', inlet:'', face:'', bubble:'', remark:'', ts: Date.now()};
   try{ await upsertRows([row], null, `${kind} ${name}`); toast(`${name}님 ${kind}로 표시했습니다`); }
   catch(e){
     if(driver.mode === 'gh' && e.isNetwork){
@@ -2437,10 +2440,10 @@ function renderInput(){
 function prodsList(){ return prodsListAll().slice(0,14); }
 function prodsListAll(){ return catalogProductNames(S.productCatalog,[...S.rows,...(S.presets.products||[])]); }
 function partsList(){ return [...new Set([...(S.presets.parts||[]), '상형1','하형1'])].filter(Boolean).slice(0,10); }
-function segBtns(){ return ['○','△','Ⅹ'].map(v=>`<button type="button" data-v="${v}">${v}</button>`).join(''); }
+function segBtns(gasa=false){ return [['○','양호'],['△','보통'],['Ⅹ','불량']].map(([v,label])=>`<button type="button" data-v="${v}"${gasa?` data-g="${v}"`:''} aria-pressed="false"><span aria-hidden="true">${v}</span><span class="status-word">${label}</span></button>`).join(''); }
 function blockHTML(){
   return `
-  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·검사·불량 상세</small></button><button type="button" class="pb-del">✕ 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·검사·불량 상세</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
   <div class="pb-body">
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
@@ -2477,23 +2480,18 @@ function blockHTML(){
     <div class="chips pb-partchips" style="margin-top:7px"></div>
     <button type="button" class="pb-defclear">불량 없음으로 지우기</button>
   </details>
-  <div class="f-label" style="margin-top:16px">검사 (기본 ○양호 · 눌러서 △보통 / Ⅹ불량)</div>
+  <div class="f-label" style="margin-top:16px">검사 상태 <span class="hint">기본은 양호입니다. 보통·불량을 선택하면 아래 비고에 사유를 적어주세요.</span></div>
   <div class="chk-grid">
     <div class="chk gasa"><div class="ck-name">석고 가사시간</div>
-      <div class="gasa-row">
-        <input class="pb-gasa" value="○" autocomplete="off" inputmode="decimal" spellcheck="false">
-        <button type="button" data-g="○">○</button><button type="button" data-g="△">△</button><button type="button" data-g="Ⅹ">Ⅹ</button>
-      </div>
+      <input class="pb-gasa" type="hidden" value="○">
+      <div class="seg gasa-status" role="group" aria-label="석고 가사시간 상태">${segBtns(true)}</div>
+      <details class="gasa-custom"><summary>시간 직접 입력</summary><label>시간을 입력하면 위 상태 선택을 대신합니다.<input class="pb-gasa-custom" placeholder="예: 12분" aria-label="석고 가사시간 직접 입력" autocomplete="off" inputmode="decimal" spellcheck="false"></label></details>
     </div>
-    <div class="chk"><div class="ck-name">CASE 상태</div><div class="seg" data-k="cs">${segBtns()}</div></div>
-    <div class="chk"><div class="ck-name">몰드 틈새</div><div class="seg" data-k="gap">${segBtns()}</div></div>
-    <div class="chk"><div class="ck-name">PVC몰드 주입구</div><div class="seg" data-k="inlet">${segBtns()}</div></div>
-    <div class="chk"><div class="ck-name">몰드 제품면</div><div class="seg" data-k="face">${segBtns()}</div></div>
-    <div class="chk"><div class="ck-name">몰드 기포</div><div class="seg" data-k="bubble">${segBtns()}</div></div>
-    <div class="chk"><div class="ck-name">분동검사 <span class="ck-hint">1호·2호 숫자 입력</span></div>
-      <div class="bd-row"><span class="bd-lbl">1호</span><input class="pb-b1" inputmode="decimal" placeholder="0.25%" autocomplete="off" aria-label="분동검사 1호"><button type="button" class="pb-pct" data-t="pb-b1" aria-label="% 붙이기">%</button></div>
-      <div class="bd-row" style="margin-top:6px"><span class="bd-lbl">2호</span><input class="pb-b2" inputmode="decimal" placeholder="0.25%" autocomplete="off" aria-label="분동검사 2호"><button type="button" class="pb-pct" data-t="pb-b2" aria-label="% 붙이기">%</button></div>
-    </div>
+    <div class="chk"><div class="ck-name">CASE 상태</div><div class="seg" data-k="cs" role="group" aria-label="CASE 상태">${segBtns()}</div></div>
+    <div class="chk"><div class="ck-name">몰드 틈새</div><div class="seg" data-k="gap" role="group" aria-label="몰드 틈새 상태">${segBtns()}</div></div>
+    <div class="chk"><div class="ck-name">몰드 주입구 (PVC)</div><div class="seg" data-k="inlet" role="group" aria-label="몰드 주입구 상태">${segBtns()}</div></div>
+    <div class="chk"><div class="ck-name">몰드 손질</div><div class="seg" data-k="face" role="group" aria-label="몰드 손질 상태">${segBtns()}</div></div>
+    <div class="chk"><div class="ck-name">몰드 기포</div><div class="seg" data-k="bubble" role="group" aria-label="몰드 기포 상태">${segBtns()}</div></div>
   </div>
   <div class="f-label">비고 <span class="hint">△·Ⅹ 체크 시 사유를 꼭 적어주세요</span></div>
   <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea></div>`;
@@ -2537,8 +2535,9 @@ function syncQuickProducts(){
   els.forEach((el,i)=>{
     const row=box.children[i+2], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input');
     row.querySelector('b').textContent=p||`제품 ${i+1} 선택`;
-    const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value;
-    row.querySelector('small').textContent=(bad?'△·Ⅹ 있음 · 사유 확인':CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':'검사 ○')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
+    const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
+    const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
+    row.querySelector('small').textContent=manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
     if(document.activeElement!==input) input.value=qty.value;
     input.placeholder=qty.placeholder;input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
     el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
@@ -2546,6 +2545,13 @@ function syncQuickProducts(){
 }
 const segSetB = (el,k,v) => el.querySelectorAll(`.seg[data-k="${k}"] button`).forEach(b=>{ const on = b.dataset.v===v; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); });
 const segGetB = (el,k) => { const b = el.querySelector(`.seg[data-k="${k}"] button.sel`); return b ? b.dataset.v : ''; };
+function syncGasaB(el,typing=false){
+  const value=el.querySelector('.pb-gasa').value,status=['○','△','Ⅹ'].includes(value);
+  el.querySelectorAll('[data-g]').forEach(b=>{const on=b.dataset.g===value;b.classList.toggle('sel',on);b.setAttribute('aria-pressed',String(on));});
+  const custom=el.querySelector('.gasa-custom');
+  if(!typing){el.querySelector('.pb-gasa-custom').value=status?'':value;custom.open=!status&&value!=='';}
+  custom.querySelector('summary').textContent=!status&&value?'시간 기록 · '+value:'시간 직접 입력';
+}
 function blockBadMark(el){
   const vals = [...CHECK_KEYS.map(k=>segGetB(el,k)), el.querySelector('.pb-gasa').value.trim()];
   return vals.some(v => v==='△' || v==='Ⅹ');
@@ -2561,6 +2567,7 @@ function renumberBlocks(){
     el.querySelector('.pb-del').style.display = (els.length>1 && !(S.editIds||[]).includes(el.dataset.rid)) ? '' : 'none';
   });
   syncQuickProducts();
+  if(!$('#entrySave').disabled)$('#entrySave').textContent=entrySaveLabel();
 }
 function bindLongPress(btn, fn){
   let t = null;
@@ -2603,26 +2610,22 @@ function addBlock(row){
   refreshProductChips(el);
   el.querySelector('.pb-partchips').innerHTML = partsList().map(p=>`<button type="button" class="chip" data-p="${esc(p)}">${esc(p)}</button>`).join('');
   el.querySelectorAll('.pb-partchips .chip').forEach(b => b.onclick = () => { el.querySelector('.pb-defpart').value = b.dataset.p; });
-  el.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+  el.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => {
     if(b.classList.contains('sel')) return;   /* 재탭으로 해제되지 않게 (라디오형) */
     b.parentElement.querySelectorAll('button').forEach(x=>{ x.classList.remove('sel'); x.setAttribute('aria-pressed', 'false'); });
     b.classList.add('sel'); b.setAttribute('aria-pressed', 'true');
     updateBlockNeed(el);
   });
-  el.querySelectorAll('.gasa-row [data-g]').forEach(b => b.onclick = () => { el.querySelector('.pb-gasa').value = b.dataset.g; updateBlockNeed(el); });
-  el.querySelector('.pb-gasa').addEventListener('input', ()=>updateBlockNeed(el));
+  el.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { el.querySelector('.pb-gasa').value = b.dataset.g;syncGasaB(el);updateBlockNeed(el); });
+  el.querySelector('.pb-gasa').addEventListener('input', ()=>{syncGasaB(el);updateBlockNeed(el);});
+  el.querySelector('.pb-gasa-custom').addEventListener('input',e=>{el.querySelector('.pb-gasa').value=e.target.value;syncGasaB(el,true);updateBlockNeed(el);});
   el.querySelector('.pb-remark').addEventListener('input', ()=>updateBlockNeed(el));
   el.addEventListener('input', e => {
     syncQuickProducts();
     if(!(e.target && e.target.classList)) return;
     e.target.classList.remove('need');
-    const n = (e.target.closest('.stepper,.f-row,.bd-row,.gasa-row') || e.target).nextElementSibling;
+    const n = (e.target.closest('.stepper,.f-row,.gasa-custom') || e.target).nextElementSibling;
     if(n && n.classList.contains('f-err')) n.remove();
-  });
-  el.querySelectorAll('.pb-pct').forEach(b => b.onclick = () => {
-    const inp = el.querySelector('.'+b.dataset.t); const v = inp.value.trim();
-    if(v && !v.endsWith('%')) inp.value = v+'%';
-    inp.focus();
   });
   el.querySelector('.pb-pm').onclick = () => { const i=el.querySelector('.pb-prod'); i.value = Math.max(0,(numOr(i.value,0)||0)-1); };
   el.querySelector('.pb-pp').onclick = () => { const i=el.querySelector('.pb-prod'); i.value = (numOr(i.value,0)||0)+1; };
@@ -2677,12 +2680,11 @@ function addBlock(row){
     el.querySelector('.pb-defect').open = !!((Number(row.scrapKg)||0)>0 || (Number(row.defQty)||0)>0 || row.defPart);
     el.querySelector('.pb-gasa').value = row.gasa ?? '○';
     CHECK_KEYS.forEach(k => segSetB(el, k, row[k]||''));
-    el.querySelector('.pb-b1').value = row.b1 ?? '';
-    el.querySelector('.pb-b2').value = row.b2 ?? '';
     el.querySelector('.pb-remark').value = row.remark||'';
   }else{
     CHECK_KEYS.forEach(k => segSetB(el, k, '○'));
   }
+  syncGasaB(el);
   updateDefSummary(el);
   updateBlockNeed(el);
   updateProdProg(el);
@@ -2695,7 +2697,7 @@ function fieldErr(inp, msg){
   expandProduct(inp.closest('.pb'),true);
   if(inp.closest('#workerDetails')) $('#workerDetails').open=true;
   inp.classList.add('need');
-  const host = inp.closest('.stepper,.f-row,.bd-row,.gasa-row') || inp;
+  const host = inp.closest('.stepper,.f-row,.gasa-custom') || inp;
   let e = host.nextElementSibling;
   if(!(e && e.classList.contains('f-err'))){ e = document.createElement('div'); e.className = 'f-err'; host.insertAdjacentElement('afterend', e); }
   e.textContent = msg;
@@ -2748,6 +2750,11 @@ function planIntentFields(previous, mode, plan, modeChanged){
   const intent=previous&&!modeChanged?previous.planIntent:mode;
   if(intent!==mode||!fits(intent))throw Error('저장된 생산 상태와 계획수량이 다릅니다. 생산 진행 상태를 다시 선택해 주세요.');
   return {planIntent:intent};
+}
+const legacyInspectionDrafts=new WeakMap();
+function rememberLegacyInspectionDraft(el,draft){
+  const values={};for(const key of ['b1','b2'])if(Object.prototype.hasOwnProperty.call(draft,key))values[key]=draft[key];
+  if(Object.keys(values).length)legacyInspectionDrafts.set(el,values);
 }
 function collectBlock(el, i){
   let product = el.querySelector('.pb-product').value.trim();
@@ -2804,7 +2811,7 @@ function collectBlock(el, i){
     gasa: el.querySelector('.pb-gasa').value.trim(),
     cs: segGetB(el,'cs'), gap: segGetB(el,'gap'), inlet: segGetB(el,'inlet'),
     face: segGetB(el,'face'), bubble: segGetB(el,'bubble'),
-    b1: el.querySelector('.pb-b1').value.trim(), b2: el.querySelector('.pb-b2').value.trim(),
+    ...(!previous?legacyInspectionDrafts.get(el)||{}:{}),
     remark: el.querySelector('.pb-remark').value.trim()
   };
 }
@@ -2890,7 +2897,7 @@ function formSnapshot(){
       pr: el.querySelector('.pb-prod').value, s: el.querySelector('.pb-scrap').value,
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
-      b1: el.querySelector('.pb-b1').value, b2: el.querySelector('.pb-b2').value,
+      ...(legacyInspectionDrafts.get(el)||{}),
       r: el.querySelector('.pb-remark').value
     }))
   });
@@ -2948,7 +2955,7 @@ function openWorkerEntry(name){
   $('#entryTitle').innerHTML=$('#entryTitle').innerHTML.replace('기록 수정','하루 기록 수정');
   $$('#prodBlocks .pb').forEach(el=>expandProduct(el,false));renumberBlocks();entrySnap=formSnapshot();
 }
-function entrySaveLabel(){return S.editId?'수정 저장':'일보 저장';}
+function entrySaveLabel(){const count=$('#prodBlocks').children.length,label=S.editId?'수정 저장':'일보 저장';return count>1&&S.entryMode!=='case'?label+` (${count}개 제품)`:label;}
 function entryDirty(){ return formSnapshot() !== entrySnap; }
 /* ── 작성 중 임시저장: 전화·앱 종료로 폼이 닫혀도 다음에 열면 이어서 (새 기록만, 같은 날짜, 12시간 이내) ── */
 let draftTimer = null;
@@ -3020,7 +3027,7 @@ function restoreForm(snap){
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));
-    el.querySelector('.pb-b1').value = b.b1 || ''; el.querySelector('.pb-b2').value = b.b2 || ''; el.querySelector('.pb-remark').value = b.r || '';
+    rememberLegacyInspectionDraft(el,b);el.querySelector('.pb-remark').value = b.r || '';syncGasaB(el);
     el.querySelector('.pb-defect').open = !!(b.s || b.dq || b.dp);
     updateDefSummary(el); updateBlockNeed(el); updateProdProg(el);
     syncPlanMode(el);expandProduct(el,false);
@@ -3069,8 +3076,8 @@ async function saveEntry(){
     /* 케이스 교체: 제품 없이 작업시간만 저장 */
     if(hours === ''){ fieldErr($('#fHours'), '케이스 교체한 작업시간을 입력하세요'); return; }
     const oldC = S.editId ? S.rows.find(r => r.id === S.editId) : null;
-    const row = {...oldC, id: oldC ? oldC.id : S.caseRowId, worker, off: true, offKind: '케이스 교체', hours, product:'', plan:'', prod:'', scrapKg:'', defQty:'', defPart:'',
-      gasa:'', cs:'', gap:'', inlet:'', face:'', bubble:'', b1:'', b2:'', remark:'', ts: oldC ? oldC.ts : Date.now(), t: Date.now()};
+    const row = {id: oldC ? oldC.id : S.caseRowId, worker, off: true, offKind: '케이스 교체', hours, product:'', plan:'', prod:'', scrapKg:'', defQty:'', defPart:'',
+      gasa:'', cs:'', gap:'', inlet:'', face:'', bubble:'', remark:'', ts: oldC ? oldC.ts : Date.now(), t: Date.now()};
     const btnC = $('#entrySave'); btnC.disabled = true; btnC.textContent = '저장 중…';
     const caseDate = S.date;
     try{
@@ -3137,7 +3144,8 @@ async function saveEntry(){
   const base = Date.now();
   const newRows = datas.map((d,i) => {
     const id=els[i].dataset.rid||uid(), previous=S.rows.find(r=>r.id===id);
-    return {...previous,id,worker,hours,...d,ts:previous?previous.ts:base+i,t:base};
+    /* 폼이 제공한 필드만 갱신한다. 숨긴 항목·확장 필드는 mutateDay의 최신 원행에 남긴다. */
+    return {id,worker,hours,...d,ts:previous?previous.ts:base+i,t:base};
   });
   const align = {worker, hours};
   /* 내 이름은 처음 한 번만 자동 학습 — 남의 기록을 고치거나 대신 입력해도 내 이름이 바뀌지 않게 */
@@ -3971,7 +3979,7 @@ function init(){
     const n = (e.target.closest('.stepper') || e.target).nextElementSibling;
     if(n && n.classList.contains('f-err')) n.remove();
   }));
-  $('#entryOv').addEventListener('click', e => { if(e.target && e.target.closest && e.target.closest('.seg, .gasa-row, .pb-planzero, .chip, .pb-pm, .pb-pp, #hrMinus, #hrPlus, .pb-pct, .pb-del, .pb-defclear, .recent-btn')){syncQuickProducts();saveDraft();} });
+  $('#entryOv').addEventListener('click', e => { if(e.target && e.target.closest && e.target.closest('.seg, .pb-planzero, .chip, .pb-pm, .pb-pp, #hrMinus, #hrPlus, .pb-del, .pb-defclear, .recent-btn')){syncQuickProducts();saveDraft();} });
   $('#draftClear').onclick = () => {
     if(!clearDraft()){ toast('임시저장을 정리하지 못했습니다. 저장공간을 확인하세요.'); return; }
     const keepW = $('#fWorker').value;
@@ -4094,7 +4102,7 @@ function init(){
   /* 숫자·기호 칸은 포커스 시 전체 선택 — '12'가 '1215'로 덧붙거나 '○'가 '15○'로 남는 오입력 방지 */
   $('#entryOv').addEventListener('focusin', e => {
     const t = e.target;
-    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-completion-stock, .pb-scrap, .pb-defqty, .pb-b1, .pb-b2, .pb-gasa')) requestAnimationFrame(() => { try{ t.select(); }catch(x){} });
+    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-completion-stock, .pb-scrap, .pb-defqty, .pb-gasa-custom')) requestAnimationFrame(() => { try{ t.select(); }catch(x){} });
   });
   /* 자정을 넘겨도 켜 둔 화면(관리자 PC): 날짜 표시·미작성 카드 갱신 */
   let lastToday = todayStr();
