@@ -293,6 +293,17 @@ details.defect[open]{border-style:solid; border-color:var(--bad); background:var
 .gasa-custom summary{cursor:pointer;min-height:36px;padding:8px 0;overflow-wrap:anywhere}
 .gasa-custom label{display:block;font-size:12px;line-height:1.45}
 .gasa-custom input{width:100%;height:44px;margin-top:6px;padding:5px 8px;background:var(--surface);border:1.5px solid var(--line-in);border-radius:9px}
+.pb-schedule{margin:14px 0 8px;padding:10px 12px;border:1px solid var(--line-in);border-radius:12px;background:var(--surface)}
+.pb-schedule summary{cursor:pointer;min-height:28px;font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.pb-schedule .hint{display:block;margin:6px 0;line-height:1.55}
+.pb-schedule-head,.pb-machine-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;gap:7px;align-items:center}
+.pb-schedule-head{margin-top:10px;font-size:12px;color:var(--ink-dim)}
+.pb-machine-row{margin-top:6px}.pb-machine-row input{width:100%;min-width:0;height:44px;padding:7px 9px}
+.pb-machine-row button,.pb-machine-add{min-height:40px;padding:7px 10px;border:1px solid var(--line-in);border-radius:8px;background:var(--surface);color:var(--ink)}
+.pb-machine-row button{height:44px;padding:4px}.pb-machine-add{margin-top:8px}
+.pb-schedule-daily-label{display:block;font-size:13px;margin-top:12px}.pb-schedule-daily-label input{width:100%;height:44px;margin-top:6px}
+.pb-schedule-note{font-size:12px;line-height:1.55;overflow-wrap:anywhere;color:var(--ink-dim);margin-top:8px}
+.pb-schedule-note.warn{color:var(--bad)}
 @media(min-width:720px){.chk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.seg button{min-height:54px}.seg button .status-word{font-size:12px}}
 .chk .ck-hint{font-size:12.5px; color:var(--ink-dim); font-weight:400}
 .recent-btn{
@@ -1776,7 +1787,7 @@ async function loadProductCatalog(background=false){
 }
 
 /* PRODUCTION_PROGRESS_PROJECTION_START */
-const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty'];
+const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions'];
 function progressSourceFields(row){return Object.fromEntries(PROGRESS_SOURCE_FIELDS.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,row[k]]));}
 function progressStable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
 function parseProductionProgress(value){
@@ -2527,7 +2538,7 @@ function partsList(){ return [...new Set([...(S.presets.parts||[]), '상형1','�
 function segBtns(gasa=false){ return [['○','양호'],['△','보통'],['Ⅹ','불량']].map(([v,label])=>`<button type="button" data-v="${v}"${gasa?` data-g="${v}"`:''} aria-pressed="false"><span aria-hidden="true">${v}</span><span class="status-word">${label}</span></button>`).join(''); }
 function blockHTML(){
   return `
-  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·검사·불량 상세</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·호기·검사 상세</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
   <div class="pb-body">
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
@@ -2553,6 +2564,16 @@ function blockHTML(){
     <input class="pb-prod" inputmode="numeric" placeholder="0" aria-label="생산량">
     <button type="button" class="pb-pp" aria-label="생산량 1 늘리기">＋</button>
   </div>
+  <details class="pb-schedule">
+    <summary>일정 조건 · 호기 / 하루 조수 <span class="pb-schedule-summary">선택 입력</span></summary>
+    <span class="hint">실제 작업의 호기와 예상 속도를 생산일정표에 반영합니다. 변경할 때만 입력하고, 비워둔 항목은 기존 조건을 유지합니다.</span>
+    <div class="pb-schedule-head"><span>호기</span><span>호기별 계획 (조)</span><span></span></div>
+    <div class="pb-machines"></div>
+    <button type="button" class="pb-machine-add">+ 호기 추가</button>
+    <label class="pb-schedule-daily-label">예상 하루 생산 (조)<input class="f-input pb-schedule-daily" inputmode="decimal" placeholder="예: 5 · 종료일 계산용" aria-label="예상 하루 생산 조수"></label>
+    <span class="hint">오늘 만든 수량은 위 생산량에 입력합니다. 이 칸은 앞으로 하루에 생산할 조수이며, 체크한 휴일을 제외해 종료일을 계산합니다.</span>
+    <div class="pb-schedule-note" role="status"></div>
+  </details>
   <details class="defect pb-defect">
     <summary><span class="df-sum">불량 있음 (석고량·수량·부위)</span></summary>
     <div class="f-label">불량석고량 (kg)</div>
@@ -2608,7 +2629,7 @@ function syncQuickProducts(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<h3>제품별 생산량</h3><p class="quick-hint">수량을 모아서 입력하세요. 제품명을 누르면 계획·검사·불량을 확인할 수 있습니다.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><label class="quick-qty"><span>생산량 (조)</span><input inputmode="numeric" aria-label="제품 ${i+1} 생산량"></label></div>`).join('');
+    box.innerHTML='<h3>제품별 생산량</h3><p class="quick-hint">수량을 모아서 입력하세요. 제품명을 누르면 계획·호기·검사 상세를 입력할 수 있습니다.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><label class="quick-qty"><span>생산량 (조)</span><input inputmode="numeric" aria-label="제품 ${i+1} 생산량"></label></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
@@ -2683,11 +2704,49 @@ function updateDefSummary(el){
     ? `불량 입력됨: ${q||'?'}개${s ? ' · '+s+'kg' : ''}${pt ? ' · '+pt : ''}`
     : '불량 있음 (석고량·수량·부위)';
 }
+const scheduleFormBaselines=new WeakMap();
+function scheduleFormValues(el){return{machines:[...el.querySelectorAll('.pb-machine-row')].map(row=>({name:row.querySelector('.pb-machine-name').value,qty:row.querySelector('.pb-machine-qty').value})),daily:el.querySelector('.pb-schedule-daily').value};}
+function scheduleFormSignature(value){return JSON.stringify({machines:(value.machines||[]).map(m=>({name:String(m.name??'').trim(),qty:String(m.qty??'').trim()})).filter(m=>m.name||m.qty),daily:String(value.daily??'').trim()});}
+function normalizeScheduleInput(value){
+  const fail=(message,key,index)=>{const e=Error(message);e.scheduleKey=key;e.machineIndex=index;throw e;};
+  const number=(raw,key,index,positive=false)=>{const text=String(raw??'').trim().replace(/,/g,'');if(!text)return null;if(!/^\d+(?:\.\d+)?$/.test(text)||!Number.isFinite(Number(text))||(positive&&Number(text)<=0))fail(positive?'예상 하루 생산은 0보다 큰 숫자로 입력하세요.':'호기별 계획은 0 이상의 숫자로 입력하세요.',key,index);return Number(text);};
+  const seen=new Set(),machines=[];
+  if((value.machines||[]).length>50)fail('호기는 최대 50개까지 입력할 수 있습니다.','name',49);
+  (value.machines||[]).forEach((m,index)=>{let name=String(m.name??'').trim().replace(/\s+/g,' ');const qty=number(m.qty,'qty',index);if(!name){if(qty!==null)fail('배정할 호기를 입력하세요.','name',index);return;}
+    if(name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^[-+]\d/.test(name))fail('호기는 60자 이내의 이름 또는 번호로 입력하세요.','name',index);
+    const numeric=name.match(/^(\d+)\s*호?$/);if(numeric){if(!Number.isSafeInteger(Number(numeric[1])))fail('호기 번호를 확인해 주세요.','name',index);name=Number(numeric[1])+'호';}
+    if(seen.has(name))fail('같은 호기가 중복되었습니다. 한 줄에 합쳐 입력하세요.','name',index);seen.add(name);machines.push({name,qty});
+  });
+  const daily=number(value.daily,'daily',null,true);return machines.length||daily!==null?{schema:1,machines,daily}:null;
+}
+function addScheduleMachine(el,value={}){
+  const row=document.createElement('div');row.className='pb-machine-row';row.innerHTML='<input class="f-input pb-machine-name" placeholder="예: 13" aria-label="일정 호기" autocomplete="off"><input class="f-input pb-machine-qty" inputmode="decimal" placeholder="미입력 가능" aria-label="호기별 계획 조수"><button type="button" title="이 호기 입력 빼기" aria-label="호기 입력 빼기">×</button>';
+  row.querySelector('.pb-machine-name').value=value.name??'';row.querySelector('.pb-machine-qty').value=value.qty??'';el.querySelector('.pb-machines').appendChild(row);
+  row.querySelector('button').onclick=()=>{row.remove();if(!el.querySelector('.pb-machine-row'))addScheduleMachine(el);updateScheduleSummary(el);syncQuickProducts();saveDraft();};return row;
+}
+function restoreScheduleForm(el,value=null,{baseline=true}={}){
+  el.querySelector('.pb-machines').innerHTML='';const machines=Array.isArray(value?.machines)?value.machines:[];(machines.length?machines:[{},{}]).forEach(m=>addScheduleMachine(el,m));el.querySelector('.pb-schedule-daily').value=value?.daily??'';
+  if(baseline)scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));updateScheduleSummary(el);
+}
+function updateScheduleSummary(el){
+  const values=scheduleFormValues(el),summary=el.querySelector('.pb-schedule-summary'),note=el.querySelector('.pb-schedule-note');let data;
+  try{data=normalizeScheduleInput(values);}catch(e){summary.textContent='입력 확인';note.classList.add('warn');note.textContent=e.message;return;}
+  summary.textContent=data?data.machines.map(m=>m.name+(m.qty!==null?' '+r2(m.qty)+'조':'')).concat(data.daily!==null?['하루 '+r2(data.daily)+'조']:[]).join(' · '):'선택 입력';
+  const plan=Number(el.querySelector('.pb-plan').value)||Number(el.dataset.productionPlanQty),allocated=(data?.machines||[]).reduce((n,m)=>n+(m.qty??0),0),partial=data?.machines.some(m=>m.qty===null),different=plan>0&&data?.machines.length&&(partial||Math.abs(allocated-plan)>0.000001);
+  note.classList.toggle('warn',!!different);note.textContent=different?`시작 계획 ${r2(plan)}조 · 호기 배정 ${r2(allocated)}조${partial?' (미입력 호기 있음)':''}. 차이는 자동으로 나누지 않습니다. 배정 조수를 확인해 주세요.`:data?'일보 저장 시 일정 조건도 함께 반영됩니다. 생산 시작·계속·종료 상태는 위 선택을 따릅니다.':'입력하지 않아도 저장할 수 있습니다. 기존 조건을 지우거나 오늘 생산량을 바꾸지 않습니다.';
+}
+function collectScheduleFields(el){
+  const values=scheduleFormValues(el);if(scheduleFormSignature(values)===scheduleFormBaselines.get(el))return{};
+  const result=normalizeScheduleInput(values);return result?{scheduleConditions:result}:{};
+}
 function addBlock(row){
   const el = document.createElement('div'); el.className = 'pb';
   el.dataset.rid = row ? row.id : uid();   /* 재전송 시 중복 등록 방지용 고정 id */
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
+  restoreScheduleForm(el,row?.scheduleConditions);
+  el.querySelector('.pb-machine-add').onclick=()=>{if(el.querySelectorAll('.pb-machine-row').length>=50){toast('호기는 최대 50개까지 입력할 수 있습니다.');return;}addScheduleMachine(el).querySelector('input').focus();saveDraft();};
+  el.querySelector('.pb-schedule').addEventListener('input',()=>{updateScheduleSummary(el);saveDraft();});
   el.querySelector('.pb-toggle').onclick=()=>expandProduct(el,el.querySelector('.pb-body').hidden);
   /* 최근 14개를 먼저 표시하고, 검색은 관리 품목 전체와 별칭을 사용한다. */
   const prodIn = el.querySelector('.pb-product');
@@ -2739,7 +2798,7 @@ function addBlock(row){
     }else{applyPz(false);if(desired==='continue')planEl.value='';else if(!planEl.value&&Number(el.dataset.productionPlanQty)>0)planEl.value=el.dataset.productionPlanQty;e.target.value=desired;el.dataset.planModeChanged='1';}
     syncPlanMode(el);saveDraft();
   };
-  planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); });
+  planEl.addEventListener('input', () => { if(planEl.value.trim()) applyPz(false); updateScheduleSummary(el); });
   el.querySelector('.pb-completion-reason').onchange=()=>{syncCompletionControls(el);saveDraft();};
   ['.pb-completion-stock','.pb-completion-note'].forEach(s=>el.querySelector(s).addEventListener('input',saveDraft));
   ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).addEventListener('input', () => updateDefSummary(el)));
@@ -2773,12 +2832,14 @@ function addBlock(row){
   updateBlockNeed(el);
   updateProdProg(el);
   syncPlanMode(el);
+  updateScheduleSummary(el);
   renumberBlocks();
   return el;
 }
 /* 칸 바로 아래에 빨간 글씨로 이유 표시 — 토스트가 키보드에 가려져도 보이게 */
 function fieldErr(inp, msg){
   expandProduct(inp.closest('.pb'),true);
+  if(inp.closest('.pb-schedule'))inp.closest('.pb-schedule').open=true;
   if(inp.closest('#workerDetails')) $('#workerDetails').open=true;
   inp.classList.add('need');
   const host = inp.closest('.stepper,.f-row,.gasa-custom') || inp;
@@ -2883,10 +2944,12 @@ function collectBlock(el, i){
   const prod = numField(el, 'pb-prod', '생산량', i);     if(!prod.ok) return null;
   const scrap = numField(el, 'pb-scrap', '불량석고량', i); if(!scrap.ok) return null;
   const defq = numField(el, 'pb-defqty', '불량수량', i);  if(!defq.ok) return null;
+  let scheduleFields;try{scheduleFields=collectScheduleFields(el);}catch(e){const machine=el.querySelectorAll('.pb-machine-row')[e.machineIndex??0],inp=e.scheduleKey==='daily'?el.querySelector('.pb-schedule-daily'):machine?.querySelector(e.scheduleKey==='qty'?'.pb-machine-qty':'.pb-machine-name');fieldErr(inp||el.querySelector('.pb-schedule-daily'),`제품 ${i+1}: ${e.message}`);return null;}
   return {
     ...productFields,
     ...planFields,
     ...completion,
+    ...scheduleFields,
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -2981,6 +3044,7 @@ function formSnapshot(){
       pr: el.querySelector('.pb-prod').value, s: el.querySelector('.pb-scrap').value,
       dq: el.querySelector('.pb-defqty').value, dp: el.querySelector('.pb-defpart').value,
       g: el.querySelector('.pb-gasa').value, segs: CHECK_KEYS.map(k=>segGetB(el,k)).join(''),
+      sc:scheduleFormValues(el),sb:scheduleFormBaselines.get(el),
       ...(legacyInspectionDrafts.get(el)||{}),
       r: el.querySelector('.pb-remark').value
     }))
@@ -3108,6 +3172,7 @@ function restoreForm(snap){
     if(b.pq)el.dataset.productionPlanQty=b.pq;
     el.querySelector('.pb-completion-reason').value=b.cr||'';el.querySelector('.pb-completion-stock').value=b.cq??'';el.querySelector('.pb-completion-note').value=b.cn||'';
     el.querySelector('.pb-prod').value = b.pr || '';
+    if(b.sc){restoreScheduleForm(el,b.sc,{baseline:false});if(typeof b.sb==='string')scheduleFormBaselines.set(el,b.sb);}
     el.querySelector('.pb-scrap').value = b.s || ''; el.querySelector('.pb-defqty').value = b.dq || ''; el.querySelector('.pb-defpart').value = b.dp || '';
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));

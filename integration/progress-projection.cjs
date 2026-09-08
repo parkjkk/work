@@ -1,7 +1,7 @@
 'use strict';
 const {hash,sourceFiles,productIndex}=require('./ilbo-sync.cjs');
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k),copy=x=>JSON.parse(JSON.stringify(x));
-const SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty'];
+const SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions'];
 function projectProgress(state,snapshot,previous,now=new Date().toISOString(),planning){
  if(!planning){require('./schedule-core.cjs');planning=require('./schedule-planning.cjs');}
  if(typeof planning.dailyProgress!=='function')throw Error('Matching planning runtime is required');

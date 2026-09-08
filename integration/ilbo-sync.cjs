@@ -9,6 +9,11 @@ const clean=x=>String(x??'').trim();
 function iso(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T00:00:00Z');return !Number.isNaN(+d)&&d.toISOString().slice(0,10)===s}
 function number(x,label){if(x===''||x==null)return null;if(typeof x!=='number'&&typeof x!=='string'||!/^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(String(x).trim()))throw Error('Invalid numeric field: '+label);const n=Number(x);if(!Number.isFinite(n)||n<0)throw Error('Invalid nonnegative field: '+label);return n}
 function workingHours(value){const hours=number(value,'hours');if(hours!==null&&hours>24)throw Error('Hours exceed day');return hours}
+function scheduleConditions(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!Array.isArray(value.machines)||value.machines.length>50)throw Error('Invalid schedule conditions');
+ const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||typeof m.name!=='string')throw Error('Invalid machine');let name=m.name.trim();const numeric=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(numeric)name=String(Number(numeric[1]))+'호';if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||names.has(name))throw Error('Invalid machine name');names.add(name);return{name,qty:number(m.qty,'machine quantity')}}),daily=number(value.daily,'daily');
+ if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');return{schema:1,machines,daily};
+}
 function completionValue(value){
  if(value===null)return null;
  if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||!(value.stockQty===null||typeof value.stockQty==='number'&&Number.isFinite(value.stockQty)&&value.stockQty>=0)||value.reason!=='stock'&&value.stockQty!==null)throw Error('Invalid production completion');
@@ -87,6 +92,9 @@ function planSync(state,snapshot,options={}){
     if(!(q===null||typeof q==='number'&&Number.isFinite(q)&&q>0)){issue('invalid-production-plan-quantity',ctx);continue}
     values.productionPlanQty=q;
    }
+   if(own(raw,'scheduleConditions')){
+    try{values.fieldScheduleConditions=scheduleConditions(raw.scheduleConditions)}catch{issue('invalid-schedule-conditions',ctx);continue}
+   }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
    const hours=workingHours(raw.hours);
@@ -129,7 +137,9 @@ function planSync(state,snapshot,options={}){
  for(const c of prepared.filter(c=>!c.attendance)){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
-  const row=c.match.row;if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
+  const row=c.match.row;
+  if(row?.fieldScheduleConditions&&c.values.fieldScheduleConditions){const prior=row.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>({...m,qty:m.qty??prior.machines?.find(x=>x.name===m.name)?.qty??null}));v.daily??=prior.daily??null}
+  if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
  }
  const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&si.targetHash===hash(rowBody(row))};
  // Assign time only to a row that can be merged. A retained clock row must not
