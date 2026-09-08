@@ -1,7 +1,7 @@
 (function(root){'use strict';const C=root.ScheduleCore,clone=C.clone;
 const add=(d,n)=>{const x=new Date(d+'T00:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
 const days=(a,b)=>{const out=[];if(!C.iso(a)||!C.iso(b)||a>b)return out;for(let d=a;d<=b&&out.length<1100;d=add(d,1))out.push(d);return out};
-const startPlan=r=>r.plan>0?r.plan:r.plan===0&&r.productionPlanQty>0?r.productionPlanQty:null;
+const startPlan=r=>{const plan=C.num(r.plan),saved=C.num(r.productionPlanQty);return plan>0?plan:plan===0&&saved>0?saved:null};
 const completion=r=>{try{return C.completionValue(r.productionCompletion)}catch{return null}};
 const endsProduction=r=>r.plan===0||!!completion(r);
 const named=(s,r)=>({...r,product:C.catalogName(s,r.product)});
@@ -20,20 +20,56 @@ function sourceContinuationLinks(s,m,stored){
  }
  return links;
 }
+function reservationContext(s,k,normalized=null,knownContinuations=null){
+ const source=s.months?.[k],m=normalized||{...source,rows:(source?.rows||[]).map(r=>named(s,r)),jobs:(source?.jobs||[]).map(j=>named(s,j))},links=new Map(),candidates=new Map(),selectable=new Map(),issues=[];
+ if(!source)return{links,candidates,selectable,issues};
+ const ordered=m.rows.map((row,index)=>({row,index})).filter(x=>!x.row.deleted).sort((a,b)=>(a.row.date||'').localeCompare(b.row.date||'')||a.index-b.index).map(x=>x.row),stored=m.jobs||[],manual=stored.filter(j=>j.manual),counts=new Map(),jobCounts=new Map();
+ for(const r of ordered)counts.set(r.id,(counts.get(r.id)||0)+1);for(const j of stored)jobCounts.set(j.id,(jobCounts.get(j.id)||0)+1);
+ const originalContinuations=knownContinuations||sourceContinuationLinks(s,m,stored),starts=ordered.filter(r=>startPlan(r)>0),same=(a,b)=>a.worker===b.worker&&a.product===b.product;
+ const evidence=r=>C.num(r.pours)>0||startPlan(r)>0||endsProduction(r);
+ const owns=(j,r)=>r.jobId?r.jobId===j.id:same(j,r)&&(!j.start||r.date>=j.start);
+ function reason(r,j){
+  if(m.closed||m.closeSnapshot||m.modern===false)return'마감 보관자료의 작업 연결은 변경할 수 없습니다.';
+  if(!r.id||counts.get(r.id)!==1||!j.id||jobCounts.get(j.id)!==1)return'행 또는 작업 ID가 중복되어 연결을 확인해야 합니다.';
+  if(!C.iso(r.date)||!(startPlan(r)>0)||!Number.isFinite(startPlan(r)))return'계획수량이 있는 시작 행에서 연결해 주세요.';
+  if(!j.manual||!same(r,j))return'같은 작업자·정식 품명의 수기 작업만 연결할 수 있습니다.';
+  if(j.carried||j.carryFrom||j.previousProduced>0||j.previousPlan>0)return'이월 작업의 기존 연결을 유지해야 합니다.';
+  if(j.stoppedAt||j.complete||j.ended||j.productionCompletion)return'종료된 작업의 기존 연결을 유지해야 합니다.';
+  if(!(j.plan>0)||!Number.isFinite(j.plan)||!C.iso(j.start))return'수기 작업의 시작일·계획수량을 확인해 주세요.';
+  if(j.sourceRowId&&j.sourceRowId!==r.id||stored.some(x=>x.id!==j.id&&x.sourceRowId===r.id))return'이미 다른 시작 행이나 작업에 연결된 일정입니다.';
+  const index=ordered.indexOf(r);
+  if(ordered.slice(0,index).some(x=>owns(j,x)&&evidence(x)))return'이 시작 행보다 앞선 실적·시작·완료 기록이 있는 작업입니다.';
+  if(starts.some(x=>x.id!==r.id&&x.jobId===j.id))return'다른 시작 행이 이 작업을 사용하고 있습니다.';
+  return'';
+ }
+ function baselineMatches(r){if(r.fieldPlanIntent==='continue'||originalContinuations.has(r.id))return false;const si=r.sourceIntegration;if(!si)return r.sourceRow==null;if(si.targetEdited)return false;const b=si.baseline;if(!b)return false;return['date','worker','product','plan','fieldPlanIntent'].every(f=>!Object.prototype.hasOwnProperty.call(b,f)||(f==='product'?C.catalogName(s,b[f])===r.product:f==='plan'?C.num(b[f])===C.num(r[f]):(b[f]??null)===(r[f]??null)))}
+ for(const r of starts){
+  const options=manual.filter(j=>same(r,j)).map(j=>{const why=reason(r,j);return{jobId:j.id,eligible:!why,reason:why,product:j.product,worker:j.worker,start:j.start,end:j.end||null,plan:j.plan,daily:j.daily??null,machines:clone(j.machines||[])}});selectable.set(r.id,options);
+  const exact=options.filter(o=>o.eligible&&o.start===r.date&&o.plan===startPlan(r)).map(o=>o.jobId);candidates.set(r.id,exact);
+  let chosen=null,explicit=false;
+  if(r.jobId){const o=options.find(o=>o.jobId===r.jobId);if(o?.eligible){chosen=o.jobId;explicit=true}}
+  else if(baselineMatches(r)&&exact.length===1){const id=exact[0],j=manual.find(j=>j.id===id),competing=starts.filter(x=>same(x,j)&&x.date===j.start&&startPlan(x)===j.plan&&(!x.jobId||x.jobId===id));if(competing.length===1)chosen=id;else issues.push({rowId:r.id,code:'ambiguous-start',message:'같은 수기 예약에 맞는 시작 행이 여러 개입니다. 연결 일정을 선택해 주세요.',candidateIds:exact})}
+  else if(!r.jobId&&exact.length>1)issues.push({rowId:r.id,code:'ambiguous-reservation',message:'같은 조건의 수기 예약이 여러 개입니다. 연결 일정을 선택해 주세요.',candidateIds:exact});
+  if(chosen){const j=manual.find(j=>j.id===chosen);links.set(r.id,{kind:'reservation-start',rowId:r.id,jobId:j.id,explicit,date:r.date,sourcePlan:startPlan(r),originalPlan:j.plan,message:explicit?'선택한 수기 일정의 호기 배정과 계획에 이 시작 행과 계속 실적을 연결합니다.':'시작일·작업자·품명·계획이 유일하게 일치하는 수기 예약에 실적을 연결합니다.'})}
+ }
+ return{links,candidates,selectable,issues};
+}
+function reservationLinks(s,k){return reservationContext(s,k)}
+function reservationLinkOptions(s,k,rowId){return reservationContext(s,k).selectable.get(rowId)||[]}
 function jobs(s,k){const source=s.months[k],m={...source,rows:(source.rows||[]).map(r=>named(s,r)),plans:(source.plans||[]).map(r=>named(s,r)),jobs:(source.jobs||[]).map(r=>named(s,r))};if(m.closed&&m.plans?.length){return(m.jobs||[]).map(j=>{const p=m.plans.find(p=>p.source===j.source),current=p?.produced??0,previous=j.carried?(p?.previousProduced||0):0,total=(p?.plan||j.plan||0)+previous;return{...j,records:[],currentProduced:current,produced:current+previous,totalPlan:total,remaining:Math.max(0,total-current-previous),complete:current+previous>=total,archived:true}})}if(m.modern===false)return[];
- const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),out=[],starts=m.rows.filter(r=>!r.deleted&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)),occ={};
+ const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),reservations=reservationContext(s,k,m,continuations),anchors=new Map([...reservations.links.values()].map(x=>[x.jobId,x.rowId])),anchor=j=>j.sourceRowId||anchors.get(j.id),out=[],starts=m.rows.filter(r=>!r.deleted&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)&&!reservations.links.has(r.id)),occ={};
  for(const r of starts){const index=occ[r.product]||0;occ[r.product]=index+1;const cfg=stored.find(j=>j.sourceRowId===r.id)||{},legacy=r.sourceIntegration&&!cfg.sourceRowId?null:m.plans.filter(p=>p.product===r.product)[index],parsed=parseInput(legacy?.input||'',k,s.workers);out.push({id:'job:'+r.id,originId:'job:'+r.id,sourceRowId:r.id,product:r.product,worker:r.worker,start:r.date,previousProduced:legacy?.previousProduced||0,previousPlan:legacy?.previousPlan||0,...parsed,...cfg,plan:startPlan(r),start:cfg.start||parsed.start||r.date,worker:cfg.worker||parsed.worker||r.worker})}
  for(const j of stored){if(!j.sourceRowId)out.push({...j,originId:j.originId||j.id});else if(!out.some(x=>x.sourceRowId===j.sourceRowId)&&m.rows.some(r=>r.id===j.sourceRowId&&!r.deleted))out.push({...j,originId:j.originId||j.id})}
  // Dates order backfilled web rows; physical row order breaks ties on the same date.
  // The original ledger order and its IDs are never rewritten.
  const ordered=m.rows.map((row,index)=>({row,index})).filter(x=>!x.row.deleted).sort((a,b)=>(a.row.date||'').localeCompare(b.row.date||'')||a.index-b.index).map(x=>x.row);
  for(const j of out){
-  const startIndex=j.sourceRowId?ordered.findIndex(r=>r.id===j.sourceRowId):-1;let endIndex=ordered.length,nextStart=false;
-  if(startIndex>=0)for(let i=startIndex;i<ordered.length;i++){const r=ordered[i];if(r.product!==j.product||r.worker!==j.worker||r.jobId&&r.jobId!==j.id)continue;if(i>startIndex&&startPlan(r)>0&&!r.jobId&&continuations.get(r.id)?.sourceRowId!==j.sourceRowId){endIndex=i;nextStart=true;break}if(endsProduction(r)){endIndex=i+1;break}}
-  let records=ordered.filter((r,i)=>r.jobId===j.id&&i<endIndex||(!r.jobId&&r.product===j.product&&r.worker===j.worker&&(startIndex>=0?i>=startIndex&&i<endIndex:j.sourceStart!=null?r.sourceRow>=j.sourceStart&&r.sourceRow<(j.sourceEnd||1000):!out.some(x=>x.sourceRowId&&x.product===j.product&&x.worker===j.worker)&&(!j.start||r.date>=j.start))));
-  if(startIndex<0&&!j.sourceRowId&&j.sourceStart==null){const siblings=out.filter(x=>!x.sourceRowId&&x.product===j.product&&x.worker===j.worker&&x.start<=j.start);if(siblings.length>1)records=records.filter(r=>r.jobId===j.id)}
+  const anchorId=anchor(j),startIndex=anchorId?ordered.findIndex(r=>r.id===anchorId):-1;let endIndex=ordered.length,nextStart=false;
+  if(startIndex>=0)for(let i=startIndex;i<ordered.length;i++){const r=ordered[i];if(r.product!==j.product||r.worker!==j.worker)continue;const linked=reservations.links.get(r.id);if(i>startIndex&&startPlan(r)>0&&((linked&&linked.jobId!==j.id)||!r.jobId&&continuations.get(r.id)?.sourceRowId!==anchorId)){endIndex=i;nextStart=true;break}if(r.jobId&&r.jobId!==j.id)continue;if(endsProduction(r)){endIndex=i+1;break}}
+  let records=ordered.filter((r,i)=>r.jobId===j.id&&i<endIndex||(!r.jobId&&r.product===j.product&&r.worker===j.worker&&(!reservations.links.has(r.id)||reservations.links.get(r.id).jobId===j.id)&&(startIndex>=0?i>=startIndex&&i<endIndex:j.sourceStart!=null?r.sourceRow>=j.sourceStart&&r.sourceRow<(j.sourceEnd||1000):!out.some(x=>anchor(x)&&x.product===j.product&&x.worker===j.worker)&&(!j.start||r.date>=j.start))));
+  if(startIndex<0&&!anchorId&&j.sourceStart==null){const siblings=out.filter(x=>!anchor(x)&&x.product===j.product&&x.worker===j.worker&&x.start<=j.start);if(siblings.length>1)records=records.filter(r=>r.jobId===j.id)}
   const terminalIndex=records.findIndex(endsProduction);if(terminalIndex>=0)records=records.slice(0,terminalIndex+1);const terminal=terminalIndex>=0?records.at(-1):null,ended=completion(terminal||{});
-  j.records=records;j.fieldPlanNotes=[...continuations.values()].filter(x=>x.sourceRowId===j.sourceRowId);j.originId||=j.id;j.currentProduced=C.sum(records,r=>r.pours);j.produced=(j.carried?(j.previousProduced||0):0)+j.currentProduced;j.totalPlan=j.carried?(j.previousProduced||0)+(j.plan||0):(j.plan||0);j.stopped=!!j.stoppedAt||nextStart&&j.produced>0;j.interruptedAt=j.stopped?(j.stoppedAt||ordered[endIndex]?.date||null):null;j.ended=!!terminal;j.unproduced=Math.max(0,j.totalPlan-j.produced);j.remaining=j.stopped||j.ended?0:j.unproduced;j.complete=j.stopped||j.ended||j.totalPlan>0&&j.remaining===0;j.firstActual=records.filter(r=>r.pours>0).map(r=>r.date).sort()[0]||null;j.lastActual=records.filter(r=>r.pours>0||endsProduction(r)).map(r=>r.date).sort().at(-1)||null;j.completedAt=j.stopped?null:j.complete?(terminal?.date||j.lastActual):null;j.completionRowId=terminal?.id||null;j.completionReason=ended?.reason||(terminal?'legacy-end':j.stopped?'stopped':j.complete?'target-reached':null);j.completionStockQty=ended?.stockQty??null;j.completionNote=ended?.note||'';j.lot=[...new Set(records.map(r=>r.lot).filter(Boolean))].join(', ');j.machines??=[];j.group=String(j.group||'');delete j.carrySignature
+  j.records=records;j.fieldPlanNotes=[...[...continuations.values()].filter(x=>x.sourceRowId===j.sourceRowId),...[...reservations.links.values()].filter(x=>x.jobId===j.id)];j.originId||=j.id;j.currentProduced=C.sum(records,r=>r.pours);j.produced=(j.carried?(j.previousProduced||0):0)+j.currentProduced;j.totalPlan=j.carried?(j.previousProduced||0)+(j.plan||0):(j.plan||0);j.stopped=!!j.stoppedAt||nextStart&&j.produced>0;j.interruptedAt=j.stopped?(j.stoppedAt||ordered[endIndex]?.date||null):null;j.ended=!!terminal;j.unproduced=Math.max(0,j.totalPlan-j.produced);j.remaining=j.stopped||j.ended?0:j.unproduced;j.complete=j.stopped||j.ended||j.totalPlan>0&&j.remaining===0;j.firstActual=records.filter(r=>r.pours>0).map(r=>r.date).sort()[0]||null;j.lastActual=records.filter(r=>r.pours>0||endsProduction(r)).map(r=>r.date).sort().at(-1)||null;j.completedAt=j.stopped?null:j.complete?(terminal?.date||j.lastActual):null;j.completionRowId=terminal?.id||null;j.completionReason=ended?.reason||(terminal?'legacy-end':j.stopped?'stopped':j.complete?'target-reached':null);j.completionStockQty=ended?.stockQty??null;j.completionNote=ended?.note||'';j.lot=[...new Set(records.map(r=>r.lot).filter(Boolean))].join(', ');j.machines??=[];j.group=String(j.group||'');delete j.carrySignature
  }
  return out;
 }
@@ -181,5 +217,5 @@ function schedule(s,k,requestedToday,options={}){const today=C.iso(options.asOf)
  return{rows:(options.skipSourceDry?output:preserveSourceDryDates(s,k,output,today)).sort((a,b)=>a.start.localeCompare(b.start)),jobs:all,warnings,asOf:today}}
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={add,days,parseInput,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
