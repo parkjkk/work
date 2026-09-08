@@ -425,6 +425,11 @@ table.mon tfoot td.d{background:var(--surface2)}
 
 /* ---------- 설정 ---------- */
 .set-sec{margin-bottom:18px}
+.set-sec+.set-sec{border-top:1px solid var(--line);padding-top:16px}
+.set-step-title{margin:18px 0 8px;font-size:14px;font-weight:700}
+.set-help summary{cursor:pointer;min-height:40px;padding:8px 0;font-weight:700}
+.set-sec .btnrow{flex-wrap:wrap}
+.set-sec .btn{height:auto;min-height:46px;padding:10px 14px;white-space:normal}
 .set-sec .f-label{margin-top:10px}
 #rosterList{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:0 10px; box-shadow:var(--shadow)}
 #rosterAddBtn{flex:0 0 auto; padding:0 20px; font-weight:700}
@@ -538,45 +543,56 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 // learn a remote password change until this device reconnects.
 const INITIAL=/*ACCESS_DEFAULT*/{"schema":1,"salt":"17aa3bb56e955aa428da8d5303e825b7","iterations":100000,"digest":"60ff1375529f5f6125b169d261fa54874f0e99beed0dd2c76f326e15ec307177","revision":"initial"}/*ACCESS_DEFAULT_END*/;
 const SERVER='https://parkjkk-production-view.pjk3742.chatgpt.site',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
-let parkedDialogs=[];
+let parkedDialogs=[],adminGate=null,adminAllowed=()=>true,unsubscribeAdmin=null,adminVersion=0;const sensitiveClosers=new Set();
 let verifier=INITIAL,cacheError='',unlocked=false,session='',pendingResolve=null,first=true,checking=false,lockVersion=0;
 function valid(v){return v&&v.schema===1&&typeof v.salt==='string'&&v.salt.length>=16&&v.salt.length<=100&&v.iterations===100000&&/^[a-f0-9]{64}$/.test(v.digest)&&typeof v.revision==='string'&&v.revision.length<=80}
 try{const text=localStorage.getItem(KEY);if(text){const v=JSON.parse(text);if(!valid(v))throw Error('기기의 로그인 확인정보가 손상되었습니다. 온라인에서 다시 로그인해 주세요.');verifier=v}}catch(e){cacheError=e.message}
 async function verify(password,v){if(!valid(v)||!crypto.subtle)throw Error('이 브라우저에서 비밀번호를 확인할 수 없습니다. 최신 Chrome 또는 Edge로 열어 주세요.');const e=new TextEncoder(),k=await crypto.subtle.importKey('raw',e.encode(password),'PBKDF2',false,['deriveBits']),b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:e.encode(v.salt),iterations:v.iterations,hash:'SHA-256'},k,256);return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('')===v.digest}
 async function api(body){let r;try{if(navigator.onLine===false)throw Error('offline');r=await originalFetch(SERVER+'/api/access',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{}),cache:'no-store',credentials:'omit',redirect:'error',signal:AbortSignal.timeout(15000)})}catch(e){const error=Error('인터넷 연결을 확인해 주세요.');error.network=true;throw error}let j;try{j=await r.json()}catch{throw Error('로그인 서버 응답을 확인하지 못했습니다.')}if(!r.ok){const e=Error(j.error||'로그인을 확인하지 못했습니다.');e.status=r.status;throw e}return j}
 function cache(v){verifier=v;try{localStorage.setItem(KEY,JSON.stringify(v));cacheError=''}catch{cacheError='이 기기에 로그인 정보를 보관하지 못했습니다. 다음 접속에는 인터넷이 필요할 수 있습니다.'}}
-const style=document.createElement('style');style.id='appAccessStyle';style.textContent=`html[data-app-locked] body>*:not(#appAccess):not(.accessChange):not(script):not(style){display:none!important}html[data-app-locked] body{min-height:100dvh;margin:0!important;background:#edf1f7!important}#appAccess{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#22344c;box-sizing:border-box;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#dce7f8,#edf1f7 65%)}#appAccess[hidden]{display:none!important}.accessCard{box-sizing:border-box;width:min(100%,420px);padding:30px;border:1px solid #d3ddea;border-radius:20px;background:#fff;box-shadow:0 18px 65px #17345815}.accessCard h1{font-size:26px;line-height:1.25;margin:10px 0 14px}.accessEyebrow{font-size:12px;letter-spacing:.14em;color:#586f91;font-weight:700}.accessCard p,.accessSettings p{font-size:13px;line-height:1.6}.accessCard label{display:block;font-weight:650;font-size:14px;margin:18px 0 7px}.accessCard input,.accessChange input{box-sizing:border-box;width:100%;min-height:46px;padding:11px 13px;background:#fff;color:#23364f;border:1px solid #aabbd0;border-radius:9px;font:inherit}.accessCard button,.accessSettings button,.accessChange button{box-sizing:border-box;min-height:42px;border:1px solid #adbbcf;border-radius:8px;padding:9px 14px;background:#fff;color:#264463;font:inherit;font-size:13px;cursor:pointer}.accessCard button[type=submit],.accessChange button[type=submit]{background:#325d96;border-color:#325d96;color:white;font-weight:700}.accessCard button[type=submit]{width:100%;margin-top:17px}.accessCard button:disabled{opacity:.55}.accessCard [role=alert],.accessChange [role=alert]{min-height:20px;color:#a83030;font-size:13px;white-space:pre-wrap}.accessCard .accessAdmin{border:none;background:transparent;width:100%;color:#566d89}.accessSettings{margin:12px 0;padding:16px;border:1px solid #d2dcea;border-radius:12px;background:#f6f8fc;color:#23364f}.accessSettings h3{margin:0 0 8px;font-size:15px}.accessSettings .accessActions{display:flex;flex-wrap:wrap;gap:8px}.accessChange{box-sizing:border-box;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:24px;border:1px solid #d0dbea;border-radius:16px;color:#22344c;background:#fff;font-family:inherit}.accessChange::backdrop{background:#16263b88}.accessChange label{display:block;margin:14px 0;font-size:14px}.accessChange p{font-size:13px;line-height:1.6}.accessChange .accessActions{display:flex;justify-content:flex-end;gap:8px}@media print{#appAccess,#appAccessOfflineBanner,.accessSettings,.accessChange{display:none!important}html[data-app-locked] body>*{display:none!important}}`;
+const style=document.createElement('style');style.id='appAccessStyle';style.textContent=`html[data-app-locked] body>*:not(#appAccess):not(.accessChange):not(.connectionGateDialog):not(script):not(style){display:none!important}html[data-app-locked] body{min-height:100dvh;margin:0!important;background:#edf1f7!important}#appAccess{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#22344c;box-sizing:border-box;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#dce7f8,#edf1f7 65%)}#appAccess[hidden]{display:none!important}.accessCard{box-sizing:border-box;width:min(100%,420px);padding:30px;border:1px solid #d3ddea;border-radius:20px;background:#fff;box-shadow:0 18px 65px #17345815}.accessCard h1{font-size:26px;line-height:1.25;margin:10px 0 14px}.accessEyebrow{font-size:12px;letter-spacing:.14em;color:#586f91;font-weight:700}.accessCard p,.accessSettings p{font-size:13px;line-height:1.6}.accessCard label{display:block;font-weight:650;font-size:14px;margin:18px 0 7px}.accessCard input,.accessChange input{box-sizing:border-box;width:100%;min-height:46px;padding:11px 13px;background:#fff;color:#23364f;border:1px solid #aabbd0;border-radius:9px;font:inherit}.accessCard button,.accessSettings button,.accessChange button{box-sizing:border-box;min-height:42px;border:1px solid #adbbcf;border-radius:8px;padding:9px 14px;background:#fff;color:#264463;font:inherit;font-size:13px;cursor:pointer}.accessCard button[type=submit],.accessChange button[type=submit]{background:#325d96;border-color:#325d96;color:white;font-weight:700}.accessCard button[type=submit]{width:100%;margin-top:17px}.accessCard button:disabled{opacity:.55}.accessCard [role=alert],.accessChange [role=alert]{min-height:20px;color:#a83030;font-size:13px;white-space:pre-wrap}.accessCard .accessAdmin{border:none;background:transparent;width:100%;color:#566d89}.accessSettings{margin:12px 0;padding:16px;border:1px solid #d2dcea;border-radius:12px;background:#f6f8fc;color:#23364f}.accessSettings h3{margin:0 0 8px;font-size:15px}.accessSettings .accessActions{display:flex;flex-wrap:wrap;gap:8px}.accessChange{box-sizing:border-box;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:24px;border:1px solid #d0dbea;border-radius:16px;color:#22344c;background:#fff;font-family:inherit}.accessChange::backdrop{background:#16263b88}.accessChange label{display:block;margin:14px 0;font-size:14px}.accessChange p{font-size:13px;line-height:1.6}.accessChange .accessActions{display:flex;justify-content:flex-end;gap:8px}@media print{#appAccess,#appAccessOfflineBanner,.accessSettings,.accessChange{display:none!important}html[data-app-locked] body>*{display:none!important}}`;
 document.documentElement.dataset.appLocked='';document.head.append(style);
 function message(text){const el=document.querySelector('#accessError');if(el)el.textContent=text}
-function lock(text=''){for(const d of document.querySelectorAll('dialog[open]')){d.close();if(d.classList.contains('accessChange')){for(const i of d.querySelectorAll('input'))i.value='';d.remove()}else if(!parkedDialogs.includes(d))parkedDialogs.push(d)}lockVersion++;unlocked=false;session='';document.documentElement.dataset.appLocked='';const el=document.querySelector('#appAccess');if(el){el.hidden=false;message(text);el.querySelector('input')?.focus()}root.dispatchEvent(new Event('production:lock'))}
-function success(j,offline=false){if(j){if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('로그인 응답 형식을 확인해 주세요.');cache(j.verifier);session=j.session}unlocked=true;delete document.documentElement.dataset.appLocked;document.querySelector('#appAccess').hidden=true;document.querySelector('#appAccessOfflineBanner')?.remove();if(offline){const banner=document.createElement('aside');banner.id='appAccessOfflineBanner';banner.setAttribute('role','status');banner.style.cssText='box-sizing:border-box;position:relative;z-index:2;padding:10px 16px;background:#fff3d6;color:#634911;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;font:13px system-ui';const text=document.createElement('span');text.textContent='오프라인 로그인 · 기기 보관자료만 사용할 수 있습니다. 서버 연결은 다시 로그인해 주세요.';const button=document.createElement('button');button.type='button';button.textContent='온라인으로 다시 로그인';button.style.cssText='min-height:36px;padding:6px 10px;border:1px solid #ad965c;border-radius:6px;background:#fff;color:#634911';button.onclick=()=>lock('온라인 연결을 다시 확인합니다. 비밀번호를 입력해 주세요.');banner.append(text,button);document.body.prepend(banner)}for(const d of parkedDialogs)if(d.isConnected&&!d.open){try{d.showModal()}catch{}}parkedDialogs=[];root.dispatchEvent(new CustomEvent('production:login',{detail:{offline,warning:cacheError,initial:first}}));if(first){first=false;pendingResolve?.();pendingResolve=null}mount();}
+function adminReady(){try{return unlocked&&!!adminGate?.unlocked&&adminAllowed()===true}catch{return false}}
+function clearSensitive(){adminVersion++;for(const close of [...sensitiveClosers])close();for(const host of document.querySelectorAll('[data-access-settings]')){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren()}}
+function setAdminGate(gate,allowed=()=>true){if(!gate||typeof gate.request!=='function'||typeof gate.lock!=='function'||typeof gate.withCredential!=='function'||typeof gate.subscribeLock!=='function'||typeof allowed!=='function')throw TypeError('관리자 설정 잠금을 확인해 주세요.');if(adminGate!==gate){unsubscribeAdmin?.();adminGate?.lock();clearSensitive();adminGate=gate;unsubscribeAdmin=gate.subscribeLock(clearSensitive)}adminAllowed=allowed;mount()}
+function requireAdmin(){if(adminReady())return true;alert('관리자 설정을 먼저 열어 주세요.');return false}
+function sensitiveDialog(d,{recovery=false}={}){
+ const gate=adminGate,version=adminVersion,loginVersion=lockVersion;let closed=false;
+ const current=()=>!closed&&d.isConnected&&d.open&&gate===adminGate&&gate.unlocked&&version===adminVersion&&loginVersion===lockVersion&&(recovery?!unlocked:adminReady());
+ const close=()=>{if(closed)return;closed=true;sensitiveClosers.delete(close);for(const i of d.querySelectorAll('input'))i.value='';if(d.open)d.close();d.remove();if(recovery)gate.lock()};
+ d.oncancel=e=>{e.preventDefault();close()};d.addEventListener('close',close);sensitiveClosers.add(close);return{gate,current,close};
+}
+function lock(text=''){lockVersion++;unlocked=false;session='';adminGate?.lock();clearSensitive();for(const d of document.querySelectorAll('dialog[open]')){d.close();if(d.classList.contains('accessChange')||d.classList.contains('connectionGateDialog')){for(const i of d.querySelectorAll('input'))i.value='';d.remove()}else if(!parkedDialogs.includes(d))parkedDialogs.push(d)}document.documentElement.dataset.appLocked='';const el=document.querySelector('#appAccess');if(el){el.hidden=false;message(text);el.querySelector('input')?.focus()}root.dispatchEvent(new Event('production:lock'))}
+function success(j,offline=false){if(j){if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('로그인 응답 형식을 확인해 주세요.');cache(j.verifier);session=j.session}adminGate?.lock();clearSensitive();unlocked=true;delete document.documentElement.dataset.appLocked;document.querySelector('#appAccess').hidden=true;document.querySelector('#appAccessOfflineBanner')?.remove();if(offline){const banner=document.createElement('aside');banner.id='appAccessOfflineBanner';banner.setAttribute('role','status');banner.style.cssText='box-sizing:border-box;position:relative;z-index:2;padding:10px 16px;background:#fff3d6;color:#634911;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;font:13px system-ui';const text=document.createElement('span');text.textContent='오프라인 로그인 · 기기 보관자료만 사용할 수 있습니다. 서버 연결은 다시 로그인해 주세요.';const button=document.createElement('button');button.type='button';button.textContent='온라인으로 다시 로그인';button.style.cssText='min-height:36px;padding:6px 10px;border:1px solid #ad965c;border-radius:6px;background:#fff;color:#634911';button.onclick=()=>lock('온라인 연결을 다시 확인합니다. 비밀번호를 입력해 주세요.');banner.append(text,button);document.body.prepend(banner)}for(const d of parkedDialogs)if(d.isConnected&&!d.open){try{d.showModal()}catch{}}parkedDialogs=[];root.dispatchEvent(new CustomEvent('production:login',{detail:{offline,warning:cacheError,initial:first}}));if(first){first=false;pendingResolve?.();pendingResolve=null}mount();}
 async function change(){
+ const recovery=!unlocked;if(recovery){if(!adminGate){message('관리자 설정을 준비하지 못했습니다. 새로고침 후 다시 시도해 주세요.');return}const version=lockVersion,gate=adminGate;if(!await gate.request())return;if(unlocked||version!==lockVersion||gate!==adminGate){gate.lock();return}}else if(!requireAdmin())return;
+ if(document.querySelector('dialog.accessChange'))return;
  const d=document.createElement('dialog');d.className='accessChange';d.setAttribute('aria-label','로그인 비밀번호 변경');
- d.innerHTML='<form><h2>로그인 비밀번호 변경</h2><p>기존 관리자 비밀번호로 확인합니다. 저장하면 생산관리와 현장일보, 다른 기기의 다음 온라인 로그인에 함께 적용됩니다.</p><label>관리자 비밀번호<input name="admin" type="password" autocomplete="off" required maxlength="128"></label><label>새 로그인 비밀번호<input name="next" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><label>새 비밀번호 다시 입력<input name="repeat" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><p role="alert"></p><div class="accessActions"><button type="button">취소</button><button type="submit">두 앱에 적용</button></div></form>';
- let closed=false,processing=false;const close=()=>{if(processing)return;closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove()};d.querySelector('[type=button]').onclick=close;d.oncancel=e=>{e.preventDefault();if(!processing)close()};d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(processing)return;const f=e.target,error=d.querySelector('[role=alert]');if(f.elements.next.value!==f.elements.repeat.value){error.textContent='새 비밀번호가 서로 다릅니다.';return}processing=true;const requestVersion=lockVersion,adminPassword=f.elements.admin.value,password=f.elements.next.value;for(const i of d.querySelectorAll('input'))i.value='';d.querySelector('[type=submit]').disabled=true;try{const current=await api(),j=await api({action:'change',revision:current.revision,adminPassword,password});if(closed||!d.isConnected||requestVersion!==lockVersion)return;if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('비밀번호 변경 응답을 확인하지 못했습니다.');lockVersion++;cache(j.verifier);if(unlocked)session=j.session;processing=false;close();if(unlocked){mount();alert('두 앱의 로그인 비밀번호를 변경했습니다. 오프라인용 HTML도 다시 내려받아 보관하세요.')}else message('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.')}catch(err){if(!closed)error.textContent=err.network?'변경 결과를 확인하지 못했습니다. 인터넷 연결 후 새 비밀번호로 로그인해 보세요. 되지 않으면 다시 변경해 주세요.':err.message}finally{processing=false;if(!closed)d.querySelector('[type=submit]').disabled=false}};
+ d.innerHTML='<form><h2>로그인 비밀번호 변경</h2><p>확인한 관리자 권한으로 변경합니다. 저장하면 생산관리와 현장일보, 다른 기기의 다음 온라인 로그인에 함께 적용됩니다.</p><label>새 로그인 비밀번호<input name="next" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><label>새 비밀번호 다시 입력<input name="repeat" type="password" autocomplete="new-password" required minlength="4" maxlength="128"></label><p role="alert"></p><div class="accessActions"><button type="button">취소</button><button type="submit">두 앱에 적용</button></div></form>';
+ const context=sensitiveDialog(d,{recovery});let processing=false;d.querySelector('[type=button]').onclick=context.close;d.querySelector('form').onsubmit=async e=>{e.preventDefault();if(processing||!context.current())return;const f=e.target,error=d.querySelector('[role=alert]');if(f.elements.next.value!==f.elements.repeat.value){error.textContent='새 비밀번호가 서로 다릅니다.';return}processing=true;const password=f.elements.next.value;for(const i of d.querySelectorAll('input'))i.value='';d.querySelector('[type=submit]').disabled=true;try{const j=await context.gate.withCredential(async adminPassword=>{const current=await api();if(!context.current())throw Error('관리자 설정을 다시 열어 주세요.');return api({action:'change',revision:current.revision,adminPassword,password})});if(!context.current())return;if(!valid(j.verifier)||!/^[A-Za-z0-9_-]{43}$/.test(j.session||''))throw Error('비밀번호 변경 응답을 확인하지 못했습니다.');lockVersion++;cache(j.verifier);if(unlocked)session=j.session;context.close();if(unlocked){mount();alert('두 앱의 로그인 비밀번호를 변경했습니다. 오프라인용 HTML도 다시 내려받아 보관하세요.')}else message('비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요.')}catch(err){if(context.current())error.textContent=err.network?'변경 결과를 확인하지 못했습니다. 인터넷 연결 후 새 비밀번호로 로그인해 보세요. 되지 않으면 다시 변경해 주세요.':err.message}finally{processing=false;if(context.current())d.querySelector('[type=submit]').disabled=false}};
  document.body.append(d);d.showModal();d.querySelector('input').focus();
 }
-async function downloadHtml(button){button.disabled=true;try{
+async function downloadHtml(button){if(!requireAdmin())return;const gate=adminGate,version=adminVersion,loginVersion=lockVersion,current=()=>button.isConnected&&adminReady()&&gate===adminGate&&version===adminVersion&&loginVersion===lockVersion;button.disabled=true;try{
  const url=new URL(location.href);url.hash='';url.search='';const r=await originalFetch(url.href,{cache:'no-store',credentials:'omit',redirect:'error'});if(!r.ok)throw Error('HTML을 읽지 못했습니다. 온라인 주소에서 내려받아 주세요.');let html=await r.text();
- if(!html.includes('/*ACCESS_DEFAULT*/')||!html.includes('/*ACCESS_DEFAULT_END*/'))throw Error('최신 앱 파일을 확인하지 못했습니다. 새로고침 후 다시 내려받아 주세요.');
+ if(!current())return;if(!html.includes('/*ACCESS_DEFAULT*/')||!html.includes('/*ACCESS_DEFAULT_END*/'))throw Error('최신 앱 파일을 확인하지 못했습니다. 새로고침 후 다시 내려받아 주세요.');
  html=html.replace(/\/\*ACCESS_DEFAULT\*\/[\s\S]*?\/\*ACCESS_DEFAULT_END\*\//,()=> '/*ACCESS_DEFAULT*/'+JSON.stringify(verifier)+'/*ACCESS_DEFAULT_END*/');
  const a=document.createElement('a'),blob=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));a.href=blob;a.download=location.pathname.split('/').pop()||'production.html';a.click();setTimeout(()=>URL.revokeObjectURL(blob),30000);
- }catch(e){alert(e.message||'온라인에서 HTML을 내려받아 주세요.')}finally{button.disabled=false}}
+ }catch(e){if(current())alert(e.message||'온라인에서 HTML을 내려받아 주세요.')}finally{if(button.isConnected)button.disabled=false}}
 async function fieldSettings(cfg){
+ if(!requireAdmin())return;if(document.querySelector('dialog.accessChange'))return;
  if(!unlocked||!session){alert('온라인으로 로그인한 뒤 서버 설정을 열어 주세요.');return}if(cfg?.transport!=='bridge'||!/^[A-Za-z0-9_-]{43}$/.test(cfg.bridgeKey||'')){alert('현장 공유 링크로 연결한 뒤 서버 설정을 열어 주세요.');return}
  const d=document.createElement('dialog');d.className='accessChange';d.setAttribute('aria-label','현장일보 서버 설정');
- d.innerHTML='<h2>현장일보 서버 설정</h2><p><b>parkjkk / ilbo-data</b><br>일보 전용 서버 토큰과 공유 링크를 관리합니다. 생산관리 저장소 권한은 바뀌지 않습니다.</p><form data-field-auth><label>관리자 비밀번호<input type="password" autocomplete="off" required maxlength="128"></label><button type="submit">설정 열기</button></form><section data-field-tools hidden><p data-field-status></p><form data-field-token><label>새 GitHub 일보 전용 토큰<input type="password" autocomplete="off" required maxlength="300"></label><button type="submit">서버 토큰 변경</button></form><form data-field-share><label>공유 링크 이름<input type="text" value="현장일보 공유" maxlength="80"></label><button type="submit">새 공유 링크 만들기</button></form><div data-field-created hidden><label>전달할 링크<input readonly></label><button type="button" data-field-copy>링크 복사</button></div><div data-field-links></div></section><p role="alert"></p><button type="button" data-field-close>닫기</button>';
- let pin='',working=false,closed=false;const version=lockVersion,error=d.querySelector('[role=alert]');const current=()=>!closed&&d.isConnected&&unlocked&&version===lockVersion;
- const close=()=>{pin='';closed=true;for(const i of d.querySelectorAll('input'))i.value='';d.close();d.remove();root.removeEventListener('production:lock',close)};d.querySelector('[data-field-close]').onclick=close;d.oncancel=e=>{e.preventDefault();close()};root.addEventListener('production:lock',close);
- const call=async action=>{if(!current())throw Error('설정을 다시 열어 주세요.');const r=await root.fetch(SERVER+'/api/field-settings',{method:'POST',headers:{Authorization:'Bearer '+cfg.bridgeKey,'Content-Type':'application/json'},body:JSON.stringify({...action,adminPassword:pin}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)});const j=await r.json();if(!r.ok)throw Error(j.error||'서버 설정을 확인하지 못했습니다.');if(!current())throw Error('설정을 다시 열어 주세요.');return j};
- const list=async()=>{const j=await call({action:'status'});d.querySelector('[data-field-status]').textContent=j.connected?'서버 연결됨 · 토큰은 표시되지 않습니다.':'서버 연결 필요';const host=d.querySelector('[data-field-links]');host.replaceChildren();for(const item of j.links||[]){const row=document.createElement('p'),name=document.createElement('span');name.textContent=item.label+' · '+(item.revokedAt?'중지됨':'사용 중')+' ';row.append(name);if(!item.revokedAt){const button=document.createElement('button');button.type='button';button.textContent='사용 중지';button.onclick=()=>run(async()=>{if(!confirm('이 공유 링크 사용을 중지할까요? 이 링크로 연결한 기기의 접근이 중지됩니다.'))return;await call({action:'revoke',id:item.id});await list()});row.append(button)}host.append(row)}};
+ d.innerHTML='<h2>현장일보 서버 설정</h2><p><b>parkjkk / ilbo-data</b><br>일보 전용 서버 토큰과 공유 링크를 관리합니다. 생산관리 저장소 권한은 바뀌지 않습니다.</p><section data-field-tools hidden><p data-field-status></p><form data-field-token><label>새 GitHub 일보 전용 토큰<input type="password" autocomplete="off" required maxlength="300"></label><button type="submit">서버 토큰 변경</button></form><form data-field-share><label>공유 링크 이름<input type="text" value="현장일보 공유" maxlength="80"></label><button type="submit">새 공유 링크 만들기</button></form><div data-field-created hidden><label>전달할 링크<input readonly></label><button type="button" data-field-copy>링크 복사</button></div><div data-field-links></div></section><p role="alert"></p><button type="button" data-field-close>닫기</button>';
+ let working=false;const context=sensitiveDialog(d),current=context.current,error=d.querySelector('[role=alert]');d.querySelector('[data-field-close]').onclick=context.close;
+ const call=async action=>{if(!current())throw Error('설정을 다시 열어 주세요.');const j=await context.gate.withCredential(async adminPassword=>{const r=await root.fetch(SERVER+'/api/field-settings',{method:'POST',headers:{Authorization:'Bearer '+cfg.bridgeKey,'Content-Type':'application/json'},body:JSON.stringify({...action,adminPassword}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(25000)});const result=await r.json();if(!r.ok)throw Error(result.error||'서버 설정을 확인하지 못했습니다.');return result});if(!current())throw Error('설정을 다시 열어 주세요.');return j};
+ const list=async()=>{const j=await call({action:'status'});if(!current())return;d.querySelector('[data-field-status]').textContent=j.connected?'서버 연결됨 · 토큰은 표시되지 않습니다.':'서버 연결 필요';const host=d.querySelector('[data-field-links]');host.replaceChildren();for(const item of j.links||[]){const row=document.createElement('p'),name=document.createElement('span');name.textContent=item.label+' · '+(item.revokedAt?'중지됨':'사용 중')+' ';row.append(name);if(!item.revokedAt){const button=document.createElement('button');button.type='button';button.textContent='사용 중지';button.onclick=()=>run(async()=>{if(!confirm('이 공유 링크 사용을 중지할까요? 이 링크로 연결한 기기의 접근이 중지됩니다.'))return;await call({action:'revoke',id:item.id});await list()});row.append(button)}host.append(row)}};
  const run=async fn=>{if(working||!current())return;working=true;error.textContent='확인 중…';try{await fn();if(current())error.textContent=''}catch(e){if(current())error.textContent=e.message}finally{working=false}};
- d.querySelector('[data-field-auth]').onsubmit=e=>{e.preventDefault();pin=e.target.querySelector('input').value;e.target.querySelector('input').value='';run(async()=>{await list();e.target.hidden=true;d.querySelector('[data-field-tools]').hidden=false})};
- d.querySelector('[data-field-token]').onsubmit=e=>{e.preventDefault();const token=e.target.querySelector('input').value;e.target.querySelector('input').value='';run(async()=>{await call({action:'connect',token});await list();d.querySelector('[data-field-status]').textContent='서버 토큰을 변경했습니다. 기존 일보 링크는 유지됩니다.'})};
- d.querySelector('[data-field-share]').onsubmit=e=>{e.preventDefault();const label=e.target.querySelector('input').value;run(async()=>{const j=await call({action:'create',label});d.querySelector('[data-field-created]').hidden=false;d.querySelector('[data-field-created] input').value=j.url;await list()})};d.querySelector('[data-field-copy]').onclick=()=>navigator.clipboard.writeText(d.querySelector('[data-field-created] input').value).catch(()=>{error.textContent='링크를 선택해서 직접 복사해 주세요.'});
- document.body.append(d);d.showModal();d.querySelector('input').focus();
+ d.querySelector('[data-field-token]').onsubmit=e=>{e.preventDefault();const token=e.target.querySelector('input').value;e.target.querySelector('input').value='';run(async()=>{await call({action:'connect',token});await list();if(!current())return;d.querySelector('[data-field-status]').textContent='서버 토큰을 변경했습니다. 기존 일보 링크는 유지됩니다.'})};
+ d.querySelector('[data-field-share]').onsubmit=e=>{e.preventDefault();const label=e.target.querySelector('input').value;run(async()=>{const j=await call({action:'create',label});if(!current())return;d.querySelector('[data-field-created]').hidden=false;d.querySelector('[data-field-created] input').value=j.url;await list()})};d.querySelector('[data-field-copy]').onclick=()=>{if(current())navigator.clipboard.writeText(d.querySelector('[data-field-created] input').value).catch(()=>{if(current())error.textContent='링크를 선택해서 직접 복사해 주세요.'})};
+ document.body.append(d);d.showModal();d.querySelector('[data-field-close]').focus();run(async()=>{await list();if(current()){d.querySelector('[data-field-tools]').hidden=false;d.querySelector('[data-field-token] input').focus()}});
 }
-function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 기존 관리자 비밀번호와 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
+function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(!adminReady()){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren();continue}if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
 root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED')lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
@@ -586,7 +602,7 @@ function draw(){const el=document.createElement('section');el.id='appAccess';el.
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',draw,{once:true});else draw();
 root.addEventListener('online',()=>{if(unlocked&&!session)lock('인터넷이 연결되었습니다. 최신 비밀번호로 다시 로그인해 주세요.')});
 root.addEventListener('storage',e=>{if(e.key===KEY&&e.newValue){try{const v=JSON.parse(e.newValue);if(valid(v)&&v.revision!==verifier.revision){verifier=v;lock('다른 창에서 비밀번호가 변경되었습니다. 다시 로그인해 주세요.')}}catch{}}});
-root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSettings,start(fn){
+root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSettings,setAdminGate,start(fn){
  let complete=false,running=false;
  const run=async()=>{
   if(complete||running||!unlocked)return;
@@ -613,7 +629,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <button class="tb-mode" id="modeBadge" aria-label="저장 상태 (설정 열기)" title="저장 상태 — 눌러서 설정 열기"><span class="dot"></span><span id="modeTxt">이 기기 저장</span></button>
     <span class="spin" aria-hidden="true"></span>
     <button class="tb-gear" id="refreshTop" aria-label="새로고침" title="최신 내용 다시 불러오기">↻</button>
-    <button class="tb-gear" id="gearBtn" aria-label="설정" title="설정">⚙︎</button>
+    <button class="tb-gear" id="gearBtn" aria-label="관리자 설정" title="관리자 설정">⚙︎</button>
   </div>
   <div class="tb-date">
     <button class="nav" id="prevDay" aria-label="전날">◀</button>
@@ -634,7 +650,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div class="daysum" id="daysum"></div>
     <div class="card" id="missCard" hidden></div>
     <div class="card">
-      <h3>내 이름 (선택하면 추가할 때 자동 입력)</h3>
+      <h3>내 이름 선택</h3>
       <div class="chips" id="meChips"></div>
     </div>
     <div id="rowList"></div>
@@ -645,7 +661,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div class="sheet-toolbar">
       <button class="print" id="printBtn" title="최신 내용 확인 후 인쇄 (Ctrl+P)">🖨 인쇄하기</button>
       <button class="tool" id="zoomBtn" title="화면맞춤 ↔ 100% 전환">화면맞춤</button>
-      <button class="tool" id="reloadBtn" title="최신 내용 다시 불러오기">↻</button>
+      <button class="tool" id="reloadBtn" title="최신 내용 다시 불러오기" aria-label="일보 새로고침">↻</button>
     </div>
     <p class="print-tip"><span class="tip-pc">인쇄 창에서 <b>여백: 기본값(또는 없음)</b> · <b>배율: 100%</b> 두 가지만 확인하세요 — A4 가로·배경색·머리글 제거는 자동입니다. (Ctrl+P도 같은 절차)</span><span class="tip-mobile">인쇄는 <b>PC 크롬/엣지</b>에서 하세요 — 폰 인쇄는 여백이 틀어집니다</span><span id="pageInfo"></span><span id="syncInfo"></span></p>
     <div class="warnbar" id="missInfo" style="max-width:680px; margin:0 auto 10px; text-align:center; font-weight:700" hidden></div>
@@ -658,18 +674,18 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div class="mon-nav">
       <button id="prevMon" title="지난달">◀</button><b id="monLabel"></b><button id="nextMon" title="다음달">▶</button>
       <button id="thisMon" class="tool" style="height:44px; padding:0 12px; margin-left:6px; font-size:13px" title="이번 달로">이번 달</button>
-      <button id="monCopy" class="tool" style="height:44px; padding:0 12px; font-size:13px" title="이 달 기록 전체를 엑셀에 붙여넣을 수 있게 복사">엑셀용 복사</button>
+      <button id="monCopy" class="tool" style="height:44px; padding:0 12px; font-size:13px" title="이 달 기록 전체를 엑셀에 붙여넣을 수 있게 복사">월 기록 복사</button>
     </div>
     <div id="monBody"></div>
   </section>
 </main>
 
-<button id="addBtn">＋ 기록 추가</button>
+<button id="addBtn">＋ 일보 작성</button>
 
 <nav id="tabbar">
-  <button data-tab="input" class="active"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>입력</button>
+  <button data-tab="input" class="active"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>일보 작성</button>
   <button data-tab="sheet"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>일보·인쇄</button>
-  <button data-tab="month"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>현황</button>
+  <button data-tab="month"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>월별 현황</button>
 </nav>
 
 <!-- 기록 추가/수정 -->
@@ -684,10 +700,10 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     </details>
     <div id="recentLoad" hidden></div>
 
-    <div class="f-label">작업시간 (hr)</div>
+    <div class="f-label">작업시간 (시간)</div>
     <div class="stepper">
       <button id="hrMinus" type="button" aria-label="작업시간 0.5시간 줄이기">−</button>
-      <input id="fHours" inputmode="decimal" value="10">
+      <input id="fHours" inputmode="decimal" value="10" aria-label="작업시간 (시간)">
       <button id="hrPlus" type="button" aria-label="작업시간 0.5시간 늘리기">＋</button>
     </div>
 
@@ -700,46 +716,45 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
   </div>
   <div class="ov-actions">
     <button class="del" id="entryDel" style="display:none">삭제</button>
-    <button class="save" id="entrySave">저장</button>
+    <button class="save" id="entrySave">일보 저장</button>
   </div>
 </div>
 
 <!-- 설정 -->
-<div class="overlay" id="setOv" role="dialog" aria-modal="true" aria-label="설정">
-  <div class="ov-head"><b>설정</b><button class="x" id="setClose" aria-label="닫기">✕</button></div>
+<div class="overlay" id="setOv" role="dialog" aria-modal="true" aria-label="관리자 설정">
+  <div class="ov-head"><b>관리자 설정</b><button class="x" id="setClose" aria-label="설정 닫기">✕</button></div>
   <div class="ov-body">
     <div id="data-access-settings" data-access-settings class="set-sec"></div>
     <div class="set-sec">
       <div class="set-note" id="setStatus" style="margin-bottom:12px"></div><button id="fieldServerSettings" type="button" class="btn sec" onclick="AppAccess.fieldSettings(ghCfg())" hidden>서버 연결 · 토큰 · 공유 링크 관리</button>
-      <h4>부서 명단 — "오늘 아직 안 쓴 사람" 확인 대상 <span id="rosterCount" style="font-weight:400; color:var(--ink-dim); font-size:13px"></span></h4>
+      <h4>일보 작성 대상 명단 <span id="rosterCount" style="font-weight:400; color:var(--ink-dim); font-size:13px"></span></h4>
       <div class="set-note" style="margin-bottom:8px">
-        <b>체크된 사람만</b> 미작성 확인에 표시됩니다. 파견 종료·퇴사자는 체크를 끄세요 (기록은 그대로 남음).
-        체크 꺼진 사람도 다시 일보를 쓰면 자동 복귀합니다.
+        <b>체크한 사람</b>을 기준으로 미작성자를 확인합니다. 부서 이동·퇴사자는 체크를 끄세요. 과거 기록은 남으며, 다시 일보를 쓰면 작성 대상에 포함됩니다.
       </div>
       <div id="rosterList"></div>
       <div class="f-row" style="margin-top:8px">
         <input class="f-input" id="rosterAdd" placeholder="이름 추가" autocomplete="off">
-        <button type="button" class="qzero" id="rosterAddBtn">추가</button>
+        <button type="button" class="qzero" id="rosterAddBtn">명단 추가</button>
       </div>
       <div class="f-label" style="margin-top:22px"></div>
       <details id="ghAdv">
-        <summary style="cursor:pointer; font-weight:700; padding:6px 0">관리자 설정 (GitHub 연결 정보 · 공지)</summary>
-        <div class="set-note">비밀번호 확인 후 연결 정보를 수정할 수 있습니다. 설정을 닫거나 접으면 다시 잠깁니다.</div>
+        <summary style="cursor:pointer; font-weight:700; padding:6px 0">저장소 연결 · 공지</summary>
+        <div class="set-note">연결 정보를 확인하고 수정합니다. 설정을 닫으면 관리자 인증이 종료됩니다.</div>
         <div class="set-note" id="bridgeConnectionNote" style="margin-top:8px" hidden>일보는 공유 서버를 통해 GitHub에 바로 저장됩니다. GitHub 토큰은 서버에서 보관하며, 이 기기에는 일보 읽기·쓰기용 공유 연결만 보관합니다. 토큰 변경과 새 공유 링크는 위의 ‘서버 연결 · 토큰 · 공유 링크 관리’에서 관리하세요.</div>
         <div class="set-note" id="directConnectionNote" style="margin-top:8px">
           기존 일보 저장소는 서버 연결로 전환합니다. 다른 저장소의 직접 연결은 이 기기 브라우저에 토큰을 보관합니다.
-          <ol>
+          <details class="set-help"><summary>직접 연결용 토큰 발급 방법</summary><ol>
             <li>github.com 로그인 → 데이터용 <b>비공개 저장소</b> 준비</li>
             <li>Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
             <li>Repository access: <b>Only select repositories</b> → 데이터 저장소만 선택</li>
             <li>Permissions → Contents: <b>Read and write</b> → 생성된 토큰을 아래에 붙여넣기</li>
-          </ol>
+          </ol></details>
         </div>
         <div class="f-label">소유자 (GitHub 아이디)</div>
         <input class="f-input" id="ghOwner" autocomplete="off" autocapitalize="off">
         <div class="f-label">데이터 저장소 이름</div>
         <input class="f-input" id="ghRepo" autocomplete="off" autocapitalize="off" placeholder="예: ilbo-data">
-        <div class="f-label">브랜치</div>
+        <div class="f-label">저장 위치 (브랜치) <span class="hint">보통 main을 사용합니다</span></div>
         <input class="f-input" id="ghBranch" value="main" autocomplete="off" autocapitalize="off">
         <div class="f-label">토큰 (github_pat_…)</div>
         <input class="f-input" id="ghToken" type="password" autocomplete="off">
@@ -747,19 +762,16 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
         <input class="f-input" id="ghExp" type="date">
         <div class="btnrow">
           <button class="btn sec" id="ghTest">연결 테스트</button>
-          <button class="btn pri" id="ghSave">저장</button>
+          <button class="btn pri" id="ghSave">연결 저장</button>
           <button class="btn sec" id="ghClear">연결 해제</button>
         </div>
         <div id="ghTestOut"></div>
         <div class="f-label" style="margin-top:18px">공지 한 줄 <span class="hint">모든 작업자의 입력 화면 맨 위에 표시 · 비우고 저장하면 사라짐</span></div>
         <div class="f-row"><input class="f-input" id="noticeIn" placeholder="예: 9/5(금) 14시 안전교육" autocomplete="off" maxlength="120"><button type="button" class="qzero" id="noticeSave">공지 저장</button></div>
       </details>
-      <div class="f-label" style="margin-top:18px">공유 링크 — 작업자에게는 이 링크 하나만 보내면 끝</div>
+      <div class="f-label" style="margin-top:18px">작업자 접속 링크</div>
       <div class="set-note" style="margin-bottom:8px">
-        받은 사람이 링크를 열고 <b>앱 로그인 비밀번호</b>를 입력하면 저장소 연결이 적용됩니다.
-        <b>주소창의 주소를 복사</b>해 전달해도 같은 연결을 사용하며 로그인 비밀번호가 필요합니다.
-        링크에 접속 정보가 들어 있으니 <b>회사 사람에게만</b> 전달하세요.
-        공유 링크를 가진 사람은 일보를 읽고 쓸 수 있습니다. 서버 연결 링크는 서버 관리 화면에서 해제하세요.
+        이 링크와 <b>앱 로그인 비밀번호</b>로 일보를 읽고 쓸 수 있습니다. 사용할 작업자에게 전달하세요. 서버 연결 링크의 사용 중지는 위의 서버 관리에서 합니다.
       </div>
       <div class="btnrow" style="margin-top:0">
         <button class="btn pri" id="shareLink">📋 공유 링크 복사</button>
@@ -767,17 +779,20 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
       <input class="f-input" id="shareLinkOut" readonly placeholder="위 버튼을 누르면 여기에 링크가 나옵니다" style="margin-top:8px">
     </div>
     <div class="set-sec">
-      <h4>백업 파일 · 오프라인 작업</h4>
+      <h4>자료 백업 · 인터넷 없이 작업</h4>
+      <h5 class="set-step-title">1. 백업 파일 내려받기</h5>
       <div class="set-note" id="backupScopeNote">전체 자료 백업은 연결된 저장소의 모든 일보·명단·관리 품목·진행 자료를 읽습니다. 이 기기 보관분은 일부 기록일 수 있습니다. 연결 암호와 토큰은 백업에 넣지 않습니다.</div>
       <div class="btnrow">
         <button class="btn pri" id="expBtn">전체 자료 백업 (.json)</button>
         <button class="btn sec" id="deviceBackupBtn" onclick="exportWorkspaceBackup(true)">이 기기 보관분 백업</button>
       </div>
-      <div class="set-note" style="margin-top:14px">백업을 가져오면 <b>별도 오프라인 작업공간</b>에서 엽니다. 연결된 저장소와 기존 기록을 바꾸거나 서버에 자동 전송하지 않습니다.</div>
+      <h5 class="set-step-title">2. 백업 파일로 작업하기</h5>
+      <div class="set-note">백업을 <b>이 기기의 별도 사본</b>으로 엽니다. 여기서 수정한 내용은 원래 자료와 합쳐지거나 서버로 전송되지 않습니다.</div>
       <label class="f-label" for="backupFile">가져올 JSON 백업 파일</label><input class="f-input" type="file" id="backupFile" accept=".json,application/json" onchange="readBackupFile(this)">
       <div class="btnrow"><button class="btn pri" id="impBtn">백업을 오프라인으로 열기</button><button class="btn sec" id="offlineReturnBtn" onclick="leaveOfflineWorkspace()" hidden>연결된 자료로 돌아가기</button></div>
       <details><summary>이전 백업 내용 붙여넣기</summary><textarea class="f-input" id="ioArea" placeholder="이전 JSON 백업을 붙여넣은 뒤 ‘백업을 오프라인으로 열기’를 누르세요." style="margin-top:8px; min-height:90px"></textarea></details>
-      <div class="f-row" style="margin-top:12px"><select class="f-input" id="offlineWorkspaceSelect" aria-label="보관한 오프라인 작업공간"></select><button class="btn sec" onclick="openSavedOfflineWorkspace()">보관 작업공간 열기</button></div>
+      <h5 class="set-step-title">3. 이전에 열었던 사본 이어서 작업하기</h5>
+      <div class="f-row" style="margin-top:12px"><select class="f-input" id="offlineWorkspaceSelect" aria-label="보관한 오프라인 작업공간"></select><button class="btn sec" onclick="openSavedOfflineWorkspace()">보관 사본 열기</button></div>
       <div class="set-note" id="backupStatus" role="status" aria-live="polite"></div>
     </div>
   </div>
@@ -804,26 +819,31 @@ function style(){
  const element=document.createElement('style');element.id='connectionGateStyle';element.textContent='.connectionGateDialog{box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #cfd7e4;border-radius:16px;background:#fff;color:#25344a;box-shadow:0 20px 80px #14233c33;font-family:inherit}.connectionGateDialog::backdrop{background:#18253c66}.connectionGateDialog h2{font-size:19px;margin:0 0 10px}.connectionGateDialog p{font-size:13px;line-height:1.6}.connectionGateDialog label{display:block;font-size:13px;font-weight:600}.connectionGateDialog input{box-sizing:border-box;width:100%;height:44px;padding:9px 12px;margin-top:7px;border:1px solid #aab8cc;border-radius:8px;font:inherit;font-size:18px}.connectionGateDialog .connectionGateActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.connectionGateDialog button{min-height:40px;border:1px solid #bcc8d8;border-radius:8px;padding:8px 16px;background:#fff;color:#25344a;font:inherit}.connectionGateDialog button[type=submit]{background:#425b9e;color:#fff;border-color:#425b9e}.connectionGateDialog button:disabled{opacity:.55}.connectionGateDialog [role=alert]{color:#ad3434;min-height:20px;margin:10px 0 0}@media print{.connectionGateDialog{display:none!important}}';document.head.append(element);
 }
 function create(){
- let granted=false,pending=null,cancel=null,version=0;
- return{get unlocked(){return granted},lock(){version++;granted=false;cancel?.()},request(){
-  if(granted)return Promise.resolve(true);if(pending)return pending;
-  const current=version;
-  pending=Promise.resolve().then(()=>new Promise(resolve=>{
-   if(version!==current){pending=null;resolve(false);return}
-   style();const before=document.activeElement,dialog=document.createElement('dialog');dialog.className='connectionGateDialog';dialog.setAttribute('aria-label','연결 설정 잠금 해제');
-   dialog.innerHTML='<form><h2>연결 설정 잠금 해제</h2><p>저장소 연결 정보를 열려면 비밀번호를 입력하세요.</p><label>설정 비밀번호<input type="password" name="password" inputmode="numeric" autocomplete="off" maxlength="128" required></label><p role="alert"></p><div class="connectionGateActions"><button type="button">취소</button><button type="submit">잠금 해제</button></div></form>';
+ let granted=false,credential='',pending=null,version=0;const listeners=new Set();
+ const gate={get unlocked(){return granted},lock(){version++;granted=false;credential='';const active=pending;pending=null;active?.finish?.(false);for(const listener of listeners){try{listener()}catch{}}},subscribeLock(listener){if(typeof listener!=='function')throw TypeError('잠금 처리 함수를 확인해 주세요.');listeners.add(listener);return()=>listeners.delete(listener)},async withCredential(fn){
+  if(!granted||!credential)throw Error('관리자 설정을 다시 열어 주세요.');if(typeof fn!=='function')throw TypeError('설정 처리 함수를 확인해 주세요.');
+  const current=version,result=await fn(credential);if(!granted||current!==version)throw Error('관리자 설정을 다시 열어 주세요.');return result;
+ },request(){
+  if(granted)return Promise.resolve(true);if(pending)return pending.promise;
+  const active={version,finish:null,promise:null};pending=active;
+  active.promise=Promise.resolve().then(()=>new Promise(resolve=>{
+   if(pending!==active||version!==active.version){resolve(false);return}
+   style();const before=document.activeElement,dialog=document.createElement('dialog');dialog.className='connectionGateDialog';dialog.setAttribute('aria-label','관리자 설정 열기');
+   dialog.innerHTML='<form><h2>관리자 설정 열기</h2><p>설정·연결·백업을 보려면 관리자 비밀번호를 입력하세요.</p><label>관리자 비밀번호<input type="password" name="password" autocomplete="off" maxlength="128" required></label><p role="alert"></p><div class="connectionGateActions"><button type="button">취소</button><button type="submit">설정 열기</button></div></form>';
    const input=dialog.querySelector('input'),form=dialog.querySelector('form'),error=dialog.querySelector('[role=alert]');let finished=false,checking=false;
-   const finish=ok=>{if(finished)return;finished=true;input.value='';granted=ok&&version===current;if(dialog.open&&typeof dialog.close==='function')dialog.close();dialog.remove();cancel=null;pending=null;if(before?.isConnected)before.focus({preventScroll:true});resolve(granted)};
-   cancel=()=>finish(false);dialog.querySelector('button[type=button]').onclick=()=>finish(false);dialog.oncancel=event=>{event.preventDefault();finish(false)};dialog.addEventListener('keydown',event=>event.stopPropagation());
+   const finish=(ok,value='')=>{if(finished)return;finished=true;input.value='';granted=ok&&version===active.version;credential=granted?value:'';if(dialog.open&&typeof dialog.close==='function')dialog.close();dialog.remove();if(pending===active)pending=null;if(before?.isConnected)before.focus({preventScroll:true});resolve(granted)};active.finish=finish;
+   const cancel=()=>{if(!finished)gate.lock()};dialog.querySelector('button[type=button]').onclick=cancel;dialog.oncancel=event=>{event.preventDefault();cancel()};dialog.addEventListener('close',cancel);dialog.addEventListener('keydown',event=>event.stopPropagation());
    form.onsubmit=async event=>{event.preventDefault();if(checking||finished)return;checking=true;error.textContent='';form.querySelector('[type=submit]').disabled=true;
-    const value=input.value;input.value='';try{const ok=await verify(value);if(finished||version!==current)return;if(ok){finish(true);return}error.textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요.'}catch(e){if(!finished)error.textContent=e.message||'비밀번호를 확인하지 못했습니다.'}finally{checking=false;if(!finished){form.querySelector('[type=submit]').disabled=false;input.focus()}}
+    const value=input.value;input.value='';try{const ok=await verify(value);if(finished||version!==active.version)return;if(ok){finish(true,value);return}error.textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요.'}catch(e){if(!finished&&version===active.version)error.textContent=e.message||'비밀번호를 확인하지 못했습니다.'}finally{checking=false;if(!finished){form.querySelector('[type=submit]').disabled=false;input.focus()}}
    };
    document.body.append(dialog);if(typeof dialog.showModal!=='function'){error.textContent='이 브라우저는 설정 잠금을 지원하지 않습니다. 최신 브라우저로 열어 주세요.';finish(false);return}dialog.showModal();input.focus();
-  }));return pending;
+  }));return active.promise;
  }};
+ root.addEventListener?.('pagehide',()=>gate.lock());return gate;
 }
 const api={create,verify};root.ScheduleConnectionGate=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(globalThis);
+
 /* CONNECTION_GATE_END */
 </script>
 
@@ -1031,7 +1051,7 @@ function replaceFieldShareHash(c){
 }
 async function makeShareLink(){
   if(!await requestFieldConnection()) return;
-  const session = fieldConnectionSession, current = () => session === fieldConnectionSession && fieldConnectionReady();
+  const session = fieldConnectionSession,view = fieldConnectionView, current = () => session === fieldConnectionSession && view === fieldConnectionView && fieldConnectionReady();
   let c = ghCfg();
   if(!connectedConfig(c)){ toast('먼저 공유 저장을 연결하세요'); return; }
   if(fieldTarget(c) && !bridgeConfig(c)){
@@ -1388,15 +1408,16 @@ async function pollFieldRevision(){
     if(epoch===storeEpoch){fieldRemotePending=true;renderSyncInfo();}
   }finally{fieldPolling=false;}
 }
-function setupFieldServerImport(){
+async function setupFieldServerImport(){
   const m=location.hash.match(/[#&]fieldSetup=([A-Za-z0-9_-]+)/);
   if(!m)return;
   let req;
   try{req=JSON.parse(b64uD(m[1]));}catch(e){return;}
   if(req.server!==FIELD_BRIDGE||typeof req.nonce!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.nonce))return;
   cancelFieldServerHandoff();
-  fieldSetup={nonce:req.nonce,opener:window.opener,hash:location.hash};
-  openSettings();
+  const setup={nonce:req.nonce,opener:window.opener,hash:location.hash};
+  fieldSetup=setup;
+  if(!await openSettings()||fieldSetup!==setup||setup.hash!==location.hash||!fieldSettingsReady())return;
   let box=$('#fieldServerImport');
   if(!box){box=document.createElement('div');box.id='fieldServerImport';box.className='set-note';$('#setStatus').after(box);}
   box.innerHTML='<p><b>처음 연결하는 기기</b>는 관리자 비밀번호 확인 후 아래 토큰 칸에 일보 저장소의 토큰을 입력하고 <b>저장</b>을 누르세요. 기존 연결이 있으면 아래 버튼으로 전달할 수 있습니다.</p><p>서버가 등록 완료를 확인한 뒤에만 이 기기의 연결을 저장합니다. 확인을 기다리는 동안 두 창을 열어 두세요.</p><button class="btn pri" type="button">서버에 연결 전달</button><p role="status" aria-live="polite"></p>';
@@ -1413,8 +1434,8 @@ async function sendFieldServerConnection(){
   const entered=fieldSetupInputs(),saved=ghCfg();
   const cfg=entered.token?entered:saved;
   if(!fieldTarget(cfg)||(!bridgeConfig(cfg)&&!cfg.token)){status.textContent='관리자 설정에 소유자 parkjkk, 저장소 ilbo-data, 브랜치 main과 해당 저장소 토큰을 입력한 뒤 저장을 누르세요.';return false;}
-  const epoch=storeEpoch,session=fieldConnectionSession,signature=JSON.stringify(saved),inputSignature=JSON.stringify(entered),requestId=crypto.randomUUID();
-  const current=()=>fieldSetup===req&&req.hash===location.hash&&req.opener===window.opener&&!req.opener.closed&&epoch===storeEpoch&&session===fieldConnectionSession&&fieldConnectionReady()&&signature===JSON.stringify(ghCfg())&&inputSignature===JSON.stringify(fieldSetupInputs());
+  const epoch=storeEpoch,session=fieldConnectionSession,view=fieldConnectionView,signature=JSON.stringify(saved),inputSignature=JSON.stringify(entered),requestId=crypto.randomUUID();
+  const current=()=>fieldSetup===req&&req.hash===location.hash&&req.opener===window.opener&&!req.opener.closed&&epoch===storeEpoch&&session===fieldConnectionSession&&view===fieldConnectionView&&fieldConnectionReady()&&signature===JSON.stringify(ghCfg())&&inputSignature===JSON.stringify(fieldSetupInputs());
   let finish;
   const promise=new Promise(resolve=>{
     let done=false,timer;
@@ -1471,6 +1492,7 @@ function getCachedDay(date){
 function isFresh(date, ms){ const m = dayMeta[date]; return !!(m && Date.now() - m.t < ms); }
 let driverKey = null;
 function initDriver(){
+  if(storeEpoch>0)lockFieldConnection();
   if(typeof fieldOfflineActivation!=='undefined'&&fieldOfflineActivation){try{fieldOfflineActivation.abort();}catch(e){}}
   const cfg = ghCfg();
   storeEpoch++;
@@ -1911,12 +1933,12 @@ async function loadPresets(background=false){
 }
 /* 명단·공지는 저장 성공 후만 반영하고 같은 연결 안에서 클릭 순서대로 처리한다. */
 const presetOperations=new Map();let presetWriteVersion=0;
-function applyFieldPresetOperation(op){
+function applyFieldPresetOperation(op,settingsSession=null){
   const epoch=storeEpoch,drv=driver;
   if(globalThis.AppAccess&&!AppAccess.unlocked)return Promise.reject(new Error('로그인 후 다시 시도해 주세요.'));
   presetWriteVersion++;
   const previous=presetOperations.get(epoch)||Promise.resolve();
-  const task=previous.catch(()=>{}).then(async()=>{assertContext(epoch);if(globalThis.AppAccess&&!AppAccess.unlocked)throw new Error('로그인 후 다시 시도해 주세요.');const next=await drv.presetsOp(op);assertContext(epoch);presetWriteVersion++;S.presets=next;renderRoster();renderMeChips();renderNotice();return next;});
+  const task=previous.catch(()=>{}).then(async()=>{assertContext(epoch);if(globalThis.AppAccess&&!AppAccess.unlocked)throw new Error('로그인 후 다시 시도해 주세요.');if(settingsSession!==null&&!fieldSettingsCurrent(settingsSession))throw contextError();const next=await drv.presetsOp(op);assertContext(epoch);presetWriteVersion++;S.presets=next;renderRoster();renderMeChips();renderNotice();return next;});
   presetOperations.set(epoch,task);
   task.finally(()=>{if(presetOperations.get(epoch)===task)presetOperations.delete(epoch);}).catch(()=>{});
   return task;
@@ -2099,7 +2121,7 @@ function renderMeChips(){
   h3.hidden = false;
   const names = [...new Set([...activeWorkers(), ...S.rows.map(r=>r.worker)])].filter(Boolean);
   const html = names.map(n => `<button class="chip ${n===S.me.worker?'sel':''}" data-n="${esc(n)}">${esc(n)}</button>`).join('') ||
-    `<span class="empty-note" style="padding:4px">아직 없음 — 기록 추가에서 이름을 입력하면 여기 나타납니다</span>`;
+    `<span class="empty-note" style="padding:4px">일보를 작성할 때 이름을 입력하면 여기에 나타납니다</span>`;
   box.innerHTML = html;
   $$('#meChips .chip').forEach(b => {
     b.onclick = () => {
@@ -2361,7 +2383,7 @@ function renderInput(){
   if(!rows.length){
     $('#rowList').innerHTML = (S.loading && !S.dayLoaded)
       ? `<div class="empty-note">불러오는 중…</div>`
-      : `<div class="empty-note">아직 기록이 없습니다.<br>아래 <b>＋ 기록 추가</b>를 눌러 시작하세요.</div>`;
+      : `<div class="empty-note">아직 기록이 없습니다.<br>아래 <b>＋ 일보 작성</b>을 눌러 시작하세요.</div>`;
     return;
   }
   const groups = [];
@@ -2890,6 +2912,7 @@ function openEntry(row, presetName, mode){
     ` <span class="ov-date${isT ? '' : ' warn'}">${dd.getMonth()+1}/${dd.getDate()}(${WD[dd.getDay()]})${isT ? '' : ' · 오늘 아님'}</span>`;
   $('#entryErr').hidden = true;
   $('#entryDel').style.display = row ? '' : 'none';
+  $('#entrySave').textContent=entrySaveLabel();
   fillWorkerChips();
   const me = S.me || {};
   $('#fWorker').value = row ? row.worker : (presetName || me.worker || '');
@@ -2925,6 +2948,7 @@ function openWorkerEntry(name){
   $('#entryTitle').innerHTML=$('#entryTitle').innerHTML.replace('기록 수정','하루 기록 수정');
   $$('#prodBlocks .pb').forEach(el=>expandProduct(el,false));renumberBlocks();entrySnap=formSnapshot();
 }
+function entrySaveLabel(){return S.editId?'수정 저장':'일보 저장';}
 function entryDirty(){ return formSnapshot() !== entrySnap; }
 /* ── 작성 중 임시저장: 전화·앱 종료로 폼이 닫혀도 다음에 열면 이어서 (새 기록만, 같은 날짜, 12시간 이내) ── */
 let draftTimer = null;
@@ -3065,7 +3089,7 @@ async function saveEntry(){
         toast('연결이 안 돼 기기에 보관했습니다 — 연결되면 자동 전송됩니다');
       } else { const ee = $('#entryErr'); ee.hidden = false; ee.textContent = '저장 안 됨: ' + e.message + ' — 잠시 후 [저장]을 다시 눌러주세요'; toast(e.message); }
     }
-    finally{ btnC.disabled = false; btnC.textContent = '저장'; }
+    finally{ btnC.disabled = false; btnC.textContent = entrySaveLabel(); }
     return;
   }
   const els = [...$('#prodBlocks').children];
@@ -3148,19 +3172,21 @@ async function saveEntry(){
       toast(e.message);
     }
   }
-  finally{ btn.disabled=false; btn.textContent='저장'; }
+  finally{ btn.disabled=false; btn.textContent=entrySaveLabel(); }
 }
 
 /* ================= 인쇄 시트 ================= */
 const SHEET_ROWS = 17;
+const PRINT_LAYOUT_VERSION = 'remark-wide-mold-finish-v1';
 /* 열 폭(%): 원본 실측값. 2026-09-02 사용자 요청으로 ○△Ⅹ 열 6개(가사시간·CASE·틈새·주입구·제품면·기포)는
-   합계(26.97%)를 유지한 채 같은 폭 4.495%(=12.95mm)로 균등 배분 — 표 전체 폭 288mm 불변 */
-const COLW = [5.037,4.955,8.448,5.037,5.199,6.499,5.037,10.398,4.495,4.495,4.495,4.495,4.495,4.495,5.199,5.199,12.023];
+   합계(26.97%)를 유지한 채 같은 폭 4.495%(=12.95mm)로 균등 배분 — 표 전체 폭 288mm 불변.
+   분동검사 1·2호의 5.199%씩은 비고 12.023%에 합산하고 원장·입력·TSV 값은 보존한다. */
+const COLW = [5.037,4.955,8.448,5.037,5.199,6.499,5.037,10.398,4.495,4.495,4.495,4.495,4.495,4.495,22.421];
 function sheetHeader(){
   const th3 = (mainTxt, subTxt, exTxt, cls='', sz='') =>
-    `<th rowspan="2" class="${cls}"><div class="hl ${sz}">${mainTxt}</div><div class="hl s10">${subTxt}</div><div class="hl ${sz}">${exTxt}</div></th>`;
+    `<th class="${cls}"><div class="hl ${sz}">${mainTxt}</div><div class="hl s10">${subTxt}</div><div class="hl ${sz}">${exTxt}</div></th>`;
   const thS = (l1,l2,l3,cls='') =>
-    `<th rowspan="2" class="${cls}"><div class="hl s9">${l1}</div><div class="hl s9">${l2}</div><div class="hl s9">${l3}</div></th>`;
+    `<th class="${cls}"><div class="hl s9">${l1}</div><div class="hl s9">${l2}</div><div class="hl s9">${l3}</div></th>`;
   return `<thead>
     <tr class="h1">
       ${th3('작업자','','(홍길동)')}
@@ -3175,12 +3201,10 @@ function sheetHeader(){
       ${thS('CASE','','상태')}
       ${thS('몰드','','틈새')}
       ${thS('몰드','PVC','주입구')}
-      ${thS('몰드','','제품면')}
+      ${thS('몰드','','손질')}
       ${thS('몰드','','기포')}
-      <th colspan="2" class="bl-m"><div class="hl s9">분동</div><div class="hl s9">검사</div></th>
-      <th rowspan="2" class="bl-m br-m"><div class="hl">비고</div><div class="hl s10">△,Ⅹ 체크시 사유 및 특이사항</div><div class="hl"></div></th>
+      <th class="bl-m br-m"><div class="hl">비고</div><div class="hl s10">△,Ⅹ 체크시 사유 및 특이사항</div><div class="hl"></div></th>
     </tr>
-    <tr class="h2"><th class="bl-m">1호</th><th>2호</th></tr>
   </thead>`;
 }
 function sheetPage(dateStr, rows, showWorkerFirst){
@@ -3194,9 +3218,9 @@ function sheetPage(dateStr, rows, showWorkerFirst){
     esc(r.scrapKg ?? ''),
     esc(r.defQty ?? ''),
     esc(r.defPart ?? ''),
-    esc(r.gasa ?? ''), esc(r.cs), esc(r.gap), esc(r.inlet), esc(r.face), esc(r.bubble), esc(r.b1), esc(r.b2),
+    esc(r.gasa ?? ''), esc(r.cs), esc(r.gap), esc(r.inlet), esc(r.face), esc(r.bubble),
     esc(r.remark ?? '')
-  ] : ['','','','','','','','','','','','','','','','',''];
+  ] : Array(COLW.length).fill('');
   let body = '';
   for(let i=0;i<SHEET_ROWS;i++){
     const c = cells(rows[i]);
@@ -3205,8 +3229,7 @@ function sheetPage(dateStr, rows, showWorkerFirst){
       <td class="num">${c[3]}</td><td class="num">${c[4]}</td><td class="num">${c[5]}</td>
       <td class="num">${c[6]}</td><td>${c[7]}</td>
       <td class="bl-m">${c[8]}</td><td>${c[9]}</td><td>${c[10]}</td><td>${c[11]}</td><td>${c[12]}</td><td>${c[13]}</td>
-      <td class="bl-m">${c[14]}</td><td>${c[15]}</td>
-      <td class="rem bl-m br-m" colspan="1">${c[16]}</td>
+      <td class="rem bl-m br-m">${c[14]}</td>
     </tr>`;
   }
   return `<div class="sheet">
@@ -3219,14 +3242,14 @@ function sheetPage(dateStr, rows, showWorkerFirst){
       <span class="legend">(상태 : ○양호△보통Ⅹ불량)</span>
     </div>
     <table class="sh">
-      <colgroup>${COLW.map((w,i)=> i===16 ? `<col style="width:${w}%">` : `<col style="width:${w}%">`).join('')}</colgroup>
+      <colgroup>${COLW.map(w=>`<col style="width:${w}%">`).join('')}</colgroup>
       ${sheetHeader()}
       <tbody>${body}</tbody>
     </table>
   </div>`;
 }
 function rowsHash(){
-  const s = JSON.stringify(orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.b1,r.b2,r.remark]));
+  const s = JSON.stringify([PRINT_LAYOUT_VERSION,orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.remark])]);
   let h = 0; for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h;
 }
 function renderSheet(){
@@ -3518,6 +3541,7 @@ function copyMonthTSV(){
 
 /* ================= 설정 ================= */
 function renderRoster(){
+  if(!fieldSettingsReady())return;
   const box = $('#rosterList');
   const names = (S.presets.workers || []).filter(Boolean);
   const cnt = $('#rosterCount');
@@ -3534,29 +3558,38 @@ function renderRoster(){
   box.innerHTML = act.map(row).join('') + (off.length ? `<div class="roster-hd">제외됨 (미작성 확인 안 함)</div>` + off.map(row).join('') : '');
   box.querySelectorAll('.roster-del').forEach(b => b.onclick = async (e) => {
     e.preventDefault();
+    if(!fieldSettingsReady())return;
+    const session=fieldConnectionSession;
     const n = b.dataset.n;
     if(!confirm(`"${n}" 을(를) 목록에서 완전히 지울까요?\n(과거 일보 기록은 그대로 남습니다)`)) return;
     const op = {kind:'remove-item', list:'workers', value:n};
     b.disabled=true;
-    try{ await applyFieldPresetOperation(op); }
+    try{ await applyFieldPresetOperation(op,session); }
     catch(err){ if(!err.contextChanged)toast('목록 삭제를 저장하지 못했습니다 — 기존 목록은 유지됩니다.'); }
     finally{b.disabled=false;}
   });
   box.querySelectorAll('input').forEach(cb => cb.onchange = async () => {
+    if(!fieldSettingsReady())return;
+    const session=fieldConnectionSession;
     const n = cb.dataset.n;
     const op = {kind: cb.checked ? 'worker-on' : 'worker-off', name: n};
     cb.disabled=true;
     try{
-      await applyFieldPresetOperation(op);
+      await applyFieldPresetOperation(op,session);
     }catch(e){ if(!e.contextChanged){renderRoster();toast('명단 변경을 저장하지 못했습니다 — 기존 명단은 유지됩니다. 다시 시도해 주세요.');} }
     finally{cb.disabled=false;}
   });
 }
 /* FIELD_CONNECTION_LOCK_START */
 const fieldConnectionGate = globalThis.ScheduleConnectionGate?.create();
-let fieldConnectionSession = 0;
+globalThis.AppAccess?.setAdminGate?.(fieldConnectionGate,fieldSettingsReady);
+let fieldConnectionSession = 0, fieldConnectionView = 0, fieldSettingsOpening = null;
+function fieldSettingsReady(){
+  return !!((!globalThis.AppAccess||AppAccess.unlocked)&&fieldConnectionGate?.unlocked&&$('#setOv').classList.contains('open'));
+}
+function fieldSettingsCurrent(session){return session===fieldConnectionSession&&fieldSettingsReady();}
 function fieldConnectionReady(){
-  return !!(fieldConnectionGate?.unlocked && $('#setOv').classList.contains('open') && $('#ghAdv').open);
+  return fieldSettingsReady()&&$('#ghAdv').open;
 }
 function fieldConnectionInputs(enabled){
   for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp','noticeIn','ghTest','ghSave','ghClear','noticeSave']) $('#'+id).disabled = !enabled;
@@ -3564,14 +3597,26 @@ function fieldConnectionInputs(enabled){
 function lockFieldConnection(){
   if(typeof cancelFieldServerHandoff==='function')cancelFieldServerHandoff();
   fieldConnectionSession++;
+  fieldSettingsOpening=null;
   fieldConnectionGate?.lock();
+  if(typeof fieldOfflineActivation!=='undefined'&&fieldOfflineActivation){try{fieldOfflineActivation.abort();}catch(e){}}
+  $('#setOv').classList.remove('open');
+  document.body.style.overflow=$('#entryOv').classList.contains('open')?'hidden':'';syncInert();
+  clearFieldConnection();
+  for(const id of ['rosterAdd','ioArea','backupFile'])$('#'+id).value='';
+  for(const id of ['setStatus','rosterList','rosterCount','backupStatus','offlineWorkspaceSelect'])$('#'+id).textContent='';
+  $('#fieldServerImport')?.remove();
+  const accessHost=$('#data-access-settings');if(accessHost){accessHost.textContent='';delete accessHost.dataset.accessBound;}
+}
+function clearFieldConnection(){
+  fieldConnectionView++;
   $('#ghAdv').open = false;
   for(const id of ['ghOwner','ghRepo','ghBranch','ghToken','ghExp','shareLinkOut','noticeIn']) $('#'+id).value = '';
   $('#ghTestOut').textContent = ''; $('#ghTestOut').className = '';
   fieldConnectionInputs(false);
 }
 function fillFieldConnection(){
-  if(!fieldConnectionGate?.unlocked) return;
+  if(!fieldSettingsReady()) return;
   const c = ghCfg() || (typeof fieldSetup!=='undefined'&&fieldSetup?{owner:'parkjkk',repo:'ilbo-data',branch:'main'}:{});
   $('#ghOwner').value = c.owner||''; $('#ghRepo').value = c.repo||'';
   $('#ghBranch').value = c.branch||'main'; $('#ghToken').value = c.token||'';
@@ -3584,35 +3629,45 @@ function fillFieldConnection(){
   $('#ghToken').placeholder=bridge?'서버에서 보관 중 · 이 기기에는 토큰 없음':'';
 }
 async function requestFieldConnection(){
-  if(!$('#setOv').classList.contains('open')) return false;
+  if(!fieldSettingsReady()) return false;
   if(fieldConnectionReady()) return true;
-  if(!fieldConnectionGate){ toast('연결 설정 잠금을 준비하지 못했습니다. 새로고침해 주세요.'); return false; }
-  const session = fieldConnectionSession;
-  if(!await fieldConnectionGate.request() || session !== fieldConnectionSession || !$('#setOv').classList.contains('open')) return false;
   fillFieldConnection(); $('#ghAdv').open = true;
   return fieldConnectionReady();
 }
 function bindFieldConnection(){
   lockFieldConnection();
   const details = $('#ghAdv');
-  details.querySelector('summary').addEventListener('click', async e => {
+  details.querySelector('summary').addEventListener('click', e => {
     e.preventDefault();
-    if(details.open) lockFieldConnection(); else await requestFieldConnection();
+    if(!fieldSettingsReady())return;
+    if(details.open) clearFieldConnection(); else {fillFieldConnection();details.open=true;}
   });
   details.addEventListener('toggle', () => {
-    if(!details.open || !fieldConnectionGate?.unlocked) lockFieldConnection();
+    if(!details.open||!fieldSettingsReady())clearFieldConnection();
   });
 }
 /* FIELD_CONNECTION_LOCK_END */
-function openSettings(){
+async function openSettings(){
+  if(globalThis.AppAccess&&!AppAccess.unlocked)return false;
+  if(fieldSettingsReady())return true;
+  if(fieldSettingsOpening)return fieldSettingsOpening;
   lockFieldConnection();
-  renderSetStatus();
-  renderRoster();
-  if(typeof renderBackupStatus==='function')renderBackupStatus();
-  $('#setOv').classList.add('open'); document.body.style.overflow='hidden'; syncInert();
-  try{ history.pushState({ov:'set'}, ''); }catch(e){}
+  if(!fieldConnectionGate){toast('관리자 설정 잠금을 준비하지 못했습니다. 새로고침해 주세요.');return false;}
+  const session=fieldConnectionSession,epoch=storeEpoch;
+  const opening=(async()=>{
+    if(!await fieldConnectionGate.request()||session!==fieldConnectionSession||epoch!==storeEpoch||(globalThis.AppAccess&&!AppAccess.unlocked))return false;
+    $('#setOv').classList.add('open');document.body.style.overflow='hidden';syncInert();
+    renderSetStatus();renderRoster();
+    globalThis.AppAccess?.mount();
+    if(typeof renderBackupStatus==='function')renderBackupStatus();
+    try{history.pushState({ov:'set'},'');}catch(e){}
+    return true;
+  })();
+  fieldSettingsOpening=opening;
+  try{return await opening;}finally{if(fieldSettingsOpening===opening)fieldSettingsOpening=null;}
 }
 function renderSetStatus(){
+  if(!fieldSettingsReady())return;
   const serverButton=$('#fieldServerSettings');if(serverButton)serverButton.hidden=!bridgeConfig(ghCfg())||!!fieldOffline;
   const c = ghCfg() || {};
   const cfgd = connectedConfig(c);
@@ -3645,7 +3700,7 @@ function closeSettings(fromPop){
 }
 async function ghTest(){
   if(!await requestFieldConnection()) return;
-  const session = fieldConnectionSession, current = () => session === fieldConnectionSession && fieldConnectionReady();
+  const session = fieldConnectionSession,view = fieldConnectionView, current = () => session === fieldConnectionSession && view === fieldConnectionView && fieldConnectionReady();
   const o=$('#ghOwner').value.trim(), r=$('#ghRepo').value.trim(), t=$('#ghToken').value.trim();
   const br = ($('#ghBranch').value.trim() || 'main');
   const out = $('#ghTestOut');
@@ -3684,7 +3739,7 @@ async function ghSaveCfg(){
   if(!await requestFieldConnection()) return;
   if(typeof fieldSetup!=='undefined'&&fieldSetup)return sendFieldServerConnection();
   if(bridgeConfig(ghCfg())){closeSettings();toast('서버 연결이 유지됩니다');return;}
-  const session=fieldConnectionSession,epoch=storeEpoch;
+  const session=fieldConnectionSession,epoch=storeEpoch,view=fieldConnectionView;
   const cfg = {owner:$('#ghOwner').value.trim(), repo:$('#ghRepo').value.trim(), branch:$('#ghBranch').value.trim()||'main', token:$('#ghToken').value.trim(), exp:$('#ghExp').value||'', v:Date.now()};
   if(!cfg.owner||!cfg.repo||!cfg.token){ toast('소유자·저장소·토큰을 입력하세요'); return; }
   if(fieldTarget(cfg)){
@@ -3694,9 +3749,9 @@ async function ghSaveCfg(){
       const j=await res.json();
       const next={owner:'parkjkk',repo:'ilbo-data',branch:'main',transport:'bridge',bridgeKey:j.key,v:Date.now()};
       if(!bridgeConfig(next))throw new Error('서버 연결 응답을 확인하지 못했습니다.');
-      if(epoch!==storeEpoch||session!==fieldConnectionSession||!fieldConnectionReady())return;
+      if(epoch!==storeEpoch||session!==fieldConnectionSession||view!==fieldConnectionView||!fieldConnectionReady())return;
       saveConnection(next);replaceFieldShareHash(next);S.authError=false;initDriver();updateNetBanner();loadPresets();refreshDay(false,true);closeSettings();toast('토큰을 서버에 보관하는 공유 저장으로 연결되었습니다');
-    }catch(e){if(epoch===storeEpoch&&session===fieldConnectionSession&&fieldConnectionReady())toast(e.message);}
+    }catch(e){if(epoch===storeEpoch&&session===fieldConnectionSession&&view===fieldConnectionView&&fieldConnectionReady())toast(e.message);}
     return;
   }
   const prev = ghCfg();
@@ -3705,10 +3760,8 @@ async function ghSaveCfg(){
   S.authError = false; S.presetsShown = false; initDriver(); updateNetBanner();
   loadPresets(); refreshDay(false, true);
   if(tokenChanged){
-    /* 토큰이 바뀌면 작업자 폰의 옛 링크는 더 이상 연결되지 않음 → 설정을 닫지 않고 공유 링크 재배포로 안내 */
-    renderSetStatus();
-    $('#shareLink').scrollIntoView({block:'center', behavior:'smooth'});
-    toast('토큰이 바뀌었습니다 — 아래 [공유 링크 복사]로 새 링크를 작업자 전원에게 다시 보내세요');
+    closeSettings();
+    toast('토큰이 바뀌었습니다 — 설정을 다시 열고 [공유 링크 복사]로 새 링크를 작업자 전원에게 보내세요');
   } else { closeSettings(); toast('공유 저장이 연결되었습니다'); }
 }
 async function ghClearCfg(){
@@ -3845,33 +3898,39 @@ async function buildFieldBackup(partial=false){
 }
 function fieldBackupSummary(packet){const days=Object.keys(packet.files).filter(p=>/^data\/\d/.test(p));return `${days.length}일 · ${days.reduce((n,p)=>n+packet.files[p].rows.length,0)}행 · ${packet.coverage.kind==='repository-complete'?'전체 저장소 기준':packet.coverage.kind==='device-partial'?'기기 보관분 · 일부 자료':packet.coverage.kind==='offline-workspace'?'오프라인 작업공간':'이 기기 원본'}${packet.local.outbox?.length?' · 전송 대기 '+packet.local.outbox.length+'건 포함':''}`;}
 async function exportWorkspaceBackup(partial=false){
-  if(fieldBackupBusy)return;fieldBackupBusy=true;const status=$('#backupStatus');status.textContent='백업 자료를 확인 중입니다… 전체 백업은 모든 파일 조회가 끝난 뒤 내려받습니다.';
-  try{const packet=await buildFieldBackup(partial),blob=new Blob([JSON.stringify(packet,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='field-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+packet.coverage.kind+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);status.textContent='백업 파일을 만들었습니다. '+fieldBackupSummary(packet);}catch(e){status.textContent='백업 중단: '+e.message;}finally{fieldBackupBusy=false;}
+  if(!fieldSettingsReady()||fieldBackupBusy)return;fieldBackupBusy=true;const session=fieldConnectionSession,status=$('#backupStatus');status.textContent='백업 자료를 확인 중입니다… 전체 백업은 모든 파일 조회가 끝난 뒤 내려받습니다.';
+  try{const packet=await buildFieldBackup(partial);if(!fieldSettingsCurrent(session))return;const blob=new Blob([JSON.stringify(packet,null,2)],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='field-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+packet.coverage.kind+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);status.textContent='백업 파일을 만들었습니다. '+fieldBackupSummary(packet);}catch(e){if(fieldSettingsCurrent(session))status.textContent='백업 중단: '+e.message;}finally{fieldBackupBusy=false;}
 }
 async function readBackupFile(input){
+  if(!fieldSettingsReady())return;
+  const session=fieldConnectionSession;
   const file=input.files?.[0];if(!file)return;
-  try{if(file.size>128*1024*1024)throw new Error('백업 파일이 너무 큽니다.');const text=await file.text(),packet=await verifyFieldBackup(JSON.parse(text));$('#ioArea').value=text;$('#backupStatus').textContent=fieldBackupSummary(packet)+' — 아래 열기 버튼을 누르면 별도 오프라인 사본으로 엽니다.';}catch(e){$('#ioArea').value='';$('#backupStatus').textContent='파일 확인 실패: '+e.message;}
+  try{if(file.size>128*1024*1024)throw new Error('백업 파일이 너무 큽니다.');const text=await file.text(),packet=await verifyFieldBackup(JSON.parse(text));if(!fieldSettingsCurrent(session))return;$('#ioArea').value=text;$('#backupStatus').textContent=fieldBackupSummary(packet)+' — 아래 열기 버튼을 누르면 별도 오프라인 사본으로 엽니다.';}catch(e){if(fieldSettingsCurrent(session)){$('#ioArea').value='';$('#backupStatus').textContent='파일 확인 실패: '+e.message;}}
 }
-async function activateFieldOffline(space,isNew=false){
+async function activateFieldOffline(space,isNew=false,session=fieldConnectionSession){
+  if(!fieldSettingsCurrent(session))throw contextError();
   const epoch=storeEpoch,scope='offline:'+space.id,created=[];
   if(isNew){try{const local=space.packet.local||{},items={'ilbo.outbox':local.outbox||[],'ilbo.drafts':local.drafts||{},'ilbo.presetsRetry':local.presetsRetry||{}};for(const [date,value]of Object.entries(local.printed||{}))items['ilbo.printed.'+date]=value;for(const [name,value]of Object.entries(items)){const key=storageKey(name,scope);localStorage.setItem(key,JSON.stringify(value));created.push(key);}}catch(e){created.forEach(key=>localStorage.removeItem(key));throw new Error('기기 보관분을 저장할 공간이 부족합니다. 기존 작업공간은 그대로입니다.');}}
   let activation;
-  try{await fieldOfflineTx('readwrite',(tx,set,fail)=>{try{assertContext(epoch);activation=tx;fieldOfflineActivation=tx;if(isNew)tx.objectStore('workspaces').put(space);tx.objectStore('meta').put(space.id,'active');set(true);}catch(e){fail(e);}});}catch(e){created.forEach(key=>localStorage.removeItem(key));throw e;}finally{if(fieldOfflineActivation===activation)fieldOfflineActivation=null;}
+  try{await fieldOfflineTx('readwrite',(tx,set,fail)=>{try{assertContext(epoch);if(!fieldSettingsCurrent(session))throw contextError();activation=tx;fieldOfflineActivation=tx;if(isNew)tx.objectStore('workspaces').put(space);tx.objectStore('meta').put(space.id,'active');set(true);}catch(e){fail(e);}});}catch(e){created.forEach(key=>localStorage.removeItem(key));throw e;}finally{if(fieldOfflineActivation===activation)fieldOfflineActivation=null;}
   assertContext(epoch);fieldOffline=space;S.authError=false;initDriver();
   const dates=Object.keys(space.packet.files).filter(p=>/^data\/\d/.test(p)).map(p=>p.slice(5,15)).sort();if(dates.length&&!dates.includes(S.date))S.date=dates.filter(d=>d<=todayStr()).at(-1)||dates[0];S.month=S.date.slice(0,7);renderDate();updateNetBanner();await Promise.all([loadPresets(),refreshDay(true,true)]);renderSetStatus();renderBackupStatus();
 }
 async function importData(){
-  if(fieldBackupBusy)return false;fieldBackupBusy=true;
-  try{const packet=await verifyFieldBackup(JSON.parse($('#ioArea').value)),space={id:crypto.randomUUID(),createdAt:new Date().toISOString(),packet};await activateFieldOffline(space,true);$('#backupStatus').textContent='별도 오프라인 작업공간을 열었습니다. '+fieldBackupSummary(packet)+' · 서버 변경 없음';return true;}catch(e){$('#backupStatus').textContent='가져오기 중단: '+e.message;return false;}finally{fieldBackupBusy=false;}
+  if(!fieldSettingsReady()||fieldBackupBusy)return false;fieldBackupBusy=true;const session=fieldConnectionSession;
+  try{const packet=await verifyFieldBackup(JSON.parse($('#ioArea').value)),space={id:crypto.randomUUID(),createdAt:new Date().toISOString(),packet};if(!fieldSettingsCurrent(session))return false;await activateFieldOffline(space,true,session);toast('별도 오프라인 작업공간을 열었습니다. '+fieldBackupSummary(packet)+' · 서버 변경 없음');return true;}catch(e){if(fieldSettingsCurrent(session))$('#backupStatus').textContent='가져오기 중단: '+e.message;return false;}finally{fieldBackupBusy=false;}
 }
 async function leaveOfflineWorkspace(){
-  if(!fieldOffline)return;
-  try{await fieldOfflineTx('readwrite',(tx,set)=>{tx.objectStore('meta').put(null,'active');set(true);});fieldOffline=null;S.authError=false;initDriver();renderDate();updateNetBanner();await Promise.all([loadPresets(),refreshDay(true,true)]);renderSetStatus();renderBackupStatus();$('#backupStatus').textContent='기존 연결로 돌아왔습니다. 오프라인 작업공간은 기기에 계속 보관됩니다.';}catch(e){$('#backupStatus').textContent=e.message;}
+  if(!fieldSettingsReady()||!fieldOffline)return;
+  const session=fieldConnectionSession,epoch=storeEpoch;let activation;
+  try{await fieldOfflineTx('readwrite',(tx,set,fail)=>{try{assertContext(epoch);if(!fieldSettingsCurrent(session))throw contextError();activation=tx;fieldOfflineActivation=tx;tx.objectStore('meta').put(null,'active');set(true);}catch(e){fail(e);}});assertContext(epoch);fieldOfflineActivation=null;fieldOffline=null;S.authError=false;initDriver();renderDate();updateNetBanner();await Promise.all([loadPresets(),refreshDay(true,true)]);renderSetStatus();renderBackupStatus();toast('기존 연결로 돌아왔습니다. 오프라인 작업공간은 기기에 계속 보관됩니다.');}catch(e){if(fieldSettingsCurrent(session))$('#backupStatus').textContent=e.message;}finally{if(fieldOfflineActivation===activation)fieldOfflineActivation=null;}
 }
-async function openSavedOfflineWorkspace(){const id=$('#offlineWorkspaceSelect').value;if(!id)return;try{const space=await readFieldOffline(id);if(!space)throw new Error('보관한 작업공간을 찾을 수 없습니다.');validateFieldBackup(space.packet);await activateFieldOffline(space);$('#backupStatus').textContent='보관한 오프라인 작업공간을 열었습니다.';}catch(e){$('#backupStatus').textContent=e.message;}}
+async function openSavedOfflineWorkspace(){if(!fieldSettingsReady())return;const session=fieldConnectionSession,id=$('#offlineWorkspaceSelect').value;if(!id)return;try{const space=await readFieldOffline(id);if(!fieldSettingsCurrent(session))return;if(!space)throw new Error('보관한 작업공간을 찾을 수 없습니다.');validateFieldBackup(space.packet);await activateFieldOffline(space,false,session);toast('보관한 오프라인 작업공간을 열었습니다.');}catch(e){if(fieldSettingsCurrent(session))$('#backupStatus').textContent=e.message;}}
 async function renderBackupStatus(){
+  if(!fieldSettingsReady())return;
+  const session=fieldConnectionSession;
   $('#offlineReturnBtn').hidden=!fieldOffline;$('#deviceBackupBtn').hidden=driver.mode!=='gh';$('#expBtn').textContent=fieldOffline?'오프라인 전체 백업 (.json)':driver.mode==='gh'?'전체 자료 백업 (.json)':'이 기기 전체 백업 (.json)';
-  try{const items=await fieldOfflineTx('readonly',(tx,set)=>{const req=tx.objectStore('workspaces').getAll();req.onsuccess=()=>set(req.result);});const select=$('#offlineWorkspaceSelect');select.innerHTML=items.length?items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(item=>`<option value="${esc(item.id)}">${esc(item.createdAt.slice(0,16).replace('T',' '))} · ${Object.keys(item.packet.files).filter(p=>/^data\/\d/.test(p)).length}일${item.id===fieldOffline?.id?' · 사용 중':''}</option>`).join(''):'<option value="">보관한 오프라인 작업공간 없음</option>';if(fieldOffline)select.value=fieldOffline.id;}catch(e){$('#backupStatus').textContent=e.message;}
+  try{const items=await fieldOfflineTx('readonly',(tx,set)=>{const req=tx.objectStore('workspaces').getAll();req.onsuccess=()=>set(req.result);});if(!fieldSettingsCurrent(session))return;const select=$('#offlineWorkspaceSelect');select.innerHTML=items.length?items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(item=>`<option value="${esc(item.id)}">${esc(item.createdAt.slice(0,16).replace('T',' '))} · ${Object.keys(item.packet.files).filter(p=>/^data\/\d/.test(p)).length}일${item.id===fieldOffline?.id?' · 사용 중':''}</option>`).join(''):'<option value="">보관한 오프라인 작업공간 없음</option>';if(fieldOffline)select.value=fieldOffline.id;}catch(e){if(fieldSettingsCurrent(session))$('#backupStatus').textContent=e.message;}
 }
 /* FIELD_BACKUP_END */
 
@@ -3922,7 +3981,7 @@ function init(){
   $('#refreshTop').onclick = () => {loadProductionProgress();refreshDay(false, true);};
   window.addEventListener('popstate', () => {
     if($('#entryOv').classList.contains('open')) requestCloseEntry(true);
-    else if($('#setOv').classList.contains('open')) closeSettings(true);
+    else if($('#setOv').classList.contains('open')||fieldSettingsOpening) closeSettings(true);
   });
   $('#entryDel').onclick = async () => {
     if($('#entrySave').disabled || $('#entryDel').disabled) return;
@@ -4001,6 +4060,8 @@ function init(){
     }
   });
   $('#rosterAddBtn').onclick = async () => {
+    if(!fieldSettingsReady())return;
+    const session=fieldConnectionSession;
     const inp = $('#rosterAdd');
     const button=$('#rosterAddBtn');if(button.disabled)return;
     const name = inp.value.replace(/\s+/g, '');   /* '김 철수' → '김철수' 중복 방지 */
@@ -4008,7 +4069,7 @@ function init(){
     if((S.presets.workers||[]).includes(name) && !(S.presets.inactive||[]).includes(name)){ toast(`"${name}" 은(는) 이미 명단에 있습니다`); inp.value=''; return; }
     const op = {kind:'worker-add', name};
     const typed=inp.value;button.disabled=true;
-    try{ await applyFieldPresetOperation(op);if(inp.value===typed)inp.value='';toast(`"${name}" 명단에 추가되었습니다`); }
+    try{ await applyFieldPresetOperation(op,session);if(!fieldSettingsCurrent(session))return;if(inp.value===typed)inp.value='';toast(`"${name}" 명단에 추가되었습니다`); }
     catch(e){ if(!e.contextChanged)toast('명단 추가를 저장하지 못했습니다 — 입력한 이름은 그대로입니다. 다시 시도해 주세요.'); }
     finally{button.disabled=false;}
   };
@@ -4048,11 +4109,12 @@ function init(){
   setupFieldServerImport();
   $('#noticeSave').onclick = async () => {
     if(!await requestFieldConnection()) return;
+    const session=fieldConnectionSession;
     const button=$('#noticeSave');if(button.disabled)return;
     const text = $('#noticeIn').value.trim();
     const op = {kind:'notice', text};
     button.disabled=true;
-    try{ await applyFieldPresetOperation(op);toast(text ? '공지를 올렸습니다 — 모든 작업자 화면 맨 위에 보입니다' : '공지를 지웠습니다'); }
+    try{ await applyFieldPresetOperation(op,session);if(fieldSettingsCurrent(session))toast(text ? '공지를 올렸습니다 — 모든 작업자 화면 맨 위에 보입니다' : '공지를 지웠습니다'); }
     catch(e){ if(!e.contextChanged)toast('공지를 저장하지 못했습니다 — 기존 공지는 유지됩니다. 다시 시도해 주세요.'); }
     finally{button.disabled=false;}
   };
