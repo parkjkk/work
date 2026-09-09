@@ -3627,7 +3627,7 @@ function pgPeriodPresentation(period){
 }
 function pgTimelineGroups(rows,jobs){
  const jobMap=new Map(jobs.map(j=>[j.id,j])),groups=new Map();
- for(const source of rows){const job=jobMap.get(source.jobId)||{},routing=pgRouting(job),explicit=!!source.explicitRouting||!!routing,row=explicit?{...source,explicitRouting:true,routingGroup:source.routingGroup??routing?.group??'',routingLane:source.routingLane??routing?.lane??1,routingOrder:source.routingOrder??routing?.order??1,routingMode:source.routingMode??routing?.mode}:source,grouped=Number(job.group)>0||String(job.group||'').startsWith('manual:'),key=JSON.stringify([row.editMonth,row.worker,explicit?['routing',row.jobId||row.id,row.machine,row.start,row.end]:grouped?'group:'+job.group:'job:'+(row.jobId||row.id),!!row.reservationConflict]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row)}
+ for(const source of rows){const job=jobMap.get(source.jobId)||{},routing=pgRouting(job),explicit=!!source.explicitRouting||!!routing,row=explicit?{...source,explicitRouting:true,routingGroup:source.routingGroup??routing?.group??'',routingLane:source.routingLane??routing?.lane??1,routingOrder:source.routingOrder??routing?.order??1,routingMode:source.routingMode??routing?.mode}:source,grouped=Number(job.group)>0||String(job.group||'').startsWith('manual:'),key=JSON.stringify([row.editMonth,row.worker,explicit?['routing',row.routingGroup||'job:'+(row.jobId||row.id)]:grouped?'group:'+job.group:'job:'+(row.jobId||row.id),!!row.reservationConflict]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row)}
  return [...groups.values()].map(parts=>{const first=parts[0],starts=parts.map(r=>r.explicitRouting?r.start:r.groupStart||r.start).filter(Boolean).sort(),ends=parts.map(r=>r.explicitRouting?r.end:r.groupEnd||r.end).filter(Boolean).sort();return{...first,start:starts[0],end:ends.at(-1),dry:parts.map(r=>r.dry).filter(Boolean).sort().at(-1),parts,memberIds:[...new Set(parts.map(r=>r.jobId))],barText:first.sourceLabel||parts.map(r=>r.machine+' '+r.product+' '+fmt(r.orphanActual?r.produced:r.qty)+'조'+(r.orphanActual?' 실적':'')).join(' / '),manual:parts.every(r=>r.manual),projected:parts.some(r=>r.projected),status:parts.some(r=>String(r.status||'').replace(/\s/g,'')==='생산중')?'생산중':first.status}});
 }
 function pgSameProductionLine(a,b){if(a.explicitRouting&&b.explicitRouting&&a.jobId===b.jobId&&(a.routingMode==='parallel'||b.routingMode==='parallel')&&a.machine!==b.machine)return false;return a.worker===b.worker&&(!(a.explicitRouting&&b.explicitRouting)||String(a.routingGroup||'')===String(b.routingGroup||'')&&(!a.routingGroup?a.jobId===b.jobId:true)&&Number(a.routingLane)===Number(b.routingLane))}
@@ -3642,7 +3642,7 @@ function pgTimelineSegments(period,periods){
  const merged=[];for(const piece of segments.sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end))){const previous=merged.at(-1);if(previous&&piece.start<=P.add(previous.end,1)){if(piece.end>previous.end)previous.end=piece.end}else merged.push({...piece})}return merged;
 }
 function pgTimelineLanes(periods){
- const pieces=r=>Array.isArray(r.displaySegments)?r.displaySegments:pgDisplaySegments(r.start,r.end),lanes=[],routeKey=r=>r.explicitRouting?JSON.stringify([r.editMonth||'',r.routingGroup||'job:'+r.jobId,r.routingLane]):'',fits=(lane,row)=>lane.every(other=>pieces(other).every(a=>pieces(row).every(b=>a.end<b.start||b.end<a.start)));
+ const pieces=r=>Array.isArray(r.displaySegments)?r.displaySegments:pgDisplaySegments(r.start,r.end),lanes=[],routeKey=r=>'',fits=(lane,row)=>lane.every(other=>pieces(other).every(a=>pieces(row).every(b=>a.end<b.start||b.end<a.start)));
  const sorted=periods.filter(r=>pieces(r).length).slice().sort((a,b)=>!!b.explicitRouting-!!a.explicitRouting||(a.explicitRouting&&b.explicitRouting?(String(a.routingGroup||a.jobId).localeCompare(String(b.routingGroup||b.jobId))||Number(a.routingLane)-Number(b.routingLane)||Number(a.routingOrder)-Number(b.routingOrder)):0)||pieces(a)[0].start.localeCompare(pieces(b)[0].start)||a.end.localeCompare(b.end));
  for(const row of sorted){const key=routeKey(row);let lane=lanes.find(l=>(l.routingKey||'')===key&&fits(l,row));if(!lane){lane=[];if(key){lane.routingKey=key;lane.routingLane=row.routingLane;lane.routingGroup=row.routingGroup;lane.routingSubline=lanes.filter(l=>l.routingKey===key).length+1}lanes.push(lane)}lane.push(row)}return lanes.length?lanes:[[]];
 }
@@ -3948,9 +3948,8 @@ function pgDirectSnapshot(g,changes=[]){const draft=C.clone(g.draft),replacement
 function pgDirectHistory(job){return !!(job.firstActual||job.complete||job.stopped||job.stoppedAt||job.previousProduced>0||job.records?.some(r=>r.pours>0))}
 function pgDirectMembers(g,id,computed=null){
  const rows=pgKeep(g.draft),row=rows.find(r=>r.id===id);if(!row)throw Error('현재 표에서 수정할 수 있는 작업을 선택해 주세요.');
- if(pgRouting(row))return[row];
- const grouped=Number(row.group)>0||String(row.group||'').startsWith('manual:');
- const members=grouped?rows.filter(r=>pgJobMonth(r)===pgJobMonth(row)&&r.worker===row.worker&&String(r.group)===String(row.group)):[row];
+ const group=pgRoutingGroup(row),grouped=Number(group)>0||String(group).startsWith('manual:');
+ const members=grouped?rows.filter(r=>pgJobMonth(r)===pgJobMonth(row)&&r.worker===row.worker&&!!pgRouting(r)===!!pgRouting(row)&&pgRoutingGroup(r)===group):[row];
  if(grouped&&!computed)computed=pgDraftResult(pgDirectSnapshot(g)).jobs;
  const actual=r=>computed?.find(j=>j.id===r.id&&(!j._ownerMonth||j._ownerMonth===pgJobMonth(r)))||r;
  return grouped&&computed&&!pgDirectHistory(actual(row))?members.filter(r=>!pgDirectHistory(actual(r))):members;
