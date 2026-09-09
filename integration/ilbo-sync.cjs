@@ -35,7 +35,8 @@ function productIndex(products){
  const ids=new Map(),names=new Map();
  const add=(name,p)=>{name=clean(name);if(!name)return;const prior=names.get(name);if(prior&&prior.id!==p.id)throw Error('Ambiguous product name or alias');names.set(name,p)};
  for(const p of products||[]){if(p.deleted)continue;if(!clean(p.id)||!clean(p.name)||ids.has(p.id))throw Error('Invalid or duplicate product ID');ids.set(p.id,p);add(p.name,p)}
- for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of p.aliases||[])add(typeof a==='string'?a:a.name,p)}
+ const current=new Set(names.keys()),ambiguous=new Set();
+ for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of p.aliases||[]){const key=clean(typeof a==='string'?a:a.name);if(!key||current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior.id!==p.id){names.delete(key);ambiguous.add(key)}else names.set(key,p)}}
  return{ids,names,resolve:r=>{if(r.productId){const p=ids.get(r.productId);if(!p)return null;const byName=names.get(clean(r.product));if(byName&&byName.id!==p.id)throw Error('Product ID and name disagree');return p}return names.get(clean(r.product))||null}};
 }
 function projectCatalog(products,prior,now=new Date().toISOString()){

@@ -989,11 +989,14 @@ function parseProductCatalog(value){
     ids.add(row.id);names.set(productNameKey(row.name),row.id);
     return {id:row.id,name:row.name.trim(),active:row.active!==false};
   });
-  const aliases=value.aliases.map(row=>{
+  const current=new Set(names.keys()),aliasMap=new Map(),ambiguous=new Set();
+  for(const row of value.aliases){
     const key=productNameKey(row?.name);
-    if(!key || !ids.has(row.productId) || names.has(key)&&names.get(key)!==row.productId) throw Error('관리 품목의 별칭 연결이 겹치거나 없습니다.');
-    names.set(key,row.productId);return {name:row.name.trim(),productId:row.productId};
-  });
+    if(!key || !ids.has(row.productId)) throw Error('관리 품목의 별칭 연결이 없습니다.');
+    if(current.has(key)||ambiguous.has(key))continue;
+    const prior=aliasMap.get(key);if(prior&&prior.productId!==row.productId){aliasMap.delete(key);ambiguous.add(key)}else aliasMap.set(key,{name:row.name.trim(),productId:row.productId});
+  }
+  const aliases=[...aliasMap.values()];
   return {schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt||'',products,aliases};
 }
 function catalogProduct(catalog,name){

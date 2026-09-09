@@ -1303,16 +1303,15 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
 // Formal name changes share one identity. Field-report aliases are deliberately
 // excluded: registering an alias must never merge an unrelated ledger product.
-function catalogProduct(state,name){const key=text(name);if(!key)return null;let found=null;for(const p of state.products||[])if(text(p.name)===key||(p.renameFrom||[]).some(old=>text(old)===key)){if(found)throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);found=p}return found}
+function catalogProduct(state,name){const key=text(name);if(!key)return null;const exact=(state.products||[]).filter(p=>text(p.name)===key);if(exact.length>1)throw Error('현재 품명이 중복됩니다: '+key);if(exact.length)return exact[0];let found=null;for(const p of state.products||[])if((p.renameFrom||[]).some(old=>text(old)===key)){if(found)throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);found=p}return found}
 function catalogName(state,name){return text(catalogProduct(state,name)?.name)||text(name)}
-function catalogIdentity(state,name){const p=catalogProduct(state,name);return p?text((p.renameFrom||[]).find(old=>text(old)))||text(p.name):text(name)}
-// A fresh lookup belongs to one calculation. Never cache mutable product arrays
-// across calls: edits and synchronization can change names without replacing them.
+function catalogIdentity(state,name){const p=catalogProduct(state,name);return p?text((p.renameFrom||[]).find(old=>text(old)&&!(state.products||[]).some(other=>other.id!==p.id&&text(other.name)===text(old))))||text(p.name):text(name)}
 function catalogLookup(state){
  const formal=new Map(),current=new Map(),ambiguous=new Set();
- for(const p of state.products||[]){if(!current.has(p.name))current.set(p.name,p);for(const key of new Set([text(p.name),...(p.renameFrom||[]).map(text)].filter(Boolean))){if(formal.has(key))ambiguous.add(key);else formal.set(key,p)}}
- const product=value=>{const key=text(value);if(ambiguous.has(key))throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);return formal.get(key)||null};
- return{product,current:value=>current.get(value)||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)))||text(p.name):text(value)}};
+ for(const p of state.products||[]){const key=text(p.name);if(current.has(key))throw Error('현재 품명이 중복됩니다: '+key);current.set(key,p)}
+ for(const p of state.products||[])for(const key of new Set([text(p.name),...(p.renameFrom||[]).map(text)].filter(Boolean))){if(current.has(key)&&current.get(key)!==p)continue;if(formal.has(key))ambiguous.add(key);else formal.set(key,p)}
+ const product=value=>{const key=text(value);if(current.has(key))return current.get(key);if(ambiguous.has(key))throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);return formal.get(key)||null};
+ return{product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&(!current.has(text(old))||current.get(text(old))===p)))||text(p.name):text(value)}};
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
@@ -4559,11 +4558,9 @@ function secondaryMasterAliases(value,name=''){
 }
 function secondaryMasterEffectiveAliases(row){const old=state.products.find(p=>p.id===row.id),name=secondaryText(row.name);return secondaryMasterAliases([...secondaryMasterAliases(row.aliases,name),...(old?.renameFrom||[]),...(old&&old.name!==name?[old.name]:[])],name)}
 function secondaryMasterAliasErrors(rows){
- const errors=[],names=new Map(rows.filter(r=>secondaryText(r.name)).map(r=>[secondaryText(r.name),r])),aliases=new Map();
- for(const row of rows)for(const alias of secondaryMasterEffectiveAliases(row)){
-  const owner=names.get(alias)||aliases.get(alias);if(owner&&owner.id!==row.id){errors.push({id:row.id,field:'aliases',message:'다른 이름 “'+alias+'”이 '+owner.name+' 품명 또는 다른 이름과 중복됩니다.'});if(!names.has(alias))errors.push({id:owner.id,field:'aliases',message:'다른 이름 “'+alias+'”이 '+row.name+'의 다른 이름과 중복됩니다.'})}else aliases.set(alias,row);
- }
- return errors;
+ // Current catalog names define distinct products. Ambiguous aliases are not
+ // exported as automatic mappings; they cannot block independent products.
+ return [];
 }
 function secondaryMasterRows(s){return secondaryInputRows(s.products.map(p=>{const memo=s.memos.find(x=>x.product===p.name);return{id:p.id,name:p.name,aliases:secondaryMasterAliases(p.aliases,p.name).join('\n'),kg:p.kg??null,cases:p.cases??null,waterRatio:p.waterRatio??null,adjustedWaterRatio:p.adjustedWaterRatio??null,measured:p.measured??'',category:p.category||O.group(C.catalogIdentity(s,p.name)),active:p.inactive?'사용중지':'사용',memo:secondarySharedText(memo?.values?.[0]),machineQty:secondarySharedText(memo?.values?.[1]),location:secondarySharedText(memo?.values?.[2]),target:memo?.values?.[3]??null,productNote:p.note??'',catalogReview:p.catalogReview?C.clone(p.catalogReview):null}}),secondaryMasterText,secondaryMasterNumbers)}
 function secondaryMasterBlank(r){return [...secondaryMasterText,...secondaryMasterSharedText,...secondaryMasterNumbers,'aliases'].every(k=>r[k]==null||String(r[k]).trim()==='')}
@@ -4592,7 +4589,7 @@ function secondaryMasterGrid(){
  return sheetGrid('product-catalog',{title:'품명·석고 기준값',rows:secondaryMasterRows(state),allowDelete:false,blank:secondaryMasterBlank,
   createDraft:()=>{const rows=secondaryMasterRows(state);return{baseRows:C.clone(rows),rows:rows.length?C.clone(rows):Array.from({length:3},()=>secondaryMasterNew()),deleted:[],revision:0}},
   orderRows:rows=>rows.sort((a,b)=>globalThis.ProductOrder?.compareProducts(a.name,b.name)||0),view:{pasteTargets:(rows,start,options,g)=>g.visibleRows()},
-  columns:[{key:'name',label:'품명',width:124},{key:'aliases',label:'현장일보 다른 이름',type:'textarea',width:150,advanced:true,title:r=>'이름 변경 전 품명은 자동 보관됩니다. 추가로 연결할 과거 이름만 한 줄씩 입력 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'cases',label:'케이스 수',type:'number',width:64},{key:'kg',label:'석고량 kg/조',type:'number',width:88},{key:'waterRatio',label:'혼수율 %',type:'number',width:72},{key:'water',label:'물량 kg',width:80,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.water)}},{key:'adjustedWaterRatio',label:'변경 혼수율 %',type:'number',width:88},{key:'requiredPlaster',label:'필요 석고량 kg',width:96,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.requiredPlaster)}},{key:'measured',label:'실측 여부·기록',width:96},{key:'productNote',label:'특이사항',width:180,advanced:true},{key:'registration',label:'등록 상태',width:140,advanced:true,calc:secondaryMasterStatus},{key:'category',label:'보고서 구분',type:'select',options:secondaryCategories,width:166,advanced:true},{key:'location',label:'보관장소',type:'textarea',width:162,advanced:true},{key:'machineQty',label:'호기·조수',type:'textarea',width:180,advanced:true},{key:'target',label:'목표재고 조',type:'number',width:122,advanced:true},{key:'memo',label:'품목 메모',type:'textarea',width:180,advanced:true,title:r=>'생산일보와 같은 품명 메모 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'active',label:'사용 상태',type:'select',options:['사용','사용중지'],width:122,advanced:true}],
+  columns:[{key:'name',label:'품명',width:124},{key:'aliases',label:'현장일보 다른 이름',type:'textarea',width:150,advanced:true,title:r=>'현재 품명이 우선합니다. 여러 품목에 겹친 다른 이름은 자동 연결하지 않습니다. 과거 이름을 한 줄씩 입력 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'cases',label:'케이스 수',type:'number',width:64},{key:'kg',label:'석고량 kg/조',type:'number',width:88},{key:'waterRatio',label:'혼수율 %',type:'number',width:72},{key:'water',label:'물량 kg',width:80,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.water)}},{key:'adjustedWaterRatio',label:'변경 혼수율 %',type:'number',width:88},{key:'requiredPlaster',label:'필요 석고량 kg',width:96,calc:r=>{const c=secondaryMasterCalc(r);return c.error?'입력 확인':fmt(c.requiredPlaster)}},{key:'measured',label:'실측 여부·기록',width:96},{key:'productNote',label:'특이사항',width:180,advanced:true},{key:'registration',label:'등록 상태',width:140,advanced:true,calc:secondaryMasterStatus},{key:'category',label:'보고서 구분',type:'select',options:secondaryCategories,width:166,advanced:true},{key:'location',label:'보관장소',type:'textarea',width:162,advanced:true},{key:'machineQty',label:'호기·조수',type:'textarea',width:180,advanced:true},{key:'target',label:'목표재고 조',type:'number',width:122,advanced:true},{key:'memo',label:'품목 메모',type:'textarea',width:180,advanced:true,title:r=>'생산일보와 같은 품명 메모 · 모바일 Enter / PC Shift+Enter 줄바꿈'},{key:'active',label:'사용 상태',type:'select',options:['사용','사용중지'],width:122,advanced:true}],
   advancedLabel:'상세 열 · 다른 이름·특이사항·재고',
   rowClass:r=>r.name&&secondaryMasterStatus(r)!=='등록됨'?'managementNeedsInput':'',rowTitle:r=>r.name?secondaryMasterStatus(r):'',
   hint:'표에서 품명·기준값을 고친 뒤 변경 저장을 누르세요. 이름을 바꿔도 과거 일보는 자동으로 연결됩니다.',
