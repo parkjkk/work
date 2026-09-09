@@ -3974,6 +3974,8 @@ function pgDirectPrepare(g,command){
    const shift=command.days+Math.round((Date.parse(period.start)-Date.parse(period.requestedStart))/86400000);
    movePeriod={start:P.add(period.start,command.days),end:P.add(period.end,command.days)};
    changes=members.map(r=>{const row=pgClean(r);row.start=P.add(row.start,shift);if(row.previousStart)row.previousStart=P.add(row.previousStart,shift);if(row.manual){row.end=movePeriod.end;row.afterPrevious=false;row.duration=null;row.manualSource='timeline'}if(command.worker)row.worker=command.worker;return row});
+   const moved=changes.find(r=>r.id===selected.id);
+   if(moved?.manual&&!pgRouting(moved)&&changes.every(r=>r.manual)&&moved.daily>0){const computed=pgDirectRatePeriod(g,changes,moved,moved,movePeriod,'daily');if(computed){for(const row of changes)row.end=computed.end;movePeriod.end=computed.end;notice+=' 새 시작일 기준 · '+computed.workdays+'생산일 → '+computed.end+' 종료';}}
   }else if(type==='resize'){
    if(pgRouting(selected))throw Error('생산줄 일정의 종료일은 계획과 하루 조수로 계산합니다. 작업조건에서 수정해 주세요.');
    if(!['start','end'].includes(command.edge)||!C.iso(command.date))throw Error('기간의 시작 또는 종료 날짜를 확인해 주세요.');
@@ -4057,8 +4059,9 @@ function pgDirectOpenForm(){
  const creating=session.command.type==='create',original=creating?session.command:pgKeep(g.draft).find(r=>r.id===session.command.id),period=session.period||{start:session.command.start,end:session.command.end};
  session.form??={...C.clone(original),...(session.command.fields||{}),end:session.command.fields?.end||original.end||period.end,machines:C.clone(session.command.fields?.machines||original.machines||[{name:'',qty:null}])};
  session.initialForm??=C.clone(session.form);pgDirectRenderForm(g);
+ if(session.mode==='edit'&&session.form.manual&&!pgRouting(session.form)&&session.form.daily>0&&session.form.plan>0&&session.endMode==null)pgDirectPreviewRate(g,'daily');
 }
-function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;pgDirectOpenForm()}
+function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;session.endMode=null;session.rateNotice=null;pgDirectOpenForm()}
 function pgDirectPreviewRate(g,field){
  const s=pgDirectState.session,root=pgDirectState.root;if(!s?.form)return;
  if(pgRouting(s.form)){try{const candidate={...s.form,id:s.command.id||s.form.id||'routing-preview',_ownerMonth:s.form._ownerMonth||month},snapshot=pgDirectSnapshot(g,[candidate]),result=pgDraftResult(snapshot),bars=result.rows.filter(r=>r.jobId===candidate.id),ends=bars.map(r=>r.end).filter(C.iso).sort();s.routingPreviewEnd=ends.at(-1)||'';s.rateNotice=s.routingPreviewEnd?'생산줄 순서와 호기 조수 기준 → '+s.routingPreviewEnd+' 예상 종료':'각 호기의 조건을 입력하면 종료일을 계산합니다.';const input=root?.querySelector('[data-pd-field="end"]');if(input)input.value=s.routingPreviewEnd;const heading=root?.querySelector('.pgDirectHeading span');if(heading)heading.textContent=s.rateNotice;}catch(e){const error=root?.querySelector('.pgDirectError');if(error)error.textContent=e.message;}return;}
