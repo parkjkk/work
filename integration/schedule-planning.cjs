@@ -206,7 +206,7 @@ function machineActualValues(value,total){
 function validateRoutingJob(job,peers=[]){
  if(!job.routing)return true;const routing=normalizeRouting(job.routing),totalPlan=job.carried?(job.previousProduced||0)+(job.plan||0):(job.plan??job.totalPlan),machines=machineQty({...job,totalPlan});
  if(!machines.length||machines.some(m=>!routingMachineName(m.name)||m.qty==null||!Number.isFinite(m.qty)||m.qty<0)||new Set(machines.map(m=>routingMachineName(m.name))).size!==machines.length)throw Error('호기와 배정 조수를 확인해 주세요.');
- if(!Number.isFinite(totalPlan)||totalPlan<0||Math.abs(C.sum(machines,m=>m.qty)-totalPlan)>0.000001+1e-12)throw Error('호기별 배정 조수의 합계와 전체 계획 조수를 맞춰 주세요.');
+ if(!Number.isFinite(totalPlan)||totalPlan<0)throw Error('유효한 품목 계획 조수를 입력해 주세요.');
  if(!job.complete){if(routing.mode==='parallel'){if(machines.some(m=>m.qty>0&&!(Number.isFinite(m.daily)&&m.daily>0)))throw Error('동시생산은 각 호기의 예상 하루 생산 조수를 입력해 주세요.');}else if(!(Number.isFinite(job.daily)&&job.daily>0))throw Error('순차생산의 예상 하루 조수를 입력해 주세요.');}
  if(!job.complete&&routing.group&&peers.some(p=>p.id!==job.id&&(p.originId||p.id)!==(job.originId||job.id)&&p.worker===job.worker&&p.routing?.group===routing.group&&p.routing.lane===routing.lane&&p.routing.order===routing.order&&(!p._ownerMonth||!job._ownerMonth||p._ownerMonth===job._ownerMonth)))throw Error('같은 생산줄 안의 순서가 중복됩니다. 새 작업의 생산 묶음 또는 순서를 지정해 주세요.');
  return true;
@@ -226,6 +226,7 @@ function routingSchedule(s,k,input,today,statusToday){
   if(j.carryBlocked){observed(j,group,j.carryReview);return null}
   try{validateRoutingJob(j,input)}catch(e){observed(j,group,e.message);return null}
   const mode=j.routing.mode,alloc=machineQty(j).filter(m=>m.qty>0).map(m=>({...m,name:routingMachineName(m.name)}));
+  const allocated=C.sum(alloc,m=>m.qty);if(Math.abs(allocated-j.totalPlan)>0.000001+1e-12)warn(j,'품목 계획 '+j.totalPlan+'조 / 호기 배정 '+allocated+'조 · 기간은 호기 배정 기준이며 계획값은 유지합니다.');
   const owned=ownedMachineEvents(s,k,j),events=owned.events.slice().sort((a,b)=>a.date.localeCompare(b.date));
   if(owned.initial>0&&alloc.length>1){observed(j,group,'이월 이전 호기별 실적을 확인할 수 없습니다. 누적 조수는 보존하고 확인되는 실제 날짜만 표시합니다.');return null}
   const stats=alloc.map(m=>({machine:m,produced:0,forecast:0,start:null,end:null,lastActual:null,firstActual:null}));
