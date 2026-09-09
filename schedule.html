@@ -3836,7 +3836,16 @@ function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs);const root=$(
 function pgCalendarEdit(g,mutate){
  if(g.locked())return;const before=C.clone(g.draft.calendar),next=C.clone(before);mutate(next);
  for(const changed of pgCalendarChanges(before,next))if(state.months[changed.date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');
- g.draft.calendarEditUndo=before;g.draft.calendar=next;g.changed();
+ const changes=pgCalendarChanges(before,next);if(!changes.length)return;
+ g.draft.calendarEditUndo=before;g.draft.calendar=next;
+ const computed=pgDraftResult(pgDirectSnapshot(g)).jobs,done=new Set();
+ for(const row of pgKeep(g.draft)){
+  if(done.has(row.id)||!row.manual||pgRouting(row)||!(row.daily>0&&row.plan>0)||!C.iso(row.start)||state.months[pgJobMonth(row)]?.closed||pgDirectHistory(computed.find(j=>j.id===row.id)||row))continue;
+  if(!changes.some(c=>(c.key.startsWith('factory|')||c.key==='worker|'+row.worker+'|'+c.date)&&c.date>=row.start&&(!C.iso(row.end)||c.date<=row.end)))continue;
+  const members=pgDirectMembers(g,row.id,computed);for(const member of members)done.add(member.id);
+  pgPatchJob(g.draft,row.id,{daily:row.daily});
+ }
+ g.changed();
 }
 function pgRange(g,worker,factory,start,end,mode){
  if(!C.iso(start)||!C.iso(end)||start>end||P.days(start,end).length>740)throw Error('시작·마지막 날짜를 확인해 주세요. 범위는 740일 이내입니다.');
