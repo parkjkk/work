@@ -39,7 +39,7 @@ function productIndex(products){
  const add=(name,p)=>{name=clean(name);if(!name)return;const prior=names.get(name);if(prior&&prior.id!==p.id)throw Error('Ambiguous product name or alias');names.set(name,p)};
  for(const p of products||[]){if(p.deleted)continue;if(!clean(p.id)||!clean(p.name)||ids.has(p.id))throw Error('Invalid or duplicate product ID');ids.set(p.id,p);add(p.name,p)}
  const current=new Set(names.keys()),ambiguous=new Set();
- for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of p.aliases||[]){const key=clean(typeof a==='string'?a:a.name);if(!key||current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior.id!==p.id){names.delete(key);ambiguous.add(key)}else names.set(key,p)}}
+ for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of [...(p.renameFrom||[]),...(p.aliases||[])]){const key=clean(typeof a==='string'?a:a.name);if(!key||current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior.id!==p.id){names.delete(key);ambiguous.add(key)}else names.set(key,p)}}
  return{ids,names,resolve:r=>{if(r.productId){const p=ids.get(r.productId);if(!p)return null;const byName=names.get(clean(r.product));if(byName&&byName.id!==p.id)throw Error('Product ID and name disagree');return p}return names.get(clean(r.product))||null}};
 }
 function projectCatalog(products,prior,now=new Date().toISOString()){
@@ -49,7 +49,8 @@ function projectCatalog(products,prior,now=new Date().toISOString()){
  return{schema:1,kind:'schedule-product-catalog',revision,updatedAt:now,products:list,aliases};
 }
 function newMonth(id){return{id,rev:1,name:id,modern:true,closed:false,rows:[],issues:[],stocks:[],plans:[],jobs:[],history:[],auditSessions:[],operations:[],headerRows:[],plaster:[],auditStamp:'',openingSource:null}}
-function rowBody(row){const x=clone(row);delete x.sourceIntegration;delete x.rev;return x}
+function rowBody(row){const x=clone(row);delete x.sourceIntegration;delete x.integrationOutbound;delete x.rev;return x}
+function outboundTarget(row){const target={};for(const field of['date','worker','product','pours','plan','hours','productionCompletion','productionPlanQty','machineActuals','fieldScrapKg','fieldDefQty','fieldPlanIntent','fieldDetails'])if(own(row,field))target[field]=clone(row[field]);return target}
 function detailOf(r){const x={};for(const k of['defPart','gasa','cs','gap','inlet','face','bubble','b1','b2','remark','sourceProduct'])if(own(r,k))x[k]=r[k];return x}
 function sourceFiles(snapshot){
  if(!snapshot||typeof snapshot.repo!=='string'||!snapshot.commit||!snapshot.files||snapshot.complete===false)throw Error('Complete source snapshot required');
@@ -65,7 +66,7 @@ function sourceFiles(snapshot){
 }
 function planSync(state,snapshot,options={}){
  const next=clone(state),ix=productIndex(next.products),files=sourceFiles(snapshot),now=options.now||snapshot.readAt||new Date().toISOString();
- const report={schema:1,kind:'ilbo-sync-report',policyVersion:'ilbo-sync-2',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},issues:[],qualityWarnings:[],updatedAt:now};
+ const report={schema:1,kind:'ilbo-sync-report',policyVersion:'ilbo-sync-3',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},issues:[],qualityWarnings:[],updatedAt:now};
  const touched=new Set(),seenKeys=new Set(),days=new Set(files.map(f=>f.path)),claimed=new Set(),prepared=[];
  const targetDeleted=new Set();
  for(const m of Object.values(next.months))for(const event of m.history||[]){
@@ -122,17 +123,32 @@ function planSync(state,snapshot,options={}){
   }catch{issue('invalid-source-number',ctx)}
  }
  const sourceMatches=new Map();for(const c of prepared.filter(c=>!c.attendance)){const key=c.group+'\0'+c.p.id;sourceMatches.set(key,(sourceMatches.get(key)||0)+1)}
+ const outboundFor=row=>row?.sourceIntegration?.outbound||row?.integrationOutbound;
+ const sentReceipt=(row,c)=>{const receipt=outboundFor(row);return receipt?.schema===1&&receipt.repo===snapshot.repo&&receipt.path===c.path&&receipt.sourceId===c.raw.id&&c.raw.managementReceipt?.schema===1&&c.raw.managementReceipt.id===receipt.id?receipt:null};
  const matchProduction=c=>{
   const m=next.months[c.month],matches=locate(c.key);
   if(m?.closed)return{code:'closed-month'};
   if(targetDeleted.has(c.key)&&!matches.length)return{code:'target-deleted'};
   if(attendanceLinks.has(c.key))return{code:'source-record-kind-changed'};
-  if(!matches.length&&sourceMatches.get(c.group+'\0'+c.p.id)>1)return{code:'multiple-source-match'};
   if(!matches.length&&!own(c.values,'pours'))return{code:'missing-production-quantity'};
   if(matches.length>1)return{code:'duplicate-source-link'};
   if(matches[0]&&matches[0].m.id!==c.month)return{code:'source-month-moved'};
   let row=matches[0]?.row,initial=false;
+  if(!row&&c.raw.managementLink){
+   const proof=c.raw.managementLink;
+   if(proof.schema!==1||typeof proof.rowId!=='string')return{code:'management-link-review'};
+   const targets=Object.values(next.months).flatMap(value=>(value.rows||[]).filter(r=>r.id===proof.rowId).map(row=>({m:value,row})));
+   if(targets.length!==1)return{code:'management-link-review'};
+   const target=targets[0],si=target.row.sourceIntegration,anchor=sentReceipt(target.row,c)?.target||target.row;
+   if(target.m.closed||target.m.id!==c.month||target.row.deleted||anchor.date!==c.date||clean(anchor.worker)!==c.values.worker||ix.names.get(clean(anchor.product))?.id!==c.p.id)return{code:'management-link-review'};
+   if(si){
+    const old=files.find(f=>f.path===proof.previousPath);
+    if(si.repo!==snapshot.repo||si.id!==c.raw.id||si.path!==proof.previousPath||!old||old.rows.some(r=>r.id===c.raw.id))return{code:'management-link-review'};
+    row=target.row;links.set(c.key,[target]);
+   }else{row=target.row;initial=true;links.set(c.key,[target]);}
+  }
   if(!row){
+   if(sourceMatches.get(c.group+'\0'+c.p.id)>1)return{code:'multiple-source-match'};
    const candidates=(m?.rows||[]).filter(r=>!r.deleted&&r.date===c.date&&r.worker===c.values.worker&&ix.names.get(clean(r.product))?.id===c.p.id&&!r.sourceIntegration);
    if(candidates.length>1)return{code:'multiple-existing-rows'};
    row=candidates[0];initial=!!row;
@@ -140,10 +156,10 @@ function planSync(state,snapshot,options={}){
   }
   return row?.deleted?{code:'target-deleted'}:{row,initial};
  };
- const bindingBases=new WeakMap();
+ const bindingBases=new WeakMap(),acknowledgements=new WeakMap();
  const bindingChanged=row=>{
   if(!bindingBases.has(row)){
-   const si=row.sourceIntegration,month=locate(si.key).find(link=>link.row===row)?.m;
+   const si=row.sourceIntegration,month=si&&locate(si.key).find(link=>link.row===row)?.m;
    const prior=(month?.history||[]).findLast(event=>event.type==='ilbo-sync'&&event.after?.id===row.id&&event.after.sourceIntegration?.key===si.key&&event.after.sourceIntegration?.targetHash===si.targetHash);
    bindingBases.set(row,prior?{known:true,value:clean(prior.after.jobId)||null}:{known:false});
   }
@@ -152,11 +168,12 @@ function planSync(state,snapshot,options={}){
  const productBasis=value=>{const name=clean(value),id=ix.names.get(name)?.id;return id?['id',id]:['name',name]};
  const basisSame=(key,a,b)=>key==='product'?same(productBasis(a),productBasis(b)):same(a,b);
  const mergeFields=(row,values,initial)=>{
-  const baseline=row?.sourceIntegration?.baseline,patch={},conflicts=[];let review=null;
+  const receipt=row?.sourceIntegration?.outbound||row?.integrationOutbound,ack=row&&acknowledgements.get(row),baseline=ack?{...(row?.sourceIntegration?.baseline||{}),...ack.target}:row?.sourceIntegration?.baseline,patch={},conflicts=[];let review=null;
   for(const [key,value]of Object.entries(values)){
    if(baseline){
     if(own(baseline,key)&&same(value,baseline[key]))continue;
     if(same(row[key],value))continue;
+    if(!ack&&receipt?.target&&own(receipt.target,key)&&!same(row[key],receipt.target[key])){conflicts.push(key);continue}
     if(own(baseline,key)&&!same(row[key],baseline[key])){conflicts.push(key);continue}
     if(!own(baseline,key)&&row[key]!=null&&row[key]!==''&&!same(row[key],value)){conflicts.push(key);continue}
    }else if(initial&&options.initialConflict!=='source'&&!same(row[key],value)){conflicts.push(key);continue}
@@ -193,13 +210,18 @@ function planSync(state,snapshot,options={}){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
   const row=c.match.row;
+  const receipt=sentReceipt(row,c);
+  if(row&&receipt){
+   if(receipt.sentHash!==hash(c.raw)&&!same(outboundTarget(row),receipt.target))c.match.code='outbound-source-conflict';
+   else{acknowledgements.set(row,receipt);c.outboundAck=true}
+  }
   if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>{const old=prior.machines?.find(x=>x.name===m.name),daily=m.daily??old?.daily;return{...m,qty:m.qty??old?.qty??null,...(daily!=null?{daily}:{})}});v.daily??=prior.daily??null;if(!own(v,'routing')&&own(prior,'routing'))v.routing=clone(prior.routing);if(prior.edits)v.edits={...clone(prior.edits),...(v.edits||{})}}if(!v.machines.length&&v.daily==null&&!own(v,'routing'))delete c.values.fieldScheduleConditions}
   if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
   // A legacy client may omit the optional split while changing total production.
   // Preserve the split and hold an incompatible edit instead of inventing an allocation.
   if(row&&!c.match.code){const merged=mergeFields(row,c.values,c.match.initial);if(!merged.conflicts.length){const candidate={...row,...merged.patch};if(candidate.machineActuals!=null)try{machineActuals(candidate.machineActuals,candidate.pours)}catch{c.match.code='invalid-machine-actuals'}}}
  }
- const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&si.targetHash===hash(rowBody(row))};
+ const canDeleteSourceRow=row=>{const si=row.sourceIntegration;return !!si&&si.repo===snapshot.repo&&!seenKeys.has(si.key)&&days.has(si.path)&&!si.targetEdited&&!si.outbound&&si.targetHash===hash(rowBody(row))};
  // Assign time only to a row that can be merged. A retained clock row must not
  // donate its hours before source deletion has actually become eligible.
  const groups=new Map();for(const c of prepared.filter(c=>!c.attendance)){if(!groups.has(c.group))groups.set(c.group,[]);groups.get(c.group).push(c)}
@@ -210,7 +232,8 @@ function planSync(state,snapshot,options={}){
   const candidates=cs.filter(c=>!c.match.code&&!mergeFields(c.match.row,c.values,c.match.initial).conflicts.length);
   const clocks=current.filter(r=>r.hours!==null&&r.hours!==''&&r.hours!==undefined),clock=clocks[0]||current[0];
   const retained=clocks.some(r=>!candidates.some(c=>c.match.row===r)&&!canDeleteSourceRow(r));
-  const owner=retained?null:candidates.find(c=>c.match.row===clock)||candidates[0];
+  const sourceClock=candidates.find(c=>{const baseline=c.match.row?.sourceIntegration?.baseline;return baseline&&baseline.date===c.date&&baseline.worker===c.values.worker&&baseline.hours!=null&&baseline.hours!==''});
+  const owner=retained?null:sourceClock||candidates.find(c=>c.match.row===clock)||candidates[0];
   for(const c of cs)c.values.hours=c===owner?hours[0]:null;
  }
  for(const c of prepared){
@@ -240,12 +263,13 @@ function planSync(state,snapshot,options={}){
   const baseline=row.sourceIntegration?.baseline,{patch,conflicts,review}=mergeFields(row,c.values,initial);
   if(conflicts.length){issue(review||(initial?'initial-field-conflict':'target-source-conflict'),c,{fields:conflicts});continue}
   const nextBaseline={...(baseline||{}),...clone(c.values)};
-  if(before?.sourceIntegration&&same(nextBaseline,baseline)&&same(patch,{})&&before.sourceIntegration.sourceHash===hash(c.raw))continue;
+  if(!c.outboundAck&&before?.sourceIntegration&&same(nextBaseline,baseline)&&same(patch,{})&&before.sourceIntegration.sourceHash===hash(c.raw))continue;
   Object.assign(row,patch);row.rev=(row.rev||0)+1;
   if(row.explicit&&own(patch,'hours'))row.explicit.hours=patch.hours!==null;
   const targetEdited=!!before?.sourceIntegration?.targetEdited||!!(before?.sourceIntegration&&before.sourceIntegration.targetHash!==hash(rowBody(before)));
   // The engine owns baseline. User edits must leave it intact for three-way merge.
   row.sourceIntegration={...(row.sourceIntegration||{}),schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:nextBaseline,sourceProduct:clean(c.raw.sourceProduct||c.raw.product),productId:c.p.id,sourceCreatedAt:c.raw.ts||null,sourceUpdatedAt:c.raw.t||null,...(targetEdited?{targetEdited:true}:{})};
+  if(c.outboundAck){delete row.sourceIntegration.outbound;delete row.integrationOutbound}
   const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily','routing'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&(!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field])||!same(baseline.fieldScheduleConditions.edits?.[field],nextBaseline.fieldScheduleConditions.edits?.[field])))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
   row.sourceIntegration.targetHash=hash(rowBody(row));
   if(!before){m.rows.push(row);links.set(c.key,[{m,row}]);report.counts.added++;history(m,'add',null,row,c)}else if(initial){links.set(c.key,[{m,row}]);report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
@@ -255,7 +279,7 @@ function planSync(state,snapshot,options={}){
   const si=row.sourceIntegration;if(!si||si.repo!==snapshot.repo||seenKeys.has(si.key))continue;
   const c={path:si.path,id:si.id,date:row.date,worker:row.worker,sourceProduct:si.sourceProduct||row.product};if(!days.has(si.path)){issue('source-day-missing',c);continue}
   if(m.closed){issue('closed-month-deletion',c);continue}
-  if(si.targetEdited||si.targetHash!==hash(rowBody(row))){issue('target-modified-before-source-deletion',c);continue}
+  if(si.outbound||si.targetEdited||si.targetHash!==hash(rowBody(row))){issue('target-modified-before-source-deletion',c);continue}
   const before=clone(row);m[field].splice(m[field].indexOf(row),1);history(m,'source-delete',before,null,c);report.counts.deleted++;
  }
  for(const id of touched)next.months[id].rev=(next.months[id].rev||0)+1;
@@ -275,4 +299,4 @@ function planSync(state,snapshot,options={}){
  const finalReport=previous&&previous.policyVersion===report.policyVersion&&previous.sourceCommit===report.sourceCommit&&same(previous.sourceFiles,report.sourceFiles)&&same(previous.issues,report.issues)&&same(previous.qualityWarnings,report.qualityWarnings)&&touched.size===0?clone(previous):report;
  return{state:next,report:finalReport,changedMonths:[...touched].sort(),changed:!same(next,state)||!same(finalReport,previous)};
 }
-module.exports={planSync,projectCatalog,productIndex,sourceFiles,hash,stable,newMonth};
+module.exports={planSync,projectCatalog,productIndex,sourceFiles,hash,stable,newMonth,completionValue,machineActuals,workingHours,outboundTarget};

@@ -59,15 +59,15 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
 // Formal name changes share one identity. Field-report aliases are deliberately
 // excluded: registering an alias must never merge an unrelated ledger product.
-function catalogProduct(state,name){const key=text(name);if(!key)return null;const exact=(state.products||[]).filter(p=>text(p.name)===key);if(exact.length>1)throw Error('현재 품명이 중복됩니다: '+key);if(exact.length)return exact[0];let found=null;for(const p of state.products||[])if((p.renameFrom||[]).some(old=>text(old)===key)){if(found)throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);found=p}return found}
-function catalogName(state,name){return text(catalogProduct(state,name)?.name)||text(name)}
-function catalogIdentity(state,name){const p=catalogProduct(state,name);return p?text((p.renameFrom||[]).find(old=>text(old)&&!(state.products||[]).some(other=>other.id!==p.id&&text(other.name)===text(old))))||text(p.name):text(name)}
+function catalogProduct(state,name){return catalogLookup(state).product(name)}
+function catalogName(state,name){return catalogLookup(state).name(name)}
+function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
 function catalogLookup(state){
- const formal=new Map(),current=new Map(),ambiguous=new Set();
- for(const p of state.products||[]){const key=text(p.name);if(current.has(key))throw Error('현재 품명이 중복됩니다: '+key);current.set(key,p)}
- for(const p of state.products||[])for(const key of new Set([text(p.name),...(p.renameFrom||[]).map(text)].filter(Boolean))){if(current.has(key)&&current.get(key)!==p)continue;if(formal.has(key))ambiguous.add(key);else formal.set(key,p)}
- const product=value=>{const key=text(value);if(current.has(key))return current.get(key);if(ambiguous.has(key))throw Error('품명 변경 이력이 다른 품목과 중복됩니다: '+key);return formal.get(key)||null};
- return{product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&(!current.has(text(old))||current.get(text(old))===p)))||text(p.name):text(value)}};
+ const current=new Map(),names=new Map(),ambiguous=new Set();
+ for(const p of state.products||[]){if(p.deleted)continue;const key=text(p.name);if(current.has(key))throw Error('현재 품명이 중복됩니다: '+key);current.set(key,p)}
+ for(const p of current.values())for(const key of new Set([...(p.renameFrom||[]),...(p.aliases||[]).map(a=>typeof a==='string'?a:a?.name)].map(text).filter(Boolean))){if(current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior!==p){names.delete(key);ambiguous.add(key)}else names.set(key,p)}
+ const product=value=>current.get(text(value))||names.get(text(value))||null;
+ return{product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}

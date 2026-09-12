@@ -18,8 +18,8 @@ async function main(){
  for(let attempt=1;attempt<=4;attempt++){
   refresh(target);refresh(source);
   const summary=run({target,source});
-  if(publish(target,['months','meta/catalog.json','meta/ilbo-sync.json'],'Sync field production records')&&publish(source,['meta/products.json','meta/production-progress.json'],'Update production catalog and progress')){
-   process.stdout.write(JSON.stringify({attempt,...summary})+'\n');return;
+  if(publish(target,['months','meta/catalog.json','meta/ilbo-sync.json'],'Sync field production records')&&publish(source,['data','meta/products.json','meta/production-progress.json'],'Synchronize shared production records')){
+   if(!summary.followUp){process.stdout.write(JSON.stringify({attempt,...summary})+'\n');return;}
   }
   // A rejected push is never forced. Re-read both repositories and recompute.
   await new Promise(r=>setTimeout(r,attempt*1000));

@@ -13,20 +13,21 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  for(const [key,source]of raw){if(linked.has(key)||source.row.off||source.file.date>asOf)continue;const r=source.row,products=new Set([ix.ids.get(r.productId),ix.names.get(String(r.product||'').trim())].filter(Boolean));for(const product of products)unlinkedProducts.add(String(r.worker||'').trim()+'\0'+product.id);}
  const progressFor=({month,row})=>{if(!indexes.has(month))indexes.set(month,planning.dailyProgress(state,month,{asOf}));return indexes.get(month).get(row.id)};
  const jobKey=(progress,month)=>progress?.originId||[month,progress?.jobId].join(':');
- const conditionJobs=new Map(),conditionSchedules=new Map();
+ const conditionJobs=new Map(),conditionSchedules=new Map();let allSchedules=null;
  function scheduleFor(link,progress){
   if(typeof planning.jobs!=='function'||!progress?.jobId||progress.warning)return null;
   const month=progress.progressMonth||link.month,m=state.months[month];if(!m||m.closed||m.closeSnapshot)return null;
   if(!conditionJobs.has(month))conditionJobs.set(month,planning.jobs(state,month));
-  const origin=progress.originId||progress.jobId,matches=conditionJobs.get(month).filter(j=>(j.originId||j.id)===origin&&j.worker===link.row.worker&&j.product===link.row.product);
+  const origin=progress.originId||progress.jobId,matches=conditionJobs.get(month).filter(j=>(j.originId||j.id)===origin&&j.worker===link.row.worker&&ix.names.get(String(j.product).trim())?.id===ix.names.get(String(link.row.product).trim())?.id);
   if(matches.length!==1)return null;const j=matches[0];if(j.carryBlocked)return null;
   const machines=(j.machines||[]).map(m=>({name:m.name,qty:Number.isFinite(m.qty)&&m.qty>=0?m.qty:null,...(Number.isFinite(m.daily)&&m.daily>0?{daily:m.daily}:{})}));
   if(machines.length>50||machines.some(m=>typeof m.name!=='string'||!m.name.trim()||m.name.length>60))return null;
   const conditions={schema:1,machines,daily:Number.isFinite(j.daily)&&j.daily>0?j.daily:null};
   if(j.routing)try{conditions.routing=planning.normalizeRouting(j.routing)}catch{return null}
   if(!conditions.machines.length&&!conditions.daily&&!conditions.routing)return null;
-  if(!conditionSchedules.has(month))conditionSchedules.set(month,typeof planning.schedule==='function'?planning.schedule(state,month,asOf).rows:[]);
-  const periods=conditionSchedules.get(month).filter(r=>r.jobId===j.id&&!r.actualOnly&&r.start&&r.end),start=periods.map(r=>r.start).sort()[0]||j.firstActual||j.previousStart||j.start||null,end=periods.map(r=>r.end).sort().at(-1)||j.end||null;
+  if(!conditionSchedules.has(month)){if(typeof planning.scheduleAll==='function')allSchedules??=planning.scheduleAll(state,asOf);const result=allSchedules?.[month]||(typeof planning.schedule==='function'?planning.schedule(state,month,asOf):{rows:[]});conditionSchedules.set(month,result.rows)}
+  if(conditionSchedules.get(month).some(r=>r.jobId===j.id&&r.reservationBlocked))return null;
+  const periods=conditionSchedules.get(month).filter(r=>r.jobId===j.id&&!r.actualOnly&&!r.reservationOnly&&r.start&&r.end),start=periods.map(r=>r.start).sort()[0]||j.firstActual||j.previousStart||j.start||null,end=periods.map(r=>r.end).sort().at(-1)||j.end||null;
   if(typeof start!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(start)||!Number.isFinite(Date.parse(start+'T00:00:00Z'))||new Date(start+'T00:00:00Z').toISOString().slice(0,10)!==start)return null;
   const value={schema:1,jobId:j.id,originId:origin,month,start,end,plan:Number.isFinite(j.totalPlan)?j.totalPlan:null,conditions};
   return{...value,revision:hash(value)};

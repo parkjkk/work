@@ -4,6 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const {planSync,projectCatalog,stable}=require('./ilbo-sync.cjs');
 const {projectProgress}=require('./progress-projection.cjs');
+const {planFieldReturn,withReturnReport}=require('./field-return.cjs');
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const git=(dir,...args)=>cp.execFileSync('git',['-C',dir,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
 function inside(root,relative){
@@ -53,6 +54,7 @@ function run({target,source,initialConflict='review',snapshotFile,dryRun=false})
  if(initialConflict==='source'&&previousReport)throw Error('Initial source-priority migration has already run');
  if(!['source','review'].includes(initialConflict))throw Error('Invalid initial conflict policy');
  const result=planSync(loaded.state,snapshot,{initialConflict,previousReport});
+ const returned=planFieldReturn(result.state,snapshot,result.report);result.state=returned.state||result.state;result.changedMonths=[...new Set([...result.changedMonths,...(returned.changedMonths||[])])].sort();result.report=withReturnReport(result.report,returned,previousReport,result.changedMonths);
  const catalog=loaded.envelope,meta=catalog.records.find(r=>r.id==='catalog');meta.months=Object.keys(result.state.months).sort();
  const priorProjectionPath=inside(source,'meta/products.json'),priorProjection=fs.existsSync(priorProjectionPath)?read(priorProjectionPath):undefined;
  const projection=projectCatalog(result.state.products,priorProjection,snapshot.readAt);
@@ -64,10 +66,10 @@ function run({target,source,initialConflict='review',snapshotFile,dryRun=false})
   if(stable(meta.months)!==stable(loaded.state.months&&Object.keys(loaded.state.months).sort()))meta.rev=(meta.rev||0)+1;
   if(write(target,'meta/catalog.json',catalog))writes.push('meta/catalog.json');
   if(write(target,'meta/ilbo-sync.json',result.report))writes.push('meta/ilbo-sync.json');
-  if(write(source,'meta/products.json',projection))writes.push('source:meta/products.json');
-  if(write(source,'meta/production-progress.json',progress))writes.push('source:meta/production-progress.json');
+  if(returned.changedRows){for(const [path,data]of Object.entries(returned.writes))if(write(source,path,data))writes.push('source:'+path)}
+  else{if(write(source,'meta/products.json',projection))writes.push('source:meta/products.json');if(write(source,'meta/production-progress.json',progress))writes.push('source:meta/production-progress.json')}
  }
- return{counts:result.report.counts,status:result.report.status,changedMonths:result.changedMonths.length,filesWritten:writes.length,dryRun};
+ return{counts:result.report.counts,status:result.report.status,changedMonths:result.changedMonths.length,filesWritten:writes.length,returnedRows:returned.changedRows,followUp:returned.changedRows>0,dryRun};
 }
 if(require.main===module){
  try{const args=process.argv.slice(2),get=k=>{const i=args.indexOf(k);return i<0?undefined:args[i+1]};const target=get('--target'),source=get('--source');if(!target||!source)throw Error('Required --target and --source');const summary=run({target:path.resolve(target),source:path.resolve(source),snapshotFile:get('--snapshot'),initialConflict:get('--initial-conflict')||'review',dryRun:args.includes('--dry-run')});process.stdout.write(JSON.stringify(summary)+'\n')}catch{process.stderr.write('Synchronization stopped: invalid input or repository state. Existing remote data was not overwritten.\n');process.exitCode=1}
