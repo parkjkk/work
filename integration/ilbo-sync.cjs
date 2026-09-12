@@ -14,7 +14,8 @@ function routingValue(value){
  const bad=()=>{const e=Error('Invalid schedule routing');e.code='invalid-schedule-routing';throw e};
  if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!['sequential','parallel'].includes(value.mode)||typeof value.group!=='string'||!Number.isInteger(value.lane)||value.lane<1||value.lane>20||!Number.isInteger(value.order)||value.order<1||value.order>50)bad();
  const group=value.group.trim();if(group.length>120||group!==''&&!(/^[1-9]\d*$/.test(group)&&Number.isSafeInteger(Number(group)))&&!/^manual:[A-Za-z0-9_.:-]+$/.test(group))bad();
- return{schema:1,mode:value.mode,group,lane:value.lane,order:value.order};
+ if(own(value,'barDisplay')&&!['combined','separate'].includes(value.barDisplay))bad();
+ return{schema:1,mode:value.mode,group,lane:value.lane,order:value.order,...(own(value,'barDisplay')?{barDisplay:value.barDisplay}:{})};
 }
 function machineActuals(value,production){
  if(value===null)return null;
@@ -24,7 +25,9 @@ function machineActuals(value,production){
 function scheduleConditions(value){
  if(!value||typeof value!=='object'||Array.isArray(value)||value.schema!==1||!Array.isArray(value.machines)||value.machines.length>50)throw Error('Invalid schedule conditions');
  const names=new Set(),machines=value.machines.map(m=>{if(!m||typeof m!=='object'||Array.isArray(m))throw Error('Invalid machine');const name=machineName(m.name);if(names.has(name))throw Error('Duplicate machine');names.add(name);const result={name,qty:number(m.qty,'machine quantity')};if(own(m,'daily')){result.daily=number(m.daily,'machine daily');if(result.daily!==null&&result.daily<=0)throw Error('Invalid machine daily capacity')}return result}),daily=number(value.daily,'daily');
- if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');return{schema:1,machines,daily,...(own(value,'routing')?{routing:routingValue(value.routing)}:{})};
+ if(daily!==null&&daily<=0)throw Error('Invalid daily capacity');
+ let edits;if(own(value,'edits')){if(!value.edits||typeof value.edits!=='object'||Array.isArray(value.edits))throw Error('Invalid schedule edits');edits={};for(const [field,id]of Object.entries(value.edits)){if(!['machines','daily','routing'].includes(field)||typeof id!=='string'||! /^[A-Za-z0-9_.:-]{1,80}$/.test(id))throw Error('Invalid schedule edit ID');edits[field]=id}}
+ return{schema:1,machines,daily,...(own(value,'routing')?{routing:routingValue(value.routing)}:{}),...(edits?{edits}:{})};
 }
 function completionValue(value){
  if(value===null)return null;
@@ -190,7 +193,7 @@ function planSync(state,snapshot,options={}){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
   const row=c.match.row;
-  if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>{const old=prior.machines?.find(x=>x.name===m.name),daily=m.daily??old?.daily;return{...m,qty:m.qty??old?.qty??null,...(daily!=null?{daily}:{})}});v.daily??=prior.daily??null;if(!own(v,'routing')&&own(prior,'routing'))v.routing=clone(prior.routing)}if(!v.machines.length&&v.daily==null&&!own(v,'routing'))delete c.values.fieldScheduleConditions}
+  if(c.values.fieldScheduleConditions){const prior=row?.sourceIntegration?.baseline?.fieldScheduleConditions,v=c.values.fieldScheduleConditions;if(prior){if(!v.machines.length)v.machines=clone(prior.machines||[]);else v.machines=v.machines.map(m=>{const old=prior.machines?.find(x=>x.name===m.name),daily=m.daily??old?.daily;return{...m,qty:m.qty??old?.qty??null,...(daily!=null?{daily}:{})}});v.daily??=prior.daily??null;if(!own(v,'routing')&&own(prior,'routing'))v.routing=clone(prior.routing);if(prior.edits)v.edits={...clone(prior.edits),...(v.edits||{})}}if(!v.machines.length&&v.daily==null&&!own(v,'routing'))delete c.values.fieldScheduleConditions}
   if(row)for(const key of['fieldScrapKg','fieldDefQty'])if(c.values[key]===null&&!own(row,key)&&!own(row.sourceIntegration?.baseline||{},key))delete c.values[key];
   // A legacy client may omit the optional split while changing total production.
   // Preserve the split and hold an incompatible edit instead of inventing an allocation.
@@ -243,7 +246,7 @@ function planSync(state,snapshot,options={}){
   const targetEdited=!!before?.sourceIntegration?.targetEdited||!!(before?.sourceIntegration&&before.sourceIntegration.targetHash!==hash(rowBody(before)));
   // The engine owns baseline. User edits must leave it intact for three-way merge.
   row.sourceIntegration={...(row.sourceIntegration||{}),schema:1,key:c.key,repo:snapshot.repo,path:c.path,id:c.raw.id,sourceHash:hash(c.raw),baseline:nextBaseline,sourceProduct:clean(c.raw.sourceProduct||c.raw.product),productId:c.p.id,sourceCreatedAt:c.raw.ts||null,sourceUpdatedAt:c.raw.t||null,...(targetEdited?{targetEdited:true}:{})};
-  const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily','routing'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field]))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
+  const revisions={...(before?.sourceIntegration?.scheduleRevisions||{})};for(const field of['machines','daily','routing'])if(baseline?.fieldScheduleConditions&&nextBaseline.fieldScheduleConditions&&(!same(baseline.fieldScheduleConditions[field],nextBaseline.fieldScheduleConditions[field])||!same(baseline.fieldScheduleConditions.edits?.[field],nextBaseline.fieldScheduleConditions.edits?.[field])))revisions[field]=(revisions[field]||0)+1;if(Object.keys(revisions).length)row.sourceIntegration.scheduleRevisions=revisions;
   row.sourceIntegration.targetHash=hash(rowBody(row));
   if(!before){m.rows.push(row);links.set(c.key,[{m,row}]);report.counts.added++;history(m,'add',null,row,c)}else if(initial){links.set(c.key,[{m,row}]);report.counts.linked++;history(m,'initial-link',before,row,c)}else{report.counts.updated++;history(m,'update',before,row,c)}
  }

@@ -137,6 +137,14 @@ function computeJobs(s,k,context){const source=s.months[k],m={...source,rows:(so
   j.records=records;j.fieldPlanNotes=[...[...continuations.values()].filter(x=>x.sourceRowId===j.sourceRowId),...[...reservations.links.values()].filter(x=>x.jobId===j.id)];j.originId||=j.id;j.currentProduced=C.sum(records,r=>r.pours);j.produced=(j.carried?(j.previousProduced||0):0)+j.currentProduced;j.totalPlan=j.carried?(j.previousProduced||0)+(j.plan||0):(j.plan||0);j.stopped=!!j.stoppedAt||nextStart&&j.produced>0;j.interruptedAt=j.stopped?(j.stoppedAt||ordered[endIndex]?.date||null):null;j.ended=!!terminal;j.unproduced=Math.max(0,j.totalPlan-j.produced);j.remaining=j.stopped||j.ended?0:j.unproduced;j.complete=j.stopped||j.ended||j.totalPlan>0&&j.remaining===0;j.firstActual=records.filter(r=>r.pours>0).map(r=>r.date).sort()[0]||null;j.lastActual=records.filter(r=>r.pours>0||endsProduction(r)).map(r=>r.date).sort().at(-1)||null;j.completedAt=j.stopped?null:j.complete?(terminal?.date||j.lastActual):null;j.completionRowId=terminal?.id||null;j.completionReason=ended?.reason||(terminal?'legacy-end':j.stopped?'stopped':j.complete?'target-reached':null);j.completionStockQty=ended?.stockQty??null;j.completionNote=ended?.note||'';j.lot=[...new Set(records.map(r=>r.lot).filter(Boolean))].join(', ');j.machines??=[];j.group=String(j.group||'');applyFieldScheduleConditions(j);delete j.carrySignature
  }
  for(const j of out)reconcileCarry(s,k,j,context);
+ // Older field forms sent a machine mode without a product-group choice.
+ // Keep the saved simultaneous reservation; a new explicit display choice is
+ // never inferred or rewritten. This changes the derived jobs only.
+ const legacyModeOnly=j=>j.routing&&!j.routing.group&&j.routing.barDisplay===undefined&&j.fieldScheduleSource?.routing&&j.fieldScheduleOverrides?.routing!==j.fieldScheduleSource.routing.signature;
+ const legacyGroups=new Map();
+ for(const j of out){if(!(Number(j.group)>0||String(j.group).startsWith('manual:')))continue;const key=j.worker+'|'+j.group;if(!legacyGroups.has(key))legacyGroups.set(key,[]);legacyGroups.get(key).push(j)}
+ const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!j.fieldScheduleOverrides?.routing;
+ for(const members of legacyGroups.values())if(members.length>1&&members.some(legacyModeOnly)&&members.every(j=>!j.routing||legacyModeOnly(j)||sameLegacyRoute(j))){const used=new Set(members.filter(sameLegacyRoute).map(j=>j.routing.lane));members.sort((a,b)=>a.id.localeCompare(b.id));for(const j of members){if(sameLegacyRoute(j))continue;let lane=1;while(used.has(lane))lane++;if(lane>20)continue;used.add(lane);j.routing={schema:1,mode:j.routing?.mode||'sequential',group:j.group,lane,order:1};j.routingLegacyGroup=true}}
  return out;
 }
 function dailyProgress(s,k,options={}){
@@ -193,7 +201,8 @@ function actualMachineSpans(s,k,j,alloc,today){
 }
 function normalizeRouting(value){
  if(!value||value.schema!==1||!['sequential','parallel'].includes(value.mode)||typeof value.group!=='string'||value.group.length>120||value.group!==''&&!/^(?:[1-9]\d*|manual:[A-Za-z0-9_.:-]+)$/.test(value.group)||/^\d+$/.test(value.group)&&!Number.isSafeInteger(Number(value.group))||!Number.isInteger(value.lane)||value.lane<1||value.lane>20||!Number.isInteger(value.order)||value.order<1||value.order>50)throw Error('생산 방식·묶음·생산줄·순서를 확인해 주세요.');
- return{schema:1,mode:value.mode,group:value.group,lane:value.lane,order:value.order};
+ if(value.barDisplay!==undefined&&!['combined','separate'].includes(value.barDisplay))throw Error('기간바 표시 방식을 확인해 주세요.');
+ return{schema:1,mode:value.mode,group:value.group,lane:value.lane,order:value.order,...(value.barDisplay!==undefined?{barDisplay:value.barDisplay}:{})};
 }
 function routingMachineName(value){if(typeof value!=='string')throw Error('호기 이름을 확인해 주세요.');const name=value.trim(),match=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||match&&!Number.isSafeInteger(Number(match[1])))throw Error('호기 이름을 확인해 주세요.');return match?Number(match[1])+'호':name}
 function machineActualValues(value,total){
@@ -207,7 +216,7 @@ function validateRoutingJob(job,peers=[]){
  if(!job.routing)return true;const routing=normalizeRouting(job.routing),totalPlan=job.carried?(job.previousProduced||0)+(job.plan||0):(job.plan??job.totalPlan),machines=machineQty({...job,totalPlan});
  if(!machines.length||machines.some(m=>!routingMachineName(m.name)||m.qty==null||!Number.isFinite(m.qty)||m.qty<0)||new Set(machines.map(m=>routingMachineName(m.name))).size!==machines.length)throw Error('호기와 배정 조수를 확인해 주세요.');
  if(!Number.isFinite(totalPlan)||totalPlan<0)throw Error('유효한 품목 계획 조수를 입력해 주세요.');
- if(!job.complete){if(routing.mode==='parallel'){if(machines.some(m=>m.qty>0&&!(Number.isFinite(m.daily)&&m.daily>0)))throw Error('동시생산은 각 호기의 예상 하루 생산 조수를 입력해 주세요.');}else if(!(Number.isFinite(job.daily)&&job.daily>0))throw Error('순차생산의 예상 하루 조수를 입력해 주세요.');}
+ if(!job.complete){if(routing.mode==='parallel'){if(machines.some(m=>m.qty>0&&!(Number.isFinite(m.daily??(machines.length===1?job.daily:null))&&(m.daily??job.daily)>0)))throw Error('여러 호기를 함께 사용하면 각 호기의 하루 조수를 입력해 주세요.');}else if(!(Number.isFinite(job.daily)&&job.daily>0))throw Error('순차생산의 예상 하루 조수를 입력해 주세요.');}
  if(!job.complete&&routing.group&&peers.some(p=>p.id!==job.id&&(p.originId||p.id)!==(job.originId||job.id)&&p.worker===job.worker&&p.routing?.group===routing.group&&p.routing.lane===routing.lane&&p.routing.order===routing.order&&(!p._ownerMonth||!job._ownerMonth||p._ownerMonth===job._ownerMonth)))throw Error('같은 생산줄 안의 순서가 중복됩니다. 새 작업의 생산 묶음 또는 순서를 지정해 주세요.');
  return true;
 }
@@ -220,12 +229,13 @@ function routingSchedule(s,k,input,today,statusToday){
  for(const j of input){const group=key(j);if(!groups.has(group))groups.set(group,[]);groups.get(group).push(j)}
  function observed(j,group,message){
   warn(j,message);const start=j.firstActual||null,end=j.lastActual||start;if(!C.iso(start)||!C.iso(end))return;
-  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
+  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
  }
  function calculate(j,group,predecessor){
   if(j.carryBlocked){observed(j,group,j.carryReview);return null}
   try{validateRoutingJob(j,input)}catch(e){observed(j,group,e.message);return null}
   const mode=j.routing.mode,alloc=machineQty(j).filter(m=>m.qty>0).map(m=>({...m,name:routingMachineName(m.name)}));
+  if(alloc.length===1&&alloc[0].daily==null&&j.daily>0)alloc[0].daily=j.daily;
   const allocated=C.sum(alloc,m=>m.qty);if(Math.abs(allocated-j.totalPlan)>0.000001+1e-12)warn(j,'품목 계획 '+j.totalPlan+'조 / 호기 배정 '+allocated+'조 · 기간은 호기 배정 기준이며 계획값은 유지합니다.');
   const owned=ownedMachineEvents(s,k,j),events=owned.events.slice().sort((a,b)=>a.date.localeCompare(b.date));
   if(owned.initial>0&&alloc.length>1){observed(j,group,'이월 이전 호기별 실적을 확인할 수 없습니다. 누적 조수는 보존하고 확인되는 실제 날짜만 표시합니다.');return null}
@@ -261,7 +271,7 @@ function routingSchedule(s,k,input,today,statusToday){
    const start=v.start||j.firstActual||planned,end=j.complete?(v.lastActual||j.completedAt||j.lastActual||start):(v.end||start);
    if(!C.iso(start)||!C.iso(end))continue;if(!finish||end>finish)finish=end;
    const actualEnd=j.complete||v.produced>=v.machine.qty,dry=C.dryDate(end,factory(s));
-   rows.push({id:j.id+':'+i,jobId:j.id,worker:j.worker,product:j.product,machine:v.machine.name,qty:v.machine.qty,start,end,groupStart:start,groupEnd:end,requestedStart:planned,groupId:group+'|job:'+j.id,dry,lot:j.lot,manual:!!j.manual,produced:j.produced,plan:j.totalPlan,remaining:j.remaining,status:j.stopped?'중단':actualEnd?(statusToday>=dry?'건조 완료':'건조 중'):v.produced>0?'생산중':'미착수',projected:!actualEnd,machineComplete:actualEnd,machineProduced:v.produced,machineRate:mode==='parallel'?v.machine.daily:j.daily,explicitRouting:true,routingGroup:group,routingLane:j.routing.lane,routingOrder:j.routing.order,routingMode:mode,description:mode==='parallel'?'호기별 동시생산 실적과 하루 조수 기준':'호기 등록 순서와 실제 누적 조수 기준',source:j.sourceRowId?'생산일보':'웹 작업'});
+   rows.push({id:j.id+':'+i,jobId:j.id,worker:j.worker,product:j.product,machine:v.machine.name,qty:v.machine.qty,start,end,groupStart:start,groupEnd:end,requestedStart:planned,groupId:group+'|job:'+j.id,dry,lot:j.lot,manual:!!j.manual,produced:j.produced,plan:j.totalPlan,remaining:j.remaining,status:j.stopped?'중단':actualEnd?(statusToday>=dry?'건조 완료':'건조 중'):v.produced>0?'생산중':'미착수',projected:!actualEnd,machineComplete:actualEnd,machineProduced:v.produced,machineRate:mode==='parallel'?v.machine.daily:j.daily,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing.lane,routingOrder:j.routing.order,routingMode:mode,description:mode==='parallel'?'호기별 동시생산 실적과 하루 조수 기준':'호기 등록 순서와 실제 누적 조수 기준',source:j.sourceRowId?'생산일보':'웹 작업'});
   }
   // Explicit early completion releases the lane on the recorded completion day.
   const releasedAt=j.stopped?j.interruptedAt||j.stoppedAt:j.completedAt;
@@ -384,6 +394,8 @@ function history(s,start,end){
  const rows=[...saved.filter(row=>!superseded(row)),...snapshots],seen=new Set();
  return rows.filter(row=>C.iso(row.start)&&C.iso(row.end)&&row.start<=end&&row.end>=start).filter(row=>{const key=row.id||[row.worker,row.product,row.machine,row.start,row.end].join('|');if(seen.has(key))return false;seen.add(key);return true}).map(row=>clone(row)).sort((a,b)=>a.start.localeCompare(b.start)||String(a.worker).localeCompare(String(b.worker)));
 }
+// Excel's plan row follows one pacing product, never the sum of companions.
+function pacingMember(members){const active=members.filter(j=>!j.complete);return[...(active.length?active:members)].sort((a,b)=>b.remaining/(b.daily||1)-a.remaining/(a.daily||1)||b.remaining-a.remaining||b.totalPlan-a.totalPlan)[0]}
 function schedule(s,k,requestedToday,options={}){const today=C.iso(options.asOf)?options.asOf:asOf(s,k),statusToday=C.iso(requestedToday)?requestedToday:today;if(s.months[k].closed&&s.months[k].closeSnapshot?.schedule)return clone(s.months[k].closeSnapshot.schedule);if(s.months[k].closed){const saved=history(s,k+'-01',add(add(k+'-01',32).slice(0,7)+'-01',-1));if(saved.length)return{jobs:jobs(s,k),rows:saved,warnings:[]};return{jobs:jobs(s,k),rows:(s.scheduleRows||[]).map(r=>({id:'archive:'+r.row,jobId:'',worker:r.cells[0],machine:r.cells[1],dry:C.serial(C.num(r.cells[3])),product:r.cells[4],qty:r.cells[5],start:C.serial(C.num(r.cells[7])),end:C.serial(C.num(r.cells[8])),status:r.cells[9],lot:r.cells[10],archived:true})).filter(r=>r.product&&r.start&&r.end&&r.start<=add(k+'-01',31)&&r.end>=k+'-01'),warnings:[]}}const raw=jobs(s,k),hasProduction=j=>!!j.firstActual||C.num(j.produced)>0||C.num(j.previousProduced)>0,all=raw.filter(j=>hasProduction(j)||!j.manual||j.manualSource==='timeline'||!raw.some(a=>!a.manual&&a.worker===j.worker&&a.product===j.product&&JSON.stringify(machineQty(a))===JSON.stringify(machineQty(j))&&a.start<=j.end)),output=[],warnings=[],groups=new Map(),groupIds=new Map();
  const baseKey=j=>j.worker+'|'+(Number(j.group)>0||String(j.group).startsWith('manual:')?'group:'+j.group:'job:'+j.id),actualGroups=new Set(all.filter(hasProduction).map(baseKey));
  // Expected companions cannot lead, extend or hide a job that has real output.
@@ -392,7 +404,7 @@ function schedule(s,k,requestedToday,options={}){const today=C.iso(options.asOf)
  function observed(j,reason=null){const start=j.firstActual||j.previousStart||j.start,end=j.lastActual||start;if(!C.iso(start)||!C.iso(end))return;output.push({id:j.id+':actual',jobId:j.id,worker:j.worker,product:j.product,machine:j.machines?.length===1?j.machines[0].name:'미배정',qty:j.totalPlan,start,end,groupStart:start,groupEnd:end,requestedStart:j.start,groupId:groupIds.get(j.id)||baseKey(j),dry:null,lot:j.lot,manual:!!j.manual,produced:j.produced,plan:j.totalPlan,remaining:j.remaining,status:j.stopped?'중단':j.complete?'건조 중':'생산중',projected:false,actualOnly:true,description:reason||'실제 생산이 기록된 기간입니다. 호기와 하루 생산 조수를 확인하면 예상 종료·건조일을 계산합니다.',source:'생산일보'});warnings.push({id:j.id,product:j.product,message:reason||'실제 생산을 우선 표시했습니다. 호기·하루 조수 확인 전에는 실제 기록 기간만 표시하며 예상 종료·건조일은 계산하지 않습니다.'})}
 
  for(const j of all)if(j.carryBlocked){if(!j.routing)observed(j,j.carryReview)}else if(j.carryReview)warnings.push({id:j.id,product:j.product,message:j.carryReview});
- for(const members of list){try{const active=members.filter(j=>!j.complete),leader=[...(active.length?active:members)].sort((a,b)=>((b.remaining/(b.daily||1))-(a.remaining/(a.daily||1)))||b.remaining-a.remaining||b.totalPlan-a.totalPlan)[0],w=leader.worker;const invalid=members.filter(j=>!j.worker||!j.start||!j.machines.length||!machineQty(j).some(a=>a.qty>0)||!j.complete&&!(j.daily>0)&&(hasProduction(j)||!j.duration&&!j.end));if(invalid.length){for(const j of invalid)warnings.push({id:j.id,product:j.product,message:'작업자·시작일·하루 조수·호기 배치를 확인해 주세요.'});for(const j of members)if(hasProduction(j))observed(j);continue}let start=leader.previousStart||leader.firstActual||leader.start,end=leader.lastActual||start,used=[];if(!C.iso(start))throw Error('유효한 시작일이 필요합니다.');if(start.slice(0,7)>k&&!leader.manual){warnings.push({id:leader.id,product:leader.product,message:'다음달 이후 시작 예정입니다.'});continue}
+ for(const members of list){try{const leader=pacingMember(members),w=leader.worker;const invalid=members.filter(j=>!j.worker||!j.start||!j.machines.length||!machineQty(j).some(a=>a.qty>0)||!j.complete&&!(j.daily>0)&&(hasProduction(j)||!j.duration&&!j.end));if(invalid.length){for(const j of invalid)warnings.push({id:j.id,product:j.product,message:'작업자·시작일·하루 조수·호기 배치를 확인해 주세요.'});for(const j of members)if(hasProduction(j))observed(j);continue}let start=leader.previousStart||leader.firstActual||leader.start,end=leader.lastActual||start,used=[];if(!C.iso(start))throw Error('유효한 시작일이 필요합니다.');if(start.slice(0,7)>k&&!leader.manual){warnings.push({id:leader.id,product:leader.product,message:'다음달 이후 시작 예정입니다.'});continue}
  if(leader.manual&&!hasProduction(leader)&&!leader.complete){const calendarBased=manualUsesCalendar(leader),allowed=d=>calendarBased?manualWork(s,w,d):!factory(s).includes(d)&&!holiday(s,w,d);start=leader.start;if(leader.duration&&!leader.end){if(leader.afterPrevious&&cursors[w]){start=add(cursors[w],1);for(let i=0;i<3;i++){start=calendarBased?nextManualWork(s,w,start):nextWork(s,w,start,today);if(i<2)start=add(start,1)}}for(let d=start,n=0;used.length<leader.duration;d=add(d,1),n++){if(n>=740)throw Error('수기 기간이 너무 깁니다.');if(allowed(d))used.push(d)}if(calendarBased)start=used[0];end=used.at(-1)}else{end=leader.end;if(!C.iso(end)||end<start)throw Error('수기 종료일은 시작일 이후의 날짜여야 합니다.');used=days(start,end).filter(allowed)}}
  else if(leader.complete){end=leader.stoppedAt||leader.lastActual||start;used=days(start,end).filter(d=>work(s,w,d,today,start))}
  else{let produced=leader.carried?(leader.effectivePreviousProduced??leader.previousProduced??0):0;const dailyActual={};for(const r of leader.records)dailyActual[r.date]=(dailyActual[r.date]||0)+(r.pours||0);let d=start;if(!hasProduction(leader)&&cursors[w]&&start<=cursors[w])d=add(cursors[w],1);for(let i=0;i<740;i++,d=add(d,1)){if(d<=today){produced+=dailyActual[d]||0;if(work(s,w,d,today,leader.start))used.push(d)}else if(work(s,w,d,today,leader.start)){used.push(d);produced+=leader.daily}if(produced>=leader.totalPlan){end=d;break}if(i===739)throw Error('2년 안에 목표수량을 채우지 못합니다.')}if(!hasProduction(leader))start=used[0]||start}
@@ -415,7 +427,66 @@ function schedule(s,k,requestedToday,options={}){const today=C.iso(options.asOf)
  const displayed=options.skipSourceDry?output:preserveSourceDryDates(s,k,output,today),actualIds=new Set([...all.filter(hasProduction).map(j=>j.id),...output.filter(r=>r.orphanActual).map(r=>r.jobId)]),pendingIds=new Set(all.filter(j=>j.manual&&!hasProduction(j)&&!j.complete).map(j=>j.id)),conflictWarnings=new Set();
  for(const r of displayed){if(!pendingIds.has(r.jobId))continue;const overlaps=displayed.filter(a=>actualIds.has(a.jobId)&&a.worker===r.worker&&!(r.explicitRouting&&a.explicitRouting&&r.routingGroup===a.routingGroup&&r.routingLane!==a.routingLane)&&a.start<=r.end&&a.end>=r.start);if(!overlaps.length)continue;r.reservationConflict=true;r.reservationConflictProducts=[...new Set(overlaps.map(a=>a.product))];let segments=[{start:r.start,end:r.end}];for(const a of overlaps){segments=segments.flatMap(span=>a.end<span.start||a.start>span.end?[span]:[...(a.start>span.start?[{start:span.start,end:add(a.start,-1)}]:[]),...(a.end<span.end?[{start:add(a.end,1),end:span.end}]:[])])}r.displaySegments=segments;if(!conflictWarnings.has(r.jobId)){warnings.push({id:r.jobId,product:r.product,message:'실제 생산 '+r.reservationConflictProducts.join(' · ')+'을 우선 표시합니다. 겹친 예상 구간은 덮어 표시하며, 예상 원본은 작업 목록에 보관합니다.'});conflictWarnings.add(r.jobId)}}
  return{rows:displayed.sort((a,b)=>a.start.localeCompare(b.start)),jobs:all,warnings,asOf:today}}
+// Read-only display projection. Daily ledger totals, inventory and job progress
+// remain separate measures. Drawing one bar or separate machine bars is not an
+// input: each physical job contributes once to its production group.
+function timelineCumulative(s,k,result,first,last){
+ if(!C.iso(first)||!C.iso(last)||first>last)return[];
+ const output=[],groups=new Map(),workdays=new Map(),jobMap=new Map(),rowMap=new Map();
+ const key=(owner,id)=>owner+'\0'+id,positive=v=>Number.isFinite(v)&&v>0,round=v=>Math.round(v*1000000)/1000000;
+ const allowed=(worker,date)=>{const id=worker+'\0'+date;if(!workdays.has(id))workdays.set(id,manualWork(s,worker,date));return workdays.get(id)};
+ for(const j of result.jobs||[])jobMap.set(key(j._ownerMonth||k,j.id),j);
+ for(const row of result.rows||[]){if(!C.iso(row.start)||!C.iso(row.end))continue;const id=key(row.editMonth||row.sourceMonth||k,row.jobId);if(!rowMap.has(id))rowMap.set(id,[]);rowMap.get(id).push(row)}
+ function series(j,owner,parts){
+  const starts=parts.map(r=>r.explicitRouting?r.start:r.groupStart||r.start).sort(),ends=parts.map(r=>r.explicitRouting?r.end:r.groupEnd||r.end).sort(),start=starts[0],end=ends.at(-1),points=new Map(),basis=asOf(s,owner);
+  const valid=(j.records||[]).filter(r=>!r.deleted&&C.iso(r.date)&&positive(r.pours)),ids=new Set(),duplicates=new Set();for(const r of valid)if(r.id){if(ids.has(r.id))duplicates.add(r.id);ids.add(r.id)}
+  const clean=valid.filter(r=>!duplicates.has(r.id)),safeJob={...j,records:clean},owned=j.carried&&first<owner+'-01'?ownedMachineEvents(s,owner,safeJob):{initial:j.carried?(j.effectivePreviousProduced??j.previousProduced??0):0,events:clean};
+  const daily=new Map();for(const event of owned.events)if(C.iso(event.date)&&positive(event.pours))daily.set(event.date,(daily.get(event.date)||0)+event.pours);
+  let cumulative=Math.max(0,C.num(owned.initial)||0);for(const[date,qty]of[...daily].sort(([a],[b])=>a.localeCompare(b))){cumulative=round(cumulative+qty);points.set(date,{value:cumulative,kind:'actual'})}
+  const uncertain=duplicates.size>0||valid.length!==(j.records||[]).filter(r=>!r.deleted&&r.pours!=null&&r.pours!==0).length;
+  const active=daily.size>0||owned.initial>0,firstForecast=active?add([basis,...daily.keys()].sort().at(-1),1):j.manual||j.routing?start:[start,add(basis,1)].sort().at(-1);
+  const warning=duplicates.size?'중복 실적 ID는 누적에서 제외했습니다. 원장 연결을 확인해 주세요.':uncertain?'유효한 날짜와 양수 실적만 누적했습니다. 입력을 확인해 주세요.':'';
+  if(!j.complete&&!j.carryBlocked&&!uncertain&&parts.some(r=>!r.actualOnly&&!r.reservationOnly)&&firstForecast<=end){
+   const explicit=!!j.routing,target=explicit?C.sum(machineQty(j),r=>r.qty):j.totalPlan;
+   if(explicit){
+    const allocation=machineQty(j),stats=allocation.map((m,i)=>{const r=parts.find(r=>r.id===j.id+':'+i);return{row:r,remaining:r?Math.max(0,(r.qty||0)-(r.machineProduced||0)):0}});
+    for(let date=firstForecast,n=0;date<=end&&n<740;date=add(date,1),n++){
+     if(!allowed(j.worker,date))continue;let capacity=j.daily,qty=0;
+     for(const stat of stats){const r=stat.row;if(!r||r.actualOnly||r.machineComplete||date<r.start||date>r.end||!(stat.remaining>0))continue;const rate=j.routing.mode==='parallel'?r.machineRate:capacity,part=Math.min(stat.remaining,rate);if(!positive(part))continue;stat.remaining=round(stat.remaining-part);qty+=part;if(j.routing.mode==='sequential')capacity-=part}
+     if(qty>0){cumulative=round(cumulative+qty);points.set(date,{value:cumulative,kind:'forecast'})}
+    }
+   }else if(positive(j.daily)&&positive(target)){
+    for(let date=firstForecast,n=0;date<=end&&n<740&&cumulative<target;date=add(date,1),n++){if(!allowed(j.worker,date))continue;cumulative=round(Math.min(target,cumulative+j.daily));points.set(date,{value:cumulative,kind:'forecast'})}
+   }
+  }
+  return{job:j,owner,parts,start,end,points,basis,warning};
+ }
+ for(const[id,parts]of rowMap){const j=jobMap.get(id);if(!j||!j.worker)continue;const owner=j._ownerMonth||k,entry=series(j,owner,parts),group=j.routing?'routing:'+(j.routing.group||'job:'+j.id):parts[0].groupId||'job:'+j.id,gkey=key(owner,j.worker+'\0'+group);if(!groups.has(gkey))groups.set(gkey,[]);groups.get(gkey).push(entry)}
+ const pointEntry=(group,entry,date,point,members)=>({worker:entry.job.worker,date,value:point.value,kind:point.kind,product:entry.job.product,jobId:entry.job.id,groupId:group,plan:entry.job.totalPlan,basis:entry.basis,warning:entry.warning,members:members.map(m=>({product:m.job.product,jobId:m.job.id,value:m.points.get(date)?.value??null,kind:m.points.get(date)?.kind||null}))});
+ for(const[group,members]of groups){
+  let selected;
+  if(!members[0].job.routing){const leader=pacingMember(members.map(m=>m.job));selected=members.filter(m=>m.job===leader)}
+  else{
+   // A -> C is one sequential lane while B continues independently. Follow
+   // the lane that finishes last, then reset the number when its product changes.
+   const lanes=new Map();for(const member of members){const lane=member.job.routing.lane;if(!lanes.has(lane))lanes.set(lane,[]);lanes.get(lane).push(member)}
+   const ranked=[...lanes.values()].sort((a,b)=>b.map(m=>m.end).sort().at(-1).localeCompare(a.map(m=>m.end).sort().at(-1))||Math.max(...b.map(m=>m.job.remaining||0))-Math.max(...a.map(m=>m.job.remaining||0))||Math.max(...b.map(m=>m.job.totalPlan||0))-Math.max(...a.map(m=>m.job.totalPlan||0)));
+   selected=ranked[0]||[];
+  }
+  for(const entry of members)for(const[date,point]of entry.points){if(date<first||date>last)continue;const clipped=entry.parts.some(r=>Array.isArray(r.displaySegments));if(point.kind==='forecast'&&clipped&&!entry.parts.some(r=>(r.displaySegments||[{start:r.start,end:r.end}]).some(span=>date>=span.start&&date<=span.end)))continue;output.push({...pointEntry(group,entry,date,point,members),pacing:selected.includes(entry)})}
+ }
+ // Historical Excel cells remain explicitly saved values. Never manufacture
+ // daily detail from a closed aggregate or overlay stale cells on live jobs.
+ const grid=(s.archive||[]).find(x=>x.name==='생산일정(계획)'),year=C.num(C.val(grid,'D1'));
+ if(grid&&Number.isInteger(year)){
+  const live=[...groups.values()].flat(),leap=year%4===0&&(year%100!==0||year%400===0),savedRows=(result.rows||[]).filter(r=>r.history&&/^생산일정\(계획\)!/.test(r.source||''));
+  for(const r of savedRows){const match=/!([A-Z]+)(\d+)$/.exec(r.source);if(!match)continue;const numericRow=Number(match[2])+3;
+   for(let date=r.start;date<=r.end;date=add(date,1)){if(date<first||date>last||live.some(m=>m.job.worker===r.worker&&date>=m.start&&date<=m.end))continue;const offset=Math.round((Date.parse(date)-Date.UTC(year,0,1))/86400000),column=6+offset+(!leap&&offset>=59?1:0),value=C.num(C.val(grid,C.col(column)+numericRow));if(!positive(value))continue;output.push({worker:r.worker,date,value,kind:'saved',product:r.product,jobId:r.jobId,groupId:r.groupId||r.jobId,plan:null,basis:null,warning:'엑셀에 보관된 작업 누적입니다. 현재 원장으로 재계산한 실적이 아닙니다.',members:[]})}
+  }
+ }
+ return output.sort((a,b)=>a.date.localeCompare(b.date)||a.worker.localeCompare(b.worker)||a.groupId.localeCompare(b.groupId));
+}
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
