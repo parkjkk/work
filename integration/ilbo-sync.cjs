@@ -42,8 +42,16 @@ function productIndex(products){
  for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of [...(p.renameFrom||[]),...(p.aliases||[])]){const key=clean(typeof a==='string'?a:a.name);if(!key||current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior.id!==p.id){names.delete(key);ambiguous.add(key)}else names.set(key,p)}}
  return{ids,names,resolve:r=>{if(r.productId){const p=ids.get(r.productId);if(!p)return null;const byName=names.get(clean(r.product));if(byName&&byName.id!==p.id)throw Error('Product ID and name disagree');return p}return names.get(clean(r.product))||null}};
 }
-function projectCatalog(products,prior,now=new Date().toISOString()){
- const ix=productIndex(products),list=[...ix.ids.values()].map(p=>({id:p.id,name:p.name,active:p.active!==false&&!p.disabled})).sort((a,b)=>a.id.localeCompare(b.id));
+function projectCatalog(products,prior,now=new Date().toISOString(),memos=[]){
+ const ix=productIndex(products),{productMemoIndex}=require('./product-memo.cjs');let memoIndex;
+ const memoUnavailable=error=>['invalid-memo-data','ambiguous-memo'].includes(error?.code);
+ if(memos==null||Array.isArray(memos))try{memoIndex=productMemoIndex(products,memos||[],ix)}catch(error){if(!memoUnavailable(error))throw error}
+ const list=[...ix.ids.values()].map(p=>{
+  const item={id:p.id,name:p.name,active:p.active!==false&&!p.disabled};
+  // Only the current common memo is shared. A memo problem cannot stop daily-record sync.
+  try{const memo=memoIndex?.get(p.id)?.memo;if(typeof memo==='string'&&memo.length)item.memo=memo}catch(error){if(!memoUnavailable(error))throw error}
+  return item;
+ }).sort((a,b)=>a.id.localeCompare(b.id));
  const aliases=[...ix.names].filter(([name,p])=>name!==p.name).map(([name,p])=>({name,productId:p.id})).sort((a,b)=>a.name.localeCompare(b.name));
  const revision=hash({products:list,aliases});if(prior?.revision===revision&&same(prior.products,list)&&same(prior.aliases,aliases))return clone(prior);
  return{schema:1,kind:'schedule-product-catalog',revision,updatedAt:now,products:list,aliases};

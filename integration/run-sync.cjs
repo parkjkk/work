@@ -35,7 +35,7 @@ function nativeState(dir){
  const envelope=read(inside(dir,'meta/catalog.json'));if(envelope.schema!==1||!Array.isArray(envelope.records))throw Error('Invalid catalog envelope');
  const meta=envelope.records.find(r=>r.id==='catalog'&&r.kind==='catalog');if(meta?.app!=='johyeong-schedule'||meta.schema!==1||!Array.isArray(meta.months))throw Error('Invalid schedule catalog');
  if(meta.catalogUnitSync)throw Error('Catalog unit update is pending');
- const state={products:envelope.records.filter(r=>r.kind==='products'&&!r.deleted),months:{},workers:envelope.records.filter(r=>r.kind==='workers'&&!r.deleted).map(r=>r.name),calendar:meta.calendar||{factory:[],workers:[]},scheduleRows:envelope.records.filter(r=>r.kind==='scheduleRows'&&!r.deleted),scheduleHistory:envelope.records.filter(r=>r.kind==='scheduleHistory'&&!r.deleted),archive:[]};
+ const state={products:envelope.records.filter(r=>r.kind==='products'&&!r.deleted),memos:envelope.records.filter(r=>r.kind==='memos'&&!r.deleted),months:{},workers:envelope.records.filter(r=>r.kind==='workers'&&!r.deleted).map(r=>r.name),calendar:meta.calendar||{factory:[],workers:[]},scheduleRows:envelope.records.filter(r=>r.kind==='scheduleRows'&&!r.deleted),scheduleHistory:envelope.records.filter(r=>r.kind==='scheduleHistory'&&!r.deleted),archive:[]};
  for(const key of meta.months){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key))throw Error('Invalid month key');const x=read(inside(dir,'months/'+key+'.json'));if(x.schema!==1||x.records?.length!==1||x.records[0].kind!=='month'||x.records[0].id!==key)throw Error('Invalid month envelope');const m=x.records[0];for(const k of['rows','issues','stocks','plans','plaster'])if(!Array.isArray(m[k]))throw Error('Missing month collection');state.months[key]=m}
  return{state,envelope,meta};
 }
@@ -57,7 +57,7 @@ function run({target,source,initialConflict='review',snapshotFile,dryRun=false})
  const returned=planFieldReturn(result.state,snapshot,result.report);result.state=returned.state||result.state;result.changedMonths=[...new Set([...result.changedMonths,...(returned.changedMonths||[])])].sort();result.report=withReturnReport(result.report,returned,previousReport,result.changedMonths);
  const catalog=loaded.envelope,meta=catalog.records.find(r=>r.id==='catalog');meta.months=Object.keys(result.state.months).sort();
  const priorProjectionPath=inside(source,'meta/products.json'),priorProjection=fs.existsSync(priorProjectionPath)?read(priorProjectionPath):undefined;
- const projection=projectCatalog(result.state.products,priorProjection,snapshot.readAt);
+ const projection=projectCatalog(result.state.products,priorProjection,snapshot.readAt,result.state.memos);
  const priorProgressPath=inside(source,'meta/production-progress.json'),priorProgress=fs.existsSync(priorProgressPath)?read(priorProgressPath):undefined;
  const progress=projectProgress(result.state,snapshot,priorProgress,snapshot.readAt);
  const writes=[];
