@@ -336,6 +336,29 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 
 @media screen and (min-width:721px) and (pointer:fine){.pgSurface.pgFocused .pgCumulativeLabel>span{display:none}.pgSurface.pgFocused .pgCumulativeLabel{padding:0 6px;gap:0;min-height:0}.pgSurface.pgFocused .pgCumulativeLabel>b{font-size:10px;line-height:12px}}
 
+/* Job labels occupy reserved empty date space; numeric date columns never move. */
+.pgCumulativeTrack{position:relative;min-width:0}
+.pgCumulativeTrack>.pgDateCells{position:relative}
+.pgSurface .pgCumulativeTrack .pgCumulativeValues{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start;align-items:start;gap:0;padding:0;min-height:var(--pg-cumulative-height,22px)}
+.pgSurface .pgCumulativeTrack .pgCumulativeNumber{align-self:center;margin:0}
+.pgCumulativeRunLabels{position:absolute;inset:0;pointer-events:none;z-index:1}
+.pgSurface button.pgCumulativeRunLabel,.pgSurface button.pgCumulativeAxisName{display:block;min-width:0;min-height:0!important;margin:0;padding:0 4px;border:0;border-radius:2px;box-shadow:none;background:#edf4f8;color:#244e69;font-size:11px;font-weight:600;line-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;pointer-events:auto}
+.pgSurface button.pgCumulativeRunLabel{position:absolute;text-align:right}
+.pgSurface button.pgCumulativeRunLabel:hover,.pgSurface button.pgCumulativeAxisName:hover{background:#dcebf5}
+.pgSurface button.pgCumulativeRunLabel:focus-visible,.pgSurface button.pgCumulativeAxisName:focus-visible{outline:2px solid #276ba3;outline-offset:-2px}
+.pgCumulativeLabel .pgCumulativeAxisNames{position:absolute;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start}
+.pgSurface button.pgCumulativeAxisName{width:100%;height:100%;text-align:right;padding:0 6px;background:#f7fafc}
+.pgCumulativeLabel .pgCumulativeAxisDefault{position:absolute;left:6px;right:6px;top:50%;transform:translateY(-50%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:12px}
+.pgCumulativeLabel[data-pg-axis-active="true"] .pgCumulativeAxisDefault{display:none}
+.pgCumulativeRunLabel[hidden],.pgCumulativeAxisName[hidden]{display:none!important}
+@media screen and (min-width:721px){.pgSurface.pgFocused button.pgCumulativeRunLabel,.pgSurface.pgFocused button.pgCumulativeAxisName{font-size:10px}}
+@media(max-width:720px){body.sheetWorkspace #planGridSurface button.pgCumulativeRunLabel,body.sheetWorkspace #planGridSurface button.pgCumulativeAxisName{min-height:0!important;font-size:11px;line-height:14px}}
+
+/* Reclaim framing space before reducing the readable period bars. */
+@media screen and (min-width:721px){
+ .pgSurface.pgFocused:not(.pgFocusToolsOpen) .pgDrySearch,.pgSurface.pgFocused:not(.pgFocusToolsOpen) .pgSelectionInfo{margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0}
+}
+
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
 .pgDateHead .pgDateSelect.pgMonthStart{border-left:2px solid #839eaf}
@@ -1881,6 +1904,19 @@ function reservationContext(s,k,normalized=null,knownContinuations=null){
  return{links,candidates,selectable,issues,controlled};
 }
 function reservationLinks(s,k){return reservationContext(s,k)}
+function fieldScheduleOverrideMatches(override,signature){
+ if(!override||!signature)return false;if(override===signature)return true;
+ try{const old=JSON.parse(override),current=JSON.parse(signature);return Array.isArray(old)&&old.length===2&&Array.isArray(current)&&old[0]===current[0]&&JSON.stringify(old[1])===JSON.stringify(current[1])&&!current[2]}catch{return false}
+}
+function activeRoutingOverride(job){const override=job.fieldScheduleOverrides?.routing,signature=job.fieldScheduleSource?.routing?.signature;return !!override&&(!signature||fieldScheduleOverrideMatches(override,signature))}
+// Product grouping is independent of the machine scheduling mode. An explicit
+// empty routing group remains an individual job even if the old group is saved.
+function productionGroupKey(job,row={}){
+ const id=String(job.id||row.jobId||row.id||'');
+ if(!job.routing&&row.explicitRouting)return 'routing:'+String(row.routingGroup||'job:'+id);
+ const group=String(job.routing?job.routing.group||'':job.group||'');
+ return Number(group)>0||group.startsWith('manual:')?'group:'+group:'job:'+id;
+}
 // Optional field conditions belong only to records owned by this worker/product
 // phase. Empty parts retain known conditions; unrelated edits do not reset them.
 function applyFieldScheduleConditions(j){
@@ -1891,7 +1927,7 @@ function applyFieldScheduleConditions(j){
   if(typeof v.daily==='number'&&Number.isFinite(v.daily)&&v.daily>0){daily=v.daily;assign('daily',r,daily)}
   if(v.routing)try{assign('routing',r,normalizeRouting(v.routing))}catch{}
  }
- for(const field of['machines','daily','routing'])if(source[field]){let match=j.fieldScheduleOverrides?.[field]===source[field].signature;try{const old=JSON.parse(j.fieldScheduleOverrides?.[field]||'null');if(Array.isArray(old)&&old.length===2){const current=JSON.parse(source[field].signature);match=old[0]===current[0]&&JSON.stringify(old[1])===JSON.stringify(current[1])&&!current[2]}}catch{}if(!match)j[field]=clone(source[field].value)}
+ for(const field of['machines','daily','routing'])if(source[field]&&!fieldScheduleOverrideMatches(j.fieldScheduleOverrides?.[field],source[field].signature))j[field]=clone(source[field].value);
  if(Object.keys(source).length)j.fieldScheduleSource=source;else delete j.fieldScheduleSource;
 }
 function captureFieldScheduleOverrides(s,k,record,cachedJobs=null){
@@ -1951,10 +1987,10 @@ function computeJobs(s,k,context){const source=s.months[k],m={...source,rows:(so
  // Older field forms sent a machine mode without a product-group choice.
  // Keep the saved simultaneous reservation; a new explicit display choice is
  // never inferred or rewritten. This changes the derived jobs only.
- const legacyModeOnly=j=>j.routing&&!j.routing.group&&j.routing.barDisplay===undefined&&j.fieldScheduleSource?.routing&&j.fieldScheduleOverrides?.routing!==j.fieldScheduleSource.routing.signature;
+ const legacyModeOnly=j=>j.routing&&!j.routing.group&&j.routing.barDisplay===undefined&&j.fieldScheduleSource?.routing&&!activeRoutingOverride(j);
  const legacyGroups=new Map();
  for(const j of out){if(!(Number(j.group)>0||String(j.group).startsWith('manual:')))continue;const key=j.worker+'|'+j.group;if(!legacyGroups.has(key))legacyGroups.set(key,[]);legacyGroups.get(key).push(j)}
- const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!j.fieldScheduleOverrides?.routing;
+ const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!activeRoutingOverride(j);
  for(const members of legacyGroups.values())if(members.length>1&&members.some(legacyModeOnly)&&members.every(j=>!j.routing||legacyModeOnly(j)||sameLegacyRoute(j))){const used=new Set(members.filter(sameLegacyRoute).map(j=>j.routing.lane));members.sort((a,b)=>a.id.localeCompare(b.id));for(const j of members){if(sameLegacyRoute(j))continue;let lane=1;while(used.has(lane))lane++;if(lane>20)continue;used.add(lane);j.routing={schema:1,mode:j.routing?.mode||'sequential',group:j.group,lane,order:1};j.routingLegacyGroup=true}}
  return out;
 }
@@ -2040,7 +2076,8 @@ function routingSchedule(s,k,input,today,statusToday){
  for(const j of input){const group=key(j);if(!groups.has(group))groups.set(group,[]);groups.get(group).push(j)}
  function observed(j,group,message){
   warn(j,message);const start=j.firstActual||null,end=j.lastActual||start;if(!C.iso(start)||!C.iso(end))return;
-  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
+  const names=[...new Set((Array.isArray(j.machines)?j.machines:[]).map(m=>typeof m?.name==='string'?m.name.trim():'').filter(Boolean))];
+  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:names.join(' / ')||'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
  }
  function calculate(j,group,predecessor){
   if(j.carryBlocked){observed(j,group,j.carryReview);return null}
@@ -2272,15 +2309,16 @@ function timelineCumulative(s,k,result,first,last){
   }
   return{job:j,owner,parts,start,end,points,basis,warning};
  }
- for(const[id,parts]of rowMap){const j=jobMap.get(id);if(!j||!j.worker)continue;const owner=j._ownerMonth||k,entry=series(j,owner,parts),group=j.routing?'routing:'+(j.routing.group||'job:'+j.id):parts[0].groupId||'job:'+j.id,gkey=key(owner,j.worker+'\0'+group);if(!groups.has(gkey))groups.set(gkey,[]);groups.get(gkey).push(entry)}
+ for(const[id,parts]of rowMap){const j=jobMap.get(id);if(!j||!j.worker)continue;const owner=j._ownerMonth||k,entry=series(j,owner,parts),group=productionGroupKey(j,parts[0]),gkey=key(owner,j.worker+'\0'+group);if(!groups.has(gkey))groups.set(gkey,[]);groups.get(gkey).push(entry)}
  const pointEntry=(group,entry,date,point,members)=>({worker:entry.job.worker,date,value:point.value,kind:point.kind,product:entry.job.product,jobId:entry.job.id,groupId:group,plan:entry.job.totalPlan,basis:entry.basis,warning:entry.warning,members:members.map(m=>({product:m.job.product,jobId:m.job.id,value:m.points.get(date)?.value??null,kind:m.points.get(date)?.kind||null}))});
  for(const[group,members]of groups){
   let selected;
-  if(!members[0].job.routing){const leader=pacingMember(members.map(m=>m.job));selected=members.filter(m=>m.job===leader)}
+  if(members.every(m=>!m.job.routing)){const leader=pacingMember(members.map(m=>m.job));selected=members.filter(m=>m.job===leader)}
   else{
    // A -> C is one sequential lane while B continues independently. Follow
    // the lane that finishes last, then reset the number when its product changes.
-   const lanes=new Map();for(const member of members){const lane=member.job.routing.lane;if(!lanes.has(lane))lanes.set(lane,[]);lanes.get(lane).push(member)}
+   const lanes=new Map();for(const member of members.filter(m=>m.job.routing)){const lane='routing:'+member.job.routing.lane;if(!lanes.has(lane))lanes.set(lane,[]);lanes.get(lane).push(member)}
+   const legacy=members.filter(m=>!m.job.routing);if(legacy.length){const leader=pacingMember(legacy.map(m=>m.job));lanes.set('legacy',legacy.filter(m=>m.job===leader))}
    const ranked=[...lanes.values()].sort((a,b)=>b.map(m=>m.end).sort().at(-1).localeCompare(a.map(m=>m.end).sort().at(-1))||Math.max(...b.map(m=>m.job.remaining||0))-Math.max(...a.map(m=>m.job.remaining||0))||Math.max(...b.map(m=>m.job.totalPlan||0))-Math.max(...a.map(m=>m.job.totalPlan||0)));
    selected=ranked[0]||[];
   }
@@ -2299,7 +2337,7 @@ function timelineCumulative(s,k,result,first,last){
 }
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
 
 (function(root){'use strict';
@@ -3903,9 +3941,9 @@ function pgCaseConflicts(s,periods,first,last){
 function pgTimelineGroups(rows,jobs){
  const jobMap=new Map(jobs.map(j=>[j.id,j])),groups=new Map();
  for(const source of rows){
-  const job=jobMap.get(source.jobId)||{},routing=pgRouting(job),explicit=!!source.explicitRouting||!!routing;
-  const row=explicit?{...source,jobDaily:job.daily,explicitRouting:true,editMonth:source.editMonth||job._ownerMonth||source.sourceMonth,routingGroup:source.routingGroup??routing?.group??'',routingLane:source.routingLane??routing?.lane??1,routingOrder:source.routingOrder??routing?.order??1,routingMode:source.routingMode??routing?.mode,routingBarDisplay:(routing?.barDisplay??source.routingBarDisplay)==='separate'?'separate':'combined'}:{...source,jobDaily:job.daily};
-  const grouped=Number(job.group)>0||String(job.group||'').startsWith('manual:'),key=JSON.stringify([row.editMonth,row.worker,explicit?['routing',row.routingBarDisplay==='separate'?['machine',row.jobId||row.id,row.id||row.machine]:row.routingGroup||'job:'+(row.jobId||row.id)]:grouped?'group:'+job.group:'job:'+(row.jobId||row.id),explicit?false:!!row.reservationConflict]);
+  const job=jobMap.get(source.jobId)||{},routing=pgRouting(job),explicit=!!source.explicitRouting||!!routing,editMonth=source.editMonth||job._ownerMonth||source.sourceMonth;
+  const row=explicit?{...source,jobDaily:job.daily,explicitRouting:true,editMonth,routingGroup:source.routingGroup??routing?.group??'',routingLane:source.routingLane??routing?.lane??1,routingOrder:source.routingOrder??routing?.order??1,routingMode:source.routingMode??routing?.mode,routingBarDisplay:(routing?.barDisplay??source.routingBarDisplay)==='separate'?'separate':'combined'}:{...source,jobDaily:job.daily,editMonth};
+  const identity=P.productionGroupKey(job,source),separate=explicit&&row.routingBarDisplay==='separate',key=JSON.stringify([editMonth,row.worker,separate?['machine',row.jobId||row.id,row.id||row.machine]:identity,explicit?false:!!row.reservationConflict]);
   if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);
  }
  return [...groups.values()].map(parts=>{
@@ -3985,9 +4023,63 @@ function pgCumulativeTitle(worker,date,entries){
  const kind=value=>value==='actual'?'실제 누적':value==='forecast'?'예상 누적':'보관 누적';
  return[worker+' '+date+' 작업 누적 · 조','파란 숫자: 입력 실적 / 회색 숫자: 예상. 하루 생산 합계가 아닙니다.',...entries.flatMap(entry=>[entry.product+' '+fmt(entry.value)+'조 · '+kind(entry.kind)+(entry.plan>0?' / 품목 계획 '+fmt(entry.plan)+'조':''),...(entry.members.length>1?['같은 생산 묶음 · '+entry.members.map(member=>member.product+(member.value==null?' (해당일 숫자 없음)':' '+fmt(member.value)+'조 '+kind(member.kind))).join(' / ')]:[]),...(entry.warning?[entry.warning]:[])]),...(entries.length>1?['서로 다른 작업의 누적을 각각 표시합니다. 합산하지 않습니다.']:[])].join('\n');
 }
+// Reserve the product prefix together with the whole job's numeric span. Reuse
+// a subline only when neither previous numbers nor their labels can be covered.
+function pgCumulativeLayout(series,dayWidth=34){
+ const width=Number.isFinite(dayWidth)&&dayWidth>0?dayWidth:34;
+ const items=series.filter(s=>Number.isFinite(s.first)&&Number.isFinite(s.last)&&s.first>=0&&s.last>=s.first).map(s=>{
+  const columns=Math.max(2,Math.min(6,Math.ceil((Number(s.labelWidth)||width*2)/width))),axis=s.first<columns;
+  return{...s,columns,axis,labelStart:axis?0:s.first-columns,start:axis?0:s.first-columns,end:s.last+1};
+ }).sort((a,b)=>a.start-b.start||a.first-b.first||a.end-b.end||String(a.key).localeCompare(String(b.key)));
+ const ends=[];for(const item of items){let lane=ends.findIndex(end=>end<=item.start);if(lane<0)lane=ends.length;ends[lane]=item.end;item.lane=lane}
+ return{items,lanes:Math.max(1,ends.length)};
+}
+function pgCumulativeAxisItem(items,lane,scrollLeft,dayWidth){
+ const cut=Math.max(0,Number(scrollLeft)||0),width=Number(dayWidth)||34;
+ return items.find(item=>item.lane===lane&&item.end*width>cut&&(item.axis||item.labelStart*width<cut-.5))||null;
+}
 function pgCumulativeRows(worker,dates,points,dayClass){
- const days=new Map();for(const point of points){if(!days.has(point.date))days.set(point.date,[]);days.get(point.date).push(point)}
- return `<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-worker="${esc(worker)}"><div class="pgAxisLabel pgCumulativeLabel" title="품목별 작업 누적 · 제품명은 숫자에 마우스를 올리거나 눌러서 확인"><b>작업 누적 · 조</b><span><i class="pgCumulativeActual">실적</i> / <i class="pgCumulativeForecast">예상</i></span></div><div class="pgDateCells">${dates.map(date=>{const entries=(days.get(date)||[]).slice().sort((a,b)=>a.product.localeCompare(b.product,'ko',{numeric:true})||String(a.jobId||'').localeCompare(String(b.jobId||''))),title=pgCumulativeTitle(worker,date,entries);return `<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${entries.map(entry=>`<button type="button" class="pgCumulativeNumber${fmt(entry.value).length>3?' pgCumulativeLong':''} ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" data-pg-cumulative-job="${esc(entry.jobId)}" data-pg-cumulative-worker="${esc(worker)}" data-pg-cumulative-date="${date}" data-pg-cumulative-product="${esc(entry.product)}" data-pg-cumulative-kind="${entry.kind}" title="${esc(pgCumulativeTitle(worker,date,[entry]))}" aria-label="${esc(pgCumulativeTitle(worker,date,[entry]).replaceAll('\n',' '))}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</button>`).join('')}</div>`}).join('')}</div></div>`;
+ const days=new Map(),series=new Map(),indices=new Map(dates.map((date,index)=>[date,index])),key=p=>JSON.stringify([p.groupId||'',p.jobId||'',p.product||'']);
+ for(const point of points){if(!indices.has(point.date))continue;const id=key(point),index=indices.get(point.date);if(!days.has(point.date))days.set(point.date,[]);days.get(point.date).push(point);if(!series.has(id))series.set(id,{key:id,first:index,last:index,entry:point});const s=series.get(id);if(index<s.first){s.first=index;s.entry=point}s.last=Math.max(s.last,index)}
+ const attributes=(entry,date=entry.date)=>`data-pg-cumulative-job="${esc(entry.jobId)}" data-pg-cumulative-worker="${esc(worker)}" data-pg-cumulative-date="${date}" data-pg-cumulative-product="${esc(entry.product)}"`;
+ const title=entry=>esc(pgCumulativeTitle(worker,entry.date,[entry]));
+ return `<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-worker="${esc(worker)}"><div class="pgAxisLabel pgCumulativeLabel" title="제품명과 작업 누적 · 제품명이나 숫자를 누르면 상세 확인"><b class="pgCumulativeAxisDefault">작업 누적 · 조</b><div class="pgCumulativeAxisNames"></div></div><div class="pgCumulativeTrack"><div class="pgDateCells">${dates.map(date=>{const entries=(days.get(date)||[]).slice().sort((a,b)=>a.product.localeCompare(b.product,'ko',{numeric:true})||String(a.jobId||'').localeCompare(String(b.jobId||''))),description=pgCumulativeTitle(worker,date,entries);return `<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(description)}" aria-label="${esc(description.replaceAll('\n',' '))}">${entries.map(entry=>`<button type="button" class="pgCumulativeNumber${fmt(entry.value).length>3?' pgCumulativeLong':''} ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" ${attributes(entry,date)} data-pg-cumulative-series="${esc(key(entry))}" data-pg-cumulative-index="${indices.get(date)}" data-pg-cumulative-kind="${entry.kind}" title="${title(entry)}" aria-label="${esc(pgCumulativeTitle(worker,date,[entry]).replaceAll('\n',' '))}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</button>`).join('')}</div>`}).join('')}</div><div class="pgCumulativeRunLabels">${[...series.values()].map(s=>`<button type="button" class="pgCumulativeRunLabel" ${attributes(s.entry)} data-pg-cumulative-series="${esc(s.key)}" data-pg-cumulative-first="${s.first}" data-pg-cumulative-last="${s.last}" title="${title(s.entry)}" aria-label="${esc(pgCumulativeTitle(worker,s.entry.date,[s.entry]).replaceAll('\n',' '))}">${esc(s.entry.product)}</button>`).join('')}</div></div></div>`;
+}
+function pgLayoutCumulativeRows(timeline=$('#pgTimeline'),dayWidth=34){
+ if(!timeline)return;const rows=[...(timeline.querySelectorAll?.('.pgCumulativeRow')||[])];if(!rows.length)return;
+ const canvas=pgLayoutCumulativeRows.canvas||(pgLayoutCumulativeRows.canvas=document.createElement('canvas')),measure=canvas.getContext('2d');
+ const plans=rows.map(row=>{
+  const numbers=[...row.querySelectorAll('.pgCumulativeNumber')],labels=[...row.querySelectorAll('.pgCumulativeRunLabel')],byKey=new Map();
+  for(const number of numbers){const key=number.dataset.pgCumulativeSeries;if(!byKey.has(key))byKey.set(key,[]);byKey.get(key).push(number)}
+  const series=labels.map(label=>{const style=getComputedStyle(label);if(measure)measure.font=style.font;return{key:label.dataset.pgCumulativeSeries,first:Number(label.dataset.pgCumulativeFirst),last:Number(label.dataset.pgCumulativeLast),labelWidth:(measure?measure.measureText(label.textContent).width:label.textContent.length*7)+10,label,numbers:byKey.get(label.dataset.pgCumulativeSeries)||[]}});
+  const layout=pgCumulativeLayout(series,dayWidth),heights=Array(layout.lanes).fill(12);
+  for(const item of layout.items)for(const number of item.numbers)heights[item.lane]=Math.max(heights[item.lane],Math.ceil(number.getBoundingClientRect().height));
+  return{row,layout,heights};
+ });
+ const set=(element,key,value)=>{if(element.style.getPropertyValue(key)!==value)element.style.setProperty(key,value)};
+ for(const {row,layout,heights}of plans){
+  row.dataset.pgCumulativeLanes=String(layout.lanes);set(row,'--pg-cumulative-lanes',String(layout.lanes));set(row,'--pg-cumulative-rows',heights.map(height=>height+'px').join(' '));set(row,'--pg-cumulative-height',heights.reduce((sum,height)=>sum+height,0)+'px');
+  const axes=row.querySelector('.pgCumulativeAxisNames');while(axes.children.length>layout.lanes)axes.lastElementChild.remove();while(axes.children.length<layout.lanes){const button=document.createElement('button');button.type='button';button.className='pgCumulativeAxisName';axes.appendChild(button)}
+  for(let lane=0;lane<layout.lanes;lane++){axes.children[lane].dataset.pgCumulativeLane=String(lane);set(axes.children[lane],'grid-row',String(lane+1))}
+  for(const item of layout.items){const lane=String(item.lane);item.label.dataset.pgCumulativeLane=lane;set(item.label,'left',item.labelStart*dayWidth+'px');set(item.label,'width',Math.max(0,item.columns*dayWidth-3)+'px');set(item.label,'top',heights.slice(0,item.lane).reduce((sum,height)=>sum+height,0)+'px');set(item.label,'height',heights[item.lane]+'px');for(const number of item.numbers){number.dataset.pgCumulativeLane=lane;set(number,'grid-row',String(item.lane+1))}}
+  row._pgCumulativeLayout={...layout,heights,dayWidth,axes:[...axes.children]};
+ }
+ pgSyncCumulativeLabels(timeline);
+}
+function pgSyncCumulativeLabels(timeline=$('#pgTimeline')){
+ if(!timeline)return;
+ for(const row of timeline.querySelectorAll?.('.pgCumulativeRow')||[]){
+  const layout=row._pgCumulativeLayout;if(!layout)continue;let active=false;const chosen=new Set();
+  for(let lane=0;lane<layout.lanes;lane++){
+   const button=layout.axes[lane],item=pgCumulativeAxisItem(layout.items,lane,timeline.scrollLeft,layout.dayWidth);button.hidden=!item;if(!item)continue;active=true;chosen.add(item);
+   const point=item.numbers.find(number=>Number(number.dataset.pgCumulativeIndex)*layout.dayWidth>=timeline.scrollLeft)||item.numbers.at(-1)||item.label;
+   if(button.textContent!==item.label.textContent)button.textContent=item.label.textContent;
+   for(const key of ['pgCumulativeSeries','pgCumulativeJob','pgCumulativeWorker','pgCumulativeDate','pgCumulativeProduct'])if(button.dataset[key]!==point.dataset[key])button.dataset[key]=point.dataset[key];
+   if(button.title!==point.title)button.title=point.title;const aria=point.getAttribute('aria-label')||point.title;if(button.getAttribute('aria-label')!==aria)button.setAttribute('aria-label',aria);
+  }
+  for(const item of layout.items)item.label.hidden=item.axis||chosen.has(item);
+  row.querySelector('.pgCumulativeLabel').dataset.pgAxisActive=String(active);
+ }
 }
 function pgOpenCumulativeInfo(worker,date,jobId){
  const dialog=$('#pgCumulativeInfoDialog'),points=($('#pgTimeline')?._pgCumulative?.get(worker)||[]).filter(p=>p.date===date&&String(p.jobId||'')===jobId);if(!dialog||!points.length)return;
@@ -4048,7 +4140,7 @@ function pgSyncScrollDock(){
  dock.querySelector('[data-pg-command="scroll-left"]').disabled=timeline.scrollLeft<=1;
  dock.querySelector('[data-pg-command="scroll-right"]').disabled=timeline.scrollLeft>=extent-1;
 }
-function pgQueueScrollDock(){if(pgDockFrame)return;pgDockFrame=requestAnimationFrame(()=>{pgDockFrame=0;pgSyncScrollDock()})}
+function pgQueueScrollDock(){if(pgDockFrame)return;pgDockFrame=requestAnimationFrame(()=>{pgDockFrame=0;pgSyncCumulativeLabels();pgSyncScrollDock()})}
 function pgBindScrollDock(){
  const track=$('#pgScrollTrack');if(!track)return;
  track.onscroll=()=>{const timeline=$('#pgTimeline');if(!timeline||track._pgMirroredLeft!=null&&Math.abs(track.scrollLeft-track._pgMirroredLeft)<1){delete track._pgMirroredLeft;return}delete track._pgMirroredLeft;if(Math.abs(timeline.scrollLeft-track.scrollLeft)>.5)timeline.scrollLeft=track.scrollLeft;pgQueueScrollDock()};
@@ -4061,7 +4153,7 @@ function pgReflow(){
  if(Math.abs(width-old)>.005||!Number.isFinite(old)){root.style.setProperty('--pg-day',width+'px');root.dataset.dayWidth=String(width)}
  if(timeline._pgPendingLeft!=null){timeline.scrollLeft=timeline._pgPendingLeft;delete timeline._pgPendingLeft;delete v.restoreNormalScroll;pgRememberTimeline()}
  root.classList.toggle('pgNarrowDays',width<22);
- pgFocusSize(root,timeline);if(typeof pgDrawPairs==='function')pgDrawPairs(timeline);pgSyncScrollDock();
+ pgLayoutCumulativeRows(timeline,width);pgFocusSize(root,timeline);if(typeof pgDrawPairs==='function')pgDrawPairs(timeline);pgSyncScrollDock();
  const hint=$('#pgFitHint');if(hint){const overflow=label+days*width>timeline.clientWidth+1;hint.textContent=pgMobileLayout()?'좌우·위아래로 밀어서 이동 · 선택 후 버튼으로 수정':fit?(overflow?'가독성을 위해 최소 간격 유지 · 좌우로 이동':'선택한 기간이 화면 너비에 맞습니다.'):'날짜 칸을 넓게 표시합니다.'}
 }
 function pgQueueReflow(){if(pgResizeFrame)return;pgResizeFrame=requestAnimationFrame(()=>{pgResizeFrame=0;pgReflow()})}
@@ -4467,13 +4559,13 @@ function pgDirectOpenForm(){
  const session=pgDirectState.session,g=pgDirectState.g;if(!session)return;
  const creating=session.command.type==='create',original=creating?session.command:pgKeep(g.draft).find(r=>r.id===session.command.id),period=session.period||{start:session.command.start,end:session.command.end};
  session.form??={...C.clone(original),...(session.command.fields||{}),end:session.command.fields?.end||original.end||period.end,machines:C.clone(session.command.fields?.machines||original.machines||[{name:'',qty:null}])};
- session.initialForm??=C.clone(session.form);pgDirectRenderForm(g);
+ session.initialForm??=C.clone(session.form);if(pgRouting(session.form))pgDirectPreviewRate(g,'routing');pgDirectRenderForm(g);
  if(session.mode==='edit'&&!session.history&&session.form.manual&&!pgRouting(session.form)&&session.form.daily>0&&session.form.plan>0&&session.endMode==null)pgDirectPreviewRate(g,'daily');
 }
 function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');const access=pgDirectAccess(g,id,session.sourceMonth,null,true);if(!access.ok)throw Error(access.reason);session.history=!!access.history;session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;session.endMode=null;session.rateNotice=null;pgDirectOpenForm()}
 function pgDirectPreviewRate(g,field){
  const s=pgDirectState.session,root=pgDirectState.root;if(!s?.form)return;
- if(pgRouting(s.form)){try{const candidate={...s.form,id:s.command.id||s.form.id||'routing-preview',_ownerMonth:s.form._ownerMonth||month},snapshot=pgDirectSnapshot(g,[candidate]),result=pgDraftResult(snapshot),bars=result.rows.filter(r=>r.jobId===candidate.id),ends=bars.map(r=>r.end).filter(C.iso).sort();s.routingPreviewEnd=ends.at(-1)||'';s.rateNotice=s.routingPreviewEnd?'생산줄 순서와 호기 조수 기준 → '+s.routingPreviewEnd+' 예상 종료':'각 호기의 조건을 입력하면 종료일을 계산합니다.';const input=root?.querySelector('[data-pd-field="end"]');if(input)input.value=s.routingPreviewEnd;const heading=root?.querySelector('.pgDirectHeading span');if(heading)heading.textContent=s.rateNotice;}catch(e){const error=root?.querySelector('.pgDirectError');if(error)error.textContent=e.message;}return;}
+ if(pgRouting(s.form)){s.routingPreviewStart='';s.routingPreviewEnd='';try{const candidate={...s.form,id:s.command.id||s.form.id||'routing-preview',_ownerMonth:s.form._ownerMonth||month},snapshot=pgDirectSnapshot(g,[candidate]),result=pgDraftResult(snapshot),bars=result.rows.filter(r=>r.jobId===candidate.id),starts=bars.map(r=>r.start).filter(C.iso).sort(),ends=bars.filter(r=>!r.actualOnly).map(r=>r.end).filter(C.iso).sort();s.routingPreviewStart=starts[0]||'';s.routingPreviewEnd=ends.at(-1)||'';s.rateNotice=s.routingPreviewEnd?'생산줄 순서와 호기 조수 기준 → '+s.routingPreviewEnd+' 예상 종료':'각 호기의 조건을 입력하면 종료일을 계산합니다.';const input=root?.querySelector('[data-pd-field="end"]');if(input)input.value=s.routingPreviewEnd;const start=root?.querySelector('[data-pd-field="start"]');if(start&&pgRoutingFollower(s.form,pgKeep(g.draft)))start.value=s.routingPreviewStart;const heading=root?.querySelector('.pgDirectHeading span');if(heading)heading.textContent=s.rateNotice;}catch(e){const error=root?.querySelector('.pgDirectError');if(error)error.textContent=e.message;}return;}
  if(s.history)return;
  if(s.command.type==='create'){if(field==='daily')s.endMode='daily';if(field==='end')s.endMode='date';if(s.endMode==='daily'&&s.form.daily>0&&s.form.plan>0&&C.iso(s.form.start))try{const computed=pgDirectRatePeriod(g,[s.form],s.form,s.form,{start:s.form.start,end:s.form.end},'daily');if(computed){s.form.end=computed.end;const input=root?.querySelector('[data-pd-field="end"]');if(input)input.value=computed.end;}}catch(e){const error=root?.querySelector('.pgDirectError');if(error)error.textContent=e.message;}return;}
  if(field==='end'){s.endMode='date';s.rateNotice='직접 입력한 종료일을 적용합니다.';}
@@ -4491,7 +4583,7 @@ function pgDirectRenderForm(g){
  const session=pgDirectState.session,root=pgDirectState.root;if(!session||!session.form||!root)return;const reopening=!!root.querySelector('.pgDirectEditor'),viewport={x:window.scrollX||0,y:window.scrollY||0};root.querySelectorAll('.pgDirectEditor').forEach(el=>el.remove());
  const value=session.form,creating=session.command.type==='create',row=pgDirectRow(value.worker||session.worker);
  const form=document.createElement('div');form.className='pgGridRow pgDirectEditor';const linked=!!value.sourceRowId,manual=creating||!!value.manual,scope=session.members.length?((session.members.length>1?'동시 '+session.members.length+'품목 · ':'')+session.members.reduce((n,r)=>n+r.machines.length,0)+'호기'+(session.history?' · 선택 품목의 조건 수정':' 함께 기간 변경')):'새 수기 계획';
- form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'수기 입력':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading"><strong>${esc(scope)}</strong><span>하루 조 변경 시 종료일 계산 · 종료일 직접 수정 가능 · Esc로 취소</span></div><div class="pgDirectFields"><label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label><label>작업자<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>${pgRoutingFollower(value,pgKeep(g.draft))?'앞 품목 종료 후 시작':'시작일'}<input type="date" data-pd-field="start" value="${esc(pgRoutingFollower(value,pgKeep(g.draft))?session.period?.start||value.start||'':value.start||'')}" ${pgRoutingFollower(value,pgKeep(g.draft))?'disabled title="앞 품목 종료 후 다음 생산일에 자동 시작"':''}></label><label>${pgRouting(value)?'예상 종료':manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(pgRouting(value)?session.routingPreviewEnd||session.period?.end||value.end||'':value.end||'')}" ${manual&&!pgRouting(value)?'':'disabled'}></label><label>품목 계획 조<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label><label ${pgRouting(value)?.mode==='parallel'?'hidden':''}>하루 조<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" ${manual?'placeholder="기간 직접 지정 시 생략"':''}></label></div>${pgDirectDisplayHTML(session)}<details class="pgProductionOptions"><summary>호기 순서·이어 만들 품목 설정</summary><section class="pgRoutingPanel">${pgRoutingFieldsHTML(value,pgKeep(g.draft),'data-pd-routing',g.locked(),false)}</section></details>${pgDirectMachinesHTML(value)}${pgDirectCompanionsHTML(session)}<div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 지정하는 수기 계획으로 전환</label>`:''}<span class="pgDirectError" role="status"></span><div><button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary">${session.conversion?'수기 전환 적용':'표에 적용'}</button></div></div></div>`;
+ form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'수기 입력':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading"><strong>${esc(scope)}</strong><span>하루 조 변경 시 종료일 계산 · 종료일 직접 수정 가능 · Esc로 취소</span></div><div class="pgDirectFields"><label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label><label>작업자<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>${pgRoutingFollower(value,pgKeep(g.draft))?'앞 품목 종료 후 시작':'시작일'}<input type="date" data-pd-field="start" value="${esc(pgRoutingFollower(value,pgKeep(g.draft))||session.history&&pgRouting(value)?session.routingPreviewStart||'':value.start||'')}" ${pgRoutingFollower(value,pgKeep(g.draft))?'disabled title="앞 품목 종료 후 다음 생산일에 자동 시작"':''}></label><label>${pgRouting(value)?'예상 종료':manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(pgRouting(value)?session.routingPreviewEnd||'':value.end||'')}" ${manual&&!pgRouting(value)?'':'disabled'}></label><label>품목 계획 조<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label><label ${pgRouting(value)?.mode==='parallel'?'hidden':''}>하루 조<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" ${manual?'placeholder="기간 직접 지정 시 생략"':''}></label></div>${pgDirectDisplayHTML(session)}<details class="pgProductionOptions"><summary>호기 순서·이어 만들 품목 설정</summary><section class="pgRoutingPanel">${pgRoutingFieldsHTML(value,pgKeep(g.draft),'data-pd-routing',g.locked(),false)}</section></details>${pgDirectMachinesHTML(value)}${pgDirectCompanionsHTML(session)}<div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 지정하는 수기 계획으로 전환</label>`:''}<span class="pgDirectError" role="status"></span><div><button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary">${session.conversion?'수기 전환 적용':'표에 적용'}</button></div></div></div>`;
  if(session.history){for(const el of form.querySelectorAll('[data-pd-field="product"],[data-pd-field="worker"],[data-pd-field="start"],[data-pd-field="end"],[data-pd-field="plan"],[data-pd-manual]'))el.disabled=true;session.rateNotice='생산 중 · 하루 조수와 호기 배정 수정 가능 · 실제 시작일과 실적은 유지';}
  if(session.members.length>1)form.querySelector('.pgDirectFields').insertAdjacentHTML('afterbegin',`<label>편집 품목<select data-pd-member ${session.conversion?'disabled':''}>${session.members.map(r=>`<option value="${esc(r.id)}" ${r.id===session.command.id?'selected':''} ${pgMeta(r).complete||pgMeta(r).stopped?'disabled':''}>${esc(r.product)} · ${esc(r.machines.map(m=>m.name).join(', '))}</option>`).join('')}</select></label>`);
  if(session.rateNotice||session.notice)form.querySelector('.pgDirectHeading span').textContent=session.rateNotice||session.notice;

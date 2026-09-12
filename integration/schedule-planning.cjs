@@ -70,6 +70,19 @@ function reservationContext(s,k,normalized=null,knownContinuations=null){
  return{links,candidates,selectable,issues,controlled};
 }
 function reservationLinks(s,k){return reservationContext(s,k)}
+function fieldScheduleOverrideMatches(override,signature){
+ if(!override||!signature)return false;if(override===signature)return true;
+ try{const old=JSON.parse(override),current=JSON.parse(signature);return Array.isArray(old)&&old.length===2&&Array.isArray(current)&&old[0]===current[0]&&JSON.stringify(old[1])===JSON.stringify(current[1])&&!current[2]}catch{return false}
+}
+function activeRoutingOverride(job){const override=job.fieldScheduleOverrides?.routing,signature=job.fieldScheduleSource?.routing?.signature;return !!override&&(!signature||fieldScheduleOverrideMatches(override,signature))}
+// Product grouping is independent of the machine scheduling mode. An explicit
+// empty routing group remains an individual job even if the old group is saved.
+function productionGroupKey(job,row={}){
+ const id=String(job.id||row.jobId||row.id||'');
+ if(!job.routing&&row.explicitRouting)return 'routing:'+String(row.routingGroup||'job:'+id);
+ const group=String(job.routing?job.routing.group||'':job.group||'');
+ return Number(group)>0||group.startsWith('manual:')?'group:'+group:'job:'+id;
+}
 // Optional field conditions belong only to records owned by this worker/product
 // phase. Empty parts retain known conditions; unrelated edits do not reset them.
 function applyFieldScheduleConditions(j){
@@ -80,7 +93,7 @@ function applyFieldScheduleConditions(j){
   if(typeof v.daily==='number'&&Number.isFinite(v.daily)&&v.daily>0){daily=v.daily;assign('daily',r,daily)}
   if(v.routing)try{assign('routing',r,normalizeRouting(v.routing))}catch{}
  }
- for(const field of['machines','daily','routing'])if(source[field]){let match=j.fieldScheduleOverrides?.[field]===source[field].signature;try{const old=JSON.parse(j.fieldScheduleOverrides?.[field]||'null');if(Array.isArray(old)&&old.length===2){const current=JSON.parse(source[field].signature);match=old[0]===current[0]&&JSON.stringify(old[1])===JSON.stringify(current[1])&&!current[2]}}catch{}if(!match)j[field]=clone(source[field].value)}
+ for(const field of['machines','daily','routing'])if(source[field]&&!fieldScheduleOverrideMatches(j.fieldScheduleOverrides?.[field],source[field].signature))j[field]=clone(source[field].value);
  if(Object.keys(source).length)j.fieldScheduleSource=source;else delete j.fieldScheduleSource;
 }
 function captureFieldScheduleOverrides(s,k,record,cachedJobs=null){
@@ -140,10 +153,10 @@ function computeJobs(s,k,context){const source=s.months[k],m={...source,rows:(so
  // Older field forms sent a machine mode without a product-group choice.
  // Keep the saved simultaneous reservation; a new explicit display choice is
  // never inferred or rewritten. This changes the derived jobs only.
- const legacyModeOnly=j=>j.routing&&!j.routing.group&&j.routing.barDisplay===undefined&&j.fieldScheduleSource?.routing&&j.fieldScheduleOverrides?.routing!==j.fieldScheduleSource.routing.signature;
+ const legacyModeOnly=j=>j.routing&&!j.routing.group&&j.routing.barDisplay===undefined&&j.fieldScheduleSource?.routing&&!activeRoutingOverride(j);
  const legacyGroups=new Map();
  for(const j of out){if(!(Number(j.group)>0||String(j.group).startsWith('manual:')))continue;const key=j.worker+'|'+j.group;if(!legacyGroups.has(key))legacyGroups.set(key,[]);legacyGroups.get(key).push(j)}
- const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!j.fieldScheduleOverrides?.routing;
+ const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!activeRoutingOverride(j);
  for(const members of legacyGroups.values())if(members.length>1&&members.some(legacyModeOnly)&&members.every(j=>!j.routing||legacyModeOnly(j)||sameLegacyRoute(j))){const used=new Set(members.filter(sameLegacyRoute).map(j=>j.routing.lane));members.sort((a,b)=>a.id.localeCompare(b.id));for(const j of members){if(sameLegacyRoute(j))continue;let lane=1;while(used.has(lane))lane++;if(lane>20)continue;used.add(lane);j.routing={schema:1,mode:j.routing?.mode||'sequential',group:j.group,lane,order:1};j.routingLegacyGroup=true}}
  return out;
 }
@@ -229,7 +242,8 @@ function routingSchedule(s,k,input,today,statusToday){
  for(const j of input){const group=key(j);if(!groups.has(group))groups.set(group,[]);groups.get(group).push(j)}
  function observed(j,group,message){
   warn(j,message);const start=j.firstActual||null,end=j.lastActual||start;if(!C.iso(start)||!C.iso(end))return;
-  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
+  const names=[...new Set((Array.isArray(j.machines)?j.machines:[]).map(m=>typeof m?.name==='string'?m.name.trim():'').filter(Boolean))];
+  rows.push({id:j.id+':routing-actual',jobId:j.id,worker:j.worker,product:j.product,machine:names.join(' / ')||'호기 확인',qty:j.totalPlan,plan:j.totalPlan,produced:j.produced,remaining:j.remaining,start,end,groupStart:start,groupEnd:end,groupId:group+'|job:'+j.id,dry:null,actualOnly:true,explicitRouting:true,routingBarDisplay:j.routing?.barDisplay||'combined',routingGroup:group,routingLane:j.routing?.lane||1,routingOrder:j.routing?.order||1,status:j.stopped?'중단':j.complete?'생산완료':'생산중',projected:false,manual:!!j.manual,source:'생산일보',description:message});
  }
  function calculate(j,group,predecessor){
   if(j.carryBlocked){observed(j,group,j.carryReview);return null}
@@ -461,15 +475,16 @@ function timelineCumulative(s,k,result,first,last){
   }
   return{job:j,owner,parts,start,end,points,basis,warning};
  }
- for(const[id,parts]of rowMap){const j=jobMap.get(id);if(!j||!j.worker)continue;const owner=j._ownerMonth||k,entry=series(j,owner,parts),group=j.routing?'routing:'+(j.routing.group||'job:'+j.id):parts[0].groupId||'job:'+j.id,gkey=key(owner,j.worker+'\0'+group);if(!groups.has(gkey))groups.set(gkey,[]);groups.get(gkey).push(entry)}
+ for(const[id,parts]of rowMap){const j=jobMap.get(id);if(!j||!j.worker)continue;const owner=j._ownerMonth||k,entry=series(j,owner,parts),group=productionGroupKey(j,parts[0]),gkey=key(owner,j.worker+'\0'+group);if(!groups.has(gkey))groups.set(gkey,[]);groups.get(gkey).push(entry)}
  const pointEntry=(group,entry,date,point,members)=>({worker:entry.job.worker,date,value:point.value,kind:point.kind,product:entry.job.product,jobId:entry.job.id,groupId:group,plan:entry.job.totalPlan,basis:entry.basis,warning:entry.warning,members:members.map(m=>({product:m.job.product,jobId:m.job.id,value:m.points.get(date)?.value??null,kind:m.points.get(date)?.kind||null}))});
  for(const[group,members]of groups){
   let selected;
-  if(!members[0].job.routing){const leader=pacingMember(members.map(m=>m.job));selected=members.filter(m=>m.job===leader)}
+  if(members.every(m=>!m.job.routing)){const leader=pacingMember(members.map(m=>m.job));selected=members.filter(m=>m.job===leader)}
   else{
    // A -> C is one sequential lane while B continues independently. Follow
    // the lane that finishes last, then reset the number when its product changes.
-   const lanes=new Map();for(const member of members){const lane=member.job.routing.lane;if(!lanes.has(lane))lanes.set(lane,[]);lanes.get(lane).push(member)}
+   const lanes=new Map();for(const member of members.filter(m=>m.job.routing)){const lane='routing:'+member.job.routing.lane;if(!lanes.has(lane))lanes.set(lane,[]);lanes.get(lane).push(member)}
+   const legacy=members.filter(m=>!m.job.routing);if(legacy.length){const leader=pacingMember(legacy.map(m=>m.job));lanes.set('legacy',legacy.filter(m=>m.job===leader))}
    const ranked=[...lanes.values()].sort((a,b)=>b.map(m=>m.end).sort().at(-1).localeCompare(a.map(m=>m.end).sort().at(-1))||Math.max(...b.map(m=>m.job.remaining||0))-Math.max(...a.map(m=>m.job.remaining||0))||Math.max(...b.map(m=>m.job.totalPlan||0))-Math.max(...a.map(m=>m.job.totalPlan||0)));
    selected=ranked[0]||[];
   }
@@ -488,5 +503,5 @@ function timelineCumulative(s,k,result,first,last){
 }
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
