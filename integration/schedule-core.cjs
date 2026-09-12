@@ -57,17 +57,33 @@ function savedScheduleDryMarkers(sheets=[]){
 }
 const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
+/* PRODUCT_NAMES_SHARED_START */
+const PRODUCT_NAME_POLICY='management-product-names-v1';
+function productNameIndex(products,extraAliases=[]){
+ const clean=value=>String(value??'').trim(),compact=value=>clean(value).normalize('NFKC').toUpperCase().replace(/[\s._-]+/g,''),current=new Map(),ids=new Map(),aliases=new Map();
+ const add=(map,key,product)=>{if(!key)return;if(!map.has(key))map.set(key,product);else if(map.get(key)!==product)map.set(key,null)};
+ for(const product of products||[]){if(product.deleted)continue;const name=clean(product.name);if(!name)continue;add(current,name,product);if(product.id)add(ids,product.id,product)}
+ for(const product of products||[]){if(product.deleted)continue;for(const value of [...(product.renameFrom||[]),...(product.aliases||[])]){const name=clean(typeof value==='string'?value:value?.name);if(!current.has(name))add(aliases,name,product)}}
+ for(const alias of extraAliases||[]){const product=ids.get(alias.productId),name=clean(alias.name);if(product&&!current.has(name))add(aliases,name,product)}
+ let normalized=null,normalizedAliases,models;
+ const prepare=()=>{if(normalized)return;normalized=new Map();normalizedAliases=new Map();models=new Map();for(const [name,product]of current){add(normalized,compact(name),product);const model=/^([A-Z]{2}\d+)[A-Z][A-Z0-9]*$/.exec(compact(name));if(model)add(models,model[1],product)}for(const [name,product]of aliases)add(normalizedAliases,compact(name),product)};
+ const resolve=value=>{const name=clean(value);if(current.has(name))return current.get(name);prepare();const key=compact(name);if(normalized.has(key))return normalized.get(key);if(aliases.has(name))return aliases.get(name);if(normalizedAliases.has(key))return normalizedAliases.get(key);return /^[A-Z]{2}\d+$/.test(key)?models.get(key)||null:null};
+ return{current,ids,aliases,names:new Map([...current,...[...aliases].filter(([,p])=>p)]),resolve,compact,policy:PRODUCT_NAME_POLICY};
+}
+/* PRODUCT_NAMES_SHARED_END */
 // Formal names take precedence; unique saved aliases resolve to the same product.
 // Registering an alias never merges a different current formal product.
+// Product indexes live only for one synchronous read calculation, never a saved state.
+const catalogReadScopes=new WeakMap();
+function withCatalogLookup(state,read){if(catalogReadScopes.has(state))return read();catalogReadScopes.set(state,{products:null,lookup:null});try{return read()}finally{catalogReadScopes.delete(state)}}
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
 function catalogLookup(state){
- const current=new Map(),names=new Map(),ambiguous=new Set();
- for(const p of state.products||[]){if(p.deleted)continue;const key=text(p.name);if(current.has(key))throw Error('현재 품명이 중복됩니다: '+key);current.set(key,p)}
- for(const p of current.values())for(const key of new Set([...(p.renameFrom||[]),...(p.aliases||[]).map(a=>typeof a==='string'?a:a?.name)].map(text).filter(Boolean))){if(current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior!==p){names.delete(key);ambiguous.add(key)}else names.set(key,p)}
- const product=value=>current.get(text(value))||names.get(text(value))||null;
- return{product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};
+ const scope=catalogReadScopes.get(state);if(scope?.lookup&&scope.products===state.products)return scope.lookup;
+ const ix=productNameIndex(state.products),current=ix.current;for(const [name,product]of current)if(!product)throw Error('현재 품명이 중복됩니다: '+name);
+ const product=value=>ix.resolve(value)||null;
+ const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}return lookup;
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
@@ -205,6 +221,6 @@ function completionValue(value){if(value==null)return null;if(!value||typeof val
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);return true}
 function updateDaily(state,key,row){const m=state.months[key];if(!m||m.closed)throw Error('마감된 월은 수정할 수 없습니다.');const i=m.rows.findIndex(x=>x.id===row.id),before=i<0?null:clone(m.rows[i]);const next={...before,...row,id:row.id||id(),rev:(before?.rev||0)+1};if(before?.plan>0&&next.plan===0&&next.productionPlanQty==null)next.productionPlanQty=before.plan;validateRecord(next);if(!next.date.startsWith(key))throw Error('선택한 월과 입력 날짜가 다릅니다.');if(Object.prototype.hasOwnProperty.call(next,'productionCompletion'))next.productionCompletion=completionValue(next.productionCompletion);if(next.productionCompletion&&root.SchedulePlanning){const staged={...state,months:{...state.months,[key]:{...m,rows:i<0?[...m.rows,next]:m.rows.map(r=>r.id===next.id?next:r)}}};if(root.SchedulePlanning.jobs(staged,key).filter(j=>j.records?.some(r=>r.id===next.id)).length!==1)throw Error('완료할 작업의 시작 계획 또는 연결을 확인해 주세요.')}if(i<0)m.rows.push(next);else m.rows[i]=next;m.rev++;const change={id:id(),at:new Date().toISOString(),type:'생산 입력',kind:'daily',month:key,before,after:clone(next)};state.changes??=[];state.changes.push(change);m.history??=[];m.history.push(clone(change));return next}
 function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[])],names=[...new Set(all.map(r=>r.worker).filter(Boolean))];return names.map(worker=>{const rows=all.filter(r=>r.worker===worker),headers=rows.filter(r=>r.header||r.explicit?.day||r.explicit?.worker||r.explicit?.hours),rawHours=sum(rows,r=>r.hours),max=Math.max(0,...headers.map(r=>r.hours||0)),adjusted=sum(headers,r=>r.hours)+max*headers.filter(r=>!r.hours).length-1.5*headers.length,explicit=rows.filter(r=>r.explicit?.worker),injectionDays=new Set(explicit.filter(r=>r.explicit?.day&&r.explicit?.hours&&r.explicit?.pours).map(r=>r.date)).size,qtyExplicit=sum(explicit,r=>r.pours),kg=sum(rows,r=>daily(r).plaster);return{worker,kg,quantity:sum(rows.filter(r=>!catalogIdentity(s,r.product).includes('부속')),r=>r.pours),defectKg:sum(rows,r=>daily(r).defect),rawHours,workingDays:new Set(explicit.map(r=>r.date)).size,adjustedHours:adjusted,hourly:adjusted>0?kg/adjusted:null,cycle:qtyExplicit>0?(sum(explicit,r=>r.hours)-1.5*injectionDays)/qtyExplicit:null}})}
-root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);

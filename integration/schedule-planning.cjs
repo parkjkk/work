@@ -111,7 +111,7 @@ function captureReservationBindings(s,k){
  for(const link of links.values()){const row=m.rows.find(r=>r.id===link.rowId),job=active.get(link.jobId);if(link.explicit||!job?.firstActual||row?.jobId||saved.some(b=>b.rowId===link.rowId))continue;added.push({rowId:link.rowId,jobId:link.jobId,worker:row.worker,product:row.product,policy:'reservation-nearest-v2'})}
  if(added.length)m.reservationBindings=[...saved,...added];return added.length;
 }
-function jobs(s,k,context=null){const scope=context||{jobs:new Map()};if(scope.jobs.has(k))return scope.jobs.get(k);const result=computeJobs(s,k,scope);scope.jobs.set(k,result);return result;}
+function jobs(s,k,context=null){return C.withCatalogLookup(s,()=>{const scope=context||{jobs:new Map()};if(scope.jobs.has(k))return scope.jobs.get(k);const result=computeJobs(s,k,scope);scope.jobs.set(k,result);return result;})}
 function reconcileCarry(s,k,j,context){
  for(const field of['effectivePreviousProduced','carryReview','carryBlocked','carryTerminal','carryUnlinkedRows','carryReconciliation'])delete j[field];
  if(!j.carried||!j.originId||!Number.isFinite(j.previousProduced))return;
@@ -459,7 +459,8 @@ function scheduleBase(s,k,requestedToday,options={}){const today=C.iso(options.a
  return{rows:displayed.sort((a,b)=>a.start.localeCompare(b.start)),jobs:all,warnings,asOf:today}}
 // Calculate one snapshot as a batch: every open month shares the same worker
 // chain, while source jobs and closed snapshots keep their stored dates.
-function scheduleAll(s,requestedToday,options={}){
+function scheduleAll(s,requestedToday,options={}){return C.withCatalogLookup(s,()=>scheduleAllRead(s,requestedToday,options))}
+function scheduleAllRead(s,requestedToday,options={}){
  const months=Object.keys(s.months||{}).sort(),base={},result={},effective=new Map(),entries=[],selected=[],superseded=new Set(),layouts=new Map();
  const jobKey=(owner,id)=>owner+'\0'+id,sourceIdentity=j=>(j.originId||j.id)+'\0'+j.worker+'\0'+C.catalogIdentity(s,j.product),hasActual=j=>!!j.firstActual||j.produced>0||j.previousProduced>0;
  const settings=(owner,extra={})=>({...options,...(options.asOfMonth&&options.asOfMonth!==owner?{asOf:undefined}:{}),...extra});

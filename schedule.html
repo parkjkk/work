@@ -628,7 +628,9 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .headerRight{min-width:0;display:flex;justify-content:flex-end;align-items:flex-end}
  body.sheetWorkspace .headerRight small{display:block;max-width:100%;font-size:11px;line-height:1.45;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;text-align:right}
  body.sheetWorkspace .headerRight>.badge{display:none}
- body.sheetWorkspace .layout>aside{padding:3px 6px}
+ body.sheetWorkspace .layout>aside{position:sticky;top:0;z-index:45;padding:3px 6px;background:#f5f7fc;box-shadow:0 2px 6px #23334d14}
+ html:has(body.sheetWorkspace){scroll-padding-top:100px;scroll-padding-bottom:80px}
+ body.sheetWorkspace #main :is(button,input,select,textarea,summary){scroll-margin-top:100px}
  body.sheetWorkspace #nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;overflow:visible;padding:0}
  body.sheetWorkspace #nav button{min-width:0;min-height:44px;padding:8px 2px;font-size:13px;line-height:1.3;white-space:normal;word-break:keep-all;overflow-wrap:normal;text-align:center}
  body.sheetWorkspace #nav button span{display:none}
@@ -860,7 +862,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
 
 /* These controls are added for mobile only; they never enter desktop or print layouts. */
 @media screen and (min-width:721px),print{
- .mobileTools,.mobileScrollHint,.pgMobileActions{display:none!important}
+ .mobileTools,.mobileScrollHint,.pgMobileActions,#mobileSaveDock{display:none!important}
 }
 
 @media screen and (max-width:420px){
@@ -1138,6 +1140,15 @@ body.sheetWorkspace .productionProgress>button[data-sheet-view-command="producti
 body.sheetWorkspace .productionProgress>button[data-sheet-view-command="machineActuals"]{grid-column:1/-1;grid-row:4;justify-self:start;min-width:0;margin:3px 0 0;padding:3px 6px}
 body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-sheet-view-command="productionJobLink"],[data-sheet-view-command="machineActuals"]){flex-basis:auto;margin-left:0}
 [data-machine-actual-row]+[data-machine-actual-row]{margin-top:10px}
+}
+
+/* The original editor remains the save owner; this small dock only reaches it. */
+@media screen and (max-width:720px){
+ body.sheetWorkspace.mobileHasSaveDock{padding-bottom:76px}
+ body.sheetWorkspace #mobileSaveDock:not([hidden]){position:fixed;z-index:50;left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #cbd7e8;border-radius:10px;background:#f8fbff;box-shadow:0 3px 18px #17364a25}
+ body.sheetWorkspace #mobileSaveDock>span{min-width:0;line-height:1.4;font-size:12px;color:#405873;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ body.sheetWorkspace #mobileSaveDock button{flex:0 0 auto;min-width:108px;font-size:14px;padding:8px 12px}
+ body.sheetWorkspace:is(.workspaceFocused,.pgFocusMode) #mobileSaveDock{display:none!important}
 }
 
 /* Visual finish only. Responsive geometry, printing and schedule meaning colors stay in their own styles. */
@@ -1433,17 +1444,33 @@ function savedScheduleDryMarkers(sheets=[]){
 }
 const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
+/* PRODUCT_NAMES_SHARED_START */
+const PRODUCT_NAME_POLICY='management-product-names-v1';
+function productNameIndex(products,extraAliases=[]){
+ const clean=value=>String(value??'').trim(),compact=value=>clean(value).normalize('NFKC').toUpperCase().replace(/[\s._-]+/g,''),current=new Map(),ids=new Map(),aliases=new Map();
+ const add=(map,key,product)=>{if(!key)return;if(!map.has(key))map.set(key,product);else if(map.get(key)!==product)map.set(key,null)};
+ for(const product of products||[]){if(product.deleted)continue;const name=clean(product.name);if(!name)continue;add(current,name,product);if(product.id)add(ids,product.id,product)}
+ for(const product of products||[]){if(product.deleted)continue;for(const value of [...(product.renameFrom||[]),...(product.aliases||[])]){const name=clean(typeof value==='string'?value:value?.name);if(!current.has(name))add(aliases,name,product)}}
+ for(const alias of extraAliases||[]){const product=ids.get(alias.productId),name=clean(alias.name);if(product&&!current.has(name))add(aliases,name,product)}
+ let normalized=null,normalizedAliases,models;
+ const prepare=()=>{if(normalized)return;normalized=new Map();normalizedAliases=new Map();models=new Map();for(const [name,product]of current){add(normalized,compact(name),product);const model=/^([A-Z]{2}\d+)[A-Z][A-Z0-9]*$/.exec(compact(name));if(model)add(models,model[1],product)}for(const [name,product]of aliases)add(normalizedAliases,compact(name),product)};
+ const resolve=value=>{const name=clean(value);if(current.has(name))return current.get(name);prepare();const key=compact(name);if(normalized.has(key))return normalized.get(key);if(aliases.has(name))return aliases.get(name);if(normalizedAliases.has(key))return normalizedAliases.get(key);return /^[A-Z]{2}\d+$/.test(key)?models.get(key)||null:null};
+ return{current,ids,aliases,names:new Map([...current,...[...aliases].filter(([,p])=>p)]),resolve,compact,policy:PRODUCT_NAME_POLICY};
+}
+/* PRODUCT_NAMES_SHARED_END */
 // Formal names take precedence; unique saved aliases resolve to the same product.
 // Registering an alias never merges a different current formal product.
+// Product indexes live only for one synchronous read calculation, never a saved state.
+const catalogReadScopes=new WeakMap();
+function withCatalogLookup(state,read){if(catalogReadScopes.has(state))return read();catalogReadScopes.set(state,{products:null,lookup:null});try{return read()}finally{catalogReadScopes.delete(state)}}
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
 function catalogLookup(state){
- const current=new Map(),names=new Map(),ambiguous=new Set();
- for(const p of state.products||[]){if(p.deleted)continue;const key=text(p.name);if(current.has(key))throw Error('현재 품명이 중복됩니다: '+key);current.set(key,p)}
- for(const p of current.values())for(const key of new Set([...(p.renameFrom||[]),...(p.aliases||[]).map(a=>typeof a==='string'?a:a?.name)].map(text).filter(Boolean))){if(current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior!==p){names.delete(key);ambiguous.add(key)}else names.set(key,p)}
- const product=value=>current.get(text(value))||names.get(text(value))||null;
- return{product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};
+ const scope=catalogReadScopes.get(state);if(scope?.lookup&&scope.products===state.products)return scope.lookup;
+ const ix=productNameIndex(state.products),current=ix.current;for(const [name,product]of current)if(!product)throw Error('현재 품명이 중복됩니다: '+name);
+ const product=value=>ix.resolve(value)||null;
+ const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}return lookup;
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
@@ -1581,7 +1608,7 @@ function completionValue(value){if(value==null)return null;if(!value||typeof val
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);return true}
 function updateDaily(state,key,row){const m=state.months[key];if(!m||m.closed)throw Error('마감된 월은 수정할 수 없습니다.');const i=m.rows.findIndex(x=>x.id===row.id),before=i<0?null:clone(m.rows[i]);const next={...before,...row,id:row.id||id(),rev:(before?.rev||0)+1};if(before?.plan>0&&next.plan===0&&next.productionPlanQty==null)next.productionPlanQty=before.plan;validateRecord(next);if(!next.date.startsWith(key))throw Error('선택한 월과 입력 날짜가 다릅니다.');if(Object.prototype.hasOwnProperty.call(next,'productionCompletion'))next.productionCompletion=completionValue(next.productionCompletion);if(next.productionCompletion&&root.SchedulePlanning){const staged={...state,months:{...state.months,[key]:{...m,rows:i<0?[...m.rows,next]:m.rows.map(r=>r.id===next.id?next:r)}}};if(root.SchedulePlanning.jobs(staged,key).filter(j=>j.records?.some(r=>r.id===next.id)).length!==1)throw Error('완료할 작업의 시작 계획 또는 연결을 확인해 주세요.')}if(i<0)m.rows.push(next);else m.rows[i]=next;m.rev++;const change={id:id(),at:new Date().toISOString(),type:'생산 입력',kind:'daily',month:key,before,after:clone(next)};state.changes??=[];state.changes.push(change);m.history??=[];m.history.push(clone(change));return next}
 function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[])],names=[...new Set(all.map(r=>r.worker).filter(Boolean))];return names.map(worker=>{const rows=all.filter(r=>r.worker===worker),headers=rows.filter(r=>r.header||r.explicit?.day||r.explicit?.worker||r.explicit?.hours),rawHours=sum(rows,r=>r.hours),max=Math.max(0,...headers.map(r=>r.hours||0)),adjusted=sum(headers,r=>r.hours)+max*headers.filter(r=>!r.hours).length-1.5*headers.length,explicit=rows.filter(r=>r.explicit?.worker),injectionDays=new Set(explicit.filter(r=>r.explicit?.day&&r.explicit?.hours&&r.explicit?.pours).map(r=>r.date)).size,qtyExplicit=sum(explicit,r=>r.pours),kg=sum(rows,r=>daily(r).plaster);return{worker,kg,quantity:sum(rows.filter(r=>!catalogIdentity(s,r.product).includes('부속')),r=>r.pours),defectKg:sum(rows,r=>daily(r).defect),rawHours,workingDays:new Set(explicit.map(r=>r.date)).size,adjustedHours:adjusted,hourly:adjusted>0?kg/adjusted:null,cycle:qtyExplicit>0?(sum(explicit,r=>r.hours)-1.5*injectionDays)/qtyExplicit:null}})}
-root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
 
@@ -1837,8 +1864,9 @@ class Workspace{
  async open({canApply,includeSyncStatus=false}={}){
   this.initialSyncStatus=null;
   // A report read before the ledger can describe this load, never a later unobserved commit.
-  const check=this.client.check(),statusRead=includeSyncStatus?this.client.get('meta/ilbo-sync.json',true).catch(()=>null):null;
-  await check;const syncStatus=statusRead?await optionalStatus(statusRead):null;
+  const check=this.client.check(),statusRead=includeSyncStatus?optionalStatus(this.client.get('meta/ilbo-sync.json',true).catch(()=>null)):null;
+  // Start the optional deadline with the connection check, not after it finishes.
+  await check;const syncStatus=statusRead?await statusRead:null;
   const cat=await this.client.get('meta/catalog.json',true);if(!cat.data){if(this.envelope.queue.length&&this.envelope.state){this.loaded=true;return this.envelope.state}if(this.envelope.state)throw Error('기존 저장소의 기준자료가 없어졌습니다. 신규자료로 덮어쓰지 않습니다.');this.loaded=true;this.empty=true;return null}
   if(cat.data.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':cat.data.records};
   for(const result of await readMonths(this.client,months)){state.months[result.key]=result.month;baseline[result.path]=result.records}
@@ -1980,7 +2008,7 @@ function captureReservationBindings(s,k){
  for(const link of links.values()){const row=m.rows.find(r=>r.id===link.rowId),job=active.get(link.jobId);if(link.explicit||!job?.firstActual||row?.jobId||saved.some(b=>b.rowId===link.rowId))continue;added.push({rowId:link.rowId,jobId:link.jobId,worker:row.worker,product:row.product,policy:'reservation-nearest-v2'})}
  if(added.length)m.reservationBindings=[...saved,...added];return added.length;
 }
-function jobs(s,k,context=null){const scope=context||{jobs:new Map()};if(scope.jobs.has(k))return scope.jobs.get(k);const result=computeJobs(s,k,scope);scope.jobs.set(k,result);return result;}
+function jobs(s,k,context=null){return C.withCatalogLookup(s,()=>{const scope=context||{jobs:new Map()};if(scope.jobs.has(k))return scope.jobs.get(k);const result=computeJobs(s,k,scope);scope.jobs.set(k,result);return result;})}
 function reconcileCarry(s,k,j,context){
  for(const field of['effectivePreviousProduced','carryReview','carryBlocked','carryTerminal','carryUnlinkedRows','carryReconciliation'])delete j[field];
  if(!j.carried||!j.originId||!Number.isFinite(j.previousProduced))return;
@@ -2328,7 +2356,8 @@ function scheduleBase(s,k,requestedToday,options={}){const today=C.iso(options.a
  return{rows:displayed.sort((a,b)=>a.start.localeCompare(b.start)),jobs:all,warnings,asOf:today}}
 // Calculate one snapshot as a batch: every open month shares the same worker
 // chain, while source jobs and closed snapshots keep their stored dates.
-function scheduleAll(s,requestedToday,options={}){
+function scheduleAll(s,requestedToday,options={}){return C.withCatalogLookup(s,()=>scheduleAllRead(s,requestedToday,options))}
+function scheduleAllRead(s,requestedToday,options={}){
  const months=Object.keys(s.months||{}).sort(),base={},result={},effective=new Map(),entries=[],selected=[],superseded=new Set(),layouts=new Map();
  const jobKey=(owner,id)=>owner+'\0'+id,sourceIdentity=j=>(j.originId||j.id)+'\0'+j.worker+'\0'+C.catalogIdentity(s,j.product),hasActual=j=>!!j.firstActual||j.produced>0||j.previousProduced>0;
  const settings=(owner,extra={})=>({...options,...(options.asOfMonth&&options.asOfMonth!==owner?{asOf:undefined}:{}),...extra});
@@ -3001,7 +3030,7 @@ function table(headers,rows){return`<div class="tableWrap"><table><thead><tr>${h
 const td=(s,cls='')=>`<td class="${cls}">${s}</td>`,tr=xs=>`<tr>${xs.join('')}</tr>`,metric=(label,n,unit,note)=>`<div class="stat"><div class="label">${label}</div><strong>${fmt(n)}<em>${unit}</em></strong><small>${note}</small></div>`;
 function head(title,sub,buttons=''){return`<div class="top"><div><h1>${title}</h1><div class="subtle">${sub}</div></div><div class="actions"><label><span class="mobileLabel">월 선택</span><select id="monthSel" aria-label="월 선택">${Object.keys(state.months).sort().reverse().map(k=>`<option ${month===k?'selected':''}>${k}</option>`).join('')}</select></label>${buttons}</div></div>`}
 function computed(){const rows=m().rows;return{kg:C.sum(rows,r=>C.daily(r).plaster),qty:C.sum(rows.filter(r=>!C.catalogIdentity(state,r.product).includes('부속')),r=>r.pours),defect:C.sum(rows,r=>C.daily(r).defect),stock:C.sum(C.inventory(state,month),r=>r.current),stockKg:C.sum(C.inventory(state,month),r=>r.kg)}}
-function render(){ if(typeof pgRememberTimeline==='function')pgRememberTimeline();document.body.classList.add('sheetWorkspace');$('#nav').innerHTML=tabs.filter(([id])=>id!=='source').map(([id,label],i)=>`<button data-page="${id}" class="${id===page?'active':''}" ${id===page?'aria-current="page"':''}><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span>${label}</button>`).join('');$('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(busy){toast('저장이 끝난 뒤 이동해 주세요.');return}page=b.dataset.page;filter='';render()});if((booting&&!connectionPreview)||!state){$('#main').innerHTML='<section class="card" role="status"><h1>보관자료 확인 중…</h1><p>선택한 메뉴는 자료를 확인한 뒤 열립니다.</p></section>';$('#saveState').textContent=connectionStatus;return}if(!month||!state.months[month])month=state.months[today().slice(0,7)]?today().slice(0,7):Object.keys(state.months).sort().at(-1);const views={home:homeView,daily:dailyView,schedule:scheduleView,stock:stockView,audit:auditView,report:reportView,master:masterView,source:sourceView,settings:settingsView};$('#main').innerHTML=localNotice()+views[page]();$('#monthSel')?.addEventListener('change',e=>{if(busy){e.target.value=month;toast('저장이 끝난 뒤 월을 바꿔 주세요.');return}month=e.target.value;filter='';render()});bindActions();bindPage();if(!connectionPreview)bindSheetGrids();if(typeof bindPlanGrid==='function')bindPlanGrid();if(typeof bindSecondaryGrids==='function')bindSecondaryGrids();if(typeof bindWorkspaceUI==='function')bindWorkspaceUI();if(typeof bindIlboIntegrationUI==='function')bindIlboIntegrationUI();$('#saveState').textContent=connectionStatus}
+function render(){ if(typeof pgRememberTimeline==='function')pgRememberTimeline();document.body.classList.add('sheetWorkspace');$('#nav').innerHTML=tabs.filter(([id])=>id!=='source').map(([id,label],i)=>`<button data-page="${id}" class="${id===page?'active':''}" ${id===page?'aria-current="page"':''}><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span>${label}</button>`).join('');$('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(busy){toast('저장이 끝난 뒤 이동해 주세요.');return}if(page===b.dataset.page){window.scrollTo({top:0,left:0,behavior:'smooth'});return}page=b.dataset.page;filter='';render()});if((booting&&!connectionPreview)||!state){$('#main').innerHTML='<section class="card" role="status"><h1>보관자료 확인 중…</h1><p>선택한 메뉴는 자료를 확인한 뒤 열립니다.</p></section>';$('#saveState').textContent=connectionStatus;return}if(!month||!state.months[month])month=state.months[today().slice(0,7)]?today().slice(0,7):Object.keys(state.months).sort().at(-1);const views={home:homeView,daily:dailyView,schedule:scheduleView,stock:stockView,audit:auditView,report:reportView,master:masterView,source:sourceView,settings:settingsView};$('#main').innerHTML=localNotice()+views[page]();$('#monthSel')?.addEventListener('change',e=>{if(busy){e.target.value=month;toast('저장이 끝난 뒤 월을 바꿔 주세요.');return}month=e.target.value;filter='';render()});bindActions();bindPage();if(!connectionPreview)bindSheetGrids();if(typeof bindPlanGrid==='function')bindPlanGrid();if(typeof bindSecondaryGrids==='function')bindSecondaryGrids();if(typeof bindWorkspaceUI==='function')bindWorkspaceUI();if(typeof bindIlboIntegrationUI==='function')bindIlboIntegrationUI();$('#saveState').textContent=connectionStatus}
 function homeView(){const x=computed(),list=schedules().filter(r=>r.status!=='건조 완료'),workers=m().rows.reduce((a,r)=>{const w=a[r.worker]??={kg:0,qty:0};w.kg+=C.daily(r).plaster||0;w.qty+=C.catalogIdentity(state,r.product).includes('부속')?0:r.pours||0;return a},{});return head('선택월 요약','상단에서 고른 월의 생산·일정·재고를 확인합니다.',`<button class="primary" data-action="daily">생산 입력</button>`)+`${!state.products.length||!state.workers.length?'<div class="notice blue">관리에서 작업자와 품목을 등록하면 생산 입력을 시작할 수 있습니다.</div>':''}<div class="stats">${metric('월 생산',x.qty,'조','부속 품목 제외 · 주입횟수')}${metric('월 생산 석고',x.kg,'kg','단위 석고량 × 주입횟수')}${metric('월 불량 석고',x.defect,'kg','현장일보 총불량 kg · 직접입력은 단위 × 개수')}${metric('현재고',x.stock,'조','이월 + 생산 − 교체')}</div><div class="grid2"><section class="card"><div class="toolbar"><h2>생산·건조 일정</h2><button data-action="schedule">전체 일정</button></div>${list.slice(0,5).map(r=>`<div class="planItem"><div class="topline"><b>${esc(r.product)}</b><span class="badge">${esc(r.status)}</span></div><div class="details"><span>${esc(r.worker)} · ${esc(r.machine)}</span><span>${esc(r.qty)}</span><span>생산 종료 ${esc(r.end||'미확인')}</span><span>건조 ${esc(r.dry||'미확인')}</span></div></div>`).join('')||'<p class="empty">해당 월의 진행 일정이 없습니다.</p>'}<div class="source">생산 원장과 작업 설정으로 계산한 일정 · 미완료 작업의 날짜는 예상입니다.</div></section><section class="card"><h2>작업자별 월 생산</h2>${Object.entries(workers).map(([w,v])=>`<div class="metricLine"><span>${esc(w)}</span><strong>${fmt(v.qty)}조 <small>· ${fmt(v.kg)} kg</small></strong></div>`).join('')}<p class="footerNote">한 번 입력한 작업자와 LOT가 함께 저장된 품목에 연결됩니다.</p></section></div><section class="card"><h2>월 전환 준비</h2><div class="workflow"><button data-action="daily">1 생산기록 확인</button><button data-action="stock">2 불출·재고 확인</button><button data-action="audit">3 실사 차이 확인</button><button data-action="report">4 마감 보고서</button></div><p class="subtle">${m().closed?'마감 보관월입니다.':'입력 가능한 작업 월입니다.'} 실사와 보고서를 확인하고 다음달을 준비하세요.</p></section>`}
 function dailyView(){const rows=m().rows.filter(r=>!filter||[r.worker,r.product,r.date,r.lot].join(' ').includes(filter));return head('생산일보','날짜·작업자·근무시간·LOT는 한 번, 품목은 여러 개 입력합니다.',`<button class="primary" data-action="newEntry" ${m().closed?'disabled':''}>+ 생산기록 입력</button><button data-action="dailyPrint">수기일보 인쇄</button>`)+`<div class="toolbar"><div class="actions"><input id="search" class="search" value="${esc(filter)}" placeholder="품명 · 작업자 · LOT 찾기" aria-label="생산기록 검색"><span class="badge ${m().closed?'amber':'blue'}">${m().closed?'마감 보관월':'작업월'} · ${rows.length}행</span></div><button data-action="csvDaily">표 내려받기</button></div><section class="card" id="dailyRecords">${table(['날짜','작업자','품명','작업 구분','주입/생산 조','석고 kg','불량 kg','LOT',''],rows.map(r=>{const d=C.daily(r);return tr([td(esc(r.date?.slice(5))),td(esc(r.worker)),td(esc(r.product),'product'),td(r.plan===0?'<span class="badge amber">종료·중단</span>':r.plan>0?`<span class="badge blue">시작 ${fmt(r.plan)}조</span>`:'계속'),td(fmt(r.pours),'num'),td(fmt(d.plaster),'num'),td(fmt(d.defect),'num'),td(esc(r.lot)),td(`<button data-edit="${esc(r.id)}" ${m().closed?'disabled':''}>수정</button>${btn('deleteDaily','삭제',r.id,m().closed)}`)])}))}<p class="footerNote">생산 조수는 주입횟수입니다. 탈형 개수는 주입횟수×케이스 수로 구분합니다. 기존값과 구별하기 위해 입력 변경 이력을 남깁니다.</p></section>`}
 function sourceView(){const cached=state.archive.flatMap(s=>Object.entries(s.cells).filter(([a,c])=>c.error).map(([a,c])=>({sheet:s.name,cell:a,value:c.v}))),diffs=C.inventory(state,month).filter(r=>r.original!=null&&Math.abs(r.current-r.original)>1e-6);return head('원본·전환 점검','원본 자료, 현재 계산 차이, 원본 대조 범위을 구분합니다.')+`<div class="stats">${metric('가져온 시트',state.archive.length,'개','숨김 시트 포함')}${metric('기준 품목',state.products.length,'개','관리 기준표에서 읽음')}${metric('현재월 재고 차이',diffs.length,'품목','원천 재계산 vs 저장된 값')}${metric('원본 오류 셀',cached.length,'개','가져오기 전 Excel 저장값')}</div><section class="card"><h2>기능 전환 상태</h2>${table(['기능','현재 상태','추가 대조'],[['엑셀 파일 읽기·원본 보관','구현','과거 월의 서로 다른 열 배치는 조회로 보존'],['생산일보 입력 흐름·기기 저장','웹 입력 연결','기존 원장과 수식 대조'],['재고·불출·실사·보고서 조회','입력·조회·반영 연결','집계 범위 차이와 원본 인쇄 일치'],['자동일정·동시그룹·수기바','웹 자동계산 연결','복합 일정은 원본 VBA 실제 실행 결과와 최종 비교 필요'],['새달·실사반영·월마감·연도전환','웹 처리 연결','실사·마감·이월 처리 이력 및 마감 스냅샷'],['GitHub 읽기·충돌방지 저장 모듈','기기 대기열·충돌 차단 연결','가짜 HTTP 검증 후 실제 저장소 연결 필요']].map(r=>tr(r.map(x=>td(esc(x))))))}</section>${state.migrationWarnings?.length?`<section class="card"><h2>원본 일정 확인사항</h2>${table(['출처','내용'],state.migrationWarnings.map(w=>tr([td(esc(w.source)),td(esc(w.message))])))}</section>`:''}<section class="card"><h2>원본 시트 조회</h2><div class="toolbar"><select id="sheetSelect" aria-label="원본 시트 선택">${state.archive.filter(s=>s.name!=='사용설명서').map(s=>`<option ${s.name===m().name?'selected':''}>${esc(s.name)}</option>`).join('')}</select><span class="subtle">저장 당시 값 · 수식 재계산 없음</span></div><div id="archiveView"></div></section><section class="card"><h2>원본 오류 위치</h2>${table(['시트','셀','저장된 오류'],cached.slice(0,100).map(r=>tr([td(esc(r.sheet)),td(esc(r.cell)),td(esc(r.value))])))}<p class="footerNote">원본 오류와 웹 구현 오류를 구분합니다. 오류값은 실제 생산·재고 숫자로 사용하지 않습니다.</p></section>`}
@@ -3285,7 +3314,7 @@ class SheetEditor{
  }
 
  status(){const info=this.inspect(),n=(info.counts.changed||0)+(info.counts.added||0)+(info.counts.deleted||0);return{info,n}}
- async load(){if(this.loaded)return;this.loaded=true;try{const saved=await S.localGet('sheet.v1:'+this.key);this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(saved.schema!==1||saved.scope!==this.scope||saved.month!==this.month||!Array.isArray(saved.draft?.rows)||!Array.isArray(saved.draft?.baseRows))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=saved.draft;this.error='저장 전 편집 내용을 복원했습니다.'}}}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
+ async load(){if(this.loaded)return;this.loaded=true;const initialDraft=this.draft;try{const saved=await S.localGet('sheet.v1:'+this.key);this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(saved.schema!==1||saved.scope!==this.scope||saved.month!==this.month||!Array.isArray(saved.draft?.rows)||!Array.isArray(saved.draft?.baseRows))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=saved.draft;this.error='저장 전 편집 내용을 복원했습니다.'}}}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();if(this.draft===initialDraft)this.update();else this.refresh();this.spec.onChange?.(this)}}
  queueDraft({compare=false}={}){const snapshot=C.clone(this.draft),version=++this.revision,record={schema:1,scope:this.scope,month:this.month,version,draft:snapshot};this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{await S.localSet('sheet.v1:'+this.key,record,compare?{expected:this.persistedDraft}:undefined);this.persistedDraft=C.clone(record)});this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
  changed(){this.draft.revision=(this.draft.revision||0)+1;this.dirty=true;this.error='';this.queueDraft();this.update();this.spec.onChange?.(this)}
  set(id,key,value){if(this.locked())return;const row=this.draft.rows.find(r=>r.id===id),column=this.spec.columns.find(c=>c.key===key);if(!row||column&&!this.editable(column,row))return;if(this.spec.patch)this.spec.patch(this.draft,id,{[key]:value});else row[key]=value;this.changed();if(this.spec.refreshOnFields?.includes(key)){this.revealId=id;this.refresh();this.focus(id,this.spec.focusAfterSet?.(key,row,this)||key)}}
@@ -5509,6 +5538,36 @@ window.addEventListener('online',()=>{if(Date.now()-twoWayState.last>10000)twoWa
 const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
 const mobileObserverOptions={childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem','colspan','rowspan']};
 function mobileLayout(){return typeof matchMedia==='function'&&matchMedia('(max-width: 720px)').matches}
+// Do not create another saving path: choose the current, visible original editor.
+let mobileSaveFrame=0,mobileSavePreferred='';
+function mobileSaveTarget(){
+ if(!mobileLayout()||!AppAccess.unlocked||document.body.matches('.workspaceFocused,.pgFocusMode')||document.querySelector('dialog[open]'))return null;
+ const candidates=[...sheetRegistry.values()].filter(g=>{if(!g.dirty||g.spec.readonly)return false;const host=g.host();return host?.isConnected&&host.getClientRects().length&&host.closest('#main')});
+ const g=candidates.find(g=>g.key===mobileSavePreferred)||candidates[0];if(!g)return null;
+ const button=g.id===pgId?document.querySelector('#pgSaveChanges'):g.host().querySelector('[data-sheet-command="save"]');
+ return button?{g,button}:null;
+}
+function mobileUpdateSaveDock(){
+ mobileSaveFrame=0;let dock=document.querySelector('#mobileSaveDock');const target=mobileSaveTarget();
+ if(!target){if(dock)dock.hidden=true;document.body.classList.remove('mobileHasSaveDock');return}
+ if(!dock){dock=document.createElement('div');dock.id='mobileSaveDock';dock.setAttribute('aria-label','현재 표 변경 저장');const label=document.createElement('span'),button=document.createElement('button');button.type='button';button.className='primary';dock.append(label,button);document.body.append(dock);
+  button.onclick=()=>{const current=mobileSaveTarget();if(current&&!current.button.disabled)current.button.click();mobileQueueSaveDock()};
+ }
+ dock.hidden=false;document.body.classList.add('mobileHasSaveDock');
+ const label=dock.firstElementChild,button=dock.lastElementChild,text=target.g.saving?'저장 중…':(target.g.spec.title||'현재 표')+' · 저장 전';
+ if(label.textContent!==text)label.textContent=text;
+ const caption=target.g.saving?'저장 중…':'변경 저장';if(button.textContent!==caption)button.textContent=caption;
+ button.disabled=target.button.disabled;
+ const vv=window.visualViewport,keyboardInset=vv?Math.max(0,innerHeight-vv.height-vv.offsetTop):0,scrollDock=document.querySelector('#pgScrollDock'),scrollInset=scrollDock&&!scrollDock.hidden&&scrollDock.getClientRects().length?scrollDock.getBoundingClientRect().height+8:0;
+ dock.style.bottom=Math.max(keyboardInset,scrollInset)+8+'px';
+}
+function mobileQueueSaveDock(){if(!mobileLayout()||!AppAccess.unlocked){if(document.querySelector('#mobileSaveDock'))mobileUpdateSaveDock();return}if(!mobileSaveFrame)mobileSaveFrame=requestAnimationFrame(mobileUpdateSaveDock)}
+window.addEventListener('scroll',mobileQueueSaveDock,{passive:true});
+window.visualViewport?.addEventListener('resize',mobileQueueSaveDock,{passive:true});
+window.visualViewport?.addEventListener('scroll',mobileQueueSaveDock,{passive:true});
+document.addEventListener('focusin',event=>{const host=event.target.closest?.('[data-sheet-key]');if(host)mobileSavePreferred=host.dataset.sheetKey;mobileQueueSaveDock()});
+document.addEventListener('input',mobileQueueSaveDock);
+document.addEventListener('click',mobileQueueSaveDock);
 function mobileFocusSnapshot(){const node=document.activeElement;return node?{node,start:node.selectionStart,end:node.selectionEnd,direction:node.selectionDirection}:null}
 function mobileRestoreFocus(saved){if(!saved?.node.isConnected||document.activeElement===saved.node)return;try{saved.node.focus({preventScroll:true});if(saved.start!=null)saved.node.setSelectionRange?.(saved.start,saved.end,saved.direction)}catch{}}
 function mobileTools(host,buttons,title='도구'){
@@ -5654,9 +5713,9 @@ function mobileMutations(records,queue=true){
 }
 function bindMobileUI(){
  mobileScreen.observer?.disconnect();mobileScreen.observedMain=null;if(mobileScreen.frame){cancelAnimationFrame(mobileScreen.frame);mobileScreen.frame=0}mobileRestoreTools();
- if(mobileScreen.resize)window.removeEventListener('resize',mobileScreen.resize);mobileScreen.resize=()=>{mobileScreen.resetPosition=true;mobileQueue()};window.addEventListener('resize',mobileScreen.resize);
- const main=document.querySelector('#main');if(!main)return;mobileRefresh();
- if(typeof MutationObserver==='function'){mobileScreen.observer=new MutationObserver(mobileMutations);mobileScreen.observedMain=main;mobileScreen.observer.observe(main,mobileObserverOptions)}
+ if(mobileScreen.resize)window.removeEventListener('resize',mobileScreen.resize);mobileScreen.resize=()=>{mobileScreen.resetPosition=true;mobileQueue();mobileQueueSaveDock()};window.addEventListener('resize',mobileScreen.resize);
+ const main=document.querySelector('#main');if(!main)return;mobileRefresh();mobileQueueSaveDock();
+ if(typeof MutationObserver==='function'){mobileScreen.observer=new MutationObserver(records=>{mobileMutations(records);if(records.some(record=>!record.target.closest?.('#ilboSyncStatus')))mobileQueueSaveDock()});mobileScreen.observedMain=main;mobileScreen.observer.observe(main,mobileObserverOptions)}
  if(mobileLayout()&&mobileScreen.page!==null&&mobileScreen.page!==page)window.scrollTo({top:0,left:0});mobileScreen.page=page;
 }
 const workspaceBindBeforeMobile=bindWorkspaceUI;

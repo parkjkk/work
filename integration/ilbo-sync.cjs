@@ -35,12 +35,10 @@ function completionValue(value){
  return{reason:value.reason,note:value.note,stockQty:value.stockQty};
 }
 function productIndex(products){
- const ids=new Map(),names=new Map();
- const add=(name,p)=>{name=clean(name);if(!name)return;const prior=names.get(name);if(prior&&prior.id!==p.id)throw Error('Ambiguous product name or alias');names.set(name,p)};
- for(const p of products||[]){if(p.deleted)continue;if(!clean(p.id)||!clean(p.name)||ids.has(p.id))throw Error('Invalid or duplicate product ID');ids.set(p.id,p);add(p.name,p)}
- const current=new Set(names.keys()),ambiguous=new Set();
- for(const p of ids.values()){if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');for(const a of [...(p.renameFrom||[]),...(p.aliases||[])]){const key=clean(typeof a==='string'?a:a.name);if(!key||current.has(key)||ambiguous.has(key))continue;const prior=names.get(key);if(prior&&prior.id!==p.id){names.delete(key);ambiguous.add(key)}else names.set(key,p)}}
- return{ids,names,resolve:r=>{if(r.productId){const p=ids.get(r.productId);if(!p)return null;const byName=names.get(clean(r.product));if(byName&&byName.id!==p.id)throw Error('Product ID and name disagree');return p}return names.get(clean(r.product))||null}};
+ const {productNameIndex}=require('./schedule-core.cjs'),ix=productNameIndex(products),ids=new Map();
+ for(const p of products||[]){if(p.deleted)continue;if(!clean(p.id)||!clean(p.name)||ids.has(p.id))throw Error('Invalid or duplicate product ID');if(p.aliases!=null&&!Array.isArray(p.aliases))throw Error('Invalid product aliases');ids.set(p.id,p)}
+ for(const product of ix.current.values())if(!product)throw Error('Ambiguous product name or alias');
+ return{ids,names:ix.names,byName:ix.resolve,resolve:r=>{const byName=ix.resolve(r.product);if(r.productId){const p=ids.get(r.productId);if(!p)return null;if(byName&&byName.id!==p.id)throw Error('Product ID and name disagree');return p}return byName||null}};
 }
 function projectCatalog(products,prior,now=new Date().toISOString(),memos=[]){
  const ix=productIndex(products),{productMemoIndex}=require('./product-memo.cjs');let memoIndex;
@@ -148,7 +146,7 @@ function planSync(state,snapshot,options={}){
    const targets=Object.values(next.months).flatMap(value=>(value.rows||[]).filter(r=>r.id===proof.rowId).map(row=>({m:value,row})));
    if(targets.length!==1)return{code:'management-link-review'};
    const target=targets[0],si=target.row.sourceIntegration,anchor=sentReceipt(target.row,c)?.target||target.row;
-   if(target.m.closed||target.m.id!==c.month||target.row.deleted||anchor.date!==c.date||clean(anchor.worker)!==c.values.worker||ix.names.get(clean(anchor.product))?.id!==c.p.id)return{code:'management-link-review'};
+   if(target.m.closed||target.m.id!==c.month||target.row.deleted||anchor.date!==c.date||clean(anchor.worker)!==c.values.worker||ix.byName(anchor.product)?.id!==c.p.id)return{code:'management-link-review'};
    if(si){
     const old=files.find(f=>f.path===proof.previousPath);
     if(si.repo!==snapshot.repo||si.id!==c.raw.id||si.path!==proof.previousPath||!old||old.rows.some(r=>r.id===c.raw.id))return{code:'management-link-review'};
@@ -157,7 +155,7 @@ function planSync(state,snapshot,options={}){
   }
   if(!row){
    if(sourceMatches.get(c.group+'\0'+c.p.id)>1)return{code:'multiple-source-match'};
-   const candidates=(m?.rows||[]).filter(r=>!r.deleted&&r.date===c.date&&r.worker===c.values.worker&&ix.names.get(clean(r.product))?.id===c.p.id&&!r.sourceIntegration);
+   const candidates=(m?.rows||[]).filter(r=>!r.deleted&&r.date===c.date&&r.worker===c.values.worker&&ix.byName(r.product)?.id===c.p.id&&!r.sourceIntegration);
    if(candidates.length>1)return{code:'multiple-existing-rows'};
    row=candidates[0];initial=!!row;
    if(row&&!same(row.pours,c.values.pours)&&options.initialConflict!=='source')return{code:'initial-quantity-conflict'};
@@ -173,7 +171,7 @@ function planSync(state,snapshot,options={}){
   }
   const base=bindingBases.get(row);return base.known&&!same(base.value,clean(row.jobId)||null);
  };
- const productBasis=value=>{const name=clean(value),id=ix.names.get(name)?.id;return id?['id',id]:['name',name]};
+ const productBasis=value=>{const name=clean(value),id=ix.byName(name)?.id;return id?['id',id]:['name',name]};
  const basisSame=(key,a,b)=>key==='product'?same(productBasis(a),productBasis(b)):same(a,b);
  const mergeFields=(row,values,initial)=>{
   const receipt=row?.sourceIntegration?.outbound||row?.integrationOutbound,ack=row&&acknowledgements.get(row),baseline=ack?{...(row?.sourceIntegration?.baseline||{}),...ack.target}:row?.sourceIntegration?.baseline,patch={},conflicts=[];let review=null;
@@ -198,7 +196,7 @@ function planSync(state,snapshot,options={}){
    if((sourceSplit&&targetBasis||targetSplit&&sourceBasis)&&!conflicts.includes('machineActuals'))conflicts.push('machineActuals');
   }
   if(row&&own(patch,'product')&&!basisSame('product',row.product,patch.product)){
-   const product=ix.names.get(clean(patch.product)),units={},basis={productId:product?.id,productRev:product?.rev??null};
+   const product=ix.byName(patch.product),units={},basis={productId:product?.id,productRev:product?.rev??null};
    // Catalog-linked units follow an explicit product correction. Recorded/manual
    // units belong to the original product and need review instead of reassignment.
    for(const [field,key]of [['plaster','kg'],['cases','cases']]){

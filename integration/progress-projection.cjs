@@ -10,7 +10,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  const raw=new Map();for(const file of sourceFiles(snapshot))for(const row of file.rows)raw.set(file.path+'\0'+row.id,{file,row});
  const linked=new Map(),rowsById=new Map();for(const [month,value]of Object.entries(state.months||{}))for(const row of value.rows||[]){if(!rowsById.has(row.id))rowsById.set(row.id,row);const si=row.sourceIntegration;if(row.deleted||si?.repo!==snapshot.repo)continue;const key=si.path+'\0'+si.id;if(!linked.has(key))linked.set(key,[]);linked.get(key).push({month,row});}
  const indexes=new Map(),entries=[],unsafeJobs=new Set(),unlinkedProducts=new Set(),ix=productIndex(state.products);
- for(const [key,source]of raw){if(linked.has(key)||source.row.off||source.file.date>asOf)continue;const r=source.row,products=new Set([ix.ids.get(r.productId),ix.names.get(String(r.product||'').trim())].filter(Boolean));for(const product of products)unlinkedProducts.add(String(r.worker||'').trim()+'\0'+product.id);}
+ for(const [key,source]of raw){if(linked.has(key)||source.row.off||source.file.date>asOf)continue;const r=source.row,products=new Set([ix.ids.get(r.productId),ix.byName(r.product)].filter(Boolean));for(const product of products)unlinkedProducts.add(String(r.worker||'').trim()+'\0'+product.id);}
  const progressFor=({month,row})=>{if(!indexes.has(month))indexes.set(month,planning.dailyProgress(state,month,{asOf}));return indexes.get(month).get(row.id)};
  const jobKey=(progress,month)=>progress?.originId||[month,progress?.jobId].join(':');
  const conditionJobs=new Map(),conditionSchedules=new Map();let allSchedules=null;
@@ -18,7 +18,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   if(typeof planning.jobs!=='function'||!progress?.jobId||progress.warning)return null;
   const month=progress.progressMonth||link.month,m=state.months[month];if(!m||m.closed||m.closeSnapshot)return null;
   if(!conditionJobs.has(month))conditionJobs.set(month,planning.jobs(state,month));
-  const origin=progress.originId||progress.jobId,matches=conditionJobs.get(month).filter(j=>(j.originId||j.id)===origin&&j.worker===link.row.worker&&ix.names.get(String(j.product).trim())?.id===ix.names.get(String(link.row.product).trim())?.id);
+  const origin=progress.originId||progress.jobId,matches=conditionJobs.get(month).filter(j=>(j.originId||j.id)===origin&&j.worker===link.row.worker&&ix.byName(j.product)?.id===ix.byName(link.row.product)?.id);
   if(matches.length!==1)return null;const j=matches[0];if(j.carryBlocked)return null;
   const machines=(j.machines||[]).map(m=>({name:m.name,qty:Number.isFinite(m.qty)&&m.qty>=0?m.qty:null,...(Number.isFinite(m.daily)&&m.daily>0?{daily:m.daily}:{})}));
   if(machines.length>50||machines.some(m=>typeof m.name!=='string'||!m.name.trim()||m.name.length>60))return null;

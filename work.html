@@ -469,6 +469,15 @@ table.mon th:first-child, table.mon td.d{position:sticky; left:0; z-index:1; box
 table.mon td.d{background:var(--surface)}
 table.mon tfoot td.d{background:var(--surface2)}
 @media (max-width:600px){ table.mon th:first-child, table.mon td.d{max-width:42vw; overflow:hidden; text-overflow:ellipsis} }   /* 긴 제품명이 숫자 열을 밀어내지 않게 */
+@media screen{
+  .ov-head .x{min-width:44px;min-height:44px}
+  .mon-pills button{min-height:44px}
+  .mon-scroll{max-height:min(65dvh,640px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+  .mon-scroll table.mon{overflow:visible}
+  .mon-scroll table.mon thead th{position:sticky;top:0;z-index:2;background:var(--surface2)}
+  .mon-scroll table.mon thead th:first-child{z-index:3}
+  .mon-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+}
 
 /* ---------- 설정 ---------- */
 .set-sec{margin-bottom:18px}
@@ -996,9 +1005,24 @@ const numOr = (v, alt='') => { const s=String(v??'').trim(); if(s==='') return a
 /* PRODUCT_ORDER_SHARED_END */
 
 /* PRODUCT_CATALOG_START — 관리 품목은 읽기 전용이며 원본 일보를 재작성하지 않는다. */
+
 function productNameKey(value){
   return String(value??'').trim();
 }
+/* PRODUCT_NAMES_SHARED_START */
+const PRODUCT_NAME_POLICY='management-product-names-v1';
+function productNameIndex(products,extraAliases=[]){
+ const clean=value=>String(value??'').trim(),compact=value=>clean(value).normalize('NFKC').toUpperCase().replace(/[\s._-]+/g,''),current=new Map(),ids=new Map(),aliases=new Map();
+ const add=(map,key,product)=>{if(!key)return;if(!map.has(key))map.set(key,product);else if(map.get(key)!==product)map.set(key,null)};
+ for(const product of products||[]){if(product.deleted)continue;const name=clean(product.name);if(!name)continue;add(current,name,product);if(product.id)add(ids,product.id,product)}
+ for(const product of products||[]){if(product.deleted)continue;for(const value of [...(product.renameFrom||[]),...(product.aliases||[])]){const name=clean(typeof value==='string'?value:value?.name);if(!current.has(name))add(aliases,name,product)}}
+ for(const alias of extraAliases||[]){const product=ids.get(alias.productId),name=clean(alias.name);if(product&&!current.has(name))add(aliases,name,product)}
+ let normalized=null,normalizedAliases,models;
+ const prepare=()=>{if(normalized)return;normalized=new Map();normalizedAliases=new Map();models=new Map();for(const [name,product]of current){add(normalized,compact(name),product);const model=/^([A-Z]{2}\d+)[A-Z][A-Z0-9]*$/.exec(compact(name));if(model)add(models,model[1],product)}for(const [name,product]of aliases)add(normalizedAliases,compact(name),product)};
+ const resolve=value=>{const name=clean(value);if(current.has(name))return current.get(name);prepare();const key=compact(name);if(normalized.has(key))return normalized.get(key);if(aliases.has(name))return aliases.get(name);if(normalizedAliases.has(key))return normalizedAliases.get(key);return /^[A-Z]{2}\d+$/.test(key)?models.get(key)||null:null};
+ return{current,ids,aliases,names:new Map([...current,...[...aliases].filter(([,p])=>p)]),resolve,compact,policy:PRODUCT_NAME_POLICY};
+}
+/* PRODUCT_NAMES_SHARED_END */
 function legacyProductName(value){
   const name=String(value??'').trim();
   return /^[\x20-\x7E]+$/.test(name)?name.toUpperCase():name;
@@ -1024,11 +1048,7 @@ function parseProductCatalog(value){
   return {schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt||'',products,aliases};
 }
 function catalogProduct(catalog,name){
-  if(!catalog)return null;
-  const key=productNameKey(name),exact=catalog.products.find(p=>productNameKey(p.name)===key);
-  if(exact)return exact;
-  const alias=catalog.aliases.find(a=>productNameKey(a.name)===key);
-  return alias?catalog.products.find(p=>p.id===alias.productId)||null:null;
+  return catalog?productNameIndex(catalog.products,catalog.aliases).resolve(name)||null:null;
 }
 // Resolve identity only for display, grouping and input choices. Source rows and
 // the exact fields used to validate projected progress remain untouched.
@@ -1044,7 +1064,7 @@ function fieldProductIdentity(value,catalog=S.productCatalog){
   const p=fieldProduct(catalog,value);
   return JSON.stringify(p?['id',p.id]:['name',fieldProductName(value,catalog)]);
 }
-function progressCatalogRevision(catalog=S.productCatalog){return catalog?.revision||'legacy';}
+function progressCatalogRevision(catalog=S.productCatalog){return (catalog?.revision||'legacy')+':'+PRODUCT_NAME_POLICY;}
 function validLocalProgress(progress,catalog=S.productCatalog){
   return progress?.policyVersion==='completion-worker-phase-3'&&progress.catalogRevision===progressCatalogRevision(catalog);
 }
@@ -1062,7 +1082,7 @@ function resolveFieldProduct(catalog,input,previous){
     throw Error('관리 목록에 없는 품명입니다. 생산일정 앱의 관리 탭에서 품명을 추가하거나 별칭을 연결해 주세요.');
   }
   if(!linked.active && !(same&&(previous.productId===linked.id||catalogProduct(catalog,previous.product)?.id===linked.id))) throw Error('사용 중지된 품명은 새 기록에 입력할 수 없습니다. 관리 탭에서 사용 여부를 확인해 주세요.');
-  const product=!linked.active&&same?previous.product:linked.name;
+  const product=linked.name;
   const original=previous?.sourceProduct || (same&&previous.product!==product?previous.product:entered!==product?entered:'');
   return {product,productId:linked.id,productCatalogRevision:catalog.revision,...(original?{sourceProduct:original}:{})};
 }
@@ -1909,10 +1929,11 @@ function refreshProductChips(el){
   input.placeholder=S.productCatalog?'관리 품명 또는 등록된 별칭 검색':'예: CC267B';
   host.innerHTML=prodsListAll().map((p,i)=>`<button type="button" class="chip" data-p="${esc(p)}"${i>=14?' hidden':''}>${esc(p)}</button>`).join('');
   /* 목록이 바뀔 때 검색어를 한 번 준비한다. 키 입력마다 품목×별칭을 다시 훑지 않는다. */
+  const compact=productNameIndex(S.productCatalog?.products||[],S.productCatalog?.aliases||[]).compact;
   const byName=new Map((S.productCatalog?.products||[]).map(p=>[productNameKey(p.name),p.id])),aliasesById=new Map();
-  for(const a of S.productCatalog?.aliases||[]){if(!aliasesById.has(a.productId))aliasesById.set(a.productId,[]);aliasesById.get(a.productId).push(productNameKey(a.name).toLocaleUpperCase());}
-  const choices=[...host.querySelectorAll('.chip')].map(c=>({button:c,terms:[productNameKey(c.dataset.p).toLocaleUpperCase(),...(aliasesById.get(byName.get(productNameKey(c.dataset.p)))||[])]}));
-  const show=()=>{const q=productNameKey(input.value).toLocaleUpperCase();choices.forEach(({button,terms},i)=>{button.hidden=q?!terms.some(n=>n.includes(q)):i>=14;});};
+  for(const a of S.productCatalog?.aliases||[]){if(!aliasesById.has(a.productId))aliasesById.set(a.productId,[]);aliasesById.get(a.productId).push(compact(a.name));}
+  const choices=[...host.querySelectorAll('.chip')].map(c=>({button:c,terms:[compact(c.dataset.p),...(aliasesById.get(byName.get(productNameKey(c.dataset.p)))||[])]}));
+  const show=()=>{const q=compact(input.value);choices.forEach(({button,terms},i)=>{button.hidden=q?!terms.some(n=>n.includes(q)):i>=14;});};
   host.querySelectorAll('.chip').forEach(button=>{
     button.onclick=()=>{input.value=button.dataset.p;show();updateProdProg(el);syncQuickProducts();const qty=el.querySelector('.pb-prod');qty.scrollIntoView({block:'center'});qty.focus();};
     if(!S.productCatalog)bindLongPress(button,()=>{if(removePreset('products',button.dataset.p))button.remove();});
@@ -2410,6 +2431,7 @@ function renderDate(){
 }
 function setDate(ds){ S.date = ds; S.dayLoaded = false; renderDate(); refreshDay(); }
 function setTab(t){
+  if(!['input','sheet','month'].includes(t)||S.tab===t)return;
   S.tab = t;
   $('#view-input').style.display = t==='input' ? '' : 'none';
   $('#view-sheet').style.display = t==='sheet' ? '' : 'none';
@@ -2418,8 +2440,26 @@ function setTab(t){
   $$('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab===t));
   document.querySelector('main').classList.toggle('wide', t==='sheet');
   document.querySelector('main').classList.toggle('month-wide', t==='month');
+  if(t==='input'){renderInput();renderMeChips();}
   if(t==='sheet'){ renderSheet(); requestAnimationFrame(applyZoom); }
   if(t==='month') renderMonth();
+}
+let visibleRefreshTask=null;
+function refreshVisibleView(){
+  if(!AppAccess.unlocked)return Promise.resolve();
+  const epoch=storeEpoch,readGeneration=loadSeq,tab=S.tab,ym=S.month,key=JSON.stringify([epoch,readGeneration,tab,tab==='month'?ym:S.date]);
+  if(visibleRefreshTask?.key===key)return visibleRefreshTask.promise;
+  const own={key,promise:null};visibleRefreshTask=own;
+  own.promise=(async()=>{
+    setBusy(true);
+    try{
+      if(tab==='month'){
+        await loadProductionProgress();
+        if(epoch===storeEpoch&&readGeneration===loadSeq&&AppAccess.unlocked&&S.tab===tab&&S.month===ym)await renderMonth({force:true});
+      }else await Promise.all([loadProductionProgress(),refreshDay(false,true)]);
+    }finally{setBusy(false);if(visibleRefreshTask===own)visibleRefreshTask=null;}
+  })();
+  return own.promise;
 }
 
 /* ================= 입력 화면 ================= */
@@ -3843,7 +3883,8 @@ function renderSheet(){
     if(slice.length && !slice[0]._showW) slice[0] = {...slice[0], _showW:true};
     pages.push(sheetPage(S.date, slice));
   }
-  $('#sheetzoom').innerHTML = pages.join('');
+  const zoom = $('#sheetzoom'), markup = pages.join('');
+  if(zoom._sheetMarkup!==markup){zoom.innerHTML=markup;zoom._sheetMarkup=markup;}
   applyZoom();
 }
 function applyZoom(){
@@ -3866,7 +3907,7 @@ function applyZoom(){
 /* ================= 현황 ================= */
 let monthSeq = 0;
 const FRESH_MONTH_MS = 5*60*1000;   /* 지난달 이전: 5분 안에 받은 적 있으면 재대조 생략 (이번 달은 항상 대조) */
-async function renderMonth(){
+async function renderMonth({force=false}={}){
   const my = ++monthSeq;
   const epoch = storeEpoch, drv = driver;
   ensureProgress();
@@ -3878,7 +3919,7 @@ async function renderMonth(){
   const cachedJson = cached ? JSON.stringify(cached.days) : null;
   if(cached) drawMonth(cached.days, y, m);
   else $('#monBody').innerHTML = `<div class="empty-note">불러오는 중…</div>`;
-  if(cached && ym !== todayStr().slice(0,7) && Date.now() - cached.t < FRESH_MONTH_MS) return;
+  if(!force && cached && ym !== todayStr().slice(0,7) && Date.now() - cached.t < FRESH_MONTH_MS) return;
   let days;
   try{ days = await drv.monthDays(ym); assertContext(epoch); }
   catch(e){ if(my===monthSeq && !cached) $('#monBody').innerHTML = `<div class="empty-note">불러오기 실패: ${esc(e.message)}</div>`; return; }
@@ -4042,7 +4083,7 @@ function drawMonth(rawDays, y, m){
       <tfoot><tr><td class="d">합계</td><td></td><td>${toff || ''}</td><td>${tcase || ''}</td><td>${tmiss || ''}</td><td>${r2(wNames.reduce((a,n)=>a+workerStat[n].hours,0)) || ''}</td><td>${r2(tp)}</td></tr></tfoot>
     </table>` : `<div class="empty-note">작업자 기록이 없습니다</div>`;
 
-  const wrapT = h => h.replace(/<table class="mon([^"]*)">/g, '<div class="mon-scroll"><table class="mon$1">').replace(/<\/table>/g, '</table></div>');
+  const wrapT = h => h.replace(/<table class="mon([^"]*)">/g, '<div class="mon-scroll" role="region" tabindex="0" aria-label="표를 좌우와 위아래로 이동"><table class="mon$1">').replace(/<\/table>/g, '</table></div>');
   const body = $('#monBody');
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
@@ -4550,7 +4591,7 @@ function init(){
     $('#prodBlocks').innerHTML = ''; addBlock(null); $('#fWorker').value = keepW; $('#draftBar').hidden = true;
     entrySnap = formSnapshot(); updateRecentBtn(false);
   };
-  $('#refreshTop').onclick = () => {loadProductionProgress();refreshDay(false, true);};
+  $('#refreshTop').onclick = refreshVisibleView;
   window.addEventListener('popstate', () => {
     if($('#entryOv').classList.contains('open')) requestCloseEntry(true);
     else if($('#setOv').classList.contains('open')||fieldSettingsOpening) closeSettings(true);
@@ -4592,7 +4633,7 @@ function init(){
     setTimeout(()=>window.print(), 100);
   };
   $('#zoomBtn').onclick = () => { S.fit = !S.fit; applyZoom(); };
-  $('#reloadBtn').onclick = () => {loadProductionProgress();refreshDay(false, true);};
+  $('#reloadBtn').onclick = refreshVisibleView;
   $('#prevMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m-2,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#nextMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#thisMon').onclick = () => { S.month = todayStr().slice(0,7); renderMonth(); };
@@ -4701,7 +4742,7 @@ function renderSyncInfo(){
   if(si) si.textContent = (driver.mode==='gh' && S.lastSync)
     ? ` · 최근 자료 확인 ${new Date(S.lastSync).getHours()}:${pad2(new Date(S.lastSync).getMinutes())}${fieldRemotePending?' · 최신 자료 확인 대기':''}` : (fieldRemotePending?' · 최신 자료 확인 대기':'');
 }
-function renderAll(){ renderInput(); renderMeChips(); if(S.tab==='sheet') renderSheet(); renderSyncInfo(); }   /* 숨은 인쇄표는 탭 진입·beforeprint 때 렌더 */
+function renderAll(){ if(S.tab==='input'){renderInput();renderMeChips();} if(S.tab==='sheet') renderSheet(); renderSyncInfo(); }   /* 숨은 업무표는 탭 진입 때 현재 자료로 갱신; 인쇄는 beforeprint에서도 확인 */
 AppAccess.start(async()=>{if(typeof restoreOfflineWorkspace==='function')await restoreOfflineWorkspace();init()});
 window.addEventListener('production:lock',()=>{productionProgressRead++;loadSeq++;lockFieldConnection();});
 </script>
