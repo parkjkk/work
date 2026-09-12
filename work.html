@@ -207,6 +207,27 @@ main.wide{max-width:none}
 .rc-chev{color:var(--ink-faint); font-size:20px; line-height:1; flex:none}
 .rowcard .rc-main{flex:1; min-width:0}
 .rowcard .rc-prod{font-weight:700; font-size:16px}
+.product-memo-link{display:flex;align-items:center;width:100%;max-width:100%;min-width:0;min-height:34px;margin:1px 0;padding:2px 0;border:0;background:transparent;color:var(--ink-dim);font-size:14px;text-align:left;cursor:pointer}
+.rowcard:has(.memo-preview){display:grid;grid-template-columns:minmax(0,1fr) auto 10px;gap:2px 8px}
+.rowcard:has(.memo-preview) .rc-main{display:contents}
+.rowcard:has(.memo-preview) .rc-prod{grid-area:1/1}
+.rowcard:has(.memo-preview) .rc-marks{grid-area:1/2}
+.rowcard:has(.memo-preview) .rc-chev{grid-area:1/3}
+.rowcard:has(.memo-preview) .product-memo-link{grid-column:1/-1;grid-row:2}
+.rowcard:has(.memo-preview) .rc-sub{grid-column:1/-1;grid-row:3}
+.product-memo-link .memo-preview{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.product-memo-link.is-empty{display:inline-flex;min-height:30px;font-size:11.5px;color:var(--ink-faint)}
+.product-memo-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#productMemoDialog{box-sizing:border-box;width:min(540px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);overflow:auto}
+#productMemoDialog::backdrop{background:#101c3288}
+#productMemoDialog h2{font-size:17px;margin:0 0 5px;overflow-wrap:anywhere}
+#productMemoDialog .memo-source{font-size:12px;color:var(--ink-dim);margin:0 0 12px}
+#productMemoDialog textarea{box-sizing:border-box;width:100%;min-height:180px;max-height:48dvh;padding:12px;resize:vertical;border:1px solid var(--line-in);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:15px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+#productMemoDialog .memo-status{font-size:12.5px;line-height:1.5;min-height:19px;margin:10px 0;color:var(--ink-dim)}
+#productMemoDialog .memo-actions{display:flex;justify-content:flex-end;gap:8px}
+#productMemoDialog .memo-conflict{margin-top:10px;font-size:13px}
+#productMemoDialog .memo-current{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;border-left:2px solid var(--line);background:var(--surface2)}
+@media print{.product-memo-link,#productMemoDialog{display:none!important}}
 .rowcard .rc-sub{font-size:13.5px; color:var(--ink-dim); margin-top:2px; display:flex; flex-wrap:wrap; gap:4px 10px}
 .rowcard .rc-marks{font-size:12.5px; display:flex; flex-direction:column; align-items:flex-end; gap:3px}
 .rowcard .rc-marks .mB{color:var(--bad); font-weight:700}
@@ -619,7 +640,7 @@ async function fieldSettings(cfg){
  document.body.append(d);d.showModal();d.querySelector('[data-field-close]').focus();run(async()=>{await list();if(current()){d.querySelector('[data-field-tools]').hidden=false;d.querySelector('[data-field-token] input').focus()}});
 }
 function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(!adminReady()){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren();continue}if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
-root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings','/api/management-sync'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
+root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings','/api/management-sync','/api/field-memo'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
  el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){if(version===lockVersion)message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
@@ -989,7 +1010,8 @@ function parseProductCatalog(value){
     if(!row || typeof row.id!=='string' || !row.id || typeof row.name!=='string' || !row.name.trim() || ids.has(row.id) || names.has(productNameKey(row.name))) throw Error('관리 품목 목록에 중복되거나 비어 있는 품명이 있습니다.');
     if(row.active!=null && typeof row.active!=='boolean') throw Error('관리 품목의 사용 여부를 확인해 주세요.');
     ids.add(row.id);names.set(productNameKey(row.name),row.id);
-    return {id:row.id,name:row.name.trim(),active:row.active!==false};
+    const memo=typeof row.memo==='string'&&row.memo.length<=100000?row.memo:null,unavailable=row.memo!=null&&memo===null||row.memo==null&&row.memoUnavailable===true;
+    return {id:row.id,name:row.name.trim(),active:row.active!==false,...(memo!==null?{memo}:{}),...(unavailable?{memoUnavailable:true}:{})};
   });
   const current=new Set(names.keys()),aliasMap=new Map(),ambiguous=new Set();
   for(const row of value.aliases){
@@ -1052,7 +1074,7 @@ const fieldTarget = c => !!(c && String(c.owner).toLowerCase()==='parkjkk' && St
 const bridgeConfig = c => !!(fieldTarget(c) && c.transport==='bridge' && typeof c.bridgeKey==='string' && /^[A-Za-z0-9_-]{43}$/.test(c.bridgeKey));
 const connectedConfig = c => !!(c && c.owner && c.repo && (bridgeConfig(c) || (c.transport!=='bridge' && c.token)));
 const scopeFor = c => connectedConfig(c) ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
-const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|progress$)/.test(k);
+const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|productMemoDrafts$|progress$)/.test(k);
 let activeScope = 'local', legacyScope = '', storeEpoch = 0;
 const storageKey = (k, scope=activeScope) => scopedItem(k) ? 'ilbo.store.'+encodeURIComponent(scope)+'.'+k : k;
 function contextError(){ const e = new Error('연결된 저장소가 바뀌었습니다. 현재 연결에서 기록을 다시 열어 주세요.'); e.contextChanged = true; return e; }
@@ -1383,6 +1405,15 @@ function ghDriver(cfg){
     },
     async loadPresets(){ const {json} = await getFile('data/presets.json'); return json || {workers:[],products:[],parts:[]}; },
     async loadProductCatalog(){ const {json} = await getFile('meta/products.json'); return json; },
+    async saveProductMemo(input){
+      assertContext(epoch);if(!bridge)throw Error('현장 공유 연결 후 메모를 저장해 주세요. 작성 내용은 이 기기에 보관했습니다.');
+      const response=await ghFetch(FIELD_BRIDGE+'/api/field-memo',{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify(input)},25000);
+      assertContext(epoch);authCheck(response);const value=await response.json();assertContext(epoch);
+      if(response.status===409&&value.code==='memo-conflict'&&typeof value.currentMemo==='string'){const error=Error('다른 곳에서 메모가 바뀌었습니다. 최신 내용을 확인해 주세요.');error.code='memo-conflict';error.currentMemo=value.currentMemo;throw error;}
+      if(!response.ok)throw Error(value.error||'메모를 저장하지 못했습니다. 작성 내용을 보관했습니다.');
+      if(value.productId!==input.productId||typeof value.memo!=='string'||value.memo.length>100000||typeof value.revision!=='string'||!value.revision)throw Error('메모 저장 결과를 확인하지 못했습니다. 작성 내용을 보관했습니다.');
+      return value;
+    },
     async loadProductionProgress(){ const {json} = await getFile('meta/production-progress.json'); return json; },
     async savePresets(p, replace){
       try{
@@ -1474,7 +1505,7 @@ async function migrateFieldBridge(force=false){
   try{return await task;}finally{if(fieldMigration===task)fieldMigration=null;}
 }
 function fieldRefreshBlocked(){
-  return !!((globalThis.AppAccess&&!AppAccess.unlocked)||fieldWrites||flushing||presetOperations.has(storeEpoch)||outboxAll().length||$('#entryOv').classList.contains('open')||$('#setOv').classList.contains('open'));
+  return !!((globalThis.AppAccess&&!AppAccess.unlocked)||fieldWrites||flushing||presetOperations.has(storeEpoch)||outboxAll().length||$('#productMemoDialog')?.open||$('#entryOv').classList.contains('open')||$('#setOv').classList.contains('open'));
 }
 function deferFieldBackground(background){
   if(!background||!fieldRefreshBlocked())return false;
@@ -1789,7 +1820,70 @@ const S = {
 };
 const CHECK_KEYS = ['cs','gap','inlet','face','bubble'];
 let productCatalogRead=0;
+// Product-wide management notes are separate from daily rows, remarks and the daily outbox.
+let productMemoSession=null,productMemoGeneration=0;
+function productMemoMap(key,scope=activeScope){const value=LS.get(key,{},scope);return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}
+function productMemoPut(key,id,value,scope=activeScope){const entries=Object.entries(productMemoMap(key,scope)).filter(([name])=>name!==id);if(value!==null)entries.push([id,value]);return LS.set(key,Object.fromEntries(entries),scope)}
+function applyProductMemoPending(catalog,fresh){
+  const pending=productMemoMap('ilbo.cache.productMemoPending'),keep=[],products=catalog.products.map(p=>({...p}));
+  for(const[id,item]of Object.entries(pending)){
+    if(!item||typeof item.memo!=='string'||typeof item.baseRevision!=='string')continue;
+    if(fresh&&catalog.revision!==item.baseRevision)continue;
+    const product=products.find(p=>p.id===id);if(!product)continue;product.memo=item.memo;delete product.memoUnavailable;keep.push([id,item]);
+  }
+  if(fresh&&keep.length!==Object.keys(pending).length)LS.set('ilbo.cache.productMemoPending',Object.fromEntries(keep));
+  return {...catalog,products};
+}
+function productMemoLink(value){
+  const p=fieldProduct(S.productCatalog,value);if(!p)return'';
+  const memo=typeof p.memo==='string'?p.memo:'',has=!!memo.trim(),cached=S.productCatalogMode==='cached';
+  return `<button type="button" class="product-memo-link${has?'':' is-empty'}" data-product-memo="${esc(p.id)}" title="${cached?'보관한 관리 메모':'관리 메모'} · 눌러서 보기·수정" aria-label="${esc(p.name)} 관리 메모 ${has?'보기·수정':'추가'}">${has?`<span class="memo-preview">${esc(memo.replace(/\s+/g,' ').trim())}</span>`:'메모 +'}</button>`;
+}
+function bindProductMemoLinks(host){host?.querySelectorAll('[data-product-memo]').forEach(button=>button.onclick=event=>{event.stopPropagation();openProductMemo(button.dataset.productMemo)})}
+function updateProductMemo(el){
+  const host=el.querySelector('.pb-product-memo'),input=el.querySelector('.pb-product');if(!host||!input)return;
+  const previous=S.rows.find(r=>r.id===el.dataset.rid),value=previous&&productNameKey(input.value)===productNameKey(previous.product)?previous:input.value,html=productMemoLink(value);
+  if(host._memoHTML!==html){host.innerHTML=html;host._memoHTML=html;bindProductMemoLinks(host)}host.hidden=!html;
+}
+function productMemoCurrent(s){return productMemoSession===s&&s.generation===productMemoGeneration&&s.epoch===storeEpoch&&s.scope===activeScope&&AppAccess.unlocked&&s.dialog.isConnected}
+function stashProductMemo(s){
+  const value=s.input.value;if(value.length>100000){s.status.textContent='메모는 100,000자까지 작성할 수 있습니다.';return false;}
+  const ok=productMemoPut('ilbo.productMemoDrafts',s.id,value===s.baseMemo?null:{baseMemo:s.baseMemo,memo:value,baseRevision:s.baseRevision},s.scope);
+  if(!ok)s.status.textContent='이 기기에 작성 내용을 보관하지 못했습니다. 창을 닫기 전에 내용을 복사해 주세요.';return ok;
+}
+function invalidateProductMemoDialog(){
+  const s=productMemoSession;productMemoGeneration++;productMemoSession=null;if(!s)return;
+  stashProductMemo(s);s.dialog.close();s.dialog.remove();
+}
+function openProductMemo(id){
+  if(!AppAccess.unlocked)return;const p=S.productCatalog?.products.find(p=>p.id===id);if(!p)return;
+  if(productMemoSession){if(!stashProductMemo(productMemoSession))return;invalidateProductMemoDialog()}
+  const memo=typeof p.memo==='string'?p.memo:'',stored=productMemoMap('ilbo.productMemoDrafts'),draft=Object.hasOwn(stored,id)?stored[id]:null,usable=draft&&typeof draft.memo==='string'&&draft.memo.length<=100000&&typeof draft.baseMemo==='string';
+  const dialog=document.createElement('dialog');dialog.id='productMemoDialog';dialog.setAttribute('aria-labelledby','productMemoTitle');dialog.innerHTML='<h2 id="productMemoTitle"></h2><p class="memo-source">품목 공용 메모 · 저장하면 생산관리에도 반영됩니다.</p><textarea aria-label="품목 공용 메모" maxlength="100000" spellcheck="false"></textarea><div class="memo-conflict" hidden><b>현재 저장된 메모</b><div class="memo-current" tabindex="0"></div><button type="button" class="btn sec memo-use-current">현재 메모를 기준으로 이어 수정</button></div><p class="memo-status" role="status"></p><div class="memo-actions"><button type="button" class="btn sec memo-close">닫기</button><button type="button" class="btn pri memo-save">메모 저장</button></div>';
+  const s={id,epoch:storeEpoch,scope:activeScope,generation:++productMemoGeneration,dialog,input:dialog.querySelector('textarea'),status:dialog.querySelector('.memo-status'),baseMemo:usable?draft.baseMemo:memo,baseRevision:usable&&typeof draft.baseRevision==='string'?draft.baseRevision:S.productCatalog.revision,busy:false,conflict:null};productMemoSession=s;
+  dialog.querySelector('h2').textContent=p.name+' · 관리 메모';s.input.value=usable?draft.memo:memo;
+  const save=dialog.querySelector('.memo-save'),buttons=()=>{save.disabled=s.busy||s.conflict!==null||s.input.value===s.baseMemo;s.input.readOnly=s.busy};
+  if(usable)s.status.textContent='이 기기에 보관한 작성 내용입니다.';else if(S.productCatalogMode==='cached')s.status.textContent='보관한 메모입니다. 연결되면 최신 내용과 비교해 저장합니다.';
+  s.input.oninput=()=>{if(!productMemoCurrent(s))return;stashProductMemo(s);buttons()};
+  const close=()=>{if(!productMemoCurrent(s)||!stashProductMemo(s))return;invalidateProductMemoDialog()};dialog.querySelector('.memo-close').onclick=close;dialog.oncancel=event=>{event.preventDefault();close()};dialog.addEventListener('keydown',event=>event.stopPropagation());
+  dialog.querySelector('.memo-use-current').onclick=()=>{if(!productMemoCurrent(s)||s.conflict===null)return;s.baseMemo=s.conflict;s.conflict=null;dialog.querySelector('.memo-conflict').hidden=true;stashProductMemo(s);s.status.textContent='입력 내용은 유지했습니다. 최신 메모와 비교해 수정한 뒤 저장하세요.';buttons();s.input.focus()};
+  save.onclick=async()=>{
+    if(!productMemoCurrent(s)||s.busy||s.conflict!==null||!stashProductMemo(s))return;
+    if(!navigator.onLine||driver.offline||typeof driver.saveProductMemo!=='function'){s.status.textContent='작성 내용을 이 기기에 보관했습니다. 현장 공유 연결 후 메모 저장을 다시 눌러 주세요.';return;}
+    const drv=driver,sent=s.input.value;s.busy=true;buttons();s.status.textContent='메모 저장 중…';fieldWrites++;
+    try{
+      const result=await drv.saveProductMemo({productId:s.id,baseMemo:s.baseMemo,memo:sent});if(!productMemoCurrent(s)||drv!==driver)return;
+      const accepted=result.memo,pendingSaved=productMemoPut('ilbo.cache.productMemoPending',s.id,{baseRevision:S.productCatalog.revision,catalogRevision:result.catalogRevision||null,memo:accepted},s.scope),product=S.productCatalog.products.find(p=>p.id===s.id);
+      if(product){product.memo=accepted;delete product.memoUnavailable}LS.set('ilbo.cache.productCatalog',S.productCatalog,s.scope);
+      s.input.value=accepted;s.baseMemo=accepted;s.baseRevision=S.productCatalog.revision;const draftCleared=productMemoPut('ilbo.productMemoDrafts',s.id,null,s.scope);
+      renderInput();$$('#prodBlocks .pb').forEach(updateProductMemo);s.status.textContent='생산관리에 저장했습니다.'+(result.syncPending?' 공유 표시를 갱신 중입니다.':'')+(!pendingSaved||!draftCleared?' 이 기기의 보관 상태를 다시 확인해 주세요.':'');
+    }catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code==='memo-conflict'&&typeof error.currentMemo==='string'){s.conflict=error.currentMemo;dialog.querySelector('.memo-current').textContent=error.currentMemo||'(빈 메모)';dialog.querySelector('.memo-conflict').hidden=false;s.status.textContent='다른 곳에서 메모가 바뀌었습니다. 입력 내용은 그대로 유지했습니다.';}else s.status.textContent=(error.isNetwork?'연결이 끊겨 작성 내용을 보관했습니다. 연결 후 메모 저장을 다시 눌러 주세요.':error.message);}
+    finally{fieldWrites--;s.busy=false;if(productMemoCurrent(s))buttons()}
+  };
+  document.body.append(dialog);dialog.showModal();buttons();s.input.focus();s.input.setSelectionRange(s.input.value.length,s.input.value.length);
+}
 function resetProductCatalog(){
+  invalidateProductMemoDialog();
   resetProductionProgress();
   productCatalogRead++;
   S.productCatalog=null;S.productCatalogMessage='';
@@ -1797,7 +1891,7 @@ function resetProductCatalog(){
   if(driver.mode!=='gh'&&!driver.offline){S.productCatalogMode='legacy';return;}
   const cached=LS.get('ilbo.cache.productCatalog',null);
   if(cached)S.productCatalogSeen=true;
-  try{if(cached)S.productCatalog=parseProductCatalog(cached);}
+  try{if(cached)S.productCatalog=applyProductMemoPending(parseProductCatalog(cached),false);}
   catch(e){S.productCatalogMessage=e.message;}
   S.productCatalogMode=S.productCatalog?'cached':'loading';
 }
@@ -1807,7 +1901,7 @@ function renderProductCatalogNote(){
   if(el.hidden)return;
   if(S.productCatalog){
     const count=S.productCatalog.products.filter(p=>p.active).length;
-    el.textContent=`관리 품목 ${count}개 · 품명 추가·수정은 생산일정 앱의 관리 탭에서 합니다.${S.productCatalogMode==='cached'?' 보관한 목록을 사용 중입니다. 연결되면 최신 목록을 확인합니다.':''}${S.productCatalogMessage?' '+S.productCatalogMessage:''}`;
+    el.textContent=`관리 품목 ${count}개 · 품명 추가·수정은 생산일정 앱의 관리 탭에서 합니다.${S.productCatalogMode==='cached'?' 보관한 목록을 사용 중입니다. 연결되면 최신 목록을 확인합니다.':''}${S.productCatalog.products.some(p=>p.memoUnavailable)?' 일부 관리 메모는 형식 확인이 필요합니다.':''}${S.productCatalogMessage?' '+S.productCatalogMessage:''}`;
   }else el.textContent=S.productCatalogMode==='loading'?'관리 품목을 확인하고 있습니다…':(S.productCatalogMessage||'관리 품목을 불러오지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.');
 }
 function refreshProductChips(el){
@@ -1823,7 +1917,7 @@ function refreshProductChips(el){
     button.onclick=()=>{input.value=button.dataset.p;show();updateProdProg(el);syncQuickProducts();const qty=el.querySelector('.pb-prod');qty.scrollIntoView({block:'center'});qty.focus();};
     if(!S.productCatalog)bindLongPress(button,()=>{if(removePreset('products',button.dataset.p))button.remove();});
   });
-  input.oninput=()=>{show();updateProdProg(el);};show();
+  input.oninput=()=>{show();updateProdProg(el);};show();updateProductMemo(el);
 }
 async function loadProductCatalog(background=false){
   const epoch=storeEpoch,seq=++productCatalogRead,drv=driver;
@@ -1832,7 +1926,7 @@ async function loadProductCatalog(background=false){
     const value=await drv.loadProductCatalog();assertContext(epoch);if(seq!==productCatalogRead)return;
     if(deferFieldBackground(background))return;
     if(value){
-      const next=parseProductCatalog(value);S.productCatalog=next;S.productCatalogSeen=true;S.productCatalogMode='ready';
+      const next=applyProductMemoPending(parseProductCatalog(value),true);S.productCatalog=next;S.productCatalogSeen=true;S.productCatalogMode='ready';
       if(!validLocalProgress(S.progress,next))S.progress=null;
       const saved=LS.set('ilbo.cache.productCatalog',next),seen=LS.set('ilbo.cache.productCatalogSeen',true);
       S.productCatalogMessage=saved&&seen?'':'이 기기에 목록을 보관하지 못했습니다.';
@@ -2043,6 +2137,7 @@ function renderManagedProgressTableContents(days,summary){
 }
 
 /* ================= 데이터 ================= */
+window.addEventListener('production:lock',invalidateProductMemoDialog);
 let loadSeq = 0, refreshing = 0;   /* refreshing = 진행 중인 조회 수 (저장의 loadSeq++ 와 분리) */
 function pendingRowsFor(date){
   return outboxAll().filter(i => i.date === date).flatMap(i => i.rows || []);
@@ -2547,6 +2642,7 @@ function planBadge(r){
 }
 function updateProdProg(el){return withProjectedReadScope(()=>updateProdProgContents(el));}
 function updateProdProgContents(el){
+  updateProductMemo(el);
   if(typeof updateScheduleReference==='function')updateScheduleReference(el);
   const box = el.querySelector('.pb-prog'); if(!box) return;
   let pn = el.querySelector('.pb-product').value.trim();
@@ -2660,6 +2756,7 @@ function renderInputContents(){
         return `<div class="rowcard ${bad?'has-bad':''} ${S.flashIds && S.flashIds.has(r.id) ? 'flash' : ''}" data-id="${esc(r.id)}" tabindex="0" role="button">
           <div class="rc-main">
             <div class="rc-prod">${esc(fieldProductName(r))}</div>
+            ${productMemoLink(r)}
             <div class="rc-sub">
               ${planBadge(r)}
               ${(()=>{const sync=fieldRecordSyncState(r);return `<span class="row-sync ${sync.kind}" title="${esc(sync.note||sync.text)}">${esc(sync.text)}</span>`;})()}
@@ -2675,9 +2772,11 @@ function renderInputContents(){
         </div>`;
       }).join('')}
     </div>`).join('');
+  bindProductMemoLinks($('#rowList'));
   $$('#rowList .edit-worker').forEach(b=>b.onclick=()=>openWorkerEntry(b.dataset.worker));
   $$('#rowList .rowcard').forEach(el => {
-    el.onclick = () => {
+    el.onclick = event => {
+      if(event.target.closest('[data-product-memo]'))return;
       const r = S.rows.find(x => x.id === el.dataset.id);
       if(!r) return;
       if(r.off){
@@ -2689,7 +2788,7 @@ function renderInputContents(){
       }
       openEntry(r);
     };
-    el.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); } };
+    el.onkeydown = e => { if(e.target.closest('[data-product-memo]'))return;if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); } };
   });
 }
 
@@ -2704,6 +2803,7 @@ function blockHTML(){
   <div class="pb-body">
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
+  <div class="pb-product-memo" hidden></div>
   <div class="chips pb-prodchips" style="margin-top:7px"></div>
   <div class="pb-prog" hidden></div>
   <div class="f-label">생산 진행 <span class="hint">같은 기물은 계속 생산 · 새 기물 시작일에만 계획수량 · 더 만들지 않으면 생산 종료</span></div>
