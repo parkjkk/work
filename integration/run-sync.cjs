@@ -3,6 +3,7 @@
 // Runs trusted integration code from the public work repository; both data repositories remain private JSON input/output.
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const {planSync,projectCatalog,stable}=require('./ilbo-sync.cjs');
+const {catalogUnitIssues}=require('./schedule-core.cjs');
 const {projectProgress}=require('./progress-projection.cjs');
 const {planFieldReturn,withReturnReport}=require('./field-return.cjs');
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));
@@ -37,6 +38,7 @@ function nativeState(dir){
  if(meta.catalogUnitSync)throw Error('Catalog unit update is pending');
  const state={products:envelope.records.filter(r=>r.kind==='products'&&!r.deleted),memos:envelope.records.filter(r=>r.kind==='memos'&&!r.deleted),months:{},workers:envelope.records.filter(r=>r.kind==='workers'&&!r.deleted).map(r=>r.name),calendar:meta.calendar||{factory:[],workers:[]},scheduleRows:envelope.records.filter(r=>r.kind==='scheduleRows'&&!r.deleted),scheduleHistory:envelope.records.filter(r=>r.kind==='scheduleHistory'&&!r.deleted),archive:[]};
  for(const key of meta.months){if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(key))throw Error('Invalid month key');const x=read(inside(dir,'months/'+key+'.json'));if(x.schema!==1||x.records?.length!==1||x.records[0].kind!=='month'||x.records[0].id!==key)throw Error('Invalid month envelope');const m=x.records[0];for(const k of['rows','issues','stocks','plans','plaster'])if(!Array.isArray(m[k]))throw Error('Missing month collection');state.months[key]=m}
+ if(catalogUnitIssues(state).length)throw Error('Catalog and month reference values need reconciliation');
  return{state,envelope,meta};
 }
 function sourceSnapshot(dir,repo='parkjkk/ilbo-data'){

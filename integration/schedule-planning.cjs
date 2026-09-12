@@ -199,7 +199,7 @@ const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
 function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)}
 function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
-const reservationLayoutPolicy='manual-transition-gap-v2';
+const reservationLayoutPolicy='manual-transition-gap-v3';
 function afterProductionGap(s,worker,end){
  if(!C.iso(end))throw Error('앞 작업의 생산 종료일을 확인해 주세요.');
  let date=add(end,1);for(let i=0;i<3;i++){date=nextManualWork(s,worker,date);if(i<2)date=add(date,1)}return date;
@@ -467,16 +467,19 @@ function scheduleAll(s,requestedToday,options={}){
  for(const entry of entries){const later=entries.filter(other=>other.owner>entry.owner&&other.job.carried&&sourceIdentity(other.job)===sourceIdentity(entry.job)).sort((a,b)=>b.owner.localeCompare(a.owner))[0];if(later){if(entry.job.manual&&!hasActual(entry.job))superseded.add(entry.key);continue}selected.push(entry)}
  const groups=new Map(),rowsFor=entry=>(base[entry.owner].rows||[]).filter(row=>row.jobId===entry.job.id);
  for(const entry of selected){const key=entry.owner+'\0'+entry.job.worker+'\0'+productionGroupKey(entry.job);if(!groups.has(key))groups.set(key,{key,owner:entry.owner,worker:entry.job.worker,members:[],requestedStart:entry.job.start});const group=groups.get(key);group.members.push(entry);if((entry.job.start||'9999')<(group.requestedStart||'9999'))group.requestedStart=entry.job.start}
- const cursors=new Map(),pending=[];
+ const cursors=new Map(),pending=[],activeStarts=new Map();
  const predecessor=(group,end)=>({groupKey:group.key,jobIds:group.members.map(e=>e.job.id),products:[...new Set(group.members.map(e=>e.job.product))],ownerMonths:[group.owner],end:end||null});
  for(const group of groups.values()){
   const active=group.members.some(e=>hasActual(e.job)&&!e.job.complete);
   if(active){const incomplete=group.members.filter(e=>!e.job.complete),unknown=incomplete.some(e=>e.job.carryBlocked||!rowsFor(e).some(row=>!row.actualOnly&&!row.reservationOnly&&C.iso(row.end))),ends=group.members.flatMap(rowsFor).filter(row=>!row.actualOnly||group.members.find(e=>e.job.id===row.jobId)?.job.complete).map(row=>row.end).filter(C.iso).sort(),end=ends.at(-1)||null,current=cursors.get(group.worker);
+   for(const entry of incomplete.filter(e=>hasActual(e.job))){const owned=ownedMachineEvents(s,entry.owner,entry.job),start=owned.initial>0?null:owned.events.map(event=>event.date).filter(C.iso).sort()[0]||null,prior=activeStarts.get(group.worker);activeStarts.set(group.worker,!start||prior===null?null:prior&&prior<start?prior:start)}
    if(unknown||!current?.blocked&&(!current||end>current.end))cursors.set(group.worker,{end,blocked:unknown,predecessor:predecessor(group,end),reason:unknown?'진행 중인 앞 작업의 예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.':''});
   }else if(group.members.every(e=>e.job.manual&&!hasActual(e.job)&&!e.job.complete))pending.push(group);
  }
- // Unlinked ongoing actuals have no trustworthy forecast finish either.
- for(const owner of months)if(!s.months[owner].closed)for(const row of base[owner].rows||[])if(row.orphanActual&&row.status==='생산중')cursors.set(row.worker,{end:null,blocked:true,predecessor:{groupKey:row.groupId,jobIds:[row.jobId],products:[row.product],ownerMonths:[owner],end:null},reason:'연결되지 않은 실제 생산의 작업·예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.'});
+ // Older unlinked history remains visible, but cannot replace the current
+ // production predecessor. Use the earliest verified start across all active
+ // jobs, never a later companion's date or an unverified carried balance.
+ for(const owner of months)if(!s.months[owner].closed)for(const row of base[owner].rows||[])if(row.orphanActual&&row.status==='생산중'&&!(C.iso(activeStarts.get(row.worker))&&row.end<activeStarts.get(row.worker)))cursors.set(row.worker,{end:null,blocked:true,predecessor:{groupKey:row.groupId,jobIds:[row.jobId],products:[row.product],ownerMonths:[owner],end:null},reason:'연결되지 않은 실제 생산의 작업·예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.'});
  pending.sort((a,b)=>(a.requestedStart||'9999').localeCompare(b.requestedStart||'9999')||a.owner.localeCompare(b.owner)||a.key.localeCompare(b.key));
  for(const group of pending){const previous=cursors.get(group.worker),manualFallback=!!previous?.blocked,anchor=manualFallback?null:previous,status=manualFallback?'manual':previous?'chained':'first';let prepared=null,calculated=null,start=null,end=null,reason='';
   try{

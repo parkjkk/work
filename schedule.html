@@ -1433,8 +1433,8 @@ function savedScheduleDryMarkers(sheets=[]){
 }
 const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
-// Formal name changes share one identity. Field-report aliases are deliberately
-// excluded: registering an alias must never merge an unrelated ledger product.
+// Formal names take precedence; unique saved aliases resolve to the same product.
+// Registering an alias never merges a different current formal product.
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
@@ -1503,13 +1503,33 @@ function catalogUnitSources(sheet,row,info=catalogUnitSourceInfo(sheet)){
  }
  return result;
 }
+// A formal rename must finish its reference update; a confirmed alias is already valid.
+function catalogUnitIssues(state){
+ const issues=[],lookup=catalogLookup(state||{});for(const [key,month]of Object.entries(state?.months||{})){
+  if(month.closed)continue;
+  for(const kind of ['rows','issues','stocks','plans','jobs'])for(const row of month[kind]||[]){const name=text(row.product),product=lookup.product(name);if(name&&product&&text(product.name)!==name&&(product.renameFrom||[]).some(previous=>text(previous)===name))issues.push({month:key,rowId:row.id,field:'product'});}
+  for(const row of month.rows||[]){
+   const basis=row.unitCatalogBasis;if(!basis)continue;
+   // A reopened historical month retains its old snapshot until an explicit catalog refresh.
+   if(month.closedAt&&basis.closedAt!==month.closedAt)continue;
+   const product=lookup.product(row.product);
+   for(const [field,name]of [['cases','cases'],['plaster','kg']]){
+    if(row.unitSources?.[field]!=='catalog'||!Object.hasOwn(basis,name))continue;
+    if(!product||basis.productId!==(product.id||'product:'+product.name)){issues.push({month:key,rowId:row.id,field});continue}
+    // Missing or unresolved master units deliberately keep the existing snapshot.
+    const value=num(product[name]);if(value==null||value<0||product.catalogReview?.status==='needs-review')continue;
+    if(value!==basis[name]||row[field]!==basis[name])issues.push({month:key,rowId:row.id,field});
+   }
+  }
+ }return issues;
+}
 function refreshCatalogUnits(state){
- const keys=[],at=new Date().toISOString();
+ const keys=[],at=new Date().toISOString(),lookup=catalogLookup(state);
  for(const [key,month]of Object.entries(state.months||{})){
   if(month.closed)continue;let changed=false;
   for(const row of month.rows||[]){
-   const matches=(state.products||[]).filter(p=>p.name===row.product);if(matches.length!==1||matches[0].catalogReview?.status==='needs-review')continue;
-   const product=matches[0],fields=[];for(const [field,name]of [['cases','cases'],['plaster','kg']]){
+   const product=lookup.product(row.product);if(!product||product.catalogReview?.status==='needs-review')continue;
+   const fields=[];for(const [field,name]of [['cases','cases'],['plaster','kg']]){
     if(row.unitSources?.[field]!=='catalog')continue;const value=num(product[name]);if(value==null||value<0||value===row[field])continue;fields.push([field,value]);
    }
    if(!fields.length)continue;const before=clone(row);for(const [field,value]of fields)row[field]=value;
@@ -1561,7 +1581,7 @@ function completionValue(value){if(value==null)return null;if(!value||typeof val
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);return true}
 function updateDaily(state,key,row){const m=state.months[key];if(!m||m.closed)throw Error('마감된 월은 수정할 수 없습니다.');const i=m.rows.findIndex(x=>x.id===row.id),before=i<0?null:clone(m.rows[i]);const next={...before,...row,id:row.id||id(),rev:(before?.rev||0)+1};if(before?.plan>0&&next.plan===0&&next.productionPlanQty==null)next.productionPlanQty=before.plan;validateRecord(next);if(!next.date.startsWith(key))throw Error('선택한 월과 입력 날짜가 다릅니다.');if(Object.prototype.hasOwnProperty.call(next,'productionCompletion'))next.productionCompletion=completionValue(next.productionCompletion);if(next.productionCompletion&&root.SchedulePlanning){const staged={...state,months:{...state.months,[key]:{...m,rows:i<0?[...m.rows,next]:m.rows.map(r=>r.id===next.id?next:r)}}};if(root.SchedulePlanning.jobs(staged,key).filter(j=>j.records?.some(r=>r.id===next.id)).length!==1)throw Error('완료할 작업의 시작 계획 또는 연결을 확인해 주세요.')}if(i<0)m.rows.push(next);else m.rows[i]=next;m.rev++;const change={id:id(),at:new Date().toISOString(),type:'생산 입력',kind:'daily',month:key,before,after:clone(next)};state.changes??=[];state.changes.push(change);m.history??=[];m.history.push(clone(change));return next}
 function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[])],names=[...new Set(all.map(r=>r.worker).filter(Boolean))];return names.map(worker=>{const rows=all.filter(r=>r.worker===worker),headers=rows.filter(r=>r.header||r.explicit?.day||r.explicit?.worker||r.explicit?.hours),rawHours=sum(rows,r=>r.hours),max=Math.max(0,...headers.map(r=>r.hours||0)),adjusted=sum(headers,r=>r.hours)+max*headers.filter(r=>!r.hours).length-1.5*headers.length,explicit=rows.filter(r=>r.explicit?.worker),injectionDays=new Set(explicit.filter(r=>r.explicit?.day&&r.explicit?.hours&&r.explicit?.pours).map(r=>r.date)).size,qtyExplicit=sum(explicit,r=>r.pours),kg=sum(rows,r=>daily(r).plaster);return{worker,kg,quantity:sum(rows.filter(r=>!catalogIdentity(s,r.product).includes('부속')),r=>r.pours),defectKg:sum(rows,r=>daily(r).defect),rawHours,workingDays:new Set(explicit.map(r=>r.date)).size,adjustedHours:adjusted,hourly:adjusted>0?kg/adjusted:null,cycle:qtyExplicit>0?(sum(explicit,r=>r.hours)-1.5*injectionDays)/qtyExplicit:null}})}
-root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
 
@@ -1712,25 +1732,7 @@ function unpackMonth(key,records){if(records.length!==1||records[0].kind!=='mont
 function packCatalog(s){const baseline=sourceBaseline(s);return[{id:'catalog',kind:'catalog',rev:1,app:s.app,schema:1,months:Object.keys(s.months).sort(),locations:s.locations,calendar:s.calendar||{factory:[],workers:[]},migrationWarnings:s.migrationWarnings||[],source:s.source,sourceHash:s.sourceHash,archiveNames:s.archive.length?s.archive.map(a=>a.name):(s.archiveNames||[]),...(baseline?{scheduleSourceBaseline:baseline}:{}),...(s.catalogUnitSync?{catalogUnitSync:clone(s.catalogUnitSync)}:{})},...s.products.map(r=>({...r,kind:'products'})),...s.memos.map(r=>({...r,kind:'memos'})),...s.counts.map(r=>({...r,kind:'counts'})),...s.workers.map(name=>({id:'worker:'+name,kind:'workers',name,rev:1})),...s.scheduleRows.map(r=>({id:'legacySchedule:'+r.row,kind:'scheduleRows',...r})),...scheduleHistory(s).map(r=>({...r,kind:'scheduleHistory'})),...scheduleDryHistory(s).map(r=>({...r,kind:'scheduleDryHistory'})),...packScheduleView(s.scheduleView)]}
 function unpackCatalog(records){const meta=records.find(r=>r.id==='catalog');if(meta?.app!=='johyeong-schedule'||meta.schema!==1||!Array.isArray(meta.months))throw Error('이 저장소는 생산관리 데이터 형식과 다릅니다.');const s=emptyState();s.locations=meta.locations||s.locations;s.calendar=meta.calendar||s.calendar;s.migrationWarnings=meta.migrationWarnings||[];s.source=meta.source||'GitHub';s.sourceHash=meta.sourceHash||'';s.archiveNames=meta.archiveNames||[];if(meta.scheduleSourceBaseline)s.scheduleSourceBaseline=clone(meta.scheduleSourceBaseline);if(meta.catalogUnitSync)s.catalogUnitSync=clone(meta.catalogUnitSync);for(const kind of['products','memos','counts','scheduleRows','scheduleHistory','scheduleDryHistory'])s[kind]=records.filter(r=>r.kind===kind&&!r.deleted).map(r=>{const x={...r};delete x.kind;return x});s.workers=records.filter(r=>r.kind==='workers'&&!r.deleted).map(r=>r.name);const view=unpackScheduleView(records);if(Object.keys(view).length)s.scheduleView=view;return{state:s,months:meta.months}}
 function applyRecords(state,path,records){if(path==='meta/catalog.json'){const loaded=unpackCatalog(records).state;for(const key of['products','workers','memos','counts','scheduleRows','scheduleHistory','scheduleDryHistory','calendar','locations','archiveNames','migrationWarnings','source','sourceHash'])state[key]=loaded[key];if(loaded.scheduleSourceBaseline)state.scheduleSourceBaseline=clone(loaded.scheduleSourceBaseline);else delete state.scheduleSourceBaseline;if(loaded.catalogUnitSync)state.catalogUnitSync=loaded.catalogUnitSync;else delete state.catalogUnitSync;if(loaded.scheduleView)state.scheduleView=loaded.scheduleView;else delete state.scheduleView}else if(/^months\//.test(path)){const key=path.slice(7,-5);state.months[key]=unpackMonth(key,records)}}
-function catalogUnitIssues(state){
- const issues=[];for(const [key,month]of Object.entries(state?.months||{})){
-  if(month.closed)continue;
-  for(const kind of ['rows','issues','stocks','plans','jobs'])for(const row of month[kind]||[])if(C.text(row.product)&&C.catalogName(state,row.product)!==C.text(row.product))issues.push({month:key,rowId:row.id,field:'product'});
-  for(const row of month.rows||[]){
-   const basis=row.unitCatalogBasis;if(!basis)continue;
-   // A reopened historical month retains its old snapshot until an explicit catalog refresh.
-   if(month.closedAt&&basis.closedAt!==month.closedAt)continue;
-   const matches=(state.products||[]).filter(p=>p.name===row.product),product=matches.length===1?matches[0]:null;
-   for(const [field,name]of [['cases','cases'],['plaster','kg']]){
-    if(row.unitSources?.[field]!=='catalog'||!Object.hasOwn(basis,name))continue;
-    if(!product||basis.productId!==(product.id||'product:'+product.name)){issues.push({month:key,rowId:row.id,field});continue}
-    // Missing or unresolved master units deliberately keep the existing snapshot.
-    const value=C.num(product[name]);if(value==null||value<0||product.catalogReview?.status==='needs-review')continue;
-    if(value!==basis[name]||row[field]!==basis[name])issues.push({month:key,rowId:row.id,field});
-   }
-  }
- }return issues;
-}
+const catalogUnitIssues=C.catalogUnitIssues;
 function unitSyncError(state,allowId){
  const pending=state?.catalogUnitSync;
  if(pending&&pending.id!==allowId){const e=Error('관리 기준값과 월자료를 반영 중입니다. 저장한 기기에서 재전송을 마친 뒤 최신자료를 불러와 주세요.');e.code='CATALOG_UNIT_SYNC';e.syncId=pending.id;return e}
@@ -2066,7 +2068,7 @@ const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
 function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)}
 function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
-const reservationLayoutPolicy='manual-transition-gap-v2';
+const reservationLayoutPolicy='manual-transition-gap-v3';
 function afterProductionGap(s,worker,end){
  if(!C.iso(end))throw Error('앞 작업의 생산 종료일을 확인해 주세요.');
  let date=add(end,1);for(let i=0;i<3;i++){date=nextManualWork(s,worker,date);if(i<2)date=add(date,1)}return date;
@@ -2334,16 +2336,19 @@ function scheduleAll(s,requestedToday,options={}){
  for(const entry of entries){const later=entries.filter(other=>other.owner>entry.owner&&other.job.carried&&sourceIdentity(other.job)===sourceIdentity(entry.job)).sort((a,b)=>b.owner.localeCompare(a.owner))[0];if(later){if(entry.job.manual&&!hasActual(entry.job))superseded.add(entry.key);continue}selected.push(entry)}
  const groups=new Map(),rowsFor=entry=>(base[entry.owner].rows||[]).filter(row=>row.jobId===entry.job.id);
  for(const entry of selected){const key=entry.owner+'\0'+entry.job.worker+'\0'+productionGroupKey(entry.job);if(!groups.has(key))groups.set(key,{key,owner:entry.owner,worker:entry.job.worker,members:[],requestedStart:entry.job.start});const group=groups.get(key);group.members.push(entry);if((entry.job.start||'9999')<(group.requestedStart||'9999'))group.requestedStart=entry.job.start}
- const cursors=new Map(),pending=[];
+ const cursors=new Map(),pending=[],activeStarts=new Map();
  const predecessor=(group,end)=>({groupKey:group.key,jobIds:group.members.map(e=>e.job.id),products:[...new Set(group.members.map(e=>e.job.product))],ownerMonths:[group.owner],end:end||null});
  for(const group of groups.values()){
   const active=group.members.some(e=>hasActual(e.job)&&!e.job.complete);
   if(active){const incomplete=group.members.filter(e=>!e.job.complete),unknown=incomplete.some(e=>e.job.carryBlocked||!rowsFor(e).some(row=>!row.actualOnly&&!row.reservationOnly&&C.iso(row.end))),ends=group.members.flatMap(rowsFor).filter(row=>!row.actualOnly||group.members.find(e=>e.job.id===row.jobId)?.job.complete).map(row=>row.end).filter(C.iso).sort(),end=ends.at(-1)||null,current=cursors.get(group.worker);
+   for(const entry of incomplete.filter(e=>hasActual(e.job))){const owned=ownedMachineEvents(s,entry.owner,entry.job),start=owned.initial>0?null:owned.events.map(event=>event.date).filter(C.iso).sort()[0]||null,prior=activeStarts.get(group.worker);activeStarts.set(group.worker,!start||prior===null?null:prior&&prior<start?prior:start)}
    if(unknown||!current?.blocked&&(!current||end>current.end))cursors.set(group.worker,{end,blocked:unknown,predecessor:predecessor(group,end),reason:unknown?'진행 중인 앞 작업의 예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.':''});
   }else if(group.members.every(e=>e.job.manual&&!hasActual(e.job)&&!e.job.complete))pending.push(group);
  }
- // Unlinked ongoing actuals have no trustworthy forecast finish either.
- for(const owner of months)if(!s.months[owner].closed)for(const row of base[owner].rows||[])if(row.orphanActual&&row.status==='생산중')cursors.set(row.worker,{end:null,blocked:true,predecessor:{groupKey:row.groupId,jobIds:[row.jobId],products:[row.product],ownerMonths:[owner],end:null},reason:'연결되지 않은 실제 생산의 작업·예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.'});
+ // Older unlinked history remains visible, but cannot replace the current
+ // production predecessor. Use the earliest verified start across all active
+ // jobs, never a later companion's date or an unverified carried balance.
+ for(const owner of months)if(!s.months[owner].closed)for(const row of base[owner].rows||[])if(row.orphanActual&&row.status==='생산중'&&!(C.iso(activeStarts.get(row.worker))&&row.end<activeStarts.get(row.worker)))cursors.set(row.worker,{end:null,blocked:true,predecessor:{groupKey:row.groupId,jobIds:[row.jobId],products:[row.product],ownerMonths:[owner],end:null},reason:'연결되지 않은 실제 생산의 작업·예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.'});
  pending.sort((a,b)=>(a.requestedStart||'9999').localeCompare(b.requestedStart||'9999')||a.owner.localeCompare(b.owner)||a.key.localeCompare(b.key));
  for(const group of pending){const previous=cursors.get(group.worker),manualFallback=!!previous?.blocked,anchor=manualFallback?null:previous,status=manualFallback?'manual':previous?'chained':'first';let prepared=null,calculated=null,start=null,end=null,reason='';
   try{

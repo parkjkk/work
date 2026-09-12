@@ -57,8 +57,8 @@ function savedScheduleDryMarkers(sheets=[]){
 }
 const clone=x=>JSON.parse(JSON.stringify(x));
 const id=()=>globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+Math.random().toString(36).slice(2);
-// Formal name changes share one identity. Field-report aliases are deliberately
-// excluded: registering an alias must never merge an unrelated ledger product.
+// Formal names take precedence; unique saved aliases resolve to the same product.
+// Registering an alias never merges a different current formal product.
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
@@ -127,13 +127,33 @@ function catalogUnitSources(sheet,row,info=catalogUnitSourceInfo(sheet)){
  }
  return result;
 }
+// A formal rename must finish its reference update; a confirmed alias is already valid.
+function catalogUnitIssues(state){
+ const issues=[],lookup=catalogLookup(state||{});for(const [key,month]of Object.entries(state?.months||{})){
+  if(month.closed)continue;
+  for(const kind of ['rows','issues','stocks','plans','jobs'])for(const row of month[kind]||[]){const name=text(row.product),product=lookup.product(name);if(name&&product&&text(product.name)!==name&&(product.renameFrom||[]).some(previous=>text(previous)===name))issues.push({month:key,rowId:row.id,field:'product'});}
+  for(const row of month.rows||[]){
+   const basis=row.unitCatalogBasis;if(!basis)continue;
+   // A reopened historical month retains its old snapshot until an explicit catalog refresh.
+   if(month.closedAt&&basis.closedAt!==month.closedAt)continue;
+   const product=lookup.product(row.product);
+   for(const [field,name]of [['cases','cases'],['plaster','kg']]){
+    if(row.unitSources?.[field]!=='catalog'||!Object.hasOwn(basis,name))continue;
+    if(!product||basis.productId!==(product.id||'product:'+product.name)){issues.push({month:key,rowId:row.id,field});continue}
+    // Missing or unresolved master units deliberately keep the existing snapshot.
+    const value=num(product[name]);if(value==null||value<0||product.catalogReview?.status==='needs-review')continue;
+    if(value!==basis[name]||row[field]!==basis[name])issues.push({month:key,rowId:row.id,field});
+   }
+  }
+ }return issues;
+}
 function refreshCatalogUnits(state){
- const keys=[],at=new Date().toISOString();
+ const keys=[],at=new Date().toISOString(),lookup=catalogLookup(state);
  for(const [key,month]of Object.entries(state.months||{})){
   if(month.closed)continue;let changed=false;
   for(const row of month.rows||[]){
-   const matches=(state.products||[]).filter(p=>p.name===row.product);if(matches.length!==1||matches[0].catalogReview?.status==='needs-review')continue;
-   const product=matches[0],fields=[];for(const [field,name]of [['cases','cases'],['plaster','kg']]){
+   const product=lookup.product(row.product);if(!product||product.catalogReview?.status==='needs-review')continue;
+   const fields=[];for(const [field,name]of [['cases','cases'],['plaster','kg']]){
     if(row.unitSources?.[field]!=='catalog')continue;const value=num(product[name]);if(value==null||value<0||value===row[field])continue;fields.push([field,value]);
    }
    if(!fields.length)continue;const before=clone(row);for(const [field,value]of fields)row[field]=value;
@@ -185,6 +205,6 @@ function completionValue(value){if(value==null)return null;if(!value||typeof val
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);return true}
 function updateDaily(state,key,row){const m=state.months[key];if(!m||m.closed)throw Error('마감된 월은 수정할 수 없습니다.');const i=m.rows.findIndex(x=>x.id===row.id),before=i<0?null:clone(m.rows[i]);const next={...before,...row,id:row.id||id(),rev:(before?.rev||0)+1};if(before?.plan>0&&next.plan===0&&next.productionPlanQty==null)next.productionPlanQty=before.plan;validateRecord(next);if(!next.date.startsWith(key))throw Error('선택한 월과 입력 날짜가 다릅니다.');if(Object.prototype.hasOwnProperty.call(next,'productionCompletion'))next.productionCompletion=completionValue(next.productionCompletion);if(next.productionCompletion&&root.SchedulePlanning){const staged={...state,months:{...state.months,[key]:{...m,rows:i<0?[...m.rows,next]:m.rows.map(r=>r.id===next.id?next:r)}}};if(root.SchedulePlanning.jobs(staged,key).filter(j=>j.records?.some(r=>r.id===next.id)).length!==1)throw Error('완료할 작업의 시작 계획 또는 연결을 확인해 주세요.')}if(i<0)m.rows.push(next);else m.rows[i]=next;m.rev++;const change={id:id(),at:new Date().toISOString(),type:'생산 입력',kind:'daily',month:key,before,after:clone(next)};state.changes??=[];state.changes.push(change);m.history??=[];m.history.push(clone(change));return next}
 function workerStats(s,k){const m=s.months[k],all=[...m.rows,...(m.headerRows||[])],names=[...new Set(all.map(r=>r.worker).filter(Boolean))];return names.map(worker=>{const rows=all.filter(r=>r.worker===worker),headers=rows.filter(r=>r.header||r.explicit?.day||r.explicit?.worker||r.explicit?.hours),rawHours=sum(rows,r=>r.hours),max=Math.max(0,...headers.map(r=>r.hours||0)),adjusted=sum(headers,r=>r.hours)+max*headers.filter(r=>!r.hours).length-1.5*headers.length,explicit=rows.filter(r=>r.explicit?.worker),injectionDays=new Set(explicit.filter(r=>r.explicit?.day&&r.explicit?.hours&&r.explicit?.pours).map(r=>r.date)).size,qtyExplicit=sum(explicit,r=>r.pours),kg=sum(rows,r=>daily(r).plaster);return{worker,kg,quantity:sum(rows.filter(r=>!catalogIdentity(s,r.product).includes('부속')),r=>r.pours),defectKg:sum(rows,r=>daily(r).defect),rawHours,workingDays:new Set(explicit.map(r=>r.date)).size,adjustedHours:adjusted,hourly:adjusted>0?kg/adjusted:null,cycle:qtyExplicit>0?(sum(explicit,r=>r.hours)-1.5*injectionDays)/qtyExplicit:null}})}
-root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
