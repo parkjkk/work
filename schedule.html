@@ -228,9 +228,113 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 
 /* Rebuilt calendar cells must not become browser scroll anchors. */
 .pgSurface{overflow-anchor:none}
-.pgCumulativeRow .pgAxisLabel small{font-size:9px;font-weight:400}.pgCumulativeRow .pgAxisLabel i{font-style:normal}.pgCumulativeRow .pgCumulativeLabel{flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;padding:2px 6px}.pgCumulativeLabel b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pgCumulativeLabel span{font-size:9px;white-space:normal;max-width:100%;line-height:1.2}.pgCumulativeLabel span small{display:block}.pgCumulativeValues{flex-direction:column;gap:1px;padding:2px 0;line-height:1.2}.pgCumulativeNumber{display:inline-flex;max-width:100%;flex-wrap:wrap;align-items:baseline;justify-content:center;overflow-wrap:anywhere;font-size:10px}.pgCumulativeNumber small{font-size:8px;font-weight:400}.pgCumulativeValues .pgCumulativeActual,.pgCumulativeActual{color:#245a80;font-weight:700}.pgCumulativeValues .pgCumulativeForecast,.pgCumulativeForecast{color:#637080;font-weight:400}.pgCumulativeValues .pgCumulativeSaved{color:#64748b;text-decoration:underline dotted;text-underline-offset:2px}
+.pgCumulativeRow{display:grid;min-height:24px}
+.pgCumulativeRow .pgAxisLabel small{font-size:9px;font-weight:400}
+.pgCumulativeRow .pgAxisLabel i{font-style:normal}
+.pgCumulativeRow .pgCumulativeLabel{flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;padding:2px 6px}
+.pgCumulativeLabel span{font-size:10px;white-space:normal;max-width:100%;line-height:1.2}
+.pgCumulativeLabel span small{display:inline;font-size:9px}
+.pgCumulativeValues{flex-direction:column;align-items:stretch;gap:1px;padding:1px 0;line-height:1.2}
+.pgSurface button.pgCumulativeNumber{display:inline-flex;flex:none;width:100%;min-width:0;max-width:100%;min-height:22px;margin:0;padding:1px 0;border:0;border-radius:2px;background:transparent;box-shadow:none;flex-wrap:wrap;align-items:center;justify-content:center;white-space:normal;overflow-wrap:anywhere;font-size:10px;line-height:12px;cursor:pointer}
+.pgSurface button.pgCumulativeNumber:hover{background:#e6f0fa}
+.pgSurface button.pgCumulativeNumber:focus-visible{outline:2px solid #276ba3;outline-offset:-2px;background:#e6f0fa;position:relative;z-index:2}
+.pgCumulativeNumber small{font-size:8px;font-weight:400}
+.pgCumulativeValues .pgCumulativeActual,.pgCumulativeActual{color:#245a80;font-weight:700}
+.pgCumulativeValues .pgCumulativeForecast,.pgCumulativeForecast{color:#637080;font-weight:400}
+.pgCumulativeValues .pgCumulativeSaved{color:#64748b;text-decoration:underline dotted;text-underline-offset:2px}
+.pgFocused button.pgCumulativeNumber{min-height:20px;font-size:10px;line-height:11px}
+.pgFocused.pgNarrowDays button.pgCumulativeNumber{font-size:9px;letter-spacing:-.2px}
+#pgCumulativeInfoDialog{box-sizing:border-box;width:min(480px,calc(100vw - 24px));max-width:480px;max-height:70dvh;margin:auto;padding:18px;border:1px solid #b7c9dc;border-radius:12px;background:#fff;color:#213e54;box-shadow:0 18px 60px #17395538;font-size:16px;line-height:1.55;overflow:auto;overscroll-behavior:contain}
+#pgCumulativeInfoDialog::backdrop{background:#17304766}
+#pgCumulativeInfoDialog .toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 8px}
+#pgCumulativeInfoDialog .toolbar form{flex:none;margin:0}
+#pgCumulativeInfoDialog h2{font-size:18px;line-height:1.4;margin:0 0 12px;color:#213e54}
+#pgCumulativeInfoDialog h3{font-size:16px;line-height:1.4;margin:0 0 6px;color:#213e54}
+#pgCumulativeInfoDialog p{margin:8px 0;overflow-wrap:anywhere}
+#pgCumulativeInfoDialog ul{margin:12px 0;padding-left:20px}
+#pgCumulativeInfoDialog li{margin:8px 0;overflow-wrap:anywhere}
+#pgCumulativeInfoDialog .pgCumulativeInfoItem{padding:10px 0;border-top:1px solid #dce6ed;overflow-wrap:anywhere}
+#pgCumulativeInfoDialog .actions{display:flex;justify-content:flex-end;margin-top:16px}
+#pgCumulativeInfoDialog button{min-width:76px;min-height:44px;padding:8px 16px;border:1px solid #aebfd1;border-radius:6px;background:#f1f6fc;color:#244c70;font-size:16px;line-height:1.4;cursor:pointer}
+#pgCumulativeInfoDialog button:focus-visible{outline:2px solid #276ba3;outline-offset:2px}
 
 .pgSurface .pgBar.pgCaseConflict{outline:3px solid #dc2626;outline-offset:-2px;box-shadow:0 0 0 1px #fff,0 0 0 3px #dc2626!important}.pgCaseBadge{background:#fff1f2;color:#9f1239;border-radius:3px;padding:1px 4px;font-weight:800}.pgSurface .pgBar.pgCaseConflict.pgSelected{outline:3px solid #dc2626;box-shadow:0 0 0 2px white,0 0 0 5px #245db5!important}
+
+/* Focus keeps every production lane, drying marker and worker cumulative row. */
+@media screen{
+ .pgSurface.pgFocused{--pg-focus-rail:28px;--pg-focus-bar:23px;--pg-focus-dry:20px;--pg-focus-font:11px}
+ .pgSurface .pgTimeline{scrollbar-gutter:auto}
+ .pgFocused:not(.pgCalendarExpanded) .pgHolidayRow{display:none}
+ .pgFocused.pgCalendarExpanded .pgHolidayRow{display:grid}
+ .pgFocused .pgWorkerBlock{border-top:1px solid #8baebe}
+ .pgFocused .pgProductionRow{min-height:var(--pg-focus-rail)}
+ .pgFocused .pgRail,.pgFocused .pgRailGrid .pgDay{height:var(--pg-focus-rail);min-height:var(--pg-focus-rail)}
+ .pgFocused .pgProductionRow>.pgAxisLabel{justify-content:flex-start;gap:5px;padding:2px 6px;line-height:1.15}
+ .pgFocused .pgProductionRow>.pgAxisLabel>b{display:block;font-size:var(--pg-focus-font);white-space:nowrap}
+ .pgFocused .pgProductionRow>.pgAxisLabel>b:empty{display:none}
+ .pgFocused .pgProductionRow>.pgAxisLabel>span{font-size:10px}
+ .pgFocused .pgBar{top:calc((var(--pg-focus-rail) - var(--pg-focus-bar))/2);height:var(--pg-focus-bar);min-height:var(--pg-focus-bar);padding:1px 4px;font-size:var(--pg-focus-font);line-height:calc(var(--pg-focus-bar) - 2px)}
+ .pgFocused .pgDryRow{min-height:var(--pg-focus-dry)}
+ .pgFocused .pgDryRow>.pgAxisLabel{justify-content:flex-start;padding:1px 6px;font-size:10px}
+ .pgFocused .pgDryDay{height:auto;min-height:var(--pg-focus-dry);padding:0;gap:1px}
+ .pgFocused .pgDryMarker{min-height:var(--pg-focus-dry);padding:0 1px;line-height:calc(var(--pg-focus-font) + 3px);font-size:var(--pg-focus-font);letter-spacing:0}
+ .pgFocused.pgNarrowDays .pgDryMarker{min-width:0;max-width:100%;padding:1px 0;font-size:9px;line-height:11px;letter-spacing:-.2px;white-space:normal;overflow-wrap:anywhere;overflow:visible;border-bottom:1px solid currentColor;border-radius:2px}
+ .pgFocused.pgNarrowDays .pgDryMarker.projected{border-bottom-style:dashed}
+ .pgFocused.pgNarrowDays .pgDrySymbol{display:none}
+ .pgFocused .pgMonthHead{height:26px;min-height:26px}
+ .pgFocused .pgMonths b{padding:4px 7px;font-size:11px}
+ .pgFocused .pgDateHead{top:26px}
+ .pgFocused .pgDateHead .pgDay{min-height:34px;padding:2px 0}
+ .pgFocused .pgDateHead .pgDateSelectionLabel{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;align-content:center;align-items:center;gap:1px 4px;padding:2px 6px}
+ .pgFocused .pgDateSelectionLabel>b{grid-column:1;grid-row:1;font-size:10px}
+ .pgFocused .pgDateSelectionLabel>span{grid-column:1;grid-row:2;font-size:9px;line-height:1.1}
+ .pgFocused .pgDateSelectionLabel>button{grid-column:2;grid-row:1 / span 2;min-height:24px;padding:2px 4px;font-size:9px}
+ .pgFocused:not(.pgFocusToolsOpen) .pgDrySearch{margin:2px 0;padding:2px 5px;gap:5px}
+ .pgFocused:not(.pgFocusToolsOpen) .pgDrySearch button,.pgFocused:not(.pgFocusToolsOpen) .pgDrySearch #pgDryQuery{min-height:26px}
+ .pgFocused .pgFocusToolbar>button[aria-pressed=true]{background:#e4f1f7;border-color:#6498b2;color:#174e6c}
+
+ /* A fixed horizontal control keeps wide dates reachable from every worker. */
+ .pgSurface,.pgSurface.pgFocused{padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}
+ .pgScrollDock{position:fixed;bottom:0;z-index:60;display:flex;align-items:center;gap:6px;box-sizing:border-box;height:calc(32px + env(safe-area-inset-bottom,0px));min-width:0;max-width:100vw;padding:3px max(7px,env(safe-area-inset-right,0px)) calc(3px + env(safe-area-inset-bottom,0px)) max(7px,env(safe-area-inset-left,0px));border:1px solid #b7c9dc;border-bottom:0;border-radius:6px 6px 0 0;background:#f4f8fd;box-shadow:0 -2px 9px #183f6420;color:#315371}
+ .pgScrollDock[hidden]{display:none!important}
+ .pgScrollDock>label,.pgScrollDock>span{flex:none;font-size:10px;font-weight:600;white-space:nowrap}
+ .pgScrollDock>button{flex:none;min-width:25px;min-height:24px;height:24px;padding:0 5px;border:1px solid #b3c5d8;border-radius:4px;background:#fff;color:#244c70;line-height:20px;font-size:16px}
+ .pgScrollDock>button:disabled{color:#8595a5;background:#eaf0f6;border-color:#d1dce7;opacity:1}
+ .pgScrollDock>button:focus-visible,.pgScrollTrack:focus-visible{outline:2px solid #276ba3;outline-offset:1px}
+ .pgScrollTrack{flex:1 1 0;min-width:0;height:20px;overflow-x:scroll;scrollbar-width:auto;scrollbar-color:#587b9b #dce6f1;border-radius:4px;background:#e6eef6;overscroll-behavior-x:contain}
+ .pgScrollTrack::-webkit-scrollbar{height:14px}
+ .pgScrollTrack::-webkit-scrollbar-track{background:#dce6f1;border-radius:6px}
+ .pgScrollTrack::-webkit-scrollbar-thumb{background:#587b9b;border:2px solid #dce6f1;border-radius:6px;min-width:32px}
+ .pgScrollTrack::-webkit-scrollbar-thumb:hover{background:#466e94}
+ .pgScrollSizer{height:1px;min-height:1px;pointer-events:none}
+}
+@media screen and (min-width:721px) and (pointer:fine){
+ .pgSurface.pgFocused .pgProductionRow{min-height:var(--pg-focus-rail)}
+ .pgSurface.pgFocused .pgRail,.pgSurface.pgFocused .pgRailGrid .pgDay{height:var(--pg-focus-rail);min-height:var(--pg-focus-rail)}
+ .pgSurface.pgFocused .pgBar{height:var(--pg-focus-bar);min-height:var(--pg-focus-bar)}
+ .pgSurface.pgFocused .pgDryDay{gap:0}
+ .pgSurface.pgFocused .pgDryMarker{min-height:var(--pg-focus-drymarker,12px);padding:0;font-size:9px;line-height:12px}
+ .pgSurface.pgFocused .pgCumulativeRow{min-height:14px}
+ .pgSurface.pgFocused .pgCumulativeRow .pgCumulativeValues{min-height:14px;padding:0;gap:0}
+ .pgSurface.pgFocused button.pgCumulativeNumber{height:auto;min-height:12px;padding:0;border:0;font-size:10px;line-height:12px;white-space:nowrap;flex-wrap:nowrap;overflow:visible}
+ .pgSurface.pgFocused button.pgCumulativeNumber small{display:none}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace #planGridSurface button.pgCumulativeNumber{min-width:0;min-height:32px!important;font-size:11px;line-height:13px;touch-action:manipulation}
+ #pgCumulativeInfoDialog{padding:16px 14px max(16px,env(safe-area-inset-bottom,0px))}
+ .pgFocused .pgProductionRow>.pgAxisLabel{gap:4px;padding-left:4px;padding-right:4px}
+ .pgFocused .pgProductionRow>.pgAxisLabel>span{font-size:9px}
+ body.sheetWorkspace #planGridSurface.pgSurface{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}
+ .pgScrollDock{height:calc(52px + env(safe-area-inset-bottom,0px));gap:4px;padding-left:max(4px,env(safe-area-inset-left,0px));padding-right:max(4px,env(safe-area-inset-right,0px))}
+ .pgScrollDock>button{width:44px;min-width:44px;height:44px;min-height:44px;font-size:20px;line-height:40px;touch-action:manipulation}
+ .pgScrollDock>label,.pgScrollDock>span{font-size:10px}
+ .pgScrollTrack{height:44px;min-height:44px;touch-action:pan-x}
+}
+@media print{.pgScrollDock,#pgCumulativeInfoDialog{display:none!important}}
+
+@media screen and (min-width:721px) and (pointer:fine){.pgSurface.pgFocused button.pgCumulativeNumber.pgCumulativeLong{height:auto;white-space:normal;overflow-wrap:anywhere;line-height:11px}}
+
+@media screen and (min-width:721px) and (pointer:fine){.pgSurface.pgFocused .pgCumulativeLabel>span{display:none}.pgSurface.pgFocused .pgCumulativeLabel{padding:0 6px;gap:0;min-height:0}.pgSurface.pgFocused .pgCumulativeLabel>b{font-size:10px;line-height:12px}}
 
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
@@ -503,7 +607,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .headerRight>.badge{display:none}
  body.sheetWorkspace .layout>aside{padding:3px 6px}
  body.sheetWorkspace #nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;overflow:visible;padding:0}
- body.sheetWorkspace #nav button{min-width:0;min-height:44px;padding:8px 2px;font-size:13px;line-height:1.3;white-space:normal;text-align:center}
+ body.sheetWorkspace #nav button{min-width:0;min-height:44px;padding:8px 2px;font-size:13px;line-height:1.3;white-space:normal;word-break:keep-all;overflow-wrap:normal;text-align:center}
  body.sheetWorkspace #nav button span{display:none}
  body.sheetWorkspace button:not(.pgBar):not(.pgDryMarker):not(.pgHoliday),body.sheetWorkspace summary{touch-action:manipulation}
  body.sheetWorkspace button:not(.pgBar):not(.pgDryMarker):not(.pgHoliday){min-height:44px!important;min-width:44px}
@@ -648,6 +752,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .secondaryAuditHeader :is(select,button){width:100%}
  body.sheetWorkspace .secondaryAuditHeader .badge{white-space:normal;line-height:1.5}
  body.sheetWorkspace .workspaceAuditApply .actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.sheetWorkspace .workspaceAuditApply .actions>label:has(#secondaryAuditMode){grid-column:1/-1;width:100%}
  body.sheetWorkspace .workspaceTabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;overflow:visible}
  body.sheetWorkspace .workspaceTabs button{padding:8px 5px;white-space:normal;font-size:13px;line-height:1.4}
  body.sheetWorkspace .managementGuide{font-size:12px;line-height:1.6;gap:6px;padding:10px}
@@ -736,6 +841,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
 }
 
 @media screen and (max-width:420px){
+ body.sheetWorkspace #nav button{font-size:12px}
  body.sheetWorkspace .formGrid,body.sheetWorkspace #dialog .formGrid{grid-template-columns:minmax(0,1fr)}
  body.sheetWorkspace .formGrid .wide{grid-column:1/-1}
  body.sheetWorkspace .pgFocused .pgFocusToolbar>.pgFocusRangeControls{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -948,7 +1054,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .sheetToolbar{flex-wrap:nowrap;gap:6px}
  body.sheetWorkspace .sheetToolbar>div:first-child{flex:0 1 auto;font-size:12px}
  body.sheetWorkspace .sheetToolbar .actions{display:flex;flex:1;justify-content:flex-end;align-items:flex-start;width:auto;flex-wrap:wrap}
- body.sheetWorkspace .sheetToolbar .actions>button{flex:1}
+ body.sheetWorkspace .sheetToolbar .actions>button{flex:1 1 96px;min-width:min(96px,100%)}
  body.sheetWorkspace .sheetToolbar .actions>.mobileTools{width:auto;flex:0 0 auto}
  body.sheetWorkspace .sheetToolbar .actions>.mobileTools[open]{flex-basis:100%}
  body.sheetWorkspace .sheetToolbar:has(.mobileTools[open]){flex-wrap:wrap}
@@ -959,7 +1065,7 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar{flex-wrap:wrap}
  body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar>div:first-child{flex-basis:100%}
  body.sheetWorkspace .sheetEditor:not([data-sheet-id=production]) .sheetToolbar>.actions{width:100%;flex-basis:100%}
- body.sheetWorkspace .sheetToolbar .actions>button{white-space:nowrap}
+ body.sheetWorkspace .sheetToolbar .actions>button{white-space:normal;overflow-wrap:anywhere;line-height:1.4}
  body.sheetWorkspace .productionOverview{padding:7px 8px 3px}
  body.sheetWorkspace .productionOverviewLine{gap:4px 8px}
  body.sheetWorkspace .productionDateRail{padding:5px 0;gap:3px}
@@ -1004,10 +1110,12 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
 }
 
 /* Keep the schedule-link action separate from production completion. */
+@media screen{
 body.sheetWorkspace .productionProgress>button[data-sheet-view-command="productionJobLink"]{grid-column:1/-1;grid-row:3;justify-self:start;min-width:0;margin:3px 0 0;padding:3px 6px}
 body.sheetWorkspace .productionProgress>button[data-sheet-view-command="machineActuals"]{grid-column:1/-1;grid-row:4;justify-self:start;min-width:0;margin:3px 0 0;padding:3px 6px}
 body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-sheet-view-command="productionJobLink"],[data-sheet-view-command="machineActuals"]){flex-basis:auto;margin-left:0}
 [data-machine-actual-row]+[data-machine-actual-row]{margin-top:10px}
+}
 
 /* Visual finish only. Responsive geometry, printing and schedule meaning colors stay in their own styles. */
 @media screen{
@@ -3470,7 +3578,7 @@ function productionJobLinkDialog(g,id){
 const pgId='plan-jobs';
 const pgViews=new Map();
 let pgObserver=null;
-let pgResizeObserver=null,pgResizeFrame=0,pgEscapeHandler=null,pgWindowResize=null,pgOutsideClick=null;
+let pgResizeObserver=null,pgResizeFrame=0,pgEscapeHandler=null,pgWindowResize=null,pgOutsideClick=null,pgWindowScroll=null,pgDockFrame=0;
 const pgEqual=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
 const pgFmt=value=>value==null?'—':Number.isFinite(Number(value))?fmt(value):'입력 확인';
 function pgView(){const key=sheetContext(pgId);if(!pgViews.has(key))pgViews.set(key,{selected:'',worker:'',query:'',twoMonths:true,anchor:null,result:null,focus:false,fit:false,compact:false,activeOnly:false,calendarExpanded:false});return pgViews.get(key)}
@@ -3715,7 +3823,7 @@ scheduleView=function(){
  const rows=pgRows(state,month),v=pgView();v.result=P.schedule(state,month,today());
  const form=sheetGrid(pgId,pgSpec(rows));
  return head('생산일정','작업조건과 휴일을 한 화면에서 바꾸고, 변경 저장으로 함께 반영합니다.',btn('csvSchedule','저장된 일정 내려받기')+btn('dryCalc','건조일 계산')+btn('undoJobs','직전 작업조건 저장 되돌리기','',m().closed))+
- `<div class="pgSurface" id="planGridSurface"><div class="pgFocusToolbar" aria-label="확대 일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">기본 화면으로</button><button data-pg-command="focus-tools" aria-expanded="${!!v.focusTools}">도구·설명</button></div><div class="pgTopActions" aria-label="일정 변경 저장 도구막대"><div class="actions"><button data-pg-command="add" ${m().closed?'disabled':''}>+ 생산량 기준 일정</button><button data-pg-command="manual" ${m().closed?'disabled':''}>+ 날짜 지정 일정</button><button data-pg-command="focus-conditions">작업 목록 편집</button></div><div class="pgSaveControls"><span id="pgSaveStatus" role="status" aria-live="polite">${m().closed?'마감 · 조회 전용':'변경 0건'}</span><button data-pg-command="save" id="pgSaveChanges" class="primary" disabled>일정 변경 저장</button></div></div>
+ `<div class="pgSurface" id="planGridSurface"><div class="pgFocusToolbar" aria-label="확대 일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">기본 화면으로</button><button data-pg-command="focus-tools" aria-expanded="${!!v.focusTools}">도구·설명</button><button data-pg-command="fit-width" aria-pressed="${pgFitEnabled(v)}">${pgFitEnabled(v)?"날짜 칸 넓히기":"전체 기간 맞춤"}</button></div><div class="pgTopActions" aria-label="일정 변경 저장 도구막대"><div class="actions"><button data-pg-command="add" ${m().closed?'disabled':''}>+ 생산량 기준 일정</button><button data-pg-command="manual" ${m().closed?'disabled':''}>+ 날짜 지정 일정</button><button data-pg-command="focus-conditions">작업 목록 편집</button></div><div class="pgSaveControls"><span id="pgSaveStatus" role="status" aria-live="polite">${m().closed?'마감 · 조회 전용':'변경 0건'}</span><button data-pg-command="save" id="pgSaveChanges" class="primary" disabled>일정 변경 저장</button></div></div>
  <section class="card pgCalendarPanel"><div class="toolbar pgTimelineToolbar"><div><h2>작업자별 생산일정</h2></div><div class="actions">${pgWorkerFilterHTML()}<label>표시 기간<select id="pgSpan"><option value="2" ${v.twoMonths&&!v.rangeStart?'selected':''}>이번달 + 다음달</option><option value="year" ${v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12'?'selected':''}>올해 전체</option><option value="custom" disabled ${v.rangeStart&&!(v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12')?'selected':''}>선택한 기간</option><option value="1" ${!v.twoMonths&&!v.rangeStart?'selected':''}>이번달</option></select></label><label>표 시작월<input type="month" id="pgRangeStart" value="${pgRangeInfo().first.slice(0,7)}"></label><label>표 종료월<input type="month" id="pgRangeEnd" value="${pgRangeInfo().last.slice(0,7)}"></label><button data-pg-command="today">오늘로 이동</button></div></div>
  <div class="pgDisplayTools" aria-label="일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">${v.focus?'기본 화면으로':'표 크게 보기'}</button><button data-pg-command="fit-width" aria-pressed="${!!v.fit}">${v.fit?'날짜 칸 넓히기':'화면 너비에 맞춤'}</button><details class="pgViewOptions"><summary>표 표시</summary><div><button data-pg-command="compact" aria-pressed="${!!v.compact}">${v.compact?'행 높이 늘리기':'행 높이 줄이기'}</button><button data-pg-command="overview" aria-pressed="${!!v.overview}">${v.overview?'휴일 행 보이기':'휴일 행 숨기기'}</button><label class="pgActiveFilter"><input type="checkbox" id="pgActiveOnly" ${v.activeOnly?'checked':''}>일정이 있는 작업자만</label></div></details><button data-pg-command="calendar-tools" aria-expanded="${!!v.calendarExpanded}" aria-controls="pgCalendarExtras">휴일 편집</button><details class="pgGuide"><summary>사용 방법</summary><div><p><b>일정 수정</b> 막대를 두 번 누르거나 Enter로 열기 · 끌어서 이동 · 양끝을 끌어 기간 변경. 모바일에서는 막대 선택 후 ‘선택 일정 수정’을 누르세요.</p><p><b>선택 해제</b> Esc · 날짜 머리글을 다시 누르면 해당 열의 강조가 해제됩니다.</p><p><b>기간 계산</b> 생산 작업일수는 표시한 작업자·공장 휴일만 제외하며, 토·일도 휴일 표시가 없으면 포함합니다. 막대는 휴일을 가로질러 이어집니다. 건조일 계산은 노란 공장 휴일만 제외합니다.</p>
   <div class="pgBasis"><span id="pgBasisLabel">계산 기준 ${esc(P.asOf(state,month,today()))}</span><button data-pg-command="recalculate" ${m().closed?'disabled':''} title="입력하지 않은 기간의 생산을 임의로 추가하지 않고 오늘까지의 실적으로 다시 계산">오늘 기준 재계산</button><span>날짜만 지나도 계획이 밀리지 않습니다.</span></div>
@@ -3727,7 +3835,7 @@ scheduleView=function(){
  </div>
  <div class="pgLegend"><span><i class="pgSwatch pgRunning"></i>생산 중</span><span><i class="pgSwatch pgWaiting"></i>미착수</span><span><i class="pgSwatch pgComplete"></i>생산 종료</span><span><i class="pgSwatch pgManual"></i>미착수 예약</span><span><i class="pgSwatch pgFactory"></i>공장 휴무</span><span>◇ 예상 건조 · ◆ 생산 종료 후 건조</span><span style="color:#bd2525">→ 같은 호기 B/R 건조 짝</span></div>
  <div class="pgDrySearch" role="search" aria-label="건조일 호기 찾기"><label for="pgDryQuery">건조 호기</label><input type="search" id="pgDryQuery" placeholder="예: 13호" value="${esc(v.dryQuery||'')}" maxlength="40" autocomplete="off" enterkeyhint="search" aria-describedby="pgDrySearchStatus"><button data-pg-command="dry-find" title="가장 최근 건조일부터 찾기">찾기</button><button data-pg-command="dry-newer" aria-label="더 최근 건조 결과" title="더 최근 결과" disabled>←</button><button data-pg-command="dry-older" aria-label="이전 건조 결과" title="이전 날짜의 결과" disabled>→</button><span id="pgDrySearchStatus" role="status" aria-live="polite">현재 표 · 건조일 최신순 (예상 포함)</span></div>
- <div id="pgSelectionInfo" class="pgSelectionInfo" role="status" hidden><span id="pgSelectionText"></span><button data-pg-command="job-conditions" id="pgSelectionConditions">호기·하루 조 수정</button><button data-pg-command="clear-selection">선택 해제 · Esc</button></div><div class="pgMobileActions"><span id="pgMobileSelected" role="status">막대를 누르면 작업이 선택됩니다.</span><div><button data-pg-command="edit-selected" id="pgMobileEdit" disabled>선택 일정 수정</button><button data-pg-command="mobile-new">+ 수기 일정</button></div></div><div id="pgTimeline" class="pgTimeline" tabindex="0" aria-label="작업자별 생산일정, 가로로 이동해 다음달 확인"></div><div id="pgManualInline" class="pgManualInline" aria-label="수기 계획기간 직접 편집"></div><div id="pgWarnings"></div></section>
+ <div id="pgSelectionInfo" class="pgSelectionInfo" role="status" hidden><span id="pgSelectionText"></span><button data-pg-command="job-conditions" id="pgSelectionConditions">호기·하루 조 수정</button><button data-pg-command="clear-selection">선택 해제 · Esc</button></div><div class="pgMobileActions"><span id="pgMobileSelected" role="status">막대를 누르면 작업이 선택됩니다.</span><div><button data-pg-command="edit-selected" id="pgMobileEdit" disabled>선택 일정 수정</button><button data-pg-command="mobile-new">+ 수기 일정</button></div></div><div id="pgTimeline" class="pgTimeline" tabindex="0" aria-label="작업자별 생산일정, 가로로 이동해 다음달 확인"></div><dialog id="pgCumulativeInfoDialog" class="pgCumulativeInfoDialog" aria-labelledby="pgCumulativeInfoTitle"></dialog><div id="pgScrollDock" class="pgScrollDock" hidden aria-label="일정표 가로 이동"><span>좌우 이동</span><button type="button" data-pg-command="scroll-left" aria-label="일정표 왼쪽으로 이동">◀</button><div id="pgScrollTrack" class="pgScrollTrack" tabindex="0" role="region" aria-label="일정표 가로 스크롤"><div id="pgScrollSizer" class="pgScrollSizer"></div></div><button type="button" data-pg-command="scroll-right" aria-label="일정표 오른쪽으로 이동">▶</button></div><div id="pgManualInline" class="pgManualInline" aria-label="수기 계획기간 직접 편집"></div><div id="pgWarnings"></div></section>
  ${form}<section class="card pgDetail" id="pgDetail" aria-label="선택 작업의 호기와 기간"></section>
  <p class="footerNote">생산실적과 시작 계획수량은 생산 입력 원장을 사용합니다. 자동 종료·건조일은 직접 수정하지 않고 하루 조수·호기 배정·휴일로 조정합니다. ${m().closed?'마감된 자료는 보관된 결과로 표시합니다.':''}</p></div>`;
 };
@@ -3878,9 +3986,14 @@ function pgCumulativeTitle(worker,date,entries){
  return[worker+' '+date+' 작업 누적 · 조','파란 숫자: 입력 실적 / 회색 숫자: 예상. 하루 생산 합계가 아닙니다.',...entries.flatMap(entry=>[entry.product+' '+fmt(entry.value)+'조 · '+kind(entry.kind)+(entry.plan>0?' / 품목 계획 '+fmt(entry.plan)+'조':''),...(entry.members.length>1?['같은 생산 묶음 · '+entry.members.map(member=>member.product+(member.value==null?' (해당일 숫자 없음)':' '+fmt(member.value)+'조 '+kind(member.kind))).join(' / ')]:[]),...(entry.warning?[entry.warning]:[])]),...(entries.length>1?['서로 다른 작업의 누적을 각각 표시합니다. 합산하지 않습니다.']:[])].join('\n');
 }
 function pgCumulativeRows(worker,dates,points,dayClass){
- const products=new Map();for(const point of points){if(!products.has(point.product))products.set(point.product,new Map());const days=products.get(point.product);if(!days.has(point.date))days.set(point.date,[]);days.get(point.date).push(point)}
- if(!products.size)products.set('',new Map());
- return[...products].sort(([a],[b])=>a.localeCompare(b,'ko',{numeric:true})).map(([product,days])=>`<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-product="${esc(product)}"><div class="pgAxisLabel pgCumulativeLabel" title="${esc(product+' · 품목별 작업 누적. 하루 합계가 아닙니다.')}">${product?`<b>${esc(product)}</b>`:''}<span>작업 누적 · 조 <small><i class="pgCumulativeActual">실적</i> / <i class="pgCumulativeForecast">예상</i></small></span></div><div class="pgDateCells">${dates.map(date=>{const entries=days.get(date)||[],title=pgCumulativeTitle(worker,date,entries);return`<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${entries.map(entry=>`<span class="pgCumulativeNumber ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" data-pg-cumulative-job="${esc(entry.jobId)}" data-pg-cumulative-kind="${entry.kind}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</span>`).join('')}</div>`}).join('')}</div></div>`).join('');
+ const days=new Map();for(const point of points){if(!days.has(point.date))days.set(point.date,[]);days.get(point.date).push(point)}
+ return `<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-worker="${esc(worker)}"><div class="pgAxisLabel pgCumulativeLabel" title="품목별 작업 누적 · 제품명은 숫자에 마우스를 올리거나 눌러서 확인"><b>작업 누적 · 조</b><span><i class="pgCumulativeActual">실적</i> / <i class="pgCumulativeForecast">예상</i></span></div><div class="pgDateCells">${dates.map(date=>{const entries=(days.get(date)||[]).slice().sort((a,b)=>a.product.localeCompare(b.product,'ko',{numeric:true})||String(a.jobId||'').localeCompare(String(b.jobId||''))),title=pgCumulativeTitle(worker,date,entries);return `<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${entries.map(entry=>`<button type="button" class="pgCumulativeNumber${fmt(entry.value).length>3?' pgCumulativeLong':''} ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" data-pg-cumulative-job="${esc(entry.jobId)}" data-pg-cumulative-worker="${esc(worker)}" data-pg-cumulative-date="${date}" data-pg-cumulative-product="${esc(entry.product)}" data-pg-cumulative-kind="${entry.kind}" title="${esc(pgCumulativeTitle(worker,date,[entry]))}" aria-label="${esc(pgCumulativeTitle(worker,date,[entry]).replaceAll('\n',' '))}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</button>`).join('')}</div>`}).join('')}</div></div>`;
+}
+function pgOpenCumulativeInfo(worker,date,jobId){
+ const dialog=$('#pgCumulativeInfoDialog'),points=($('#pgTimeline')?._pgCumulative?.get(worker)||[]).filter(p=>p.date===date&&String(p.jobId||'')===jobId);if(!dialog||!points.length)return;
+ const kind=value=>value==='actual'?'실제 누적':value==='forecast'?'예상 누적':'보관 누적';
+ dialog.innerHTML=`<form method="dialog"><div class="toolbar"><h2 id="pgCumulativeInfoTitle">${esc(worker)} · ${date}</h2><button type="submit" aria-label="누적 상세 닫기">닫기</button></div></form><div class="pgCumulativeInfoItems">${points.map(entry=>`<div class="pgCumulativeInfoItem"><h3>${esc(entry.product)}</h3><p><strong>${fmt(entry.value)}조</strong>${entry.plan>0?' / 계획 '+fmt(entry.plan)+'조':''} · ${kind(entry.kind)}</p>${entry.warning?'<p>'+esc(entry.warning)+'</p>':''}${entry.members?.length>1?'<p>함께 생산 · '+entry.members.map(member=>esc(member.product)+(member.value==null?' (해당일 숫자 없음)':' '+fmt(member.value)+'조')).join(' / ')+'</p>':''}</div>`).join('')}</div><p>작업 시작부터의 누적이며, 하루 생산 합계가 아닙니다.</p>`;
+ if(!dialog.open)dialog.showModal();
 }
 function pgTimeline(g,preview){
  const v=pgView(),{first,last,months,dayCount}=pgRangeInfo(),dates=P.days(first,last);v.previewState=preview.state;
@@ -3900,23 +4013,56 @@ function pgTimeline(g,preview){
    const pieces=r.displaySegments.filter(p=>p.end>=first&&p.start<=last);
    return pieces.map((part,index)=>{const left=Math.max(0,idx(part.start)),right=Math.min(dayCount,idx(part.end)+1);return`<button class="pgBar ${cls}${r.caseConflicts.length?' pgCaseConflict':''}${readonly?' pgArchived':''}" style="left:calc(${left} * var(--pg-day));width:calc(${right-left} * var(--pg-day) - 3px)" ${r.orphanActual?`data-pg-actual-row="${esc(r.sourceRowId)}"`:readonly?'data-pg-history="true"':`data-pg-select="${esc(r.jobId)}"`} data-pg-period-key="${esc(pgPeriodKey(r))}" data-pg-status="${esc(presentation.label)}" data-pg-month="${esc(r.editMonth||r.start.slice(0,7))}" data-pg-start="${r.start}" data-pg-end="${r.end}" data-pg-segment-start="${part.start}" data-pg-segment-end="${part.end}" data-pg-first="${index===0&&part.start>=first&&part.start===r.start}" data-pg-last="${index===pieces.length-1&&part.end<=last&&part.end===r.end}" data-pg-members="${esc(JSON.stringify(r.memberIds))}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${r.caseConflicts.length?'<span class="pgCaseBadge">⚠ 케이스 중복</span> ':''}<span class="pgBarState">${esc(presentation.label)}</span> ${esc(r.barText)}${r.start<first?' ◀':''}${r.end>last?' ▶':''}</button>`}).join('');
   }).join('')}</div></div>`).join('');
-  const dry=`<div class="pgGridRow pgDryRow">${label('','건조일')}<div class="pgDateCells">${dateCells(d=>`<div class="pgDay pgDryDay${dayClass(d)}" data-pg-day="${d}">${dryData.rows.filter(r=>r.worker===worker&&r.dry===d).map(r=>`<button class="pgDryMarker ${r.projected?'projected':''}" data-pg-select="${esc(r.jobId)}" data-pg-dry-key="${esc(pgDryKey(r))}" data-pg-month="${esc(r.editMonth||r.sourceMonth||r.start?.slice(0,7)||d.slice(0,7))}" data-pg-pair-product="${esc(r.product)}" data-pg-pair-machine="${esc(r.machine)}" data-pg-pair-date="${d}" data-pg-pair-worker="${esc(worker)}" data-pg-pair-source-id="${esc(r.id)}" title="${esc(pgDryTitle(r,d))}" aria-label="${esc(pgDryTitle(r,d))}">${r.projected?'◇':'◆'}${esc(r.machine.replace(/호$/,''))}</button>`).join('')}</div>`)}</div></div>`;
+  const dry=`<div class="pgGridRow pgDryRow">${label('','건조일')}<div class="pgDateCells">${dateCells(d=>`<div class="pgDay pgDryDay${dayClass(d)}" data-pg-day="${d}">${dryData.rows.filter(r=>r.worker===worker&&r.dry===d).map(r=>`<button class="pgDryMarker ${r.projected?'projected':''}" data-pg-select="${esc(r.jobId)}" data-pg-dry-key="${esc(pgDryKey(r))}" data-pg-month="${esc(r.editMonth||r.sourceMonth||r.start?.slice(0,7)||d.slice(0,7))}" data-pg-pair-product="${esc(r.product)}" data-pg-pair-machine="${esc(r.machine)}" data-pg-pair-date="${d}" data-pg-pair-worker="${esc(worker)}" data-pg-pair-source-id="${esc(r.id)}" title="${esc(pgDryTitle(r,d))}" aria-label="${esc(pgDryTitle(r,d))}"><span class="pgDrySymbol" aria-hidden="true">${r.projected?'◇':'◆'}</span><span class="pgDryNumber">${esc(r.machine.replace(/호$/,''))}</span></button>`).join('')}</div>`)}</div></div>`;
   const actual=pgCumulativeRows(worker,dates,cumulative.get(worker)||[],dayClass);
   return`<section class="pgWorkerBlock" aria-label="${esc(worker)} 일정">${holidayRow(worker)}${production}${dry}${actual}</section>`;
  }).join('');
  const basis=$('#pgBasisLabel');if(basis)basis.textContent='계산 기준 '+P.asOf(preview.state,month,today());
- const el=$('#pgTimeline'),owner=pgView(),saved=owner.timelineScroll,left=el.dataset.start===first&&el.dataset.end===last?el.scrollLeft:saved?.first===first&&saved?.last===last?saved.left:0,top=el.scrollTop;el._pgViewOwner=owner;el._pgPendingLeft=left;el._pgPeriods=allPeriods;el._pgDryRows=dryData.rows;el._pgPairCandidates=dryData.rows;el._pgPairWorkers=dryData.workers;el.dataset.days=String(dayCount);el.dataset.start=first;el.dataset.end=last;el.innerHTML=`<div class="pgTimelineInner" style="--pg-days:${dayCount}">${monthHead}${dayHead}${holidayRow('',true)}${body||`<p class="empty">${selection!==null?'표시할 작업자를 체크해 주세요.':v.activeOnly?'이 기간에 일정이 있는 작업자가 없습니다. 작업자 선택 또는 기간을 바꿔 주세요.':'기준정보에 작업자를 등록하면 일정표가 표시됩니다.'}</p>`}</div>`;el.scrollLeft=left;el.scrollTop=top;if(!el._pgScrollBound){el._pgScrollBound=true;el.addEventListener('scroll',()=>{if(el._pgPendingLeft==null&&el.isConnected)pgRememberTimeline()},{passive:true})}pgBindDateSelection(el);pgSyncDrySearch();
+ const el=$('#pgTimeline'),owner=pgView(),saved=owner.timelineScroll,left=!owner.focus&&owner.restoreNormalScroll?owner.normalTimelineLeft??0:el.dataset.start===first&&el.dataset.end===last?el.scrollLeft:saved?.first===first&&saved?.last===last?saved.left:0,top=el.scrollTop;el._pgViewOwner=owner;el._pgPendingLeft=left;el._pgPeriods=allPeriods;el._pgCumulative=cumulative;el._pgDryRows=dryData.rows;el._pgPairCandidates=dryData.rows;el._pgPairWorkers=dryData.workers;el.dataset.days=String(dayCount);el.dataset.start=first;el.dataset.end=last;el.innerHTML=`<div class="pgTimelineInner" style="--pg-days:${dayCount}">${monthHead}${dayHead}${holidayRow('',true)}${body||`<p class="empty">${selection!==null?'표시할 작업자를 체크해 주세요.':v.activeOnly?'이 기간에 일정이 있는 작업자가 없습니다. 작업자 선택 또는 기간을 바꿔 주세요.':'기준정보에 작업자를 등록하면 일정표가 표시됩니다.'}</p>`}</div>`;el.scrollLeft=left;el.scrollTop=top;if(!el._pgScrollBound){el._pgScrollBound=true;el.addEventListener('scroll',()=>{if(el._pgPendingLeft==null&&el.isConnected){pgRememberTimeline();pgQueueScrollDock()}},{passive:true})}pgBindDateSelection(el);pgSyncDrySearch();
 }
 function pgMobileLayout(){return typeof matchMedia==='function'&&matchMedia('(max-width: 720px)').matches}
 function pgTouchControls(){return pgMobileLayout()||(typeof matchMedia==='function'&&matchMedia('(pointer: coarse)').matches)||!!document.querySelector('#planGridSurface')?.classList?.contains('pgDirectTouch')}
 function pgColumnWidth(viewport,label,days,fit){if(!fit)return 34;if(!(viewport>0&&days>0))return 18;return Math.max(18,Math.floor(Math.max(0,viewport-label-2)/days*100)/100)}
+// Focus-only presentation never overwrites normal density, filters or records.
+function pgFitEnabled(v=pgView()){return v.focus?v.focusFit!==false:!!v.fit}
+function pgFocusSize(root,timeline){
+ if(!pgView().focus)return;
+ const rails=[...timeline.querySelectorAll('.pgProductionRow')],dry=[...timeline.querySelectorAll('.pgDryRow')];
+ if(!rails.length)return;
+ const heights=nodes=>nodes.reduce((sum,el)=>sum+el.getBoundingClientRect().height,0),bounds=timeline.getBoundingClientRect();
+ const fixed=bounds.height-heights(rails)-heights(dry),available=innerHeight-Math.max(0,bounds.top+scrollY)-(pgMobileLayout()?62:42);
+ const dryBudget=(height,marker)=>dry.reduce((sum,row)=>sum+Math.max(height,...[...row.querySelectorAll('.pgDryDay')].map(cell=>cell.children.length*marker+2)),0),roomy=Math.floor((available-fixed-dryBudget(24,18))/rails.length);
+ const rail=roomy>=31?Math.min(36,roomy):Math.max(20,Math.min(30,Math.floor((available-fixed-dryBudget(14,12))/rails.length))),bar=Math.min(30,rail-3),dryHeight=rail>30?24:14;
+ for(const [name,value]of [['rail',rail],['bar',bar],['dry',dryHeight],['drymarker',rail>30?18:12],['font',rail>30?12:10]]){const key='--pg-focus-'+name,next=value+'px';if(root.style.getPropertyValue(key)!==next)root.style.setProperty(key,next)}
+}
+function pgSyncScrollDock(){
+ const timeline=$('#pgTimeline'),dock=$('#pgScrollDock'),track=$('#pgScrollTrack'),sizer=$('#pgScrollSizer');
+ if(!dock||!track||!sizer)return;
+ const rect=timeline?.getBoundingClientRect(),extent=timeline?Math.max(0,timeline.scrollWidth-timeline.clientWidth):0;
+ const visible=page==='schedule'&&timeline?.isConnected&&rect.width>0&&extent>1&&rect.top<innerHeight-36&&rect.bottom>Math.max(80,$('.pgFocused .pgFocusToolbar')?.getBoundingClientRect().bottom||0);
+ dock.hidden=!visible;if(!visible)return;
+ const left=Math.max(0,rect.left),width=Math.max(0,Math.min(innerWidth,rect.right)-left);
+ for(const [key,value]of [['left',left+'px'],['width',width+'px']])if(dock.style[key]!==value)dock.style[key]=value;
+ const needed=Math.ceil(track.clientWidth+extent)+'px';if(sizer.style.width!==needed)sizer.style.width=needed;
+ if(Math.abs(track.scrollLeft-timeline.scrollLeft)>.5){track._pgMirroredLeft=timeline.scrollLeft;track.scrollLeft=timeline.scrollLeft}
+ dock.querySelector('[data-pg-command="scroll-left"]').disabled=timeline.scrollLeft<=1;
+ dock.querySelector('[data-pg-command="scroll-right"]').disabled=timeline.scrollLeft>=extent-1;
+}
+function pgQueueScrollDock(){if(pgDockFrame)return;pgDockFrame=requestAnimationFrame(()=>{pgDockFrame=0;pgSyncScrollDock()})}
+function pgBindScrollDock(){
+ const track=$('#pgScrollTrack');if(!track)return;
+ track.onscroll=()=>{const timeline=$('#pgTimeline');if(!timeline||track._pgMirroredLeft!=null&&Math.abs(track.scrollLeft-track._pgMirroredLeft)<1){delete track._pgMirroredLeft;return}delete track._pgMirroredLeft;if(Math.abs(timeline.scrollLeft-track.scrollLeft)>.5)timeline.scrollLeft=track.scrollLeft;pgQueueScrollDock()};
+ track.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(e.key))return;e.preventDefault();const timeline=$('#pgTimeline');if(!timeline)return;const step=e.key.startsWith('Page')?timeline.clientWidth*.8:Math.max(34,Number($('#planGridSurface')?.dataset.dayWidth)||34);timeline.scrollLeft=e.key==='Home'?0:e.key==='End'?timeline.scrollWidth:timeline.scrollLeft+(['ArrowLeft','PageUp'].includes(e.key)?-step:step);pgQueueScrollDock()};
+ pgQueueScrollDock();
+}
 function pgReflow(){
  const root=$('#planGridSurface'),timeline=$('#pgTimeline');if(page!=='schedule'||!root||!timeline)return;
- const v=pgView(),label=parseFloat(getComputedStyle(root).getPropertyValue('--pg-label'))||156,days=Number(timeline.dataset.days)||31,width=pgMobileLayout()?Math.max(32,pgColumnWidth(timeline.clientWidth,label,days,v.fit)):pgColumnWidth(timeline.clientWidth,label,days,v.fit),old=Number(root.dataset.dayWidth);
+ const v=pgView(),label=parseFloat(getComputedStyle(root).getPropertyValue('--pg-label'))||156,days=Number(timeline.dataset.days)||31,fit=pgFitEnabled(v),width=pgMobileLayout()?Math.max(32,pgColumnWidth(timeline.clientWidth,label,days,fit)):v.focus&&fit?Math.max(18,Math.floor(Math.max(0,timeline.clientWidth-label-2)/days*100)/100):pgColumnWidth(timeline.clientWidth,label,days,fit),old=Number(root.dataset.dayWidth);
  if(Math.abs(width-old)>.005||!Number.isFinite(old)){root.style.setProperty('--pg-day',width+'px');root.dataset.dayWidth=String(width)}
- if(timeline._pgPendingLeft!=null){timeline.scrollLeft=timeline._pgPendingLeft;delete timeline._pgPendingLeft;pgRememberTimeline()}
- if(typeof pgDrawPairs==='function')pgDrawPairs(timeline);
- const hint=$('#pgFitHint');if(hint){const overflow=label+days*width>timeline.clientWidth+1;hint.textContent=pgMobileLayout()?'좌우·위아래로 밀어서 이동 · 선택 후 버튼으로 수정':v.fit?(overflow?'가독성을 위해 최소 간격 유지 · 좌우로 이동':'선택한 기간이 화면 너비에 맞습니다.'):'날짜 칸을 넓게 표시합니다.'}
+ if(timeline._pgPendingLeft!=null){timeline.scrollLeft=timeline._pgPendingLeft;delete timeline._pgPendingLeft;delete v.restoreNormalScroll;pgRememberTimeline()}
+ root.classList.toggle('pgNarrowDays',width<22);
+ pgFocusSize(root,timeline);if(typeof pgDrawPairs==='function')pgDrawPairs(timeline);pgSyncScrollDock();
+ const hint=$('#pgFitHint');if(hint){const overflow=label+days*width>timeline.clientWidth+1;hint.textContent=pgMobileLayout()?'좌우·위아래로 밀어서 이동 · 선택 후 버튼으로 수정':fit?(overflow?'가독성을 위해 최소 간격 유지 · 좌우로 이동':'선택한 기간이 화면 너비에 맞습니다.'):'날짜 칸을 넓게 표시합니다.'}
 }
 function pgQueueReflow(){if(pgResizeFrame)return;pgResizeFrame=requestAnimationFrame(()=>{pgResizeFrame=0;pgReflow()})}
 function pgArrangeFocusToolbar(root,focused){
@@ -3929,16 +4075,17 @@ function pgArrangeFocusToolbar(root,focused){
 function pgApplyDisplay(){
  const root=$('#planGridSurface');if(!root)return;const v=pgView();
  pgArrangeFocusToolbar(root,!!v.focus);root.classList.toggle('pgFocusToolsOpen',!!v.focusTools);root.querySelector('[data-pg-command="focus-tools"]')?.setAttribute('aria-expanded',String(!!v.focusTools));
- root.classList.toggle('pgOverview',!!v.overview);root.classList.toggle('pgFocused',!!v.focus);root.classList.toggle('pgCompact',!!v.compact);root.classList.toggle('pgCalendarExpanded',!!v.calendarExpanded);document.body.classList.toggle('pgFocusMode',!!v.focus);
- const controls=[['focus-mode',v.focus?'기본 화면으로':'표 크게 보기',v.focus],['fit-width',v.fit?'날짜 칸 넓히기':'화면 너비에 맞춤',v.fit],['compact',v.compact?'행 높이 늘리기':'행 높이 줄이기',v.compact],['overview',v.overview?'휴일 행 보이기':'휴일 행 숨기기',v.overview]];
+ root.classList.toggle('pgOverview',!!v.overview);root.classList.toggle('pgFocused',!!v.focus);root.classList.toggle('pgCompact',v.focus||!!v.compact);root.classList.toggle('pgCalendarExpanded',!!v.calendarExpanded);document.body.classList.toggle('pgFocusMode',!!v.focus);
+ const controls=[['focus-mode',v.focus?'기본 화면으로':'표 크게 보기',v.focus],['fit-width',pgFitEnabled(v)?'날짜 칸 넓히기':v.focus?'전체 기간 맞춤':'화면 너비에 맞춤',pgFitEnabled(v)],['compact',v.compact?'행 높이 늘리기':'행 높이 줄이기',v.compact],['overview',v.overview?'휴일 행 보이기':'휴일 행 숨기기',v.overview]];
  for(const [command,label,pressed]of controls){const selector='[data-pg-command="'+command+'"]',buttons=root.querySelectorAll?.(selector)||[root.querySelector(selector)].filter(Boolean);for(const button of buttons){button.textContent=label;button.setAttribute('aria-pressed',String(!!pressed))}}
  pgSyncWorkerFilter();const active=root.querySelector('#pgActiveOnly');if(active)active.checked=!!v.activeOnly;root.querySelector('[data-pg-command="calendar-tools"]')?.setAttribute('aria-expanded',String(!!v.calendarExpanded));pgQueueReflow();
 }
-function pgSetFocus(enabled){const v=pgView();if(enabled&&!v.focus)v.scrollBeforeFocus=window.scrollY||0;v.focus=!!enabled;pgApplyDisplay();window.scrollTo(0,enabled?0:v.scrollBeforeFocus||0)}
+function pgSetFocus(enabled){const v=pgView();if(enabled&&!v.focus){v.scrollBeforeFocus=window.scrollY||0;const timeline=$('#pgTimeline');v.normalTimelineLeft=timeline?.scrollLeft||0;v.focusFit=true;v.focusTools=false}v.focus=!!enabled;if(!enabled){v.restoreNormalScroll=true;if($('#pgTimeline'))$('#pgTimeline')._pgPendingLeft=v.normalTimelineLeft??0;}pgApplyDisplay();window.scrollTo(0,enabled?0:v.scrollBeforeFocus||0)}
 function pgDisconnectView(){
  pgResizeObserver?.disconnect();pgResizeObserver=null;if(pgResizeFrame){cancelAnimationFrame(pgResizeFrame);pgResizeFrame=0}
  if(pgEscapeHandler)document.removeEventListener('keydown',pgEscapeHandler);pgEscapeHandler=null;
  if(pgWindowResize)window.removeEventListener('resize',pgWindowResize);pgWindowResize=null;
+ if(pgWindowScroll)window.removeEventListener('scroll',pgWindowScroll);pgWindowScroll=null;if(pgDockFrame){cancelAnimationFrame(pgDockFrame);pgDockFrame=0}const dock=$('#pgScrollDock');if(dock)dock.hidden=true;
  if(pgOutsideClick)document.removeEventListener('click',pgOutsideClick);pgOutsideClick=null;
 }
 function pgInlineManual(g){
@@ -4018,7 +4165,7 @@ async function pgSaveSchedule(g){
  finally{pgLock(g)}
 }
 function pgSyncSave(g,status=pgSaveState(g)){const label=$('#pgSaveStatus'),button=$('#pgSaveChanges');if(label)label.textContent=status.label;if(button){button.disabled=status.disabled;button.textContent=g.saving?'저장 중…':'일정 변경 저장'}}
-function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs);const root=$('#planGridSurface');if(!root)return;const locked=g.locked(),saveStatus=pgSaveState(g);pgSyncSave(g,saveStatus);for(const input of g.host()?.querySelectorAll('[data-cell="start"],[data-cell="daily"]')||[]){const row=g.draft.rows.find(r=>r.id===input.dataset.row);if(input.dataset.cell==='start'&&pgRoutingFollower(row)&&C.iso(pgDates(row,'start'))){input.disabled=true;input.value=pgDates(row,'start')}if(input.dataset.cell==='daily'&&pgRouting(row)?.mode==='parallel'){input.disabled=true;input.value='호기별 입력'}}const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-routing],[data-pg-manual-mode],[data-pg-inline-date],[data-pg-inline-rate]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date')||el.hasAttribute('data-pg-inline-rate'))&&row&&(pgStarted(row)||!!pgRouting(row)))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected','job-conditions','dry-find','dry-newer','dry-older'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=saveStatus.disabled;b.disabled=disabled})}
+function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs);const root=$('#planGridSurface');if(!root)return;const locked=g.locked(),saveStatus=pgSaveState(g);pgSyncSave(g,saveStatus);for(const input of g.host()?.querySelectorAll('[data-cell="start"],[data-cell="daily"]')||[]){const row=g.draft.rows.find(r=>r.id===input.dataset.row);if(input.dataset.cell==='start'&&pgRoutingFollower(row)&&C.iso(pgDates(row,'start'))){input.disabled=true;input.value=pgDates(row,'start')}if(input.dataset.cell==='daily'&&pgRouting(row)?.mode==='parallel'){input.disabled=true;input.value='호기별 입력'}}const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-routing],[data-pg-manual-mode],[data-pg-inline-date],[data-pg-inline-rate]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date')||el.hasAttribute('data-pg-inline-rate'))&&row&&(pgStarted(row)||!!pgRouting(row)))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected','job-conditions','dry-find','dry-newer','dry-older','scroll-left','scroll-right'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=saveStatus.disabled;b.disabled=disabled});pgSyncScrollDock()}
 function pgCalendarEdit(g,mutate){
  if(g.locked())return;g.draft=pgReconcileCalendarDraft(g.draft);const before=C.clone(g.draft.calendar),next=C.clone(before);mutate(next);
  for(const changed of pgCalendarChanges(before,next))if(state.months[changed.date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');
@@ -4043,7 +4190,7 @@ function pgSetField(g,key,value){const row=pgSelectedRow(g);if(!row||g.locked())
 function bindPlanGrid(){
  pgObserver?.disconnect();pgObserver=null;pgDisconnectView();if(page!=='schedule'){document.body.classList.remove('pgFocusMode');return}const root=$('#planGridSurface'),g=sheetEditor(pgId);if(!root||!g)return;pgApplyDisplay();
  if(!g.draft.calendar)g.draft.calendar=pgCalendar(state);if(!g.draft.baseCalendar)g.draft.baseCalendar=pgCalendar(state);
- root.onclick=e=>{const actual=e.target.closest('[data-pg-actual-row]');if(actual){pgOpenActualDaily(actual.dataset.pgActualRow,actual.dataset.pgMonth).catch(err=>toast(err.message));return}const workers=e.target.closest('[data-pg-workers]');if(workers){pgSetWorkerSelection(workers.dataset.pgWorkers==='all'?null:[],g);return}const item=e.target.closest('[data-pg-dry-key],.pgBar[data-pg-history]');if(item&&pgChooseTimeline(g,item))return;const select=e.target.closest('[data-pg-select]');if(select){const targetMonth=select.dataset.pgMonth;if(!pgKeep(g.draft).some(r=>r.id===select.dataset.pgSelect)){toast('보관된 완료 일정입니다. 실제 기록은 해당 월의 생산 입력에서 확인하세요.');return}g.select(select.dataset.pgSelect);return}
+ root.onclick=e=>{const cumulative=e.target.closest('button[data-pg-cumulative-job]');if(cumulative){pgOpenCumulativeInfo(cumulative.dataset.pgCumulativeWorker,cumulative.dataset.pgCumulativeDate,cumulative.dataset.pgCumulativeJob);return}const actual=e.target.closest('[data-pg-actual-row]');if(actual){pgOpenActualDaily(actual.dataset.pgActualRow,actual.dataset.pgMonth).catch(err=>toast(err.message));return}const workers=e.target.closest('[data-pg-workers]');if(workers){pgSetWorkerSelection(workers.dataset.pgWorkers==='all'?null:[],g);return}const item=e.target.closest('[data-pg-dry-key],.pgBar[data-pg-history]');if(item&&pgChooseTimeline(g,item))return;const select=e.target.closest('[data-pg-select]');if(select){const targetMonth=select.dataset.pgMonth;if(!pgKeep(g.draft).some(r=>r.id===select.dataset.pgSelect)){toast('보관된 완료 일정입니다. 실제 기록은 해당 월의 생산 입력에서 확인하세요.');return}g.select(select.dataset.pgSelect);return}
   const cell=e.target.closest('[data-pg-date]');if(cell){if(g.locked())return;try{const worker=cell.dataset.pgWorker,isFactory=cell.dataset.pgFactory==='1',date=cell.dataset.pgDate,v=pgView(),anchor=v.anchor,off=isFactory?P.factory({calendar:g.draft.calendar}).includes(date):P.holiday({calendar:g.draft.calendar},worker,date),mode=off?'clear':'holiday';if(pgTouchControls()){ $('#pgCalTarget').value=isFactory?'':worker;$('#pgCalStart').value=date;$('#pgCalEnd').value=date;$('#pgCalMode').value=mode;v.calendarExpanded=true;if(v.focus)v.focusTools=true;pgApplyDisplay();toast('휴일 편집에서 대상·날짜를 확인하고 선택 기간에 적용을 누르세요.');return}if(e.shiftKey&&anchor&&anchor.worker===worker&&anchor.factory===isFactory){pgRange(g,worker,isFactory,[anchor.date,date].sort()[0],[anchor.date,date].sort()[1],anchor.mode)}else{v.anchor={worker,factory:isFactory,date,mode};pgRange(g,worker,isFactory,date,date,mode)}$('#pgCalTarget').value=isFactory?'':worker;$('#pgCalStart').value=e.shiftKey&&anchor?anchor.date:date;$('#pgCalEnd').value=date}catch(err){toast(err.message)}return}
   const button=e.target.closest('[data-pg-command]');if(!button)return;const action=button.dataset.pgCommand;
   try{
@@ -4054,7 +4201,8 @@ function bindPlanGrid(){
    if(action==='today'){const timeline=$('#pgTimeline'),d=today();if(d>=pgRangeInfo().first&&d<=pgRangeInfo().last)timeline.scrollLeft=Math.max(0,((Date.parse(d)-Date.parse(pgRangeInfo().first))/86400000)*(Number(root.dataset.dayWidth)||34)-120);else toast('오늘 날짜는 현재 표시한 월 범위 밖입니다.');return}
    if(action==='focus-tools'){pgView().focusTools=!pgView().focusTools;pgApplyDisplay();return}
    if(action==='focus-mode'){pgSetFocus(!pgView().focus);pgRefresh(g);return}
-   if(action==='fit-width'){pgView().fit=!pgView().fit;pgApplyDisplay();return}
+   if(action==='fit-width'){const v=pgView();if(v.focus)v.focusFit=!pgFitEnabled(v);else v.fit=!v.fit;pgApplyDisplay();return}
+    if(action==='scroll-left'||action==='scroll-right'){const timeline=$('#pgTimeline');timeline.scrollLeft+=(action==='scroll-left'?-1:1)*Math.max(100,timeline.clientWidth*.7);pgQueueScrollDock();return}
    if(action==='overview'){pgView().overview=!pgView().overview;pgApplyDisplay();return}if(action==='compact'){pgView().compact=!pgView().compact;pgApplyDisplay();return}
    if(action==='calendar-tools'){pgView().calendarExpanded=!pgView().calendarExpanded;pgApplyDisplay();return}
    if(action==='open-daily'){page='daily';filter=pgSelectedRow(g)?.product||'';render();return}
@@ -4082,6 +4230,7 @@ function bindPlanGrid(){
  pgEscapeHandler=e=>{if(e.key!=='Escape'||e.defaultPrevented||e.isComposing||document.querySelector('dialog[open]'))return;const popup=root.querySelector('#pgWorkerFilter[open],.pgViewOptions[open],.pgGuide[open]');if(popup){e.preventDefault();popup.open=false;popup.querySelector('summary')?.focus();return}if(pgView().selectionActive||pgView().timelineSelection){e.preventDefault();pgClearSelection(g);return}if(pgView().focus){e.preventDefault();pgSetFocus(false)}};document.addEventListener('keydown',pgEscapeHandler);
  pgOutsideClick=e=>{for(const popup of root.querySelectorAll('#pgWorkerFilter[open],.pgViewOptions[open],.pgGuide[open]'))if(!popup.contains(e.target))popup.open=false};document.addEventListener('click',pgOutsideClick);
  pgWindowResize=()=>pgQueueReflow();window.addEventListener('resize',pgWindowResize);
+ pgBindScrollDock();pgWindowScroll=()=>pgQueueScrollDock();window.addEventListener('scroll',pgWindowScroll,{passive:true});
  if(typeof ResizeObserver!=='undefined'){pgResizeObserver=new ResizeObserver(()=>pgQueueReflow());pgResizeObserver.observe($('#pgTimeline'))}
  // SheetEditor.load restores the draft and invokes onChange in finally. Avoid
  // drawing the same timeline once before that pending read and immediately again.
@@ -5294,7 +5443,14 @@ document.addEventListener('click',mobileCloseMenus);
 document.addEventListener('keydown',mobileCloseMenus);
 
 const workspaceFocusBeforeMobile=workspaceSetFocus;
-workspaceSetFocus=function(on){workspaceFocusBeforeMobile(on);mobileQueue()};
+workspaceSetFocus=function(on){
+ const returning=document.body.classList.contains('workspaceFocused');
+ workspaceFocusBeforeMobile(on);
+ // Returning the original toolbar exposes all its controls at once. Regroup
+ // those same nodes before paint so narrow screens never show clipped tools.
+ if(on||returning){if(mobileScreen.frame){cancelAnimationFrame(mobileScreen.frame);mobileScreen.frame=0}mobileRefresh()}
+ else mobileQueue();
+};
 
 // Restore ranges before the existing full-screen toolbar takes ownership of
 // their parent. Both arrangements continue to use the same input nodes.
@@ -5310,7 +5466,7 @@ const viewPreferenceVersion=1,viewPreferencePrefix='schedule.view.v1:';
 const viewPreferencePages=['daily','schedule','stock','audit','report','master','home','source','settings'];
 const viewPreferenceFocusPages=['daily','stock','audit','master','report'];
 const viewPreferenceDetails=['.pgViewOptions','.pgGuide','.pgPattern','.sheetHelp','.managementHelp','.moDefinitions','.ledgerMonthSummary','.top .mobileTools','.sheetToolbar .mobileTools','#ilboSyncStatus>.mobileTools'];
-const viewPreferenceScheduleFlags=['twoMonths','focus','fit','compact','overview','activeOnly','calendarExpanded','focusTools','warningsOpen'];
+const viewPreferenceScheduleFlags=['twoMonths','focus','fit','compact','overview','activeOnly','calendarExpanded','focusTools','warningsOpen','focusFit'];
 const viewPreferenceState={scope:null,records:new Map(),pending:new Map(),captures:new Set(),activePlan:null,timer:0,sharedTimer:0,sharedSaving:false,rendering:0,applying:false,grids:new WeakSet(),plans:new WeakSet(),stocks:new WeakSet(),forms:new WeakSet(),userNavigation:false,userMonth:false,warningShown:false};
 function viewPreferenceSharedClean(value){return typeof ScheduleNative!=='undefined'&&ScheduleNative.cleanScheduleView?ScheduleNative.cleanScheduleView(value):{}}
 function viewPreferenceSharedWritable(){return typeof workspace!=='undefined'&&workspace&&!workspace.offline&&!workspace.pendingMigration&&!workspace.closed&&typeof workspace.saveScheduleView==='function'&&viewPreferenceScope()===workspace.key&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)}
