@@ -274,6 +274,9 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 @media screen{
  .pgSurface.pgFocused{--pg-focus-rail:28px;--pg-focus-bar:23px;--pg-focus-dry:20px;--pg-focus-font:11px}
  .pgSurface .pgTimeline{scrollbar-gutter:auto}
+ /* Focus has one visible horizontal scrollbar: the fixed dock. Keep native scrolling. */
+ .pgSurface.pgFocused .pgTimeline{scrollbar-width:none}
+ .pgSurface.pgFocused .pgTimeline::-webkit-scrollbar{height:0}
  .pgFocused:not(.pgCalendarExpanded) .pgHolidayRow{display:none}
  .pgFocused.pgCalendarExpanded .pgHolidayRow{display:grid}
  .pgFocused .pgWorkerBlock{border-top:1px solid #8baebe}
