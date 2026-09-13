@@ -345,11 +345,12 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 
 @media screen and (min-width:721px) and (pointer:fine){.pgSurface.pgFocused .pgCumulativeLabel>span{display:none}.pgSurface.pgFocused .pgCumulativeLabel{padding:0 6px;gap:0;min-height:0}.pgSurface.pgFocused .pgCumulativeLabel>b{font-size:10px;line-height:12px}}
 
-/* Job labels occupy reserved empty date space; numeric date columns never move. */
+/* Fit job labels into empty date space without adding lanes or moving numbers. */
 .pgCumulativeTrack{position:relative;min-width:0}
 .pgCumulativeTrack>.pgDateCells{position:relative}
 .pgSurface .pgCumulativeTrack .pgCumulativeValues{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start;align-items:start;gap:0;padding:0;min-height:var(--pg-cumulative-height,22px)}
 .pgSurface .pgCumulativeTrack .pgCumulativeNumber{align-self:center;margin:0}
+.pgSurface .pgCumulativeTrack .pgCumulativeNumber.pgCumulativeStart{box-shadow:inset 2px 0 #417795;background:#edf4f8}
 .pgCumulativeRunLabels{position:absolute;inset:0;pointer-events:none;z-index:1}
 .pgSurface button.pgCumulativeRunLabel,.pgSurface button.pgCumulativeAxisName{display:block;min-width:0;min-height:0!important;margin:0;padding:0 4px;border:0;border-radius:2px;box-shadow:none;background:#edf4f8;color:#244e69;font-size:11px;font-weight:600;line-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;pointer-events:auto}
 .pgSurface button.pgCumulativeRunLabel{position:absolute;text-align:right}
@@ -361,7 +362,7 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 .pgCumulativeLabel[data-pg-axis-active="true"] .pgCumulativeAxisDefault{display:none}
 .pgCumulativeRunLabel[hidden],.pgCumulativeAxisName[hidden]{display:none!important}
 @media screen and (min-width:721px){.pgSurface.pgFocused button.pgCumulativeRunLabel,.pgSurface.pgFocused button.pgCumulativeAxisName{font-size:10px}}
-@media(max-width:720px){body.sheetWorkspace #planGridSurface button.pgCumulativeRunLabel,body.sheetWorkspace #planGridSurface button.pgCumulativeAxisName{min-height:0!important;font-size:11px;line-height:14px}}
+@media(max-width:720px){body.sheetWorkspace #planGridSurface button.pgCumulativeRunLabel,body.sheetWorkspace #planGridSurface button.pgCumulativeAxisName{min-width:0;min-height:0!important;font-size:11px;line-height:14px}}
 
 /* Reclaim framing space before reducing the readable period bars. */
 @media screen and (min-width:721px){
@@ -4209,20 +4210,25 @@ function pgCumulativeTitle(worker,date,entries){
  const kind=value=>value==='actual'?'실제 누적':value==='forecast'?'예상 누적':'보관 누적';
  return[worker+' '+date+' 작업 누적 · 조','파란 숫자: 입력 실적 / 회색 숫자: 예상. 하루 생산 합계가 아닙니다.',...entries.flatMap(entry=>[entry.product+' '+fmt(entry.value)+'조 · '+kind(entry.kind)+(entry.plan>0?' / 품목 계획 '+fmt(entry.plan)+'조':''),...(entry.members.length>1?['같은 생산 묶음 · '+entry.members.map(member=>member.product+(member.value==null?' (해당일 숫자 없음)':' '+fmt(member.value)+'조 '+kind(member.kind))).join(' / ')]:[]),...(entry.warning?[entry.warning]:[])]),...(entries.length>1?['서로 다른 작업의 누적을 각각 표시합니다. 합산하지 않습니다.']:[])].join('\n');
 }
-// Reserve the product prefix together with the whole job's numeric span. Reuse
-// a subline only when neither previous numbers nor their labels can be covered.
+// Only numeric production spans allocate lanes. Fit names into the remaining
+// prefix space afterwards; a long name must never create another numeric row.
 function pgCumulativeLayout(series,dayWidth=34){
  const width=Number.isFinite(dayWidth)&&dayWidth>0?dayWidth:34;
  const items=series.filter(s=>Number.isFinite(s.first)&&Number.isFinite(s.last)&&s.first>=0&&s.last>=s.first).map(s=>{
-  const columns=Math.max(2,Math.min(6,Math.ceil((Number(s.labelWidth)||width*2)/width))),axis=s.first<columns;
-  return{...s,columns,axis,labelStart:axis?0:s.first-columns,start:axis?0:s.first-columns,end:s.last+1};
- }).sort((a,b)=>a.start-b.start||a.first-b.first||a.end-b.end||String(a.key).localeCompare(String(b.key)));
- const ends=[];for(const item of items){let lane=ends.findIndex(end=>end<=item.start);if(lane<0)lane=ends.length;ends[lane]=item.end;item.lane=lane}
+  const desiredColumns=Math.max(2,Math.min(6,Math.ceil((Number(s.labelWidth)||width*2)/width)));
+  return{...s,desiredColumns,start:s.first,end:s.last+1};
+ }).sort((a,b)=>a.first-b.first||a.end-b.end||String(a.key).localeCompare(String(b.key)));
+ const ends=[];for(const item of items){
+  let lane=-1,space=-1;
+  for(let i=0;i<ends.length;i++)if(ends[i]<=item.first){const available=Math.min(item.desiredColumns,item.first-ends[i]);if(available>space){lane=i;space=available}}
+  if(lane<0){lane=ends.length;space=Math.min(item.desiredColumns,item.first)}
+  item.lane=lane;item.columns=space;item.labelStart=item.first-space;item.axis=space===0;ends[lane]=item.end;
+ }
  return{items,lanes:Math.max(1,ends.length)};
 }
 function pgCumulativeAxisItem(items,lane,scrollLeft,dayWidth){
  const cut=Math.max(0,Number(scrollLeft)||0),width=Number(dayWidth)||34;
- return items.find(item=>item.lane===lane&&item.end*width>cut&&(item.axis||item.labelStart*width<cut-.5))||null;
+ return items.find(item=>item.lane===lane&&item.end*width>cut&&(item.axis?item.first*width<=cut+.5:item.labelStart*width<cut-.5))||null;
 }
 function pgCumulativeRows(worker,dates,points,dayClass){
  const days=new Map(),series=new Map(),indices=new Map(dates.map((date,index)=>[date,index])),key=p=>JSON.stringify([p.groupId||'',p.jobId||'',p.product||'']);
@@ -4247,7 +4253,7 @@ function pgLayoutCumulativeRows(timeline=$('#pgTimeline'),dayWidth=34){
   row.dataset.pgCumulativeLanes=String(layout.lanes);set(row,'--pg-cumulative-lanes',String(layout.lanes));set(row,'--pg-cumulative-rows',heights.map(height=>height+'px').join(' '));set(row,'--pg-cumulative-height',heights.reduce((sum,height)=>sum+height,0)+'px');
   const axes=row.querySelector('.pgCumulativeAxisNames');while(axes.children.length>layout.lanes)axes.lastElementChild.remove();while(axes.children.length<layout.lanes){const button=document.createElement('button');button.type='button';button.className='pgCumulativeAxisName';axes.appendChild(button)}
   for(let lane=0;lane<layout.lanes;lane++){axes.children[lane].dataset.pgCumulativeLane=String(lane);set(axes.children[lane],'grid-row',String(lane+1))}
-  for(const item of layout.items){const lane=String(item.lane);item.label.dataset.pgCumulativeLane=lane;set(item.label,'left',item.labelStart*dayWidth+'px');set(item.label,'width',Math.max(0,item.columns*dayWidth-3)+'px');set(item.label,'top',heights.slice(0,item.lane).reduce((sum,height)=>sum+height,0)+'px');set(item.label,'height',heights[item.lane]+'px');for(const number of item.numbers){number.dataset.pgCumulativeLane=lane;set(number,'grid-row',String(item.lane+1))}}
+  for(const item of layout.items){const lane=String(item.lane);item.label.dataset.pgCumulativeLane=lane;set(item.label,'left',item.labelStart*dayWidth+'px');set(item.label,'width',Math.max(0,item.columns*dayWidth-3)+'px');set(item.label,'top',heights.slice(0,item.lane).reduce((sum,height)=>sum+height,0)+'px');set(item.label,'height',heights[item.lane]+'px');for(const number of item.numbers){number.dataset.pgCumulativeLane=lane;number.classList.toggle('pgCumulativeStart',item.axis&&Number(number.dataset.pgCumulativeIndex)===item.first);set(number,'grid-row',String(item.lane+1))}}
   row._pgCumulativeLayout={...layout,heights,dayWidth,axes:[...axes.children]};
  }
  pgSyncCumulativeLabels(timeline);
