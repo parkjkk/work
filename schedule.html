@@ -356,10 +356,9 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 .pgSurface button.pgCumulativeRunLabel{position:absolute;text-align:right}
 .pgSurface button.pgCumulativeRunLabel:hover,.pgSurface button.pgCumulativeAxisName:hover{background:#dcebf5}
 .pgSurface button.pgCumulativeRunLabel:focus-visible,.pgSurface button.pgCumulativeAxisName:focus-visible{outline:2px solid #276ba3;outline-offset:-2px}
-.pgCumulativeLabel .pgCumulativeAxisNames{position:absolute;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start}
-.pgSurface button.pgCumulativeAxisName{width:100%;height:100%;text-align:right;padding:0 6px;background:#f7fafc}
-.pgCumulativeLabel .pgCumulativeAxisDefault{position:absolute;left:6px;right:6px;top:50%;transform:translateY(-50%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:12px}
-.pgCumulativeLabel[data-pg-axis-active="true"] .pgCumulativeAxisDefault{display:none}
+.pgCumulativeLabel .pgCumulativeAxisNames{position:absolute;inset:0 0 0 45px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start;border-left:1px solid #c4d6e3}
+.pgSurface button.pgCumulativeAxisName{width:100%;height:100%;text-align:right;padding:0 3px;background:#f7fafc}
+.pgCumulativeLabel .pgCumulativeAxisDefault{position:absolute;left:5px;width:38px;top:50%;transform:translateY(-50%);white-space:nowrap;font-size:10px!important;line-height:12px;color:#28506c}
 .pgCumulativeRunLabel[hidden],.pgCumulativeAxisName[hidden]{display:none!important}
 @media screen and (min-width:721px){.pgSurface.pgFocused button.pgCumulativeRunLabel,.pgSurface.pgFocused button.pgCumulativeAxisName{font-size:10px}}
 @media(max-width:720px){body.sheetWorkspace #planGridSurface button.pgCumulativeRunLabel,body.sheetWorkspace #planGridSurface button.pgCumulativeAxisName{min-width:0;min-height:0!important;font-size:11px;line-height:14px}}
@@ -368,6 +367,18 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 @media screen and (min-width:721px){
  .pgSurface.pgFocused:not(.pgFocusToolsOpen) .pgDrySearch,.pgSurface.pgFocused:not(.pgFocusToolsOpen) .pgSelectionInfo{margin-top:0;margin-bottom:0;padding-top:0;padding-bottom:0}
 }
+
+/* Keep worker and row-type identity visible without adding headers or rows. */
+.pgSurface .pgWorkerBlock{border-top-color:#5f8196}
+.pgWorkerBlock>.pgProductionRow{background:#edf4fa;border-bottom-color:#b6cddd}
+.pgWorkerBlock>.pgProductionRow>.pgAxisLabel{background:#e5eff7;justify-content:space-between;gap:4px}
+.pgSurface .pgWorkerBlock>.pgProductionRow>.pgAxisLabel>b:not(:empty){display:block;min-width:0;max-width:calc(100% - 47px);padding:1px 3px;border-radius:3px;background:#2c526d;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:14px}
+.pgSurface .pgWorkerBlock>.pgProductionRow>.pgAxisLabel>span{flex:none;font-size:9px;font-weight:600;color:#315571}
+.pgWorkerBlock>.pgDryRow>.pgAxisLabel{justify-content:flex-start;gap:0;border-left:3px solid #ae7842}
+.pgWorkerBlock>.pgDryRow>.pgAxisLabel>b:empty{display:none}
+.pgWorkerBlock>.pgDryRow>.pgAxisLabel>span{font-weight:700;color:#73461e}
+.pgWorkerBlock>.pgCumulativeRow>.pgAxisLabel{background:#eaf2f8;border-left:3px solid #5b829f}
+.pgSurface .pgWorkerBlock .pgCumulativeAxisName{background:#f0f6fb}
 
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
@@ -4235,7 +4246,7 @@ function pgCumulativeRows(worker,dates,points,dayClass){
  for(const point of points){if(!indices.has(point.date))continue;const id=key(point),index=indices.get(point.date);if(!days.has(point.date))days.set(point.date,[]);days.get(point.date).push(point);if(!series.has(id))series.set(id,{key:id,first:index,last:index,entry:point});const s=series.get(id);if(index<s.first){s.first=index;s.entry=point}s.last=Math.max(s.last,index)}
  const attributes=(entry,date=entry.date)=>`data-pg-cumulative-job="${esc(entry.jobId)}" data-pg-cumulative-worker="${esc(worker)}" data-pg-cumulative-date="${date}" data-pg-cumulative-product="${esc(entry.product)}"`;
  const title=entry=>esc(pgCumulativeTitle(worker,entry.date,[entry]));
- return `<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-worker="${esc(worker)}"><div class="pgAxisLabel pgCumulativeLabel" title="제품명과 작업 누적 · 제품명이나 숫자를 누르면 상세 확인"><b class="pgCumulativeAxisDefault">작업 누적 · 조</b><div class="pgCumulativeAxisNames"></div></div><div class="pgCumulativeTrack"><div class="pgDateCells">${dates.map(date=>{const entries=(days.get(date)||[]).slice().sort((a,b)=>a.product.localeCompare(b.product,'ko',{numeric:true})||String(a.jobId||'').localeCompare(String(b.jobId||''))),description=pgCumulativeTitle(worker,date,entries);return `<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(description)}" aria-label="${esc(description.replaceAll('\n',' '))}">${entries.map(entry=>`<button type="button" class="pgCumulativeNumber${fmt(entry.value).length>3?' pgCumulativeLong':''} ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" ${attributes(entry,date)} data-pg-cumulative-series="${esc(key(entry))}" data-pg-cumulative-index="${indices.get(date)}" data-pg-cumulative-kind="${entry.kind}" title="${title(entry)}" aria-label="${esc(pgCumulativeTitle(worker,date,[entry]).replaceAll('\n',' '))}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</button>`).join('')}</div>`}).join('')}</div><div class="pgCumulativeRunLabels">${[...series.values()].map(s=>`<button type="button" class="pgCumulativeRunLabel" ${attributes(s.entry)} data-pg-cumulative-series="${esc(s.key)}" data-pg-cumulative-first="${s.first}" data-pg-cumulative-last="${s.last}" title="${title(s.entry)}" aria-label="${esc(pgCumulativeTitle(worker,s.entry.date,[s.entry]).replaceAll('\n',' '))}">${esc(s.entry.product)}</button>`).join('')}</div></div></div>`;
+ return `<div class="pgGridRow pgActualRow pgCumulativeRow" data-pg-cumulative-worker="${esc(worker)}"><div class="pgAxisLabel pgCumulativeLabel" title="제품명과 작업 누적 · 제품명이나 숫자를 누르면 상세 확인"><b class="pgCumulativeAxisDefault" title="작업 누적 · 조" aria-label="작업 누적 · 조">누적·조</b><div class="pgCumulativeAxisNames"></div></div><div class="pgCumulativeTrack"><div class="pgDateCells">${dates.map(date=>{const entries=(days.get(date)||[]).slice().sort((a,b)=>a.product.localeCompare(b.product,'ko',{numeric:true})||String(a.jobId||'').localeCompare(String(b.jobId||''))),description=pgCumulativeTitle(worker,date,entries);return `<div class="pgDay pgCumulativeValues${dayClass(date)}" data-pg-day="${date}" title="${esc(description)}" aria-label="${esc(description.replaceAll('\n',' '))}">${entries.map(entry=>`<button type="button" class="pgCumulativeNumber${fmt(entry.value).length>3?' pgCumulativeLong':''} ${entry.kind==='actual'?'pgCumulativeActual':entry.kind==='forecast'?'pgCumulativeForecast':'pgCumulativeSaved'}" ${attributes(entry,date)} data-pg-cumulative-series="${esc(key(entry))}" data-pg-cumulative-index="${indices.get(date)}" data-pg-cumulative-kind="${entry.kind}" title="${title(entry)}" aria-label="${esc(pgCumulativeTitle(worker,date,[entry]).replaceAll('\n',' '))}">${fmt(entry.value)}${entry.plan>0?`<small>/${fmt(entry.plan)}</small>`:''}</button>`).join('')}</div>`}).join('')}</div><div class="pgCumulativeRunLabels">${[...series.values()].map(s=>`<button type="button" class="pgCumulativeRunLabel" ${attributes(s.entry)} data-pg-cumulative-series="${esc(s.key)}" data-pg-cumulative-first="${s.first}" data-pg-cumulative-last="${s.last}" title="${title(s.entry)}" aria-label="${esc(pgCumulativeTitle(worker,s.entry.date,[s.entry]).replaceAll('\n',' '))}">${esc(s.entry.product)}</button>`).join('')}</div></div></div>`;
 }
 function pgLayoutCumulativeRows(timeline=$('#pgTimeline'),dayWidth=34){
  if(!timeline)return;const rows=[...(timeline.querySelectorAll?.('.pgCumulativeRow')||[])];if(!rows.length)return;
