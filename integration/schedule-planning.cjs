@@ -199,15 +199,18 @@ const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
 function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)}
 function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
-const reservationLayoutPolicy='manual-transition-gap-v3';
+const reservationLayoutPolicy='manual-transition-gap-v4';
 function afterProductionGap(s,worker,end){
  if(!C.iso(end))throw Error('앞 작업의 생산 종료일을 확인해 주세요.');
  let date=add(end,1);for(let i=0;i<3;i++){date=nextManualWork(s,worker,date);if(i<2)date=add(date,1)}return date;
 }
 function manualDuration(s,job){
  if(job.manualEndMode!=='date'&&job.daily!=null){if(!(Number.isFinite(job.daily)&&job.daily>0))throw Error('수기 작업의 하루 조수를 확인해 주세요.');if(!(job.totalPlan>0))throw Error('수기 작업의 계획 조수를 확인해 주세요.');return Math.ceil(job.totalPlan/job.daily)}
- if(C.iso(job.start)&&C.iso(job.end)&&job.end>=job.start){const span=days(job.start,job.end);if(span.length>740)throw Error('수기 기간은 740일 이내로 입력해 주세요.');const count=span.filter(d=>manualWork(s,job.worker,d)).length;if(count>0)return count;throw Error('원래 수기 기간에 근무일이 없어 작업기간을 확인해야 합니다.')}
- if(Number.isFinite(job.duration)&&job.duration>0&&job.duration<=740)return Math.ceil(job.duration);
+ // Date edits reserve a period, but a known quantity/rate is a lower bound.
+ // New holidays must not leave an apparently finished bar below its target.
+ const required=Number.isFinite(job.daily)&&job.daily>0&&Number.isFinite(job.totalPlan)&&job.totalPlan>0?Math.ceil(job.totalPlan/job.daily):0;
+ if(C.iso(job.start)&&C.iso(job.end)&&job.end>=job.start){const span=days(job.start,job.end);if(span.length>740)throw Error('수기 기간은 740일 이내로 입력해 주세요.');const count=Math.max(required,span.filter(d=>manualWork(s,job.worker,d)).length);if(count>0)return count;throw Error('원래 수기 기간에 근무일이 없어 작업기간을 확인해야 합니다.')}
+ if(Number.isFinite(job.duration)&&job.duration>0&&job.duration<=740)return Math.max(required,Math.ceil(job.duration));
  throw Error('수기 작업의 하루 조수 또는 원래 시작·종료일을 확인해 주세요.');
 }
 function manualDurationEnd(s,worker,start,duration){
@@ -486,7 +489,7 @@ function scheduleAllRead(s,requestedToday,options={}){
   try{
    if(group.members.some(e=>e.job.carryBlocked))throw Error('이월 작업 연결을 확인해야 수기 일정을 배치할 수 있습니다.');
    start=anchor?afterProductionGap(s,group.worker,anchor.end):group.requestedStart;if(!C.iso(start))throw Error('수기 작업의 시작일을 확인해 주세요.');
-   const legacy=group.members.filter(e=>!e.job.routing),legacyEnds=legacy.map(e=>{const savedPeriod=manualFallback&&e.job.manualEndMode!=='daily'&&C.iso(e.job.start)&&C.iso(e.job.end)&&e.job.end>=e.job.start,duration=manualDuration(s,savedPeriod?{...e.job,manualEndMode:'date'}:e.job);return savedPeriod||!anchor&&e.job.manualEndMode==='date'&&C.iso(e.job.end)?e.job.end:manualDurationEnd(s,group.worker,start,duration)}),legacyEnd=legacyEnds.sort().at(-1)||null;
+   const legacy=group.members.filter(e=>!e.job.routing),legacyEnds=legacy.map(e=>{const savedPeriod=manualFallback&&e.job.manualEndMode!=='daily'&&C.iso(e.job.start)&&C.iso(e.job.end)&&e.job.end>=e.job.start,duration=manualDuration(s,savedPeriod?{...e.job,manualEndMode:'date'}:e.job),calculatedEnd=manualDurationEnd(s,group.worker,start,duration),keepEnd=savedPeriod||!anchor&&e.job.manualEndMode==='date'&&C.iso(e.job.end);return keepEnd&&e.job.end>calculatedEnd?e.job.end:calculatedEnd}),legacyEnd=legacyEnds.sort().at(-1)||null;
    prepared=group.members.map(entry=>{const job=clone(entry.job);if(job.routing){const offset=C.iso(job.start)&&C.iso(group.requestedStart)?Math.round((Date.parse(job.start)-Date.parse(group.requestedStart))/86400000):0;job.start=add(start,offset)}else{job.start=start;job.end=legacyEnd;job.duration=null;job.afterPrevious=false}return job});
    calculated=scheduleBase(s,group.owner,requestedToday,settings(group.owner,{inputJobs:prepared,isolatedGroup:true,skipSourceDry:true}));
    if(group.members.some(entry=>!calculated.rows.some(row=>row.jobId===entry.job.id&&!row.actualOnly&&!row.reservationOnly&&C.iso(row.end))))throw Error(calculated.warnings[0]?.message||'수기 작업의 호기·하루 조수와 작업기간을 확인해 주세요.');
