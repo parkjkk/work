@@ -55,6 +55,8 @@
 @media(max-width:720px){.sheetDateSort select{min-height:44px;font-size:16px}.sheetReadonlyDates>.sheetDateSort{margin:8px 0}.sheetFilters .sheetDateSort{font-size:.75rem}}
 @media print{.sheetDateSort{display:none!important}}
 
+@media(max-width:720px){.sheetViewport>.mobileDateSort{position:sticky;left:0;display:flex;width:max-content;max-width:100%;box-sizing:border-box;padding:5px 8px;margin:0;background:#f8fafc;border-bottom:1px solid #dae4eb;z-index:1}}
+
 /* Read-only progress beside the existing editable plan column. */
 .sheetEditor[data-sheet-id="production"] td[data-result="currentProgress"]{padding:3px 6px;text-align:left;background:#f4f7fb;vertical-align:middle}
 .productionProgress{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:4px;line-height:1.25;min-height:33px;color:#304767}
@@ -5570,7 +5572,7 @@ window.addEventListener('production:lock',()=>{twoWayClear();twoWayRender()});
 window.addEventListener('online',()=>{if(Date.now()-twoWayState.last>10000)twoWaySchedule()});
 
 // Responsive organization only: move existing controls, never copy input values or ledger rows.
-const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
+const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dateSorts:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
 const mobileObserverOptions={childList:true,subtree:true,attributes:true,attributeFilter:['hidden','data-sheet-problem','colspan','rowspan']};
 function mobileLayout(){return typeof matchMedia==='function'&&matchMedia('(max-width: 720px)').matches}
 // Do not create another saving path: choose the current, visible original editor.
@@ -5622,7 +5624,12 @@ function mobileDockStatus(node,host){
  if(focused&&(node===focused.node||node.contains(focused.node))){const menu=host.closest('.workspaceMore');menu?.classList.add('open');menu?.querySelector('button')?.setAttribute('aria-expanded','true');mobileRestoreFocus(focused)}
  return true;
 }
-function mobileRestoreTools(){const focused=mobileFocusSnapshot();mobileRestoreStatus();for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear();mobileRestoreFocus(focused)}
+function mobileRestoreDateSorts(){for(const [control,anchor]of mobileScreen.dateSorts){if(control.isConnected&&anchor.isConnected){const options=anchor.parentNode?.closest('.workspaceFocusOptions');if(options&&control.contains(document.activeElement))options.hidden=false;anchor.replaceWith(control);control.classList.remove('mobileDateSort')}else anchor.remove()}mobileScreen.dateSorts.clear()}
+function mobileShowDateSorts(main){
+ for(const [control,anchor]of mobileScreen.dateSorts)if(!control.isConnected||!anchor.isConnected){anchor.remove();mobileScreen.dateSorts.delete(control)}
+ for(const select of main.querySelectorAll('.sheetEditor .sheetFilters [data-sheet-sort]')){const control=select.closest('.sheetDateSort'),viewport=select.closest('.sheetEditor')?.querySelector('.sheetViewport'),table=viewport?.querySelector('table');if(!control||!table)continue;const focused=mobileFocusSnapshot(),anchor=document.createComment('mobile date sort position');control.before(anchor);table.before(control);control.classList.add('mobileDateSort');mobileScreen.dateSorts.set(control,anchor);mobileRestoreFocus(focused)}
+}
+function mobileRestoreTools(){const focused=mobileFocusSnapshot();mobileRestoreDateSorts();mobileRestoreStatus();for(const {menu,locations}of mobileScreen.menus.values()){for(const {button,anchor}of locations){if(anchor.isConnected)anchor.replaceWith(button)}menu.remove()}mobileScreen.menus.clear();mobileRestoreFocus(focused)}
 function mobileOverflow(wrapper){return wrapper.clientWidth>0&&wrapper.scrollWidth>wrapper.clientWidth+2}
 function mobileSameNodes(before,after){return before?.length===after.length&&after.every((node,index)=>before[index]===node)}
 function mobileSetStyle(node,key,value){if(node.style.getPropertyValue(key)!==value)node.style.setProperty(key,value)}
@@ -5718,6 +5725,7 @@ function mobileRefresh(){
   // Schedule controls use authored responsive menus.
 
  }
+ if(small&&!planFocused)mobileShowDateSorts(main);
  mobileFitColumns(main,small,resetPosition);
  mobileLabelReadTables(main);
  if(!tableFocus)for(const wrapper of main.querySelectorAll('.sheetViewport,.tableWrap,.secondaryTableScroll,.ledgerReadViewport,.archivePane')){
