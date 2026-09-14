@@ -56,7 +56,7 @@ function projectCatalog(products,prior,now=new Date().toISOString(),memos=[]){
 }
 function newMonth(id){return{id,rev:1,name:id,modern:true,closed:false,rows:[],issues:[],stocks:[],plans:[],jobs:[],history:[],auditSessions:[],operations:[],headerRows:[],plaster:[],auditStamp:'',openingSource:null}}
 function rowBody(row){const x=clone(row);delete x.sourceIntegration;delete x.integrationOutbound;delete x.rev;return x}
-function outboundTarget(row){const target={};for(const field of['date','worker','product','pours','plan','hours','productionCompletion','productionPlanQty','machineActuals','fieldScrapKg','fieldDefQty','fieldPlanIntent','fieldDetails'])if(own(row,field))target[field]=clone(row[field]);return target}
+function outboundTarget(row){const target={};for(const field of['date','worker','product','pours','plan','hours','productionCompletion','productionPlanQty','machineActuals','scheduleTarget','fieldScrapKg','fieldDefQty','fieldPlanIntent','fieldDetails'])if(own(row,field))target[field]=clone(row[field]);return target}
 function detailOf(r){const x={};for(const k of['defPart','gasa','cs','gap','inlet','face','bubble','b1','b2','remark','sourceProduct'])if(own(r,k))x[k]=r[k];return x}
 function sourceFiles(snapshot){
  if(!snapshot||typeof snapshot.repo!=='string'||!snapshot.commit||!snapshot.files||snapshot.complete===false)throw Error('Complete source snapshot required');
@@ -120,6 +120,9 @@ function planSync(state,snapshot,options={}){
    }
    if(own(raw,'machineActuals')){
     try{values.machineActuals=machineActuals(raw.machineActuals,raw.prod)}catch{issue('invalid-machine-actuals',ctx);continue}
+   }
+   if(own(raw,'scheduleTarget')){
+    try{values.scheduleTarget=require('./schedule-core.cjs').scheduleTargetValue(raw.scheduleTarget)}catch{issue('invalid-schedule-target',ctx);continue}
    }
    if(own(raw,'scrapKg'))values.fieldScrapKg=number(raw.scrapKg,'scrapKg');
    if(own(raw,'defQty'))values.fieldDefQty=number(raw.defQty,'defQty');
@@ -188,12 +191,20 @@ function planSync(state,snapshot,options={}){
   if(baseline){
    // A split is meaningful only for its total, worker, product and job. Different
    // fields can conflict even when a regular cell-by-cell merge would succeed.
-   const basis=['date','worker','product','pours'];
+   const basis=['date','worker','product','pours','scheduleTarget'];
    const sourceSplit=own(values,'machineActuals')&&!same(values.machineActuals,baseline.machineActuals)&&!same(values.machineActuals,row.machineActuals);
    const targetSplit=!same(row.machineActuals,baseline.machineActuals)&&(!own(values,'machineActuals')||!same(row.machineActuals,values.machineActuals));
    const targetBasis=basis.some(key=>own(baseline,key)&&!basisSame(key,row[key],baseline[key])&&(!own(values,key)||!basisSame(key,row[key],values[key])))||sourceSplit&&bindingChanged(row);
    const sourceBasis=basis.some(key=>own(values,key)&&own(baseline,key)&&!basisSame(key,values[key],baseline[key])&&!basisSame(key,row[key],values[key]));
    if((sourceSplit&&targetBasis||targetSplit&&sourceBasis)&&!conflicts.includes('machineActuals'))conflicts.push('machineActuals');
+   // Moving a record to another job changes the meaning of its quantities and
+   // conditions. Protect concurrent edits even when no machine split exists.
+   const meaning=['date','worker','product','pours','plan','productionCompletion','productionPlanQty','machineActuals','fieldScheduleConditions'];
+   const sourceTarget=own(values,'scheduleTarget')&&!same(values.scheduleTarget,baseline.scheduleTarget)&&!same(values.scheduleTarget,row.scheduleTarget);
+   const targetTarget=!same(row.scheduleTarget,baseline.scheduleTarget)&&(!own(values,'scheduleTarget')||!same(row.scheduleTarget,values.scheduleTarget));
+   const managementMeaning=meaning.some(key=>!basisSame(key,row[key],baseline[key])&&(!own(values,key)||!basisSame(key,row[key],values[key])));
+   const fieldMeaning=meaning.some(key=>own(values,key)&&!basisSame(key,values[key],baseline[key])&&!basisSame(key,row[key],values[key]));
+   if((sourceTarget&&managementMeaning||targetTarget&&fieldMeaning)&&!conflicts.includes('scheduleTarget'))conflicts.push('scheduleTarget');
   }
   if(row&&own(patch,'product')&&!basisSame('product',row.product,patch.product)){
    const product=ix.byName(patch.product),units={},basis={productId:product?.id,productRev:product?.rev??null};
@@ -297,6 +308,16 @@ function planSync(state,snapshot,options={}){
   const key=attendance.date+'\0'+attendance.worker;if(checkedDays.has(key))continue;checkedDays.add(key);
   const rows=m.rows.filter(r=>!r.deleted&&r.date===attendance.date&&r.worker===attendance.worker&&Number.isFinite(r.pours)&&r.pours>0);
   if(rows.length)report.qualityWarnings.push({code:'off-production-overlap',date:attendance.date,worker:attendance.worker,products:[...new Set(rows.map(r=>r.product))].sort(),rows:rows.length,pours:rows.reduce((n,r)=>n+r.pours,0),rowIds:rows.map(r=>r.id).sort(),message:'현장 휴무 기록과 같은 날의 생산실적이 함께 있습니다. 원본을 확인해 주세요.'});
+ }
+ // Preserve the factual daily record even when its separate schedule link is
+ // stale. Only the attribution is held, and a corrected/cleared target can be
+ // returned normally on the next pass without rewriting actual workers.
+ let planning;const supportJobs=new Map(),supportContext={jobs:new Map()};
+ for(const [month,m]of Object.entries(next.months))for(const row of m.rows||[]){
+  const si=row.sourceIntegration;if(m.closed||m.closeSnapshot||row.deleted||!row.scheduleTarget||si?.repo!==snapshot.repo||report.issues.some(value=>value.path===si.path&&value.id===si.id))continue;
+  planning??=require('./schedule-planning.cjs');if(!supportJobs.has(month))supportJobs.set(month,planning.jobs(next,month,supportContext));
+  if(supportJobs.get(month).filter(job=>planning.recordMatchesJob(job,row,next)).length===1)continue;
+  issue('schedule-target-review',{path:si.path,id:si.id,date:row.date,worker:row.worker,sourceProduct:si.sourceProduct||row.product},{fields:['scheduleTarget'],effect:'schedule-only',message:'일보 실적은 보존했으며 일정 연결은 보류했습니다. 품목의 담당 작업을 다시 선택해 주세요.'});
  }
  report.qualityWarnings.sort((a,b)=>(a.date+'\0'+a.worker).localeCompare(b.date+'\0'+b.worker));
  report.issues.sort((a,b)=>stable(a).localeCompare(stable(b)));

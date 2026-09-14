@@ -4,7 +4,43 @@ const days=(a,b)=>{const out=[];if(!C.iso(a)||!C.iso(b)||a>b)return out;for(let 
 const startPlan=r=>{const plan=C.num(r.plan),saved=C.num(r.productionPlanQty);return plan>0?plan:plan===0&&saved>0?saved:null};
 const completion=r=>{try{return C.completionValue(r.productionCompletion)}catch{return null}};
 const endsProduction=r=>r.plan===0||!!completion(r);
-const named=(s,r)=>({...r,product:C.catalogName(s,r.product)});
+const named=(s,r)=>{const value={...r,product:C.catalogName(s,r.product)};Object.defineProperty(value,'_scheduleProductId',{value:C.catalogLookup(s).product(r.product)?.id||null});return value};
+const resolvedScheduleTargets=new WeakMap();
+function targetForJob(s,month,job){return C.scheduleTargetValue({schema:1,jobId:job.id,originId:job.originId||job.id,month,worker:job.worker,productId:C.catalogLookup(s).product(job.product)?.id||''})}
+function scheduleTargetMatches(job,row,s=null){
+ try{const t=C.scheduleTargetValue(row.scheduleTarget),productId=s?C.catalogLookup(s).product(row.product)?.id:row._scheduleProductId;
+ return !!t&&row.fieldPlanIntent!=='start'&&row.planIntent!=='start'&&t.worker===job.worker&&t.originId===(job.originId||job.id)&&(!productId||t.productId===productId)&&(s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&(!row.jobId||row.jobId===job.id)&&C.iso(row.date)&&row.date>=(job.previousStart||job.start)&&t.month<=row.date.slice(0,7);
+ }catch{return false}
+}
+function recordMatchesJob(job,row,s=null){
+ if(!row.scheduleTarget)return (s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&row.worker===workerAt(job,row.date);
+ return scheduleTargetMatches(job,row,s)&&(resolvedScheduleTargets.get(row)===job.id||(job.records||[]).some(r=>r.id===row.id&&r.date===row.date&&r.worker===row.worker&&JSON.stringify(r.scheduleTarget)===JSON.stringify(row.scheduleTarget)));
+}
+function productionTargetOptions(s,k,rowId){
+ const month=s.months?.[k],row=month?.rows.find(r=>r.id===rowId);if(!row||row.deleted||month.closed||month.closeSnapshot||row.fieldPlanIntent==='start')return[];
+ const basis={...s,months:{...s.months,[k]:{...month,rows:month.rows.filter(r=>r.id!==rowId)}}},product=C.catalogName(s,row.product);
+ return jobs(basis,k).filter(j=>j.product===product&&!j.complete&&!j.stopped&&!j.carryBlocked&&!j.handoffBlocked&&(j.produced>0||j.previousProduced>0)&&(j.previousStart||j.start)<=row.date&&!j.records?.some(endsProduction)&&j.sourceRowId!==rowId).flatMap(j=>{try{return[{jobId:j.id,eligible:true,product:j.product,worker:workerAt(j,row.date),start:j.previousStart||j.start,end:j.end||null,plan:j.totalPlan,daily:dailyAt(j,row.date),machines:clone(j.machines||[]),scheduleTarget:targetForJob(s,k,j)}]}catch{return[]}});
+}
+// Resolve an explicit physical job without changing the daily producer. These
+// proofs live only on normalized read objects, never on the source ledger.
+function resolveScheduleTargets(s,k,m,out,context){
+ if(!m.rows.some(r=>r.scheduleTarget&&!r.deleted))return;
+ const basis={...s,months:{...s.months,[k]:{...s.months[k],rows:s.months[k].rows.filter(r=>!r.scheduleTarget)}}},baseline=computeJobs(basis,k,context),accepted=new Map();
+ for(const row of [...m.rows].sort((a,b)=>(a.date||'').localeCompare(b.date||''))){if(!row.scheduleTarget||row.deleted)continue;
+  let t;try{t=C.scheduleTargetValue(row.scheduleTarget)}catch{continue}
+  if(t.productId!==row._scheduleProductId||t.month>k)continue;
+  const candidates=out.filter(j=>scheduleTargetMatches(j,row)&&(!j.stoppedAt||row.date<=j.stoppedAt));if(candidates.length!==1)continue;
+  const job=candidates[0],original=s.months?.[t.month];if(!original)continue;
+  const originals=(original.jobs||[]).filter(j=>j.id===t.jobId&&j.worker===t.worker&&(j.originId||j.id)===t.originId&&C.catalogLookup(s).product(j.product)?.id===t.productId);
+  const originalStart=(original.rows||[]).filter(r=>'job:'+r.id===t.jobId&&!r.deleted&&!r.scheduleTarget&&r.worker===t.worker&&C.catalogLookup(s).product(r.product)?.id===t.productId&&startPlan(r)>0);
+  if(originals.length!==1&&!(originals.length===0&&originalStart.length===1&&t.originId===t.jobId))continue;
+  if(t.month===k&&t.jobId!==job.id||t.month!==k&&(!job.carried||job.originId!==t.originId))continue;
+  const bases=baseline.filter(j=>j.id===job.id);if(bases.length!==1)continue;const base=bases[0],prior=(base.records||[]).filter(r=>r.date<row.date),today=(base.records||[]).filter(r=>r.date===row.date),previous=base.carried?(base.effectivePreviousProduced??base.previousProduced??0):0,earlier=(accepted.get(job.id)||[]).filter(r=>r.date<row.date);
+  if(base.carryBlocked||base.handoffBlocked||base.carryTerminal||prior.some(endsProduction)||earlier.some(endsProduction)||base.totalPlan>0&&previous+C.sum(prior,r=>r.pours)+C.sum(earlier,r=>r.pours)>=base.totalPlan)continue;
+  const began=previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
+  if(began){resolvedScheduleTargets.set(row,job.id);if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
+ }
+}
 
 // A production job owns quantities and machines; assignments own dated labour.
 // Never rewrite the worker on historical daily rows when an assignment changes.
@@ -12,23 +48,26 @@ function normalizedHandoffs(job){
  if(job.handoffs==null)return[];
  if(!Array.isArray(job.handoffs)||job.handoffs.length>100)throw Error('작업 넘기기 기록 형식을 확인해 주세요.');
  let worker=job.worker,date='',ids=new Set();
- return job.handoffs.map(h=>{if(!h||typeof h.id!=='string'||!h.id||ids.has(h.id)||!C.iso(h.date)||h.date<=date||C.iso(job.start)&&h.date<job.start&&!job.carried||h.from!==worker||typeof h.to!=='string'||!h.to.trim()||h.to===worker||h.daily!=null&&(!(Number.isFinite(h.daily)&&h.daily>0)||job.routing?.mode==='parallel')||h.otherWork&&(!String(h.otherWork.label||'').trim()||!C.iso(h.otherWork.end)||h.otherWork.end<h.date))throw Error('작업 넘기기 날짜·담당자 연결·하루 조수를 확인해 주세요.');ids.add(h.id);date=h.date;worker=h.to;return h});
+ return job.handoffs.map(h=>{if(!h||typeof h.id!=='string'||!h.id||ids.has(h.id)||!C.iso(h.date)||h.date<=date||C.iso(job.start)&&h.date<job.start&&!job.carried||h.from!==worker||typeof h.to!=='string'||!h.to.trim()||h.to===worker||h.daily!=null&&(!(Number.isFinite(h.daily)&&h.daily>0)||job.routing?.mode==='parallel')||h.otherWork&&(!String(h.otherWork.label||'').trim()||!C.iso(h.otherWork.end)||h.otherWork.end<h.date))throw Error('작업 넘기기 날짜·담당자 연결·하루 조수를 확인해 주세요.');if(h.quantity!=null){const q=h.quantity;if(!q||q.schema!==1||!Number.isFinite(q.recipientQty)||q.recipientQty<=0||!Number.isFinite(q.threshold)||q.threshold<0||!C.iso(q.sourceLastDate)||q.sourceLastDate>=h.date||!Number.isFinite(q.sourceLastQty)||q.sourceLastQty<0||job.routing?.mode==='parallel'||h.otherWork)throw Error('수량으로 나눈 작업의 배정 조수·마지막 생산일을 확인해 주세요.')}ids.add(h.id);date=h.date;worker=h.to;return h});
 }
 function safeHandoffs(job){try{return normalizedHandoffs(job)}catch{return[]}}
 function workerAt(job,date){let worker=job.worker;for(const h of safeHandoffs(job)){if(h.date>date)break;worker=h.to}return worker}
-function dailyAt(job,date,machine=null){let rate=machine?.daily??job.daily;for(const h of safeHandoffs(job)){if(h.date>date)break;if(h.daily>0){if(!(machine&&job.routing?.mode==='parallel'))rate=h.daily}}return rate}
+function dailyAt(job,date,machine=null){let rate=machine?.daily??job.daily;const assignments=safeHandoffs(job);for(const h of assignments){if(h.date>date)break;if(h.daily>0){if(!(machine&&job.routing?.mode==='parallel'))rate=h.daily}}if(assignments.some(h=>h.quantity&&date>h.quantity.sourceLastDate&&date<h.date))return 0;const final=assignments.find(h=>h.quantity?.sourceLastDate===date&&h.quantity.sourceLastQty>0);return final?Math.min(rate,final.quantity.sourceLastQty):rate}
 function handoffSegments(job,start,end){
  if(!C.iso(start)||!C.iso(end)||end<start)return[];const list=normalizedHandoffs(job),out=[];let worker=job.worker,begin=start,id='origin',incoming=null;
- for(const h of list){if(h.date<=start){worker=h.to;id=h.id;incoming=h;continue}if(h.date>end)break;out.push({worker,start:begin,end:add(h.date,-1),assignmentId:id,handoffIn:incoming,handoffOut:h});worker=h.to;begin=h.date;id=h.id;incoming=h}
+ for(const h of list){if(h.date<=start){worker=h.to;id=h.id;incoming=h;continue}if(h.date>end)break;const last=h.quantity?([h.quantity.sourceLastDate,add(h.date,-1)].sort()[0]):add(h.date,-1);if(begin<=last)out.push({worker,start:begin,end:last,assignmentId:id,handoffIn:incoming,handoffOut:h});worker=h.to;begin=h.date;id=h.id;incoming=h}
  out.push({worker,start:begin,end,assignmentId:id,handoffIn:incoming,handoffOut:null});return out;
 }
-function handoffRecordMatches(job,row){try{return row.worker===workerAt(job,row.date)&&row.product===job.product}catch{return row.worker===job.worker&&row.product===job.product}}
+function handoffRecordMatches(job,row){try{return recordMatchesJob(job,row)}catch{return !row.scheduleTarget&&row.worker===job.worker&&row.product===job.product}}
 function otherWorkPeriods(s,start='1900-01-01',end='2200-12-31'){
  const values=new Map();for(const [month,m]of Object.entries(s.months||{}).sort(([a],[b])=>a.localeCompare(b)))for(const j of m.jobs||[])for(const h of Array.isArray(j.handoffs)?j.handoffs:[]){if(!h?.otherWork||!C.iso(h.date)||!C.iso(h.otherWork.end)||h.otherWork.end<h.date||h.date>end||h.otherWork.end<start||!h.from)continue;if(!safeHandoffs(j).includes(h)||(s.workers||[]).length&&(!(s.workers||[]).includes(h.from)||!(s.workers||[]).includes(h.to)))continue;const id='other-work:'+h.id;values.set(id,{id,jobId:j.id,worker:h.from,start:h.date,end:h.otherWork.end,label:String(h.otherWork.label||'다른 업무'),source:'handoff',handoffId:h.id,ownerMonth:month})}return [...values.values()];
 }
 const assignmentCalendarScopes=new WeakMap();
 function withAssignmentCalendar(s,read){if(assignmentCalendarScopes.has(s))return read();const periods=otherWorkPeriods(s);assignmentCalendarScopes.set(s,periods);try{return read()}finally{assignmentCalendarScopes.delete(s)}}
 function otherWorkOn(s,worker,date){return(assignmentCalendarScopes.get(s)||otherWorkPeriods(s,date,date)).some(r=>r.worker===worker&&r.start<=date&&r.end>=date)}
+function creditedWork(s,worker,date){
+ const scope=assignmentCalendarScopes.get(s);if(!scope?.creditedDays){const values=new Set();for(const [month,value]of Object.entries(s.months||{})){if(!(value.rows||[]).some(r=>r.scheduleTarget&&!r.deleted))continue;for(const j of jobs(s,month))for(const r of j.records||[])if(r.scheduleTarget&&r.pours>0)values.add(workerAt(j,r.date)+'\0'+r.date)}if(scope)scope.creditedDays=values;else return values.has(worker+'\0'+date)}return scope.creditedDays.has(worker+'\0'+date);
+}
 function prepareHandoff(s,k,command){
  const month=s.months?.[k];if(!month||month.closed)throw Error('입력 가능한 월에서 작업을 넘겨 주세요.');
  const date=command.date,to=String(command.to||'').trim();if(!C.iso(date)||date.slice(0,7)!==k)throw Error('선택한 저장 월 안의 적용 날짜를 입력해 주세요.');if(!(s.workers||[]).includes(to))throw Error('등록된 받을 작업자를 선택해 주세요.');
@@ -54,6 +93,78 @@ function prepareHandoff(s,k,command){
  if(command.otherWork){const outgoing=[...latest.values()].filter(j=>!selected.some(x=>(x.originId||x.id)===(j.originId||j.id))&&!j.complete&&!j.stopped&&(j.firstActual||j.produced>0)&&workerAt(j,date)===from);if(outgoing.length)throw Error('다른 업무 기간에 현재 담당자의 다른 진행 생산이 있습니다. 해당 작업도 넘기거나 업무 기간을 조정해 주세요.');const actual=Object.values(s.months).flatMap(m=>m.rows||[]).find(r=>!r.deleted&&r.worker===from&&r.date>=date&&r.date<=command.otherWork.end&&C.num(r.pours)>0);if(actual)throw Error(actual.date+'에 다른 업무 담당자의 생산 실적이 있습니다. 업무 기간을 확인해 주세요.');}
  if(conflicts.length&&!command.allowConcurrent){const error=Error('받을 작업자에게 진행 중 생산이 있습니다. 동시생산 또는 기존 작업 넘기기를 선택해 주세요.');error.code='handoff-concurrent';error.conflicts=conflicts;throw error}
  return{operationId:operationsId,date,from,to,changes,conflicts,policy:'dated-assignment-v1'};
+}
+const quotaRound=value=>Math.round(value*1000000)/1000000;
+function quotaConsumed(s,k,job,event,context=null){
+ const used=j=>(j.records||[]).some(row=>row.date>=event.date&&(C.num(row.pours)>0||endsProduction(row)));
+ if(used(job))return true;
+ if(job.carried)for(const month of Object.keys(s.months||{}).filter(month=>month<k).sort()){
+  const m=s.months[month],values=m.closed&&m.closeSnapshot?.schedule?.jobs||jobs(s,month,context||{jobs:new Map()});
+  for(const prior of values)if((prior.originId||prior.id)===(job.originId||job.id)&&prior.worker===job.worker&&C.catalogName(s,prior.product)===job.product&&used(prior))return true;
+ }
+ // A frozen carry total above the quota boundary proves the receiver's share
+ // is already in progress even when old individual records are unavailable.
+ return !!(job.carried&&event.quantity&&event.date<k+'-01'&&(job.effectivePreviousProduced??job.previousProduced??0)>event.quantity.threshold);
+}
+function quotaWithoutEvent(s,k,job,event){
+ if(!event)return{state:s,job};
+ const origin=job.originId||job.id,strip=values=>(values||[]).map(value=>(value.originId||value.id)===origin&&value.worker===job.worker&&C.catalogName(s,value.product)===job.product?{...value,handoffs:(value.handoffs||[]).filter(h=>h.id!==event.id)}:value),months={};
+ for(const [month,m]of Object.entries(s.months)){const snapshot=m.closeSnapshot?.schedule;months[month]={...m,jobs:strip(m.jobs),...(snapshot?{closeSnapshot:{...m.closeSnapshot,schedule:{...snapshot,jobs:strip(snapshot.jobs)}}}:{})}}
+ const basis={...s,months},matches=jobs(basis,k,{jobs:new Map(),skipQuantityRefresh:true}).filter(value=>value.id===job.id);
+ if(matches.length!==1)throw Error('수량을 나눌 원래 작업 연결을 확인해 주세요.');return{state:basis,job:matches[0]};
+}
+function quotaBoundary(s,k,job,to,threshold){
+ const today=asOf(s,k),produced=job.produced,totalPlan=job.totalPlan;
+ if(!Number.isFinite(produced)||!Number.isFinite(totalPlan)||!Number.isFinite(threshold)||threshold<0||threshold>totalPlan)throw Error('현재 누적과 계획 조수를 확인한 뒤 나눠 주세요.');
+ let remaining=quotaRound(Math.max(0,threshold-produced)),sourceLastDate=today,sourceLastQty=0;
+ for(let date=add(today,1),guard=0;remaining>0&&guard<740;date=add(date,1),guard++){
+  if(!manualWork(s,workerAt(job,date),date))continue;const capacity=dailyAt(job,date);if(!(Number.isFinite(capacity)&&capacity>0))throw Error('기존 담당자의 하루 조수를 먼저 입력해 주세요.');sourceLastQty=quotaRound(Math.min(remaining,capacity));remaining=quotaRound(remaining-sourceLastQty);sourceLastDate=date;
+ }
+ if(remaining>0)throw Error('2년 안에 기존 담당자의 남은 수량을 생산할 수 없습니다.');
+ const date=nextManualWork(s,to,add(sourceLastDate,1));return{date,sourceLastDate,sourceLastQty,totalPlan,produced,remaining:quotaRound(Math.max(0,totalPlan-produced)),retainedQty:quotaRound(Math.max(0,threshold-produced)),recipientQty:quotaRound(Math.max(0,totalPlan-Math.max(produced,threshold))),threshold};
+}
+function quotaPriorShare(s,k,job,event){
+ if(event.quantity)return quotaRound(Math.min(event.quantity.recipientQty,Math.max(0,job.totalPlan-job.produced)));
+ let produced=job.produced;const today=asOf(s,k);
+ for(let date=add(today,1),guard=0;date<event.date&&guard<740&&produced<job.totalPlan;date=add(date,1),guard++){if(!manualWork(s,workerAt(job,date),date))continue;const rate=dailyAt(job,date);if(!(Number.isFinite(rate)&&rate>0))throw Error('기존 날짜 예약의 배정량을 계산하려면 하루 조수가 필요합니다.');produced=Math.min(job.totalPlan,produced+rate)}
+ return quotaRound(Math.max(0,job.totalPlan-produced));
+}
+function prepareQuantityHandoff(s,k,command){
+ const month=s.months?.[k],to=String(command.to||'').trim();if(!month||month.closed||month.closeSnapshot)throw Error('입력 가능한 월에서 작업을 나눠 주세요.');if(!(s.workers||[]).includes(to))throw Error('등록된 받을 작업자를 선택해 주세요.');
+ const values=jobs(s,k),matches=values.filter(j=>j.id===command.jobId);if(matches.length!==1)throw Error('수량을 나눌 생산 작업을 찾을 수 없습니다.');const job=matches[0],history=normalizedHandoffs(job),last=history.at(-1);
+ if(job.routing?.mode==='parallel')throw Error('호기별 동시생산은 조수를 임의로 나눌 수 없습니다. 단일·순차생산에서 수량을 나누거나 날짜로 작업을 넘겨 주세요.');
+ if(job.complete||job.stopped||job.carryBlocked||job.handoffBlocked||!(job.produced>0))throw Error('실적이 있는 진행 중 생산 작업만 수량으로 나눌 수 있습니다.');
+ if(Object.entries(s.months).some(([month,m])=>month>k&&(m.jobs||[]).some(j=>j.carried&&(j.originId||j.id)===(job.originId||job.id))))throw Error('다음달로 이월된 작업은 가장 최근 이월 월에서 나눠 주세요.');
+ const pending=last&&!quotaConsumed(s,k,job,last)?last:null;
+ if(pending&&pending.to!==to)throw Error('다른 사람에게 넘기기로 한 예약이 있습니다. 같은 받을 작업자의 수량을 수정하거나 기존 넘기기 예약을 먼저 확인해 주세요.');
+ if(pending?.otherWork)throw Error('다른 업무 기간이 연결된 넘기기는 날짜 방식에서 먼저 정리해 주세요.');
+ if(!pending&&workerAt(job,asOf(s,k))===to)throw Error('받을 작업자가 이미 이 작업을 생산하고 있어 남은 수량을 맡고 있습니다. 이전 배정 수량을 다시 넘길 수 없습니다.');
+ const baseline=quotaWithoutEvent(s,k,job,pending),base=baseline.job,from=pending?.from||workerAt(base,asOf(baseline.state,k));if(to===from)throw Error('현재 담당자와 다른 작업자를 선택해 주세요.');
+ if(base.complete||base.stopped||base.carryBlocked||base.handoffBlocked)throw Error('원래 작업의 남은 수량과 실적 연결을 확인해 주세요.');
+ const remaining=quotaRound(Math.max(0,base.totalPlan-base.produced)),previousRecipientQty=pending?quotaPriorShare(baseline.state,k,base,pending):0,adding=command.addQuantity!=null;
+ if(adding&&!pending)throw Error('추가 배정은 같은 받을 작업자의 아직 시작하지 않은 넘기기 예약에서 사용해 주세요.');
+ const delta=adding?Number(command.addQuantity):0,recipientQty=quotaRound(adding?previousRecipientQty+delta:Number(command.quantity));
+ if(adding&&(!Number.isFinite(delta)||delta<=0)||!Number.isFinite(recipientQty)||recipientQty<=0||recipientQty>remaining+0.000001)throw Error('받을 수량은 현재 남은 '+remaining+'조 안에서 입력해 주세요.');
+ if(command.daily!=null&&!(Number.isFinite(Number(command.daily))&&Number(command.daily)>0))throw Error('받을 작업자의 하루 조수는 0보다 크게 입력해 주세요.');
+ const threshold=quotaRound(base.totalPlan-recipientQty),boundary=quotaBoundary(baseline.state,k,base,to,threshold),operationId=command.operationId||C.id(),event={...(pending?clone(pending):{}),id:pending?.id||operationId+':0',date:boundary.date,from,to,...(command.daily!=null?{daily:Number(command.daily)}:{}),quantity:{schema:1,recipientQty,threshold,sourceLastDate:boundary.sourceLastDate,sourceLastQty:boundary.sourceLastQty}};
+ const kept=pending?history.slice(0,-1):history;if(kept.some(h=>h.date>=event.date))throw Error('이전 작업 넘기기 이후에 남은 수량을 나눌 수 있습니다.');
+ const source=month.jobs?.find(j=>j.id===job.id),next={...clone(source||job),handoffs:[...clone(kept),event]};normalizedHandoffs(next);if(!source)for(const field of['records','produced','remaining','currentProduced','firstActual','lastActual','complete','totalPlan','unproduced','fieldPlanNotes','handoffReview','handoffBlocked'])delete next[field];
+ const contradiction=(job.records||[]).find(row=>row.date>=event.date&&(C.num(row.pours)>0||endsProduction(row))&&!handoffRecordMatches(next,row));if(contradiction)throw Error(contradiction.date+'의 실제 담당 기록을 바꿀 수 없습니다. 실적 이후의 남은 수량만 나눠 주세요.');
+ const ambiguous=(month.rows||[]).find(row=>!row.deleted&&row.worker===to&&row.date>=event.date&&C.catalogName(s,row.product)===job.product&&(C.num(row.pours)>0||endsProduction(row))&&!(job.records||[]).some(r=>r.id===row.id));if(ambiguous)throw Error(ambiguous.date+'에 받을 작업자의 같은 품명 실적이 있습니다. 작업 연결을 먼저 확인해 주세요.');
+ const latest=new Map();for(const [owner,m]of Object.entries(s.months).sort(([a],[b])=>a.localeCompare(b)))if(!m.closed)for(const other of jobs(s,owner))latest.set((other.originId||other.id)+'\0'+other.product,other);
+ const conflicts=[...latest.values()].filter(other=>(other.originId||other.id)!==(job.originId||job.id)&&!other.complete&&!other.stopped&&(other.firstActual||other.produced>0)&&workerAt(other,event.date)===to).map(other=>({jobId:other.id,worker:to,product:other.product,start:other.firstActual||other.start,end:other.end||null}));
+ if(conflicts.length&&!command.allowConcurrent){const error=Error('받을 작업자에게 진행 중 생산이 있습니다. 동시생산 여부를 확인해 주세요.');error.code='handoff-concurrent';error.conflicts=conflicts;throw error}
+ return{operationId,date:event.date,from,to,changes:[{month:k,job:next}],conflicts,policy:'quantity-assignment-v1',quantityPlan:{...boundary,recipientQty,previousRecipientQty,addedQty:adding?delta:quotaRound(recipientQty-previousRecipientQty),pendingId:pending?.id||null,amended:!!pending}};
+}
+function refreshQuantityHandoffs(s,k,out,context){
+ if(context?.skipQuantityRefresh)return out;const changes=new Map(),failures=new Map();
+ for(const job of out){if(job.handoffBlocked||job.carryBlocked)continue;const quota=safeHandoffs(job).filter(h=>h.quantity);if(!quota.length)continue;
+  try{const list=normalizedHandoffs(job);for(const event of quota){if(quotaConsumed(s,k,job,event,context))continue;if(event!==list.at(-1))throw Error('아직 시작하지 않은 수량 인계 뒤에 다른 넘기기가 있습니다. 이후 넘기기 순서를 먼저 확인해 주세요.');const baseline=quotaWithoutEvent(s,k,job,event),base=baseline.job;if(base.routing?.mode==='parallel')throw Error('수량 인계가 있는 작업은 단일·순차생산으로 유지해 주세요.');if(Math.abs(base.totalPlan-event.quantity.threshold-event.quantity.recipientQty)>0.000001)throw Error('계획 조수가 바뀌었습니다. 나눠 맡을 수량을 다시 확인해 주세요.');const boundary=quotaBoundary(baseline.state,k,base,event.to,event.quantity.threshold),updated={...clone(event),date:boundary.date,quantity:{...clone(event.quantity),sourceLastDate:boundary.sourceLastDate,sourceLastQty:boundary.sourceLastQty}};if(JSON.stringify(updated)!==JSON.stringify(event))changes.set(job.id,{...job,handoffs:list.map(h=>h.id===event.id?updated:clone(h))});}}
+  catch(error){failures.set(job.id,error.message);job.handoffBlocked=true;job.handoffReview=error.message}
+ }
+ if(!changes.size)return out;
+ const m=s.months[k],stored=[...(m.jobs||[])];for(const [id,job]of changes){const index=stored.findIndex(j=>j.id===id),original=index<0?job:stored[index],updated={...original,handoffs:clone(job.handoffs)};if(index<0)stored.push(updated);else stored[index]=updated}
+ const basis={...s,months:{...s.months,[k]:{...m,jobs:stored}}},result=computeJobs(basis,k,{jobs:new Map(),skipQuantityRefresh:true});for(const job of result)if(failures.has(job.id)){job.handoffBlocked=true;job.handoffReview=failures.get(job.id)}return result;
 }
 function splitHandoffRows(rows,jobs){return rows.flatMap(row=>{const j=jobs.find(j=>j.id===row.jobId);if(!j?.handoffs?.length||j.handoffBlocked)return[row];return handoffSegments(j,row.start,row.end).map(segment=>({...row,id:row.id+':assignment:'+segment.assignmentId,physicalRowId:row.id,physicalStart:row.start,physicalEnd:row.end,worker:segment.worker,start:segment.start,end:segment.end,groupStart:segment.start,groupEnd:segment.end,assignmentId:segment.assignmentId,assignmentStart:segment.start,assignmentEnd:segment.end,handoffIn:segment.handoffIn,handoffOut:segment.handoffOut,dry:segment.end===row.end?row.dry:null,physicalDry:row.dry,handoffSegment:true,...(segment.handoffOut?{status:'작업 넘김',projected:false}:{})}))})}
 
@@ -98,6 +209,7 @@ function reservationContext(s,k,normalized=null,knownContinuations=null){
  }
  function warn(r,code,message,ids=[]){const issue={rowId:r.id,code,message,candidateIds:ids};issues.push(issue);return issue}
  for(const r of ordered){
+  if(r.scheduleTarget){controlled.add(r.id);continue}
   const rk=key(r),positive=startPlan(r)>0,actual=C.num(r.pours)>0,prior=phases.get(rk),proof=originalContinuations.get(r.id),configured=stored.find(j=>j.sourceRowId===r.id),explicitJob=r.jobId&&stored.find(j=>j.id===r.jobId);
   if(r.jobId&&explicitJob&&!handoffRecordMatches(explicitJob,r)){controlled.add(r.id);warn(r,'explicit-job-identity','연결된 작업과 현재 작업자·품명이 다릅니다. 이 실적은 이전 작업에 합산하지 않으며 일정·호기에서 연결을 확인해 주세요.',[r.jobId]);continue}
   if(!positive&&!actual&&!r.jobId){if(endsProduction(r)){terminals.set(rk,{date:r.date,jobId:prior?.id||null});phases.delete(rk)}continue}
@@ -141,7 +253,7 @@ function productionGroupKey(job,row={}){
 function applyFieldScheduleConditions(j){
  const source=clone(j.fieldScheduleCarrySource||{});let machines=clone(source.machines?.value||j.machines||[]),daily=source.daily?.value??j.daily;
  function assign(field,r,value){const prior=source[field],revision=r.sourceIntegration?.scheduleRevisions?.[field]||0;if(prior&&JSON.stringify(prior.value)===JSON.stringify(value)&&prior.rowId!==r.id&&!revision)return;source[field]={rowId:r.id,signature:JSON.stringify([r.id,value,revision]),value:clone(value)}}
- for(const r of j.records||[]){const v=r.fieldScheduleConditions;if(!v||v.schema!==1||!handoffRecordMatches(j,r))continue;
+ for(const r of j.records||[]){let v=r.fieldScheduleConditions;if(!v||v.schema!==1||!handoffRecordMatches(j,r))continue;if(r.scheduleTarget){v={schema:1,...Object.fromEntries(['machines','daily','routing'].filter(f=>v.edits?.[f]).map(f=>[f,v[f]]))};}
   const assigned=[...safeHandoffs(j)].reverse().find(h=>h.date<=r.date);if(assigned){if(Number.isFinite(v.daily)&&v.daily>0&&j.routing?.mode!=='parallel'){source.handoffDaily??={};const revision=r.sourceIntegration?.scheduleRevisions?.daily||0,prior=source.handoffDaily[assigned.id],sameValue=prior&&prior.value===v.daily&&prior.rowId!==r.id&&!revision,proof=sameValue?prior:{rowId:r.id,signature:JSON.stringify([r.id,v.daily,revision]),value:v.daily};source.handoffDaily[assigned.id]=proof;if(!fieldScheduleOverrideMatches(j.fieldScheduleOverrides?.['handoffDaily:'+assigned.id],proof.signature)){j.handoffs=clone(j.handoffs);j.handoffs.find(x=>x.id===assigned.id).daily=v.daily;}}const machineKey=a=>JSON.stringify((a||[]).map(m=>({name:routingMachineName(m.name),qty:C.num(m.qty),daily:C.num(m.daily)}))),routeKey=value=>{if(!value)return'';const result={...value};delete result.barDisplay;return JSON.stringify(result)};if(Array.isArray(v.machines)&&v.machines.length&&machineKey(v.machines)!==machineKey(machines)||v.routing&&routeKey(v.routing)!==routeKey(source.routing?.value||j.routing))j.handoffReview='인계 후 일보의 호기·생산 순서 변경은 적용하지 않았습니다. 인계 당시 호기를 유지하며 실제 호기별 생산량은 그대로 반영합니다.';continue;}
   if(Array.isArray(v.machines)&&v.machines.length&&v.machines.every(m=>m&&typeof m.name==='string'&&m.name.trim()&&(m.qty==null||typeof m.qty==='number'&&Number.isFinite(m.qty)&&m.qty>=0))&&new Set(v.machines.map(m=>m.name.trim())).size===v.machines.length){machines=v.machines.map(m=>({name:m.name.trim(),qty:m.qty??machines.find(old=>old.name===m.name.trim())?.qty??null,...((m.daily??machines.find(old=>old.name===m.name.trim())?.daily)>0?{daily:m.daily??machines.find(old=>old.name===m.name.trim())?.daily}:{})}));assign('machines',r,machines)}
   if(typeof v.daily==='number'&&Number.isFinite(v.daily)&&v.daily>0){daily=v.daily;assign('daily',r,daily)}
@@ -191,17 +303,18 @@ function reconcileCarry(s,k,j,context){
  if(previous.produced!==j.previousProduced)j.carryReconciliation={sourceMonth,storedPreviousProduced:j.previousProduced,actualPreviousProduced:previous.produced};
 }
 function computeJobs(s,k,context){const source=s.months[k],m={...source,rows:(source.rows||[]).map(r=>named(s,r)),plans:(source.plans||[]).map(r=>named(s,r)),jobs:(source.jobs||[]).map(r=>named(s,r))};if(m.closed&&m.plans?.length){return(m.jobs||[]).map(j=>{const p=m.plans.find(p=>p.source===j.source),current=p?.produced??0,previous=j.carried?(p?.previousProduced||0):0,total=(p?.plan||j.plan||0)+previous;return{...j,records:[],currentProduced:current,produced:current+previous,totalPlan:total,remaining:Math.max(0,total-current-previous),complete:current+previous>=total,archived:true}})}if(m.modern===false)return[];
- const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),reservations=reservationContext(s,k,m,continuations),anchors=new Map([...reservations.links.values()].map(x=>[x.jobId,x.rowId])),anchor=j=>j.sourceRowId||anchors.get(j.id),out=[],starts=m.rows.filter(r=>!r.deleted&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)&&!reservations.links.has(r.id)),occ={};
+ const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),reservations=reservationContext(s,k,m,continuations),anchors=new Map([...reservations.links.values()].map(x=>[x.jobId,x.rowId])),anchor=j=>j.sourceRowId||anchors.get(j.id),out=[],starts=m.rows.filter(r=>!r.deleted&&!r.scheduleTarget&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)&&!reservations.links.has(r.id)),occ={};
  for(const r of starts){const index=occ[r.product]||0;occ[r.product]=index+1;const prior=stored.find(j=>j.sourceRowId===r.id),identityChanged=prior&&(prior.worker!==r.worker||prior.product!==r.product),cfg=identityChanged?{}:prior||{},legacy=identityChanged||r.sourceIntegration&&!cfg.sourceRowId?null:m.plans.filter(p=>p.product===r.product)[index],parsed=parseInput(legacy?.input||'',k,s.workers);out.push({id:'job:'+r.id,originId:'job:'+r.id,sourceRowId:r.id,product:r.product,worker:r.worker,start:r.date,previousProduced:legacy?.previousProduced||0,previousPlan:legacy?.previousPlan||0,...parsed,...cfg,plan:startPlan(r),start:cfg.start||parsed.start||r.date,worker:cfg.worker||parsed.worker||r.worker})}
  for(const j of stored){if(!j.sourceRowId)out.push({...j,originId:j.originId||j.id});else if(!out.some(x=>x.sourceRowId===j.sourceRowId)&&m.rows.some(r=>r.id===j.sourceRowId&&!r.deleted))out.push({...j,originId:j.originId||j.id})}
  // Dates order backfilled web rows; physical row order breaks ties on the same date.
  // The original ledger order and its IDs are never rewritten.
  const ordered=m.rows.map((row,index)=>({row,index})).filter(x=>!x.row.deleted).sort((a,b)=>(a.row.date||'').localeCompare(b.row.date||'')||a.index-b.index).map(x=>x.row);
+ resolveScheduleTargets(s,k,m,out,context);
  for(const j of out){
   const anchorId=anchor(j),startIndex=anchorId?ordered.findIndex(r=>r.id===anchorId):-1;let endIndex=ordered.length,nextStart=false;
-  if(startIndex>=0)for(let i=startIndex;i<ordered.length;i++){const r=ordered[i];if(!handoffRecordMatches(j,r))continue;const linked=reservations.links.get(r.id);if(i>startIndex&&startPlan(r)>0&&continuations.get(r.id)?.jobId!==j.id&&((linked&&linked.jobId!==j.id)||!r.jobId&&continuations.get(r.id)?.sourceRowId!==anchorId)){endIndex=i;nextStart=true;break}if(r.jobId&&r.jobId!==j.id)continue;if(endsProduction(r)){endIndex=i+1;break}}
-  let records=ordered.filter((r,i)=>r.jobId===j.id&&handoffRecordMatches(j,r)&&i<endIndex||(!r.jobId&&handoffRecordMatches(j,r)&&(!safeHandoffs(j).some(h=>r.date>=h.date)||!out.some(other=>other.id!==j.id&&handoffRecordMatches(other,r)&&(other.previousStart||other.start)<=r.date&&(!other.sourceRowId||ordered.findIndex(x=>x.id===other.sourceRowId)<=i)))&&(!reservations.links.has(r.id)||reservations.links.get(r.id).jobId===j.id)&&(startIndex>=0?i>=startIndex&&i<endIndex:j.sourceStart!=null?r.sourceRow>=j.sourceStart&&r.sourceRow<(j.sourceEnd||1000):!(j.manual&&!j.carried&&reservations.controlled.has(r.id))&&!out.some(x=>anchor(x)&&x.product===j.product&&x.worker===j.worker)&&(!j.start||r.date>=j.start))));
-  if(startIndex<0&&!anchorId&&j.sourceStart==null){const siblings=out.filter(x=>!anchor(x)&&x.product===j.product&&x.worker===j.worker&&x.start<=j.start);if(siblings.length>1)records=records.filter(r=>r.jobId===j.id)}
+  if(startIndex>=0)for(let i=startIndex;i<ordered.length;i++){const r=ordered[i];if(!handoffRecordMatches(j,r))continue;const linked=reservations.links.get(r.id);if(i>startIndex&&!r.scheduleTarget&&startPlan(r)>0&&continuations.get(r.id)?.jobId!==j.id&&((linked&&linked.jobId!==j.id)||!r.jobId&&continuations.get(r.id)?.sourceRowId!==anchorId)){endIndex=i;nextStart=true;break}if(r.jobId&&r.jobId!==j.id)continue;if(endsProduction(r)){endIndex=i+1;break}}
+  let records=ordered.filter((r,i)=>r.scheduleTarget?resolvedScheduleTargets.get(r)===j.id&&i<endIndex:r.jobId===j.id&&handoffRecordMatches(j,r)&&i<endIndex||(!r.jobId&&handoffRecordMatches(j,r)&&(!safeHandoffs(j).some(h=>r.date>=h.date)||!out.some(other=>other.id!==j.id&&handoffRecordMatches(other,r)&&(other.previousStart||other.start)<=r.date&&(!other.sourceRowId||ordered.findIndex(x=>x.id===other.sourceRowId)<=i)))&&(!reservations.links.has(r.id)||reservations.links.get(r.id).jobId===j.id)&&(startIndex>=0?i>=startIndex&&i<endIndex:j.sourceStart!=null?r.sourceRow>=j.sourceStart&&r.sourceRow<(j.sourceEnd||1000):!(j.manual&&!j.carried&&reservations.controlled.has(r.id))&&!out.some(x=>anchor(x)&&x.product===j.product&&x.worker===j.worker)&&(!j.start||r.date>=j.start))));
+  if(startIndex<0&&!anchorId&&j.sourceStart==null){const siblings=out.filter(x=>!anchor(x)&&x.product===j.product&&x.worker===j.worker&&x.start<=j.start);if(siblings.length>1)records=records.filter(r=>r.jobId===j.id||resolvedScheduleTargets.get(r)===j.id)}
   const terminalIndex=records.findIndex(endsProduction);if(terminalIndex>=0)records=records.slice(0,terminalIndex+1);const terminal=terminalIndex>=0?records.at(-1):null,ended=completion(terminal||{});
   j.records=records;j.fieldPlanNotes=[...[...continuations.values()].filter(x=>x.sourceRowId===j.sourceRowId),...[...reservations.links.values()].filter(x=>x.jobId===j.id)];j.originId||=j.id;j.currentProduced=C.sum(records,r=>r.pours);j.produced=(j.carried?(j.previousProduced||0):0)+j.currentProduced;j.totalPlan=j.carried?(j.previousProduced||0)+(j.plan||0):(j.plan||0);j.stopped=!!j.stoppedAt||nextStart&&j.produced>0;j.interruptedAt=j.stopped?(j.stoppedAt||ordered[endIndex]?.date||null):null;j.ended=!!terminal;j.unproduced=Math.max(0,j.totalPlan-j.produced);j.remaining=j.stopped||j.ended?0:j.unproduced;j.complete=j.stopped||j.ended||j.totalPlan>0&&j.remaining===0;j.firstActual=records.filter(r=>r.pours>0).map(r=>r.date).sort()[0]||null;j.lastActual=records.filter(r=>r.pours>0||endsProduction(r)).map(r=>r.date).sort().at(-1)||null;j.completedAt=j.stopped?null:j.complete?(terminal?.date||j.lastActual):null;j.completionRowId=terminal?.id||null;j.completionReason=ended?.reason||(terminal?'legacy-end':j.stopped?'stopped':j.complete?'target-reached':null);j.completionStockQty=ended?.stockQty??null;j.completionNote=ended?.note||'';j.lot=[...new Set(records.map(r=>r.lot).filter(Boolean))].join(', ');j.machines??=[];j.group=String(j.group||'');applyFieldScheduleConditions(j);delete j.carrySignature
  }
@@ -214,7 +327,7 @@ function computeJobs(s,k,context){const source=s.months[k],m={...source,rows:(so
  for(const j of out){if(!(Number(j.group)>0||String(j.group).startsWith('manual:')))continue;const key=j.worker+'|'+j.group;if(!legacyGroups.has(key))legacyGroups.set(key,[]);legacyGroups.get(key).push(j)}
  const sameLegacyRoute=j=>j.routing?.group===j.group&&j.routing.barDisplay===undefined&&!activeRoutingOverride(j);
  for(const members of legacyGroups.values())if(members.length>1&&members.some(legacyModeOnly)&&members.every(j=>!j.routing||legacyModeOnly(j)||sameLegacyRoute(j))){const used=new Set(members.filter(sameLegacyRoute).map(j=>j.routing.lane));members.sort((a,b)=>a.id.localeCompare(b.id));for(const j of members){if(sameLegacyRoute(j))continue;let lane=1;while(used.has(lane))lane++;if(lane>20)continue;used.add(lane);j.routing={schema:1,mode:j.routing?.mode||'sequential',group:j.group,lane,order:1};j.routingLegacyGroup=true}}
- return out;
+ return refreshQuantityHandoffs(s,k,out,context);
 }
 function dailyProgress(s,k,options={}){
  const month=s.months?.[k];if(!month)throw Error('생산 월을 찾을 수 없습니다.');
@@ -240,7 +353,7 @@ function dailyProgress(s,k,options={}){
   calculations.set(chainKey,value);return value;
  }
  const resolution=reservationContext(working,k),reservationIssues=new Map(resolution.issues.map(i=>[i.rowId,i.message]));
- for(const r of selected){if(r.deleted)continue;const linked=owners.get(r.id)||[],reservationWarning=reservationIssues.get(r.id)||'';if(linked.length===1){const v=progress(linked[0]),reservationLink=linked[0].job.fieldPlanNotes?.find(n=>n.kind==='reservation-start')||null;result.set(r.id,{...v,jobId:linked[0].job.id,reservationLink:reservationLink?clone(reservationLink):null,reservationWarning,warning:[v.warning,reservationWarning].filter(Boolean).join(' ')})}else result.set(r.id,{jobId:null,plan:null,produced:null,remaining:null,unproduced:null,percent:null,complete:false,completedAt:null,completionRowId:null,reason:null,stockQty:null,asOf:cutoff,reservationWarning,warning:reservationWarning||(linked.length?'한 실적이 여러 작업에 연결되어 확인이 필요합니다.':'연결된 작업이 없습니다. 시작 계획 또는 작업 연결을 확인해 주세요.')})}
+ for(const r of selected){if(r.deleted)continue;const linked=owners.get(r.id)||[],reservationWarning=reservationIssues.get(r.id)||'';if(linked.length===1){const v=progress(linked[0]),reservationLink=linked[0].job.fieldPlanNotes?.find(n=>n.kind==='reservation-start')||null;result.set(r.id,{...v,jobId:linked[0].job.id,...(r.scheduleTarget?{scheduleWorker:workerAt(linked[0].job,r.date)}:{}),reservationLink:reservationLink?clone(reservationLink):null,reservationWarning,warning:[v.warning,reservationWarning].filter(Boolean).join(' ')})}else result.set(r.id,{jobId:null,plan:null,produced:null,remaining:null,unproduced:null,percent:null,complete:false,completedAt:null,completionRowId:null,reason:null,stockQty:null,asOf:cutoff,reservationWarning,warning:reservationWarning||(r.scheduleTarget?'반영할 작업의 품명·시작/완료·이월 연결을 확인해 주세요. 실제 일보는 보존했습니다.':linked.length?'한 실적이 여러 작업에 연결되어 확인이 필요합니다.':'연결된 작업이 없습니다. 시작 계획 또는 작업 연결을 확인해 주세요.')})}
  for(const entry of all.filter(e=>e.key===k)){
   const j=entry.job,ids=j.carryBlocked?(entry.rowLinks||[]).map(r=>r.id):j.carryUnlinkedRows||[];
   for(const id of ids)if(result.has(id))result.set(id,{...result.get(id),jobId:null,produced:null,remaining:null,unproduced:null,percent:null,complete:false,completedAt:null,completionRowId:null,reason:null,warning:j.carryReview,reservationWarning:j.carryReview});
@@ -249,7 +362,7 @@ function dailyProgress(s,k,options={}){
 }
 function factory(s){return (s.calendar?.factory||[]).map(r=>typeof r==='string'?r:r.date)}
 function holiday(s,worker,d){return(s.calendar?.workers||[]).some(r=>r.worker===worker&&r.date===d&&r.mark!==''&&!Number.isFinite(Number(r.mark)))}
-function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return Object.values(s.months).some(m=>m.rows.some(r=>r.worker===worker&&r.date===d&&r.pours>0));return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
+function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return Object.values(s.months).some(m=>m.rows.some(r=>!r.deleted&&r.worker===worker&&r.date===d&&r.pours>0))||creditedWork(s,worker,d);return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
 function nextWork(s,w,d,today,force=null){for(let i=0;i<740;i++,d=add(d,1))if(work(s,w,d,today,force))return d;throw Error('2년 안에 작업 가능한 날짜가 없습니다.')}
 const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
@@ -384,7 +497,8 @@ function asOf(s,k){
 function dryInputData(s,key,worker,asOfOverride=null,actualPriority=false){
  const fields=['id','originId','sourceRowId','product','worker','plan','start','end','previousStart','previousPlan','previousProduced','carried','daily','group','duration','afterPrevious','machines','manual','manualSource','stoppedAt','sourceStart','sourceEnd','handoffs'];
  const inputs=jobs(s,key).filter(job=>job.worker===worker&&(!actualPriority||!manualUsesCalendar(job)||C.num(job.produced)>0||C.num(job.previousProduced)>0)).map(job=>({...Object.fromEntries(fields.map(field=>[field,field==='product'?C.catalogIdentity(s,job.product):job[field]??null])),...(job.routing?{routing:job.routing}:{}),...(job.carryReconciliation||job.carryTerminal||job.carryBlocked?{carryActualRevision:[job.effectivePreviousProduced??null,job.carryTerminal||false,job.carryBlocked||false]}:{})}));
- const actual=Object.keys(s.months||{}).sort().map(month=>[month,(s.months[month].rows||[]).filter(row=>row.worker===worker).map(row=>({...Object.fromEntries(['id','date','worker','product','plan','pours','jobId','sourceRow','deleted'].map(field=>[field,field==='product'?C.catalogIdentity(s,row.product):row[field]??null])),...(row.productionCompletion?{productionCompletion:row.productionCompletion}:{}),...(row.productionPlanQty>0?{productionPlanQty:row.productionPlanQty}:{}),...(Object.prototype.hasOwnProperty.call(row,'machineActuals')?{machineActuals:row.machineActuals}:{})})) ]).filter(([,rows])=>rows.length);
+ const creditOrigins=new Set(inputs.map(j=>j.originId||j.id));
+ const actual=Object.keys(s.months||{}).sort().map(month=>[month,(s.months[month].rows||[]).filter(row=>row.worker===worker||row.scheduleTarget?.worker===worker&&creditOrigins.has(row.scheduleTarget.originId)).map(row=>({...Object.fromEntries(['id','date','worker','product','plan','pours','jobId','sourceRow','deleted'].map(field=>[field,field==='product'?C.catalogIdentity(s,row.product):row[field]??null])),...(row.scheduleTarget?{scheduleTarget:row.scheduleTarget}:{}),...(row.productionCompletion?{productionCompletion:row.productionCompletion}:{}),...(row.productionPlanQty>0?{productionPlanQty:row.productionPlanQty}:{}),...(Object.prototype.hasOwnProperty.call(row,'machineActuals')?{machineActuals:row.machineActuals}:{})})) ]).filter(([,rows])=>rows.length);
  return{version:1,asOf:C.iso(asOfOverride)?asOfOverride:asOf(s,key),jobs:inputs,actual};
 }
 function dryFingerprint(prefix,value){
@@ -633,5 +747,5 @@ function timelineCumulativeRead(s,k,result,first,last){
 }
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
