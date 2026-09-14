@@ -6,10 +6,12 @@ const completion=r=>{try{return C.completionValue(r.productionCompletion)}catch{
 const endsProduction=r=>r.plan===0||!!completion(r);
 const named=(s,r)=>{const value={...r,product:C.catalogName(s,r.product)};Object.defineProperty(value,'_scheduleProductId',{value:C.catalogLookup(s).product(r.product)?.id||null});return value};
 const resolvedScheduleTargets=new WeakMap();
+// Actual production can precede a retained manual reservation date.
+function productionStartDate(job){return job.previousStart||job.firstActual||job.start}
 function targetForJob(s,month,job){return C.scheduleTargetValue({schema:1,jobId:job.id,originId:job.originId||job.id,month,worker:job.worker,productId:C.catalogLookup(s).product(job.product)?.id||''})}
 function scheduleTargetMatches(job,row,s=null){
  try{const t=C.scheduleTargetValue(row.scheduleTarget),productId=s?C.catalogLookup(s).product(row.product)?.id:row._scheduleProductId;
- return !!t&&row.fieldPlanIntent!=='start'&&row.planIntent!=='start'&&t.worker===job.worker&&t.originId===(job.originId||job.id)&&(!productId||t.productId===productId)&&(s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&(!row.jobId||row.jobId===job.id)&&C.iso(row.date)&&row.date>=(job.previousStart||job.start)&&t.month<=row.date.slice(0,7);
+ return !!t&&row.fieldPlanIntent!=='start'&&row.planIntent!=='start'&&t.worker===job.worker&&t.originId===(job.originId||job.id)&&(!productId||t.productId===productId)&&(s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&(!row.jobId||row.jobId===job.id)&&C.iso(row.date)&&row.date>=productionStartDate(job)&&t.month<=row.date.slice(0,7);
  }catch{return false}
 }
 function recordMatchesJob(job,row,s=null){
@@ -19,13 +21,17 @@ function recordMatchesJob(job,row,s=null){
 function productionTargetOptions(s,k,rowId){
  const month=s.months?.[k],row=month?.rows.find(r=>r.id===rowId);if(!row||row.deleted||month.closed||month.closeSnapshot||row.fieldPlanIntent==='start')return[];
  const basis={...s,months:{...s.months,[k]:{...month,rows:month.rows.filter(r=>r.id!==rowId)}}},product=C.catalogName(s,row.product);
- return jobs(basis,k).filter(j=>j.product===product&&!j.complete&&!j.stopped&&!j.carryBlocked&&!j.handoffBlocked&&(j.produced>0||j.previousProduced>0)&&(j.previousStart||j.start)<=row.date&&!j.records?.some(endsProduction)&&j.sourceRowId!==rowId).flatMap(j=>{try{return[{jobId:j.id,eligible:true,product:j.product,worker:workerAt(j,row.date),start:j.previousStart||j.start,end:j.end||null,plan:j.totalPlan,daily:dailyAt(j,row.date),machines:clone(j.machines||[]),scheduleTarget:targetForJob(s,k,j)}]}catch{return[]}});
+ return jobs(basis,k).filter(j=>j.product===product&&!j.complete&&!j.stopped&&!j.carryBlocked&&!j.handoffBlocked&&(j.produced>0||j.previousProduced>0)&&productionStartDate(j)<=row.date&&!j.records?.some(endsProduction)&&j.sourceRowId!==rowId).flatMap(j=>{try{return[{jobId:j.id,eligible:true,product:j.product,worker:workerAt(j,row.date),start:productionStartDate(j),end:j.end||null,plan:j.totalPlan,daily:dailyAt(j,row.date),machines:clone(j.machines||[]),scheduleTarget:targetForJob(s,k,j)}]}catch{return[]}});
 }
 // Resolve an explicit physical job without changing the daily producer. These
 // proofs live only on normalized read objects, never on the source ledger.
 function resolveScheduleTargets(s,k,m,out,context){
  if(!m.rows.some(r=>r.scheduleTarget&&!r.deleted))return;
  const basis={...s,months:{...s.months,[k]:{...s.months[k],rows:s.months[k].rows.filter(r=>!r.scheduleTarget)}}},baseline=computeJobs(basis,k,context),accepted=new Map();
+ const baselines=new Map();for(const j of baseline){if(!baselines.has(j.id))baselines.set(j.id,[]);baselines.get(j.id).push(j)}
+ // Read the start from independently linked actuals, never from the support row
+ // being validated. These are transient computed jobs; saved dates stay intact.
+ for(const job of out){const matches=baselines.get(job.id)||[];if(matches.length===1&&C.iso(matches[0].firstActual))job.firstActual=matches[0].firstActual;}
  for(const row of [...m.rows].sort((a,b)=>(a.date||'').localeCompare(b.date||''))){if(!row.scheduleTarget||row.deleted)continue;
   let t;try{t=C.scheduleTargetValue(row.scheduleTarget)}catch{continue}
   if(t.productId!==row._scheduleProductId||t.month>k)continue;
@@ -35,7 +41,7 @@ function resolveScheduleTargets(s,k,m,out,context){
   const originalStart=(original.rows||[]).filter(r=>'job:'+r.id===t.jobId&&!r.deleted&&!r.scheduleTarget&&r.worker===t.worker&&C.catalogLookup(s).product(r.product)?.id===t.productId&&startPlan(r)>0);
   if(originals.length!==1&&!(originals.length===0&&originalStart.length===1&&t.originId===t.jobId))continue;
   if(t.month===k&&t.jobId!==job.id||t.month!==k&&(!job.carried||job.originId!==t.originId))continue;
-  const bases=baseline.filter(j=>j.id===job.id);if(bases.length!==1)continue;const base=bases[0],prior=(base.records||[]).filter(r=>r.date<row.date),today=(base.records||[]).filter(r=>r.date===row.date),previous=base.carried?(base.effectivePreviousProduced??base.previousProduced??0):0,earlier=(accepted.get(job.id)||[]).filter(r=>r.date<row.date);
+  const bases=baselines.get(job.id)||[];if(bases.length!==1)continue;const base=bases[0],prior=(base.records||[]).filter(r=>r.date<row.date),today=(base.records||[]).filter(r=>r.date===row.date),previous=base.carried?(base.effectivePreviousProduced??base.previousProduced??0):0,earlier=(accepted.get(job.id)||[]).filter(r=>r.date<row.date);
   if(base.carryBlocked||base.handoffBlocked||base.carryTerminal||prior.some(endsProduction)||earlier.some(endsProduction)||base.totalPlan>0&&previous+C.sum(prior,r=>r.pours)+C.sum(earlier,r=>r.pours)>=base.totalPlan)continue;
   const began=previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
   if(began){resolvedScheduleTargets.set(row,job.id);if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
@@ -132,6 +138,14 @@ function prepareHandoffEdit(s,k,command){
  if(conflicts.length&&!command.allowConcurrent){const error=Error('받을 작업자에게 진행 중 생산이 있습니다. 함께 생산하는지 확인해 주세요.');error.code='handoff-concurrent';error.conflicts=conflicts;throw error}
  return{operationId:operation,date,from:event.from,to,changes,conflicts,policy:'dated-assignment-v1',amended:true,handoffId:event.id,previousDate:event.date};
 }
+// An explicit earlier date may recognize the existing recipient's linked actuals.
+// This never infers a handoff from production, changes a recipient, or rewrites a row.
+function earlierRecipientDateCorrection(s,old,record,row){
+ if(!row.scheduleTarget||row.worker!==workerAt(record,row.date)||old.handoffs?.length!==record.handoffs?.length)return false;
+ const changed=record.handoffs.filter(h=>{const prior=old.handoffs.find(p=>p.id===h.id);return !prior||prior.date!==h.date});
+ if(changed.length!==1)return false;const next=changed[0],prior=old.handoffs.find(h=>h.id===next.id);
+ return !!prior&&prior.from===next.from&&prior.to===next.to&&next.to===row.worker&&next.date<prior.date&&next.date<=row.date&&row.date<prior.date&&record.handoffs.every(h=>{const p=old.handoffs.find(x=>x.id===h.id);return p&&p.from===h.from&&p.to===h.to})&&scheduleTargetMatches(old,row,s);
+}
 function validateHandoffChange(s,k,record){
  const month=s.months?.[k],saved=month?.jobs?.find(j=>j.id===record.id);if(!month)throw Error('저장할 생산 월을 찾을 수 없습니다.');
  if(JSON.stringify(saved?.handoffs||[])===JSON.stringify(record.handoffs||[]))return true;
@@ -140,7 +154,7 @@ function validateHandoffChange(s,k,record){
  if(Object.entries(s.months).some(([key,m])=>key>k&&(m.jobs||[]).some(j=>j.carried&&(j.originId||j.id)===(old.originId||old.id))))throw Error('다음달로 이월된 작업입니다. 가장 최근 이월 월에서 다시 수정해 주세요.');
  for(const [key,m]of Object.entries(s.months)){
   const chain=m.closed&&m.closeSnapshot?.schedule?.jobs||jobs(s,key),related=chain.filter(j=>(j.originId||j.id)===(old.originId||old.id)&&j.worker===old.worker&&C.catalogName(s,j.product)===old.product);
-  for(const prior of related)for(const row of prior.records||[])if((C.num(row.pours)>0||endsProduction(row))&&workerAt(old,row.date)!==workerAt(record,row.date))throw Error(row.date+'의 생산 담당이 바뀌는 배정입니다. 새로 들어온 실적을 확인하고 다시 수정해 주세요.');
+  for(const prior of related)for(const row of prior.records||[])if((C.num(row.pours)>0||endsProduction(row))&&workerAt(old,row.date)!==workerAt(record,row.date)&&!(!m.closed&&!m.closeSnapshot&&earlierRecipientDateCorrection(s,old,record,row)))throw Error(row.date+'의 생산 담당이 바뀌는 배정입니다. 새로 들어온 실적을 확인하고 다시 수정해 주세요.');
  }
  const values=[...(month.jobs||[])],index=values.findIndex(j=>j.id===record.id);if(index<0)values.push(record);else values[index]=record;
  const after=jobs({...s,months:{...s.months,[k]:{...month,jobs:values}}},k),signature=j=>JSON.stringify((j?.records||[]).map(r=>[r.id,r.date,r.worker,r.pours,r.plan,r.scheduleTarget]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
@@ -804,5 +818,5 @@ function timelineCumulativeRead(s,k,result,first,last){
 }
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,validateHandoffChange,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={productionStartDate,productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,validateHandoffChange,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);

@@ -83,7 +83,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   const handoff=handoffFor(job),owners=handoff?[handoff.originalWorker,...handoff.changes.map(h=>h.to)]:[job.worker];if(owners.some(worker=>unlinkedProducts.has(String(worker||'').trim()+'\0'+product.id)))continue;
   const records=(job.records||[]).filter(row=>row.date<=asOf),progress=records.map(row=>progressFor({month:row.date.slice(0,7),row})).find(value=>value?.jobId&&(value.originId||value.jobId)===(job.originId||job.id));
   if(progress?.warning||progress?.complete||!progress&&job.complete)continue;
-  const start=job.previousStart||job.firstActual||job.start,produced=progress?.produced??job.previousProduced??0,plan=progress?.plan??job.totalPlan;
+  const start=typeof planning.productionStartDate==='function'?planning.productionStartDate(job):job.previousStart||job.firstActual||job.start,produced=progress?.produced??job.previousProduced??0,plan=progress?.plan??job.totalPlan;
   if(!(typeof start==='string'&&start<=asOf)||!(records.some(row=>Number.isFinite(row.pours)&&row.pours>0)||Number.isFinite(job.previousProduced)&&job.previousProduced>0)||!Number.isFinite(produced)||!Number.isFinite(plan)||plan<=0)continue;
   const schedule=scheduleForJob(month,job),value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom:start,plan,produced,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
  }
