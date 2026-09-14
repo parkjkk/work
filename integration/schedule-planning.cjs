@@ -69,6 +69,7 @@ function creditedWork(s,worker,date){
  const scope=assignmentCalendarScopes.get(s);if(!scope?.creditedDays){const values=new Set();for(const [month,value]of Object.entries(s.months||{})){if(!(value.rows||[]).some(r=>r.scheduleTarget&&!r.deleted))continue;for(const j of jobs(s,month))for(const r of j.records||[])if(r.scheduleTarget&&r.pours>0)values.add(workerAt(j,r.date)+'\0'+r.date)}if(scope)scope.creditedDays=values;else return values.has(worker+'\0'+date)}return scope.creditedDays.has(worker+'\0'+date);
 }
 function prepareHandoff(s,k,command){
+ if(command.handoffId)return prepareHandoffEdit(s,k,command);
  const month=s.months?.[k];if(!month||month.closed)throw Error('입력 가능한 월에서 작업을 넘겨 주세요.');
  const date=command.date,to=String(command.to||'').trim();if(!C.iso(date)||date.slice(0,7)!==k)throw Error('선택한 저장 월 안의 적용 날짜를 입력해 주세요.');if(!(s.workers||[]).includes(to))throw Error('등록된 받을 작업자를 선택해 주세요.');
  const computed=jobs(s,k),job=computed.find(j=>j.id===command.jobId);if(!job)throw Error('넘길 생산 작업을 찾을 수 없습니다.');const from=workerAt(job,date);if(to===from)throw Error('현재 담당자와 다른 작업자를 선택해 주세요.');
@@ -93,6 +94,58 @@ function prepareHandoff(s,k,command){
  if(command.otherWork){const outgoing=[...latest.values()].filter(j=>!selected.some(x=>(x.originId||x.id)===(j.originId||j.id))&&!j.complete&&!j.stopped&&(j.firstActual||j.produced>0)&&workerAt(j,date)===from);if(outgoing.length)throw Error('다른 업무 기간에 현재 담당자의 다른 진행 생산이 있습니다. 해당 작업도 넘기거나 업무 기간을 조정해 주세요.');const actual=Object.values(s.months).flatMap(m=>m.rows||[]).find(r=>!r.deleted&&r.worker===from&&r.date>=date&&r.date<=command.otherWork.end&&C.num(r.pours)>0);if(actual)throw Error(actual.date+'에 다른 업무 담당자의 생산 실적이 있습니다. 업무 기간을 확인해 주세요.');}
  if(conflicts.length&&!command.allowConcurrent){const error=Error('받을 작업자에게 진행 중 생산이 있습니다. 동시생산 또는 기존 작업 넘기기를 선택해 주세요.');error.code='handoff-concurrent';error.conflicts=conflicts;throw error}
  return{operationId:operationsId,date,from,to,changes,conflicts,policy:'dated-assignment-v1'};
+}
+function prepareHandoffEdit(s,k,command){
+ const month=s.months?.[k],date=command.date,to=String(command.to||'').trim();
+ if(!month||month.closed||month.closeSnapshot)throw Error('입력 가능한 월에서 작업 배정을 수정해 주세요.');
+ if(!C.iso(date)||date.slice(0,7)!==k)throw Error('선택한 저장 월 안의 적용 날짜를 입력해 주세요.');
+ if(!(s.workers||[]).includes(to))throw Error('등록된 받을 작업자를 선택해 주세요.');
+ const before=jobs(s,k),matches=before.filter(j=>j.id===command.jobId);if(matches.length!==1)throw Error('수정할 생산 작업을 찾을 수 없습니다.');
+ const job=matches[0],history=normalizedHandoffs(job),event=history.find(h=>h.id===command.handoffId);if(!event)throw Error('수정할 작업 넘기기 기록을 찾을 수 없습니다. 다시 선택해 주세요.');
+ if(job.complete||job.stopped||job.carryBlocked||job.handoffBlocked||!(job.produced>0))throw Error('진행 중인 작업의 배정만 수정할 수 있습니다.');
+ if(event.from===to)throw Error('보내는 사람과 다른 받을 사람을 선택해 주세요.');
+ if(Object.entries(s.months).some(([key,m])=>key>k&&(m.jobs||[]).some(j=>j.carried&&(j.originId||j.id)===(job.originId||job.id))))throw Error('다음달로 이월된 작업은 가장 최근 이월 월에서 수정해 주세요.');
+ if(event.date<k+'-01')throw Error('이전 월에 넘긴 배정은 과거 실적을 유지합니다. 현재 월에서 새로 넘길 작업을 선택해 주세요.');
+ if(job.routing?.mode==='parallel'&&command.daily!=null)throw Error('동시생산은 기존 호기별 하루 조수를 유지합니다.');
+ const operation=event.id.replace(/:[01]$/,''),peers=/:[01]$/.test(event.id)?before.flatMap(j=>j.id===job.id?[]:safeHandoffs(j).filter(h=>h.id.replace(/:[01]$/,'')===operation&&h.id!==event.id&&h.from===event.to&&h.to===event.from&&h.date===event.date).map(h=>({job:j,event:h}))):[];
+ if(peers.length>1)throw Error('서로 바꾼 작업 연결이 중복되어 배정을 확인해야 합니다.');
+ if(peers.length&&(to!==event.to||command.otherWork))throw Error('서로 바꾼 작업은 같은 두 사람의 날짜를 함께 수정합니다. 다른 사람에게 넘기려면 새 작업 넘기기를 선택해 주세요.');
+ if(command.swapJobId&&!peers.some(p=>p.job.id===command.swapJobId))throw Error('기존 배정 수정에서 새 맞교환을 만들 수 없습니다. 새로 넘기기를 선택해 주세요.');
+ const edits=[{job,event},...peers],changes=[];
+ for(const [index,entry]of edits.entries()){
+  const current=entry.job,old=entry.event,source=month.jobs?.find(j=>j.id===current.id),replacement={...clone(old),date,to:index?old.to:to};
+  if(current.complete||current.stopped||current.carryBlocked||current.handoffBlocked)throw Error('함께 수정할 작업의 진행 상태를 확인해 주세요.');
+  if(!index&&Object.prototype.hasOwnProperty.call(command,'daily')){if(command.daily==null)delete replacement.daily;else replacement.daily=Number(command.daily)}
+  if(!index&&Object.prototype.hasOwnProperty.call(command,'otherWork')){if(command.otherWork)replacement.otherWork={label:String(command.otherWork.label||'').trim(),end:command.otherWork.end};else delete replacement.otherWork}
+  delete replacement.quantity;
+  const next={...clone(source||current),handoffs:normalizedHandoffs(current).map(h=>h.id===old.id?replacement:clone(h))};normalizedHandoffs(next);
+  if(replacement.otherWork){const occupied=Object.values(s.months).flatMap(m=>m.rows||[]).find(r=>!r.deleted&&r.worker===old.from&&r.date>=date&&r.date<=replacement.otherWork.end&&C.num(r.pours)>0);if(occupied)throw Error(occupied.date+'에 다른 업무 담당자의 생산 실적이 있습니다. 업무 기간을 확인해 주세요.');}
+  if(otherWorkOn(s,replacement.to,date))throw Error('받을 작업자에게 다른 업무 기간이 있습니다. 해당 기간을 확인해 주세요.');
+  if(!source)for(const field of['records','produced','remaining','currentProduced','firstActual','lastActual','complete','totalPlan','unproduced','fieldPlanNotes','handoffReview','handoffBlocked'])delete next[field];
+  changes.push({month:k,job:next});
+ }
+ const basis={...s,months:{...s.months,[k]:{...month,jobs:[...(month.jobs||[])]}}};for(const change of changes){const list=basis.months[k].jobs,i=list.findIndex(j=>j.id===change.job.id);if(i<0)list.push(change.job);else list[i]=change.job}
+ for(const change of changes)validateHandoffChange(s,k,change.job);
+ const result=schedule(basis,k,asOf(basis,k));for(const change of changes){const parts=result.rows.filter(r=>r.jobId===change.job.id&&!r.actualOnly&&!r.reservationOnly),recipient=parts.some(r=>r.worker===workerAt(change.job,date)&&r.end>=date);if(!recipient)throw Error('수정한 날짜에는 받을 사람의 남은 생산기간이 없습니다. 날짜와 하루 조수를 확인해 주세요.');}
+ const latest=new Map();for(const [owner,m]of Object.entries(s.months).sort(([a],[b])=>a.localeCompare(b)))if(!m.closed)for(const j of jobs(s,owner))latest.set((j.originId||j.id)+'\0'+j.product,j);
+ const conflicts=[...latest.values()].filter(j=>!edits.some(e=>(e.job.originId||e.job.id)===(j.originId||j.id)&&e.job.product===j.product)&&!j.complete&&!j.stopped&&(j.firstActual||j.produced>0)&&changes.some(change=>workerAt(j,date)===workerAt(change.job,date))).map(j=>({jobId:j.id,worker:workerAt(j,date),product:j.product,start:j.firstActual||j.start,end:j.end||null}));
+ if(conflicts.length&&!command.allowConcurrent){const error=Error('받을 작업자에게 진행 중 생산이 있습니다. 함께 생산하는지 확인해 주세요.');error.code='handoff-concurrent';error.conflicts=conflicts;throw error}
+ return{operationId:operation,date,from:event.from,to,changes,conflicts,policy:'dated-assignment-v1',amended:true,handoffId:event.id,previousDate:event.date};
+}
+function validateHandoffChange(s,k,record){
+ const month=s.months?.[k],saved=month?.jobs?.find(j=>j.id===record.id);if(!month)throw Error('저장할 생산 월을 찾을 수 없습니다.');
+ if(JSON.stringify(saved?.handoffs||[])===JSON.stringify(record.handoffs||[]))return true;
+ if(month.closed||month.closeSnapshot)throw Error('마감된 월의 작업 배정은 수정할 수 없습니다.');
+ normalizedHandoffs(record);const before=jobs(s,k),old=before.find(j=>j.id===record.id);if(!old)throw Error('배정을 수정할 원래 작업을 찾을 수 없습니다.');
+ if(Object.entries(s.months).some(([key,m])=>key>k&&(m.jobs||[]).some(j=>j.carried&&(j.originId||j.id)===(old.originId||old.id))))throw Error('다음달로 이월된 작업입니다. 가장 최근 이월 월에서 다시 수정해 주세요.');
+ for(const [key,m]of Object.entries(s.months)){
+  const chain=m.closed&&m.closeSnapshot?.schedule?.jobs||jobs(s,key),related=chain.filter(j=>(j.originId||j.id)===(old.originId||old.id)&&j.worker===old.worker&&C.catalogName(s,j.product)===old.product);
+  for(const prior of related)for(const row of prior.records||[])if((C.num(row.pours)>0||endsProduction(row))&&workerAt(old,row.date)!==workerAt(record,row.date))throw Error(row.date+'의 생산 담당이 바뀌는 배정입니다. 새로 들어온 실적을 확인하고 다시 수정해 주세요.');
+ }
+ const values=[...(month.jobs||[])],index=values.findIndex(j=>j.id===record.id);if(index<0)values.push(record);else values[index]=record;
+ const after=jobs({...s,months:{...s.months,[k]:{...month,jobs:values}}},k),signature=j=>JSON.stringify((j?.records||[]).map(r=>[r.id,r.date,r.worker,r.pours,r.plan,r.scheduleTarget]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+ for(const prior of before)if(signature(prior)!==signature(after.find(j=>j.id===prior.id)))throw Error('배정 변경으로 기존 생산 실적의 작업 연결이 달라집니다. 최신 실적을 확인한 뒤 다시 수정해 주세요.');
+ return true;
 }
 const quotaRound=value=>Math.round(value*1000000)/1000000;
 function quotaConsumed(s,k,job,event,context=null){
@@ -132,11 +185,14 @@ function quotaPriorShare(s,k,job,event){
 function prepareQuantityHandoff(s,k,command){
  const month=s.months?.[k],to=String(command.to||'').trim();if(!month||month.closed||month.closeSnapshot)throw Error('입력 가능한 월에서 작업을 나눠 주세요.');if(!(s.workers||[]).includes(to))throw Error('등록된 받을 작업자를 선택해 주세요.');
  const values=jobs(s,k),matches=values.filter(j=>j.id===command.jobId);if(matches.length!==1)throw Error('수량을 나눌 생산 작업을 찾을 수 없습니다.');const job=matches[0],history=normalizedHandoffs(job),last=history.at(-1);
+ if(command.handoffId&&last?.id!==command.handoffId)throw Error('수량 수정은 마지막 작업 넘기기에서 가능합니다. 뒤에 있는 배정을 먼저 확인해 주세요.');
  if(job.routing?.mode==='parallel')throw Error('호기별 동시생산은 조수를 임의로 나눌 수 없습니다. 단일·순차생산에서 수량을 나누거나 날짜로 작업을 넘겨 주세요.');
  if(job.complete||job.stopped||job.carryBlocked||job.handoffBlocked||!(job.produced>0))throw Error('실적이 있는 진행 중 생산 작업만 수량으로 나눌 수 있습니다.');
  if(Object.entries(s.months).some(([month,m])=>month>k&&(m.jobs||[]).some(j=>j.carried&&(j.originId||j.id)===(job.originId||job.id))))throw Error('다음달로 이월된 작업은 가장 최근 이월 월에서 나눠 주세요.');
  const pending=last&&!quotaConsumed(s,k,job,last)?last:null;
- if(pending&&pending.to!==to)throw Error('다른 사람에게 넘기기로 한 예약이 있습니다. 같은 받을 작업자의 수량을 수정하거나 기존 넘기기 예약을 먼저 확인해 주세요.');
+ if(command.handoffId&&!pending)throw Error('이미 받는 사람의 생산 실적이 있는 배정입니다. 이전 수량을 바꾸지 않고 새로 넘기기로 남은 작업을 배정해 주세요.');
+ if(pending&&pending.to!==to&&(!command.handoffId||command.addQuantity!=null))throw Error('받을 사람을 바꾸려면 기존 배정 수정에서 받는 사람이 만들 전체 수량을 입력해 주세요.');
+ if(pending&&values.some(other=>other.id!==job.id&&safeHandoffs(other).some(h=>h.id.replace(/:[01]$/,'')===pending.id.replace(/:[01]$/,'')&&h.date===pending.date&&h.from===pending.to&&h.to===pending.from)))throw Error('서로 작업 바꾸기로 연결된 배정입니다. 양쪽 날짜를 함께 유지하도록 날짜 방식에서 수정해 주세요.');
  if(pending?.otherWork)throw Error('다른 업무 기간이 연결된 넘기기는 날짜 방식에서 먼저 정리해 주세요.');
  if(!pending&&workerAt(job,asOf(s,k))===to)throw Error('받을 작업자가 이미 이 작업을 생산하고 있어 남은 수량을 맡고 있습니다. 이전 배정 수량을 다시 넘길 수 없습니다.');
  const baseline=quotaWithoutEvent(s,k,job,pending),base=baseline.job,from=pending?.from||workerAt(base,asOf(baseline.state,k));if(to===from)throw Error('현재 담당자와 다른 작업자를 선택해 주세요.');
@@ -149,6 +205,7 @@ function prepareQuantityHandoff(s,k,command){
  const threshold=quotaRound(base.totalPlan-recipientQty),boundary=quotaBoundary(baseline.state,k,base,to,threshold),operationId=command.operationId||C.id(),event={...(pending?clone(pending):{}),id:pending?.id||operationId+':0',date:boundary.date,from,to,...(command.daily!=null?{daily:Number(command.daily)}:{}),quantity:{schema:1,recipientQty,threshold,sourceLastDate:boundary.sourceLastDate,sourceLastQty:boundary.sourceLastQty}};
  const kept=pending?history.slice(0,-1):history;if(kept.some(h=>h.date>=event.date))throw Error('이전 작업 넘기기 이후에 남은 수량을 나눌 수 있습니다.');
  const source=month.jobs?.find(j=>j.id===job.id),next={...clone(source||job),handoffs:[...clone(kept),event]};normalizedHandoffs(next);if(!source)for(const field of['records','produced','remaining','currentProduced','firstActual','lastActual','complete','totalPlan','unproduced','fieldPlanNotes','handoffReview','handoffBlocked'])delete next[field];
+ validateHandoffChange(s,k,next);
  const contradiction=(job.records||[]).find(row=>row.date>=event.date&&(C.num(row.pours)>0||endsProduction(row))&&!handoffRecordMatches(next,row));if(contradiction)throw Error(contradiction.date+'의 실제 담당 기록을 바꿀 수 없습니다. 실적 이후의 남은 수량만 나눠 주세요.');
  const ambiguous=(month.rows||[]).find(row=>!row.deleted&&row.worker===to&&row.date>=event.date&&C.catalogName(s,row.product)===job.product&&(C.num(row.pours)>0||endsProduction(row))&&!(job.records||[]).some(r=>r.id===row.id));if(ambiguous)throw Error(ambiguous.date+'에 받을 작업자의 같은 품명 실적이 있습니다. 작업 연결을 먼저 확인해 주세요.');
  const latest=new Map();for(const [owner,m]of Object.entries(s.months).sort(([a],[b])=>a.localeCompare(b)))if(!m.closed)for(const other of jobs(s,owner))latest.set((other.originId||other.id)+'\0'+other.product,other);
@@ -747,5 +804,5 @@ function timelineCumulativeRead(s,k,result,first,last){
 }
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
-root.SchedulePlanning={productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning={productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,validateHandoffChange,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
 })(globalThis);
