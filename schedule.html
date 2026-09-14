@@ -4233,6 +4233,25 @@ function pgReconcileCalendarDraft(d){
  for(const row of d.rows){const base=bases.get(row.id),now=latest.get(row.id);if(!base||!now||!row.manual||row.routing)continue;for(const field of ['start','end','duration','afterPrevious','manualSource','manualEndMode'])if(pgEqual(row[field],base[field])&&!pgEqual(now[field],base[field])){if(Object.hasOwn(now,field)){row[field]=C.clone(now[field]);base[field]=C.clone(now[field])}else{delete row[field];delete base[field]}}}
  return d;
 }
+// Refresh the ledger under a draft without publishing that draft. Untouched
+// fields follow the remote state; edited fields keep their original conflict base.
+function pgRefreshDraft(source,draft,key=month){
+ const d=C.clone(draft),latest=pgRows(source,key),base=new Map(d.baseRows.map(r=>[r.id,r])),now=new Map(latest.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),rows=[],bases=[];
+ if(base.size!==d.baseRows.length||now.size!==latest.length||new Set(d.rows.map(r=>r.id)).size!==d.rows.length)throw Error('작업 ID가 중복되어 최신 실적 받기를 보류했습니다.');
+ for(const local of d.rows){const original=base.get(local.id),remote=now.get(local.id);
+  if(!original){rows.push(local);continue}
+  if(!remote){if(!pgEqual(local,original)||deleted.has(local.id)){rows.push(local);bases.push(original)}continue}
+  const value=C.clone(local),baseline=C.clone(original),identityChanged=['product','worker','sourceRowId','originId','_ownerMonth'].some(k=>!pgEqual(original[k],remote[k]));
+  if(identityChanged&&!pgEqual(local,original)){rows.push(value);bases.push(baseline);continue}
+  if(!deleted.has(local.id))for(const field of new Set([...Object.keys(original),...Object.keys(local),...Object.keys(remote)]))if(pgEqual(local[field],original[field])){if(Object.hasOwn(remote,field)){value[field]=C.clone(remote[field]);baseline[field]=C.clone(remote[field])}else{delete value[field];delete baseline[field]}}
+  rows.push(value);bases.push(baseline);
+ }
+ const seen=new Set(d.rows.map(r=>r.id));for(const remote of latest)if(!seen.has(remote.id)&&!base.has(remote.id)){rows.push(C.clone(remote));bases.push(C.clone(remote))}
+ d.rows=rows;d.baseRows=bases;
+ const oldCalendar=d.baseCalendar||pgCalendar(source),calendar=pgCalendarMerge(oldCalendar,d.calendar,pgCalendar(source));if(d.calendarEditUndo)d.calendarEditUndo=pgCalendarMerge(oldCalendar,d.calendarEditUndo,pgCalendar(source)).calendar;d.calendar=calendar.calendar;d.baseCalendar=calendar.baseline;
+ if(pgEqual(d.scheduleAsOf,d.baseScheduleAsOf))d.scheduleAsOf=d.baseScheduleAsOf=source.months[key]?.scheduleAsOf||null;
+ return d;
+}
 function pgFresh(rows){if(P.captureSourceBaseline)P.captureSourceBaseline(state);return{baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0,calendar:pgCalendar(state),baseCalendar:pgCalendar(state),scheduleAsOf:m().scheduleAsOf||null,baseScheduleAsOf:m().scheduleAsOf||null}}
 function pgKeep(d){const deleted=new Set(d.deleted.map(r=>r.id));return d.rows.filter(r=>!deleted.has(r.id))}
 function pgMeta(row){return pgView().result?.jobs?.find(j=>j.id===row.id)||P.jobs(state,pgJobMonth(row)).find(j=>j.id===row.id)||row}
@@ -4348,8 +4367,10 @@ function pgCalendarChanges(base,next){
  const a=map(base),b=map(next),changed=[];for(const key of new Set([...a.keys(),...b.keys()]))if(!pgEqual(a.get(key)?.value,b.get(key)?.value))changed.push({key,date:(a.get(key)||b.get(key)).date});return changed;
 }
 function pgInspect(d){
- const errors=pgCalendarMerge(d.baseCalendar,d.calendar).conflicts.map(conflict=>({id:'',field:'calendar',message:pgCalendarConflictText(conflict)})),base=new Map(d.baseRows.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),changedRows=d.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),all=changedRows.length||d.deleted.length?pgAllJobs(state):null,latest=changedRows.length?pgRows(state,month,all):[];
+ const errors=pgCalendarMerge(d.baseCalendar,d.calendar).conflicts.map(conflict=>({id:'',field:'calendar',message:pgCalendarConflictText(conflict)})),conflicts=[],base=new Map(d.baseRows.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),changedRows=d.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),all=changedRows.length||d.deleted.length?pgAllJobs(state):null,latest=all?pgRows(state,month,all):[];
+ if(all)try{sheetApply(d,latest)}catch(e){conflicts.push(...(e.errors||[{id:'',field:'',message:e.message}]))}
  for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(d))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
+ errors.push(...conflicts);
  for(const entry of d.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
  const calendarChanges=pgCalendarChanges(d.baseCalendar||{},d.calendar||{});
  for(const changed of calendarChanges)if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
@@ -4357,7 +4378,7 @@ function pgInspect(d){
  const counts=sheetCounts(d),calendarCount=calendarChanges.length;
  counts.changed+=calendarCount||(!pgEqual(d.baseCalendar,d.calendar)?1:0);
  if(!pgEqual(d.baseScheduleAsOf,d.scheduleAsOf)){counts.changed++;if(!C.iso(d.scheduleAsOf)||m().closed)errors.push({id:'',field:'scheduleAsOf',message:'계산 기준일을 확인해 주세요. 마감월은 변경할 수 없습니다.'})}
- return{ok:errors.length===0,errors,counts};
+ return{ok:errors.length===0,errors,counts,conflicts};
 }
 async function pgCommit(d){
  if(m().closed)throw Error('마감월은 수정할 수 없습니다.');
@@ -4399,7 +4420,7 @@ function pgSpec(rows){return{
   {key:'kind',label:'일정 구분',width:90,calc:r=>r.manual?'수기 예약':'자동'},
   {key:'note',label:'비고',type:'text',width:220,advanced:true}
  ],
- inspect:pgInspect,commit:pgCommit,reconcileDraft:pgReconcileCalendarDraft,rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
+ inspect:pgInspect,commit:pgCommit,reconcileDraft:d=>pgRefreshDraft(state,d,month),rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
  summary:d=>`작업 ${pgKeep(d).length}건 · 휴일 변경 ${pgCalendarChanges(d.baseCalendar||{},d.calendar||{}).length}칸 · 누적·잔여·종료·건조일은 생산기록과 작업조건에서 계산`,
  onSelect:(row,g)=>{pgView().selected=row.id;pgView().selectionActive=true;pgView().timelineSelection=g._pgTimelineChoice||null;pgDetail(g);pgInlineManual(g);pgMarkSelection(g)},
  onChange:g=>pgRefresh(g)
@@ -6108,7 +6129,12 @@ function ilboIssueInfo(issue,index){
  const dates=[issue.date,dateFromPath,linked?.date],date=dates.find(d=>C.iso(d))||(/^\d{4}-(?:0[1-9]|1[0-2])$/.test(issue.month||'')?issue.month:'확인 필요');
  return{date,worker:issue.worker||linked?.worker||'—',product:issue.sourceProduct||issue.product||linked?.product||(['unknown-product','missing-product'].includes(issue.code)?'품명 확인 필요':'—'),message:(ilboIssueMessages[issue.code]||'자동 반영을 보류했습니다. 현장일보와 관리 원장을 확인해 주세요.')+(changed.length?' 확인 항목: '+changed.join(' · '):'')};
 }
-function ilboHasEdits(){return busy||booting||!!localReadError||!!$('#dialog')?.open||[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&(g.dirty||g.saving||g.loading))||!!workspace?.envelope?.queue?.length||!!workspace?.resolving}
+function ilboInteracting(){return !!($('#dialog')?.open||document.querySelector?.('dialog[open]'))||!!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')||typeof pgDirectState!=='undefined'&&!!(pgDirectState.session||pgDirectState.touchPointers?.size)}
+function ilboRenderLatest(){
+ const x=window.scrollX||0,y=window.scrollY||0,positions=[...document.querySelectorAll?.('#pgTimeline,[data-sheet-id] .sheetViewport')||[]].map(el=>({selector:el.id?'#'+el.id:'[data-sheet-id="'+el.closest('[data-sheet-id]').dataset.sheetId+'"] .sheetViewport',left:el.scrollLeft,top:el.scrollTop}));
+ render();for(const pos of positions){const el=document.querySelector?.(pos.selector);if(el){el.scrollLeft=pos.left;el.scrollTop=pos.top}}window.scrollTo?.(x,y);
+}
+function ilboHasEdits(){return busy||booting||!!localReadError||ilboInteracting()||[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&(g.dirty||g.saving||g.loading))||!!workspace?.envelope?.queue?.length||!!workspace?.resolving}
 function ilboAccessReady(){return typeof AppAccess==='undefined'||AppAccess.unlocked}
 function ilboConnectionLoading(){return typeof connectionOpening!=='undefined'&&!!connectionOpening}
 function ilboCanRefresh(client,accessVersion=ilboAccessVersion){return ilboAccessReady()&&accessVersion===ilboAccessVersion&&workspace===client&&!client.closed&&!client.pendingMigration&&!ilboHasEdits()&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')}
@@ -6124,58 +6150,63 @@ function ilboUpdateManualSummary(){
  const node=$('#ilboSyncStatus')?.querySelector?.('[data-ilbo-manual-result]');if(!node)return;
  const text=ilboManualSummary();if(node.textContent!==text)node.textContent=text;if(node.hidden!==!text)node.hidden=!text;
 }
+function ilboMergeableGrid(g){return g.id==='production'||g.id==='plan-jobs'&&typeof pgRefreshDraft==='function'}
+async function ilboReceiveLatest(){const dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty&&ilboMergeableGrid(g));return dirty?ilboMergeDrafts():ilboCheck(true)}
 function ilboDraftMergeBlock(client){
  if(!ilboAccessReady())return '앱 잠금을 해제한 뒤 다시 확인해 주세요.';
  if(!client||workspace!==client||client.closed||client.pendingMigration||typeof client.readSnapshot!=='function'||typeof client.adoptSnapshot!=='function')return '관리 저장소 연결을 확인해 주세요.';
- if(busy||booting||localReadError||ilboRefreshRun||ilboConnectionLoading()||$('#dialog')?.open)return '진행 중인 작업을 마친 뒤 다시 확인해 주세요.';
+ if(busy||booting||localReadError||ilboRefreshRun||ilboConnectionLoading()||($('#dialog')?.open||document.querySelector?.('dialog[open]')))return '진행 중인 작업을 마친 뒤 다시 확인해 주세요.';
  if(client.envelope?.queue?.length||client.resolving)return '전송 대기·복구를 마친 뒤 최신자료를 합쳐 주세요.';
  const grids=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope());
  if(grids.some(g=>g.loading||g.saving||g.storageError))return '초안 읽기·저장 상태를 먼저 확인해 주세요.';
- if(grids.some(g=>g.dirty&&g.id!=='production'))return '다른 표의 미저장 작업을 마친 뒤 생산일보 최신자료를 합쳐 주세요.';
- if(!grids.some(g=>g.dirty&&g.id==='production'))return '최신자료 확인을 눌러 주세요.';
+ if(grids.some(g=>g.dirty&&!ilboMergeableGrid(g)))return '다른 표의 미저장 작업을 마친 뒤 최신자료를 합쳐 주세요.';
+ if(!grids.some(g=>g.dirty&&ilboMergeableGrid(g)))return '최신자료 확인을 눌러 주세요.';
  return '';
 }
-async function ilboMergeDrafts(){
- ilboEnsureScope();const client=workspace,blocked=ilboDraftMergeBlock(client);if(blocked){toast(blocked);return}
- const before=state,entries=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty).map(g=>({g,signature:JSON.stringify(g.draft),revision:g.revision,draft:C.clone(g.draft)}));
- const run={client,scope:client.key,page,month,merge:true,cancelled:false,adopted:false,accessVersion:ilboAccessVersion};ilboRefreshRun=run;ilboManualChecked=null;busy=true;ilboStatusError='';
+async function ilboMergeDrafts({automatic=false,revision=''}={}){
+ ilboEnsureScope();const client=workspace,blocked=ilboDraftMergeBlock(client);if(blocked||automatic&&ilboInteracting()){if(!automatic)toast(blocked);return}
+ const before=state,entries=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty).map(g=>({g,signature:JSON.stringify(g.draft),revision:g.revision,draft:C.clone(g.draft)}));
+ const run={client,scope:client.key,page,month,merge:true,automatic,cancelled:false,adopted:false,accessVersion:ilboAccessVersion};ilboRefreshRun=run;if(!automatic){ilboManualChecked=null;busy=true}ilboStatusError='';
  const current=()=>ilboAccessReady()&&run.accessVersion===ilboAccessVersion&&workspace===client&&!client.closed&&ilboStatusClient===client&&ilboRefreshRun===run&&client.key===run.scope&&page===run.page&&month===run.month&&!run.cancelled;
- const stable=()=>current()&&state===before&&!client.envelope?.queue?.length&&!client.resolving&&!localReadError&&!$('#dialog')?.open&&entries.every(({g,signature,revision})=>g.dirty&&!g.saving&&!g.loading&&!g.storageError&&g.revision===revision&&JSON.stringify(g.draft)===signature)&&![...sheetRegistry.values()].some(g=>g.scope===run.scope&&(g.saving||g.loading||g.dirty&&g.id!=='production'));
+ const stable=()=>current()&&state===before&&(!automatic||!busy&&!document.hidden&&!ilboInteracting())&&!client.envelope?.queue?.length&&!client.resolving&&!localReadError&&!($('#dialog')?.open||document.querySelector?.('dialog[open]'))&&entries.every(({g,signature,revision})=>g.dirty&&!g.saving&&!g.loading&&!g.storageError&&g.revision===revision&&JSON.stringify(g.draft)===signature)&&![...sheetRegistry.values()].some(g=>g.scope===run.scope&&(g.saving||g.loading||g.dirty&&!ilboMergeableGrid(g)));
  let applied=false;
  try{
-  ilboRenderStatus();for(const {g}of entries)g.update();
+  if(!automatic){ilboRenderStatus();for(const {g}of entries)g.update()}
   // A durable original draft makes a failed later draft write recoverable from the adopted ledger.
   for(const entry of entries){if(!stable())throw Error('context-changed');const writing=entry.g.queueDraft({compare:true});entry.revision=entry.g.revision;await writing;if(!stable())throw Error('context-changed')}
   const snapshot=await client.readSnapshot({canApply:stable});if(!snapshot||!stable())throw Error('context-changed');
-  for(const entry of entries)entry.next=productionRefreshDraft(snapshot.state,entry.draft);
+  for(const entry of entries)entry.next=entry.g.id==='plan-jobs'?pgRefreshDraft(snapshot.state,entry.draft,entry.g.month):productionRefreshDraft(snapshot.state,entry.draft);
   const next=await client.adoptSnapshot(snapshot,{canApply:stable});if(!next||!stable())throw Error('context-changed');
-  state=next;applied=true;run.adopted=true;ilboRefreshPending=false;ilboManualChecked={state,date:typeof today==='function'?today():''};
-  for(const entry of entries){entry.g.draft=entry.next;entry.g.error='최신 원장을 합쳤습니다. 미저장 입력은 그대로 보관 중입니다.'}
-  for(const {g}of entries){await g.queueDraft({compare:true});if(!current())break}
-  if(current()){const conflicts=entries.reduce((n,{g})=>n+(g.inspect().conflicts?.length||0),0);toast('초안을 유지하고 최신자료를 합쳤습니다.'+(conflicts?' 동시 수정 '+conflicts+'건을 확인한 뒤 저장해 주세요.':' 입력 내용은 변경 저장을 눌러야 원장에 저장됩니다.'))}
+  state=next;applied=true;run.adopted=true;ilboRefreshPending=false;if(revision)ilboAppliedRevision=revision;if(!automatic)ilboManualChecked={state,date:typeof today==='function'?today():''};
+  for(const entry of entries){entry.g.draft=entry.next;if(!automatic)entry.g.error='최신 원장을 합쳤습니다. 미저장 입력은 그대로 보관 중입니다.'}
+  if(automatic){const writing=Promise.all(entries.map(({g})=>g.queueDraft({compare:true})));ilboRenderLatest();await writing}
+  else for(const {g}of entries){await g.queueDraft({compare:true});if(!current())break}
+  if(current()&&!automatic){const conflicts=entries.reduce((n,{g})=>n+(g.inspect().conflicts?.length||0),0);toast('초안을 유지하고 최신자료를 합쳤습니다.'+(conflicts?' 동시 수정 '+conflicts+'건을 확인한 뒤 저장해 주세요.':' 입력 내용은 변경 저장을 눌러야 원장에 저장됩니다.'))}
  }catch(e){
-  if(workspace===client&&ilboRefreshRun===run){ilboStatusError=applied&&e.code==='DEVICE_CONFLICT'?'다른 창에서 초안이 바뀌었습니다. 이 화면의 입력을 유지하고 있으며 다른 창의 초안을 덮지 않았습니다. 이 화면을 닫지 말고 두 초안을 확인해 주세요.':applied?'최신 원장은 불러왔지만 보완한 초안을 기기에 보관하지 못했습니다. 원래 초안은 보존되어 있으며 다시 열면 최신 원장과 함께 복원됩니다.':run.cancelled?'최신자료 합치기를 취소했습니다. 원장과 기존 초안은 그대로입니다.':e.message==='context-changed'?'불러오는 중 입력·연결·로그인 상태가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':e.code==='DEVICE_CONFLICT'?'다른 창에서 기기자료가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':'최신자료를 합치지 못했습니다. 기존 초안은 그대로 보존했습니다. '+(['CATALOG_UNIT_SYNC'].includes(e.code)?e.message:'연결·기기 저장 상태와 마감 여부를 확인해 주세요.');if(ilboAccessReady()&&run.accessVersion===ilboAccessVersion)toast(ilboStatusError)}
- }finally{busy=false;if(ilboRefreshRun===run){ilboRefreshRun=null;if(workspace===client&&ilboAccessReady()){if(applied)render();else for(const {g}of entries)g.update();ilboRenderStatus()}}}
+  if(automatic&&!applied&&(e.message==='context-changed'||run.cancelled)){if(workspace===client&&ilboRefreshRun===run)ilboRefreshPending=true;return}
+  if(workspace===client&&ilboRefreshRun===run){ilboStatusError=applied&&e.code==='DEVICE_CONFLICT'?'다른 창에서 초안이 바뀌었습니다. 이 화면의 입력을 유지하고 있으며 다른 창의 초안을 덮지 않았습니다. 이 화면을 닫지 말고 두 초안을 확인해 주세요.':applied?'최신 원장은 불러왔지만 보완한 초안을 기기에 보관하지 못했습니다. 원래 초안은 보존되어 있으며 다시 열면 최신 원장과 함께 복원됩니다.':run.cancelled?'최신자료 합치기를 취소했습니다. 원장과 기존 초안은 그대로입니다.':e.message==='context-changed'?'불러오는 중 입력·연결·로그인 상태가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':e.code==='DEVICE_CONFLICT'?'다른 창에서 기기자료가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':'최신자료를 합치지 못했습니다. 기존 초안은 그대로 보존했습니다. '+(['CATALOG_UNIT_SYNC'].includes(e.code)?e.message:'연결·기기 저장 상태와 마감 여부를 확인해 주세요.');if(!automatic&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion)toast(ilboStatusError)}
+ }finally{if(!automatic)busy=false;if(ilboRefreshRun===run){ilboRefreshRun=null;if(workspace===client&&ilboAccessReady()){if(!automatic){if(applied)ilboRenderLatest();else for(const {g}of entries)g.update()}if(!ilboInteracting())ilboRenderStatus()}}}
 }
 function ilboRenderStatus(){
  if(!ilboAccessReady())return;
  ilboEnsureScope();const main=$('#main');if(!main||!['daily','schedule','master','settings'].includes(page)||!workspace&&page!=='settings')return;
  let box=$('#ilboSyncStatus');if(!box){box=document.createElement('section');box.id='ilboSyncStatus';box.className='notice blue';const anchor=main.querySelector('.top');if(anchor)anchor.after(box);else main.prepend(box)}
  const report=ilboStatus,issues=report?.issues||[],quality=report?.qualityWarnings||[],stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'',index=issues.length?ilboSourceLookup():null;
- const guide='<p>어느 앱에서 저장해도 생산량·계획·호기별 생산량·근무시간·불량·현장 메모를 서로 반영합니다. 일정은 관리에서 계산한 날짜와 조건을 함께 보여줍니다. 같은 항목을 양쪽에서 다르게 고치면 덮지 않고 확인할 기록에 표시합니다. 이 화면은 15초마다 새 자료를 확인하며 작성 중인 입력은 유지합니다.</p>';
- box.innerHTML='<div class="toolbar"><span><b>두 앱 연동</b> · '+(workspace?(when?'자동 연동 확인 '+esc(when):'자동 반영 상태를 확인 중입니다.'):'관리 저장소에 연결하면 현장일보가 자동 반영됩니다.')+(issues.length?' · 미반영 '+issues.length+'건':'')+(quality.length?' · 원자료 확인 '+quality.length+'건':'')+'</span>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>최신자료 확인</button>':'')+'</div>'+(ilboStatusError?'<p>'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>작성 중인 내용이 있어 최신자료 반영을 보류했습니다. 현재 화면의 입력은 유지됩니다. 생산일보는 초안을 유지하고 최신자료 합치기를 사용할 수 있습니다.</p>':'')+'<details><summary>'+(issues.length?'미반영 기록 확인 · '+issues.length+'건':'어떤 내용이 서로 반영되나요?')+'</summary>'+guide+(issues.length?table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])})):page==='settings'?'<p>현장 기록은 별도 일보 저장소에서 가져옵니다. 관리 품명과 다른 이름은 관리 탭에서 연결합니다.</p>':'')+'</details>';
- if(quality.length)box.innerHTML+='<details><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
- const manualSummary=ilboManualSummary();if(manualSummary)box.innerHTML+='<p data-ilbo-manual-result>'+esc(manualSummary)+'</p>';
- if(workspace&&page==='daily'&&[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty)){
-  const blocked=ilboDraftMergeBlock(workspace);box.innerHTML+='<div class="toolbar"><button id="ilboMergeDrafts" '+(blocked?'disabled':'')+'>입력 유지하고 최신자료 받기</button><span>작성 중인 입력을 유지하고 새 현장 기록을 가져옵니다.</span></div>'+(blocked&&!ilboRefreshRun?'<p>'+esc(blocked)+'</p>':'');
+ const guide='<p>어느 앱에서 저장해도 생산량·계획·호기별 생산량·근무시간·불량·현장 메모를 서로 반영합니다. 일정은 관리에서 계산한 날짜와 조건을 함께 보여줍니다. 같은 항목을 양쪽에서 다르게 고치면 덮지 않고 확인할 기록에 표시합니다. 화면을 보는 동안 5초마다 새 자료를 확인하고 자동 반영합니다. 작성 중인 일정·휴일·일보 입력은 유지하며, 입력창이나 드래그 조작을 마치면 이어서 반영합니다.</p>';
+ let html='<div class="toolbar"><span><b>두 앱 연동</b> · '+(workspace?(when?'자동 연동 확인 '+esc(when):'자동 반영 상태를 확인 중입니다.'):'관리 저장소에 연결하면 현장일보가 자동 반영됩니다.')+(issues.length?' · 미반영 '+issues.length+'건':'')+(quality.length?' · 원자료 확인 '+quality.length+'건':'')+'</span>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>최신자료 확인</button>':'')+'</div>'+(ilboStatusError?'<p>'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>새 자료가 있습니다. 현재 화면의 입력은 유지됩니다. 일정·일보의 입력창이나 드래그 조작이 끝나면 자동 반영합니다. 다른 표의 편집·전송 대기는 먼저 마쳐 주세요.</p>':'')+'<details><summary>'+(issues.length?'미반영 기록 확인 · '+issues.length+'건':'어떤 내용이 서로 반영되나요?')+'</summary>'+guide+(issues.length?table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])})):page==='settings'?'<p>현장 기록은 별도 일보 저장소에서 가져옵니다. 관리 품명과 다른 이름은 관리 탭에서 연결합니다.</p>':'')+'</details>';
+ if(quality.length)html+='<details><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
+ const manualSummary=ilboManualSummary();if(manualSummary)html+='<p data-ilbo-manual-result>'+esc(manualSummary)+'</p>';
+ if(workspace&&ilboRefreshPending&&['daily','schedule'].includes(page)&&[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty)){
+  const blocked=ilboDraftMergeBlock(workspace);html+='<div class="toolbar"><button id="ilboMergeDrafts" '+(blocked?'disabled':'')+'>입력 유지하고 최신자료 받기</button><span>작성 중인 입력을 유지하고 새 현장 기록을 가져옵니다.</span></div>'+(blocked&&!ilboRefreshRun?'<p>'+esc(blocked)+'</p>':'');
  }
- if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted)box.innerHTML+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
- const button=$('#ilboRefreshNow');if(button)button.onclick=()=>ilboCheck(true);
+ if(ilboRefreshRun?.merge&&!ilboRefreshRun.automatic&&!ilboRefreshRun.adopted)html+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
+ if(box._ilboMarkup!==html){box.innerHTML=html;box._ilboMarkup=html}
+ const button=$('#ilboRefreshNow');if(button)button.onclick=()=>page==='schedule'?ilboReceiveLatest():ilboCheck(true);
  const merge=$('#ilboMergeDrafts');if(merge)merge.onclick=()=>ilboMergeDrafts();const cancel=$('#ilboMergeCancel');if(cancel)cancel.onclick=()=>{if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted){ilboRefreshRun.cancelled=true;ilboRenderStatus()}};
 }
 async function ilboCheck(manual=false){
  ilboEnsureScope();const client=workspace;if(!ilboAccessReady()||!client||client.pendingMigration||client.closed||ilboRefreshRun||document.hidden||booting||ilboConnectionLoading()||!state)return;
- const run={client,scope:client.key,accessVersion:ilboAccessVersion};if(manual)ilboManualChecked=null;ilboInitialClient=client;ilboRefreshRun=run;ilboRenderStatus();const owned=()=>workspace===client&&ilboStatusClient===client&&client.key===run.scope&&ilboStatusScope===run.scope&&ilboRefreshRun===run,current=()=>owned()&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion;
+ let mergeRevision='';const run={client,scope:client.key,accessVersion:ilboAccessVersion};if(manual)ilboManualChecked=null;ilboInitialClient=client;ilboRefreshRun=run;if(manual)ilboRenderStatus();const owned=()=>workspace===client&&ilboStatusClient===client&&client.key===run.scope&&ilboStatusScope===run.scope&&ilboRefreshRun===run,current=()=>owned()&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion;
  try{
   const seed=!manual&&client.initialSyncStatus?.state===state&&client.envelope.state===state&&!client.envelope.queue.length?client.initialSyncStatus:null;
   const result=seed?seed.result:await client.client.get('meta/ilbo-sync.json',true);if(!current())return;if(seed)client.initialSyncStatus=null;
@@ -6188,17 +6219,22 @@ async function ilboCheck(manual=false){
   if(manual||revision&&revision!==ilboAppliedRevision){
    if(ilboCanRefresh(client,run.accessVersion)){
     const next=await client.open({canApply:()=>ilboCanRefresh(client,run.accessVersion)});if(!current())return;
-    if(next&&ilboCanRefresh(client,run.accessVersion)){state=next;ilboAppliedRevision=revision;ilboRefreshPending=false;if(manual)ilboManualChecked={state,date:typeof today==='function'?today():''};render();if(manual)toast(ilboManualSummary()||'GitHub 최신자료를 확인했습니다.')}
+    if(next&&ilboCanRefresh(client,run.accessVersion)){state=next;ilboAppliedRevision=revision;ilboRefreshPending=false;if(manual)ilboManualChecked={state,date:typeof today==='function'?today():''};ilboRenderLatest();if(manual)toast(ilboManualSummary()||'GitHub 최신자료를 확인했습니다.')}
     else ilboRefreshPending=true;
-   }else{ilboRefreshPending=true;if(manual)toast([...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.id==='production'&&g.dirty)?'미저장 입력을 유지하려면 입력 유지하고 최신자료 받기를 눌러 주세요.':'편집 내용을 먼저 저장해 주세요. 미저장 내용은 그대로 보관되어 있습니다.')}
+   }else{ilboRefreshPending=true;if(!manual)mergeRevision=revision;else toast('작성 중인 입력은 유지됩니다. 입력창이나 조작을 마치면 최신자료를 자동 반영합니다.')}
   }
- }catch(e){if(current()){ilboStatusError=e.message==='invalid-sync-report'?'자동 연동 결과의 형식을 확인하지 못했습니다. 관리 저장소의 연동 실행 결과를 확인해 주세요.':'GitHub 연동 상태를 읽지 못했습니다. 관리자 탭에서 저장소 연결 상태를 확인해 주세요.';if(manual)toast(ilboStatusError)}}finally{if(owned()){const active=current();ilboRefreshRun=null;if(active)ilboRenderStatus()}}
+ }catch(e){if(current()){ilboStatusError=e.message==='invalid-sync-report'?'자동 연동 결과의 형식을 확인하지 못했습니다. 관리 저장소의 연동 실행 결과를 확인해 주세요.':'GitHub 연동 상태를 읽지 못했습니다. 관리자 탭에서 저장소 연결 상태를 확인해 주세요.';if(manual)toast(ilboStatusError)}}finally{if(owned()){const active=current();ilboRefreshRun=null;if(active&&!ilboInteracting()&&(!mergeRevision||ilboDraftMergeBlock(client)))ilboRenderStatus()}}
+ if(mergeRevision&&workspace===client&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion&&!ilboDraftMergeBlock(client))await ilboMergeDrafts({automatic:!manual,revision:mergeRevision});
 }
 function bindIlboIntegrationUI(){
  if(!ilboAccessReady())return;ilboRenderStatus();const client=workspace;if(!client||client===ilboInitialClient||client.closed||client.pendingMigration||booting||ilboConnectionLoading()||!state)return;
  ilboInitialClient=client;Promise.resolve().then(()=>{if(workspace===client)ilboCheck()});
 }
-setInterval(()=>ilboCheck(),15000);
+setInterval(()=>ilboCheck(),5000);
+document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)ilboCheck()});
+window.addEventListener('online',()=>ilboCheck());
+let ilboIdleTimer=null;
+for(const event of ['focusout','pointerup','pointercancel','close'])document.addEventListener?.(event,()=>{if(!ilboRefreshPending)return;clearTimeout(ilboIdleTimer);ilboIdleTimer=setTimeout(()=>ilboCheck(),400)},true);
 window.addEventListener('focus',()=>ilboCheck());
 window.addEventListener('production:lock',()=>{ilboAccessVersion++});
 window.addEventListener('production:login',()=>ilboCheck());
