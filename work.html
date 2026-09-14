@@ -1754,13 +1754,14 @@ function queuedScheduleChanges(date,rows,edits={}){
 function pruneScheduleQueueMeta(item){if(!item.scheduleEdits&&!item.scheduleConflict)return item;const ids=new Set((item.rows||[]).map(r=>r.id)),next={...item};if(item.scheduleEdits)next.scheduleEdits=Object.fromEntries(Object.entries(item.scheduleEdits).filter(([id])=>ids.has(id)));if(item.scheduleConflict&&!ids.has(item.scheduleConflict.rowId))delete next.scheduleConflict;return next;}
 async function verifyManagedScheduleChanges(rows,edits,drv=driver,epoch=storeEpoch){
   const targetProjection=await verifyScheduleTargets(rows,edits,drv,epoch);
-  const guarded=rows.filter(row=>edits?.[row.id]?.managed&&edits[row.id].fields?.some(k=>['machines','daily','routing'].includes(k)));if(!guarded.length||drv.offline||drv.mode!=='gh')return;
+  const guarded=rows.filter(row=>edits?.[row.id]?.managed&&(edits[row.id].managed.target||edits[row.id].managed.handoffLocked||edits[row.id].fields?.some(k=>['machines','daily','routing'].includes(k))));if(!guarded.length||drv.offline||drv.mode!=='gh')return;
   if(typeof drv.loadProductionProgress!=='function')throw Error('관리 일정 조건을 확인하지 못했습니다. 연결 후 다시 저장하세요. 입력은 보관됩니다.');
   const value=targetProjection||await drv.loadProductionProgress();assertContext(epoch);const projection=targetProjection||value&&parseProductionProgress(value);
   for(const row of guarded){const edit=edits[row.id],ref=edit.managed,selected=ref.target&&(projection?.targets.find(t=>scheduleTargetKey(t.target)===scheduleTargetKey(ref.target))||projection?.entries.find(e=>scheduleTargetKey(e.scheduleTarget)===scheduleTargetKey(ref.target)&&e.schedule)),exact=projection?._bySource.get(ref.path+'#'+ref.id),entry=selected||exact&&latestProjectedEntry(projection,exact),latest=entry&&projectedScheduleAt(entry,ref.assignmentDate||ref.date);
     if(!latest||latest.originId!==ref.schedule?.originId||(ref.target?scheduleTargetKey(entry.target||entry.scheduleTarget)!==scheduleTargetKey(ref.target):((entry.handoff?projectedWorkerAt(entry,ref.assignmentDate||ref.date)!==(ref.worker||ref.source?.worker):entry.worker!==ref.source?.worker)||fieldProductIdentity(entry)!==fieldProductIdentity(ref.source))))throw Error('이 작업의 최신 관리 연결을 확인하지 못했습니다. 관리 반영을 확인한 뒤 다시 저장하세요. 입력은 유지됩니다.');
+    if(ref.assignmentDate&&ref.worker&&(projectedWorkerAt(entry,ref.assignmentDate)!==ref.worker||ref.assignmentKey&&projectedAssignmentKey(entry,ref.assignmentDate)!==ref.assignmentKey))throw Error('작성 중 이 작업의 담당자 또는 넘기는 날짜가 바뀌었습니다. 입력은 유지됩니다. 최신 자료를 불러온 뒤 작업을 다시 확인해 주세요.');
     if(latest.revision===ref.schedule.revision)continue;
-    const fields=edit.fields.filter(k=>['machines','daily','routing'].includes(k)&&progressStable(schedulePart(latest.conditions,k))!==progressStable(schedulePart(ref.schedule.conditions,k))&&progressStable(schedulePart(latest.conditions,k))!==progressStable(schedulePart(row.scheduleConditions,k)));
+    const fields=(edit.fields||[]).filter(k=>['machines','daily','routing'].includes(k)&&progressStable(schedulePart(latest.conditions,k))!==progressStable(schedulePart(ref.schedule.conditions,k))&&progressStable(schedulePart(latest.conditions,k))!==progressStable(schedulePart(row.scheduleConditions,k)));
     if(fields.length){const e=Error(`${row.product||'이 품목'}의 관리 일정 조건이 작성 중 바뀌었습니다. 변경된 조건을 선택한 뒤 다시 저장하세요.`);e.scheduleConflict={rowId:row.id,field:'managed',fields,latest:latest.conditions,managed:{...ref,path:entry.path,id:entry.id,source:entry.source,schedule:latest,value:latest.conditions,date:entry.path?.slice(5,15)||ref.date}};throw e;}
   }
 }
@@ -1998,6 +1999,7 @@ function scheduleTargetKey(value){return value?JSON.stringify([value.originId,va
 function progressSourceFields(row){return Object.fromEntries(PROGRESS_SOURCE_FIELDS.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,row[k]]));}
 function progressStable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
 function projectedWorkerAt(entry,date){let worker=entry.handoff?.originalWorker||entry.scheduleTarget?.worker||entry.target?.worker||entry.scheduleWorker||entry.worker;for(const h of entry.handoff?.changes||[])if(h.date<=date)worker=h.to;return worker;}
+function projectedAssignmentKey(entry,date){return progressStable([entry.handoff?.originalWorker||entry.scheduleTarget?.worker||entry.target?.worker||entry.worker,(entry.handoff?.changes||[]).filter(h=>h.date<=date).map(h=>[h.date,h.from,h.to])]);}
 function projectedHandoffText(entry,date=S.productionProgress?.asOf||S.date){const h=entry.handoff?.changes.filter(h=>h.date<=date).at(-1);return h?`${h.from} → ${h.to} · ${fmtMD(h.date)}부터 이어서 생산`:'';}
 function projectedAttributionText(entry,date=S.date){const owner=projectedWorkerAt(entry,date);return entry.scheduleTarget&&owner!==entry.worker?`${owner} 작업에 합산 · 오늘 생산: ${entry.worker}`:'';}
 function projectedScheduleAt(entry,date){const schedule=entry.schedule;if(!schedule||!entry.handoff||!Object.prototype.hasOwnProperty.call(entry.handoff,'originalDaily'))return schedule;let daily=entry.handoff.originalDaily;for(const h of entry.handoff.changes)if(h.date<=date&&Object.prototype.hasOwnProperty.call(h,'daily'))daily=h.daily;return{...schedule,conditions:{...schedule.conditions,daily}};}
@@ -3100,7 +3102,7 @@ function updateScheduleTarget(el){
   select.innerHTML='<option value="">'+(state.ambiguous?'어느 작업에 더할지 선택하세요':'연결된 생산 작업 없음')+'</option>'+items.map((t,i)=>`<option value="${i+1}">${esc(projectedWorkerAt(t,S.date))} · ${esc((t.schedule?.conditions.machines||[]).map(m=>m.name).join(' / ')||t.product)}${t.start?' · '+fmtMD(t.start)+' 시작':''}</option>`).join('');
   const selected=state.target?items.findIndex(t=>scheduleTargetKey(t.target)===scheduleTargetKey(state.target)):-1;select.value=selected<0?'':String(selected+1);select.disabled=items.length<=1||!!previous?.scheduleTarget;select.closest('label').hidden=select.disabled;
   const owner=descriptor?projectedWorkerAt(descriptor,S.date):state.target?.worker;
-  note.textContent=owner?`${owner} 작업에 합산 · 오늘 생산: ${worker||'작업자 선택'}${!descriptor||S.productionProgressMode!=='ready'?' · 연결을 다시 확인한 뒤 반영됩니다.':''}`:state.ambiguous?'같은 품목의 작업이 여러 개입니다. 반영할 작업을 선택하세요.':S.productionProgressMode==='ready'?'진행 중인 연결 작업이 없습니다. 새로 시작하면 새 계획 시작을 선택하세요.':'관리 작업을 확인하지 못했습니다. 일보는 실제 작업자로 보관하며 관리 연결 확인 뒤 반영됩니다.';
+  note.textContent=owner===worker&&descriptor?.handoff&&S.productionProgressMode==='ready'?projectedHandoffText(descriptor,S.date)||`${owner} 담당 작업 · 기존 누적에 이어서 반영`:owner?`${owner} 작업에 합산 · 오늘 생산: ${worker||'작업자 선택'}${!descriptor||S.productionProgressMode!=='ready'?' · 연결을 다시 확인한 뒤 반영됩니다.':''}`:state.ambiguous?'같은 품목의 작업이 여러 개입니다. 반영할 작업을 선택하세요.':S.productionProgressMode==='ready'?'진행 중인 연결 작업이 없습니다. 새로 시작하면 새 계획 시작을 선택하세요.':'관리 작업을 확인하지 못했습니다. 일보는 실제 작업자로 보관하며 관리 연결 확인 뒤 반영됩니다.';
   select.onchange=()=>{const item=items[Number(select.value)-1];state.target=item?.target||null;state.changed=true;state.ambiguous=!state.target&&items.length>1;scheduleManagedForms.delete(el);scheduleTargetForms.set(el,state);updateProdProg(el);saveDraft();};
 }
 function collectScheduleTarget(el){
@@ -3111,7 +3113,7 @@ function collectScheduleTarget(el){
 function selectedTargetReference(el){
   const target=scheduleTargetForms.get(el)?.target;if(!target||S.productionProgressMode!=='ready'||S.offline||driver.offline)return null;
   const descriptor=scheduleTargetDescriptor(target);if(!descriptor||!descriptor.schedule||descriptor.start>S.date)return null;const schedule=projectedScheduleAt(descriptor,S.date);
-  return{value:schedule.conditions,date:S.date,managed:true,context:scheduleFormContext(el),schedule,target:descriptor.target,worker:projectedWorkerAt(descriptor,S.date),assignmentDate:S.date,handoffText:descriptor.handoff?projectedHandoffText(descriptor,S.date):'',handoffLocked:!!descriptor.handoff,targetRevision:descriptor.revision};
+  return{value:schedule.conditions,date:S.date,managed:true,context:scheduleFormContext(el),schedule,target:descriptor.target,worker:projectedWorkerAt(descriptor,S.date),assignmentDate:S.date,assignmentKey:projectedAssignmentKey(descriptor,S.date),handoffText:descriptor.handoff?projectedHandoffText(descriptor,S.date):'',handoffLocked:!!descriptor.handoff,targetRevision:descriptor.revision};
 }
 function managedScheduleReference(el){
   const targetReference=selectedTargetReference(el);if(targetReference)return targetReference;
@@ -3120,13 +3122,13 @@ function managedScheduleReference(el){
   const worker=$('#fWorker').value.trim(),product=el.querySelector('.pb-product').value,previous=S.rows.find(r=>r.id===el.dataset.rid),starting=el.querySelector('.pb-planmode').value==='start'||el.querySelector('.pb-plan').value.trim()!=='';
   if(!product||previous&&(previous.worker!==worker||fieldProductIdentity(previous)!==fieldProductIdentity(product))||starting&&(!previous||el.dataset.planModeChanged==='1'||!(Number(previous.plan)>0)||String(previous.plan)!==el.querySelector('.pb-plan').value.trim()))return null;
   let row=previous,date=S.date;
-  if(!row){const active=knownManagedRuns(product,worker).filter(run=>!run.managed.complete&&!run.managed.warning&&run.managed.schedule&&projectedWorkerAt(run.managed,S.date)===worker),transferred=active.filter(run=>run.managed.handoff);if(transferred.length===1&&active.length===1){const entry=transferred[0].managed,schedule=projectedScheduleAt(entry,S.date);if(schedule.start<=S.date)return{value:schedule.conditions,date:entry.path.slice(5,15),managed:true,context:scheduleFormContext(el),path:entry.path,id:entry.id,source:entry.source,schedule,worker,assignmentDate:S.date,handoffText:projectedHandoffText(entry,S.date),handoffLocked:!!entry.handoff};}else if(transferred.length)return null;}
+  if(!row){const active=knownManagedRuns(product,worker).filter(run=>!run.managed.complete&&!run.managed.warning&&run.managed.schedule&&projectedWorkerAt(run.managed,S.date)===worker),transferred=active.filter(run=>run.managed.handoff);if(transferred.length===1&&active.length===1){const entry=transferred[0].managed,schedule=projectedScheduleAt(entry,S.date);if(schedule.start<=S.date)return{value:schedule.conditions,date:entry.path.slice(5,15),managed:true,context:scheduleFormContext(el),path:entry.path,id:entry.id,source:entry.source,schedule,worker,assignmentDate:S.date,assignmentKey:projectedAssignmentKey(entry,S.date),handoffText:projectedHandoffText(entry,S.date),handoffLocked:!!entry.handoff};}else if(transferred.length)return null;}
   if(!row){const progress=S.progress,key=progress?.byWorkerProduct?.[JSON.stringify([worker,fieldProductName(product)])],phase=progress?.phases?.[key];if(!validLocalProgress(progress)||!phase||phase.ambiguous||phase.end||phase.worker!==worker||fieldProductIdentity(phase.product)!==fieldProductIdentity(product))return null;
     const refs=Object.entries(progress.byRecord||{}).filter(([id,r])=>id.slice(0,10)<=S.date&&r.phase===key).sort((a,b)=>b[0].localeCompare(a[0]));
     for(const[id,ref]of refs){const ds=id.slice(0,10),rows=ds===S.rowsDate?S.rows:dayCache[ds]||S.progressDays?.[ds],source=Array.isArray(rows)?rows.find(r=>r.id===id.slice(11)):null;if(source&&progressStable(ref.source)===progressStable(progressSourceFields(source))){row=source;date=ds;break;}}if(!row)return null;
   }
   const run=recordProjectedProgress(row,date),entry=run?.managed,schedule=entry&&projectedScheduleAt(entry,S.date);if(!schedule||entry.warning||!previous&&entry.complete||schedule.start>S.date)return null;
-  return{value:schedule.conditions,date:entry.path.slice(5,15),managed:true,context:scheduleFormContext(el),path:entry.path,id:entry.id,source:entry.source,schedule,worker,assignmentDate:S.date,handoffText:projectedHandoffText(entry,S.date),handoffLocked:!!entry.handoff};
+  return{value:schedule.conditions,date:entry.path.slice(5,15),managed:true,context:scheduleFormContext(el),path:entry.path,id:entry.id,source:entry.source,schedule,worker,assignmentDate:S.date,assignmentKey:projectedAssignmentKey(entry,S.date),handoffText:projectedHandoffText(entry,S.date),handoffLocked:!!entry.handoff};
 }
 function updateHandoffScheduleLock(el,reference=null){
   const previous=S.rows.find(r=>r.id===el.dataset.rid),worker=$('#fWorker').value.trim(),product=el.querySelector('.pb-product').value,starting=el.querySelector('.pb-planmode').value==='start'&&(!previous||el.dataset.planModeChanged==='1');
@@ -3270,7 +3272,7 @@ function collectScheduleEdit(el,payload){
   const fields=payload?.scheduleConditions?changedScheduleFields(el,payload.scheduleConditions):[];
   const beforeActuals=machineActualBaselines.get(el)||{present:false},guardActuals=Array.isArray(beforeActuals.value);if(Object.prototype.hasOwnProperty.call(payload||{},'machineActuals'))fields.push('machineActuals');
   const targetState=scheduleTargetForms.get(el),guardTarget=!!targetState?.before?.present||Object.prototype.hasOwnProperty.call(payload||{},'scheduleTarget');
-  const managed=scheduleManagedForms.get(el);return fields.length||guardActuals||guardTarget||discard?{schema:1,...(guardTarget?{guardTarget:true,targetBefore:targetState?.before||{present:false}}:{}),before:scheduleFormOriginals.get(el)||null,fields,...(fields.some(k=>k!=='machineActuals')&&managed?{managed}:{}),...(discard?{discard:true}:{}),...(guardActuals||fields.includes('machineActuals')?{beforeActuals,guardActuals}:{}),...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
+  const managed=scheduleManagedForms.get(el);return fields.length||guardActuals||guardTarget||managed?.handoffLocked||discard?{schema:1,...(guardTarget?{guardTarget:true,targetBefore:targetState?.before||{present:false}}:{}),before:scheduleFormOriginals.get(el)||null,fields,...((fields.some(k=>k!=='machineActuals')||guardTarget||managed?.handoffLocked)&&managed?{managed}:{}),...(discard?{discard:true}:{}),...(guardActuals||fields.includes('machineActuals')?{beforeActuals,guardActuals}:{}),...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
 }
 function addBlock(row){
   const el = document.createElement('div'); el.className = 'pb';
@@ -4847,7 +4849,7 @@ function init(){
   /* 숫자·기호 칸은 포커스 시 전체 선택 — '12'가 '1215'로 덧붙거나 '○'가 '15○'로 남는 오입력 방지 */
   $('#entryOv').addEventListener('focusin', e => {
     const t = e.target;
-    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-completion-stock, .pb-scrap, .pb-defqty, .pb-gasa-custom')) requestAnimationFrame(() => { try{ t.select(); }catch(x){} });
+    if(t && t.matches && t.matches('#fHours, .pb-prod, .pb-plan, .pb-completion-stock, .pb-scrap, .pb-defqty, .pb-gasa-custom')) requestAnimationFrame(() => { if(document.activeElement!==t||!t.isConnected)return;try{ t.select(); }catch(x){} });
   });
   /* 자정을 넘겨도 켜 둔 화면(관리자 PC): 날짜 표시·미작성 카드 갱신 */
   let lastToday = todayStr();
