@@ -355,9 +355,9 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 .pgSurface .pgCumulativeTrack .pgCumulativeNumber{align-self:center;margin:0}
 .pgSurface .pgCumulativeTrack .pgCumulativeNumber.pgCumulativeStart{box-shadow:inset 2px 0 #417795;background:#edf4f8}
 .pgCumulativeRunLabels{position:absolute;inset:0;pointer-events:none;z-index:1}
-.pgSurface button.pgCumulativeRunLabel,.pgSurface button.pgCumulativeAxisName{display:block;min-width:0;min-height:0!important;margin:0;padding:0 4px;border:0;border-radius:2px;box-shadow:none;background:#edf4f8;color:#244e69;font-size:11px;font-weight:600;line-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;pointer-events:auto}
+.pgSurface button.pgCumulativeRunLabel,.pgSurface button.pgCumulativeAxisName{display:block;min-width:0;min-height:0!important;margin:0;padding:0 4px;border:0;border-radius:2px;box-shadow:none;background:#edf4f8;color:#7b365d;font-size:11px;font-weight:600;line-height:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;pointer-events:auto}
 .pgSurface button.pgCumulativeRunLabel{position:absolute;text-align:right}
-.pgSurface button.pgCumulativeRunLabel:hover,.pgSurface button.pgCumulativeAxisName:hover{background:#dcebf5}
+body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorkspace .pgSurface button.pgCumulativeAxisName:hover{background:#dcebf5;color:#7b365d}
 .pgSurface button.pgCumulativeRunLabel:focus-visible,.pgSurface button.pgCumulativeAxisName:focus-visible{outline:2px solid #276ba3;outline-offset:-2px}
 .pgCumulativeLabel .pgCumulativeAxisNames{position:absolute;inset:0 0 0 45px;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--pg-cumulative-rows,22px);align-content:start;border-left:1px solid #c4d6e3}
 .pgSurface button.pgCumulativeAxisName{width:100%;height:100%;text-align:right;padding:0 3px;background:#f7fafc}
@@ -419,6 +419,28 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 
 .pgFocused #pgSelectionConditions{display:none}
 
+/* Selection changes content, never the timeline's position or available height. */
+.pgSurface #pgSelectionInfo{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto auto;align-items:center;gap:6px;padding:4px 6px;margin:4px 0;height:48px;min-height:48px;box-sizing:border-box}
+.pgSurface #pgSelectionText{display:block;min-width:0;height:32px;max-height:32px;line-height:16px;overflow:auto;overflow-wrap:anywhere;overscroll-behavior:contain}
+.pgSurface #pgSelectionInfo>.pgSelectionEdit{display:block!important}
+.pgSurface #pgSelectionInfo>#pgSelectionConditions{display:block!important}
+.pgSurface #pgSelectionInfo>button{min-width:94px;max-width:140px;height:32px;min-height:32px;max-height:32px;line-height:14px;white-space:normal;padding:2px 6px}
+.pgSurface #pgSelectionInfo>.pgSelectionNew{display:none}
+.pgSurface #pgSelectionInfo.pgSelectionEmpty{background:#f5f7fa;border-color:#d6dfe8}
+.pgSurface #pgSelectionInfo.pgSelectionEmpty #pgSelectionText{color:#52677a}
+@media screen and (max-width:720px),screen and (pointer:coarse){
+ body.sheetWorkspace #planGridSurface .pgMobileActions{display:none!important}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:32px 44px;gap:4px;padding:4px;margin:4px 0;height:90px;min-height:90px}
+ body.sheetWorkspace #planGridSurface #pgSelectionText{grid-column:1/-1;height:32px;max-height:32px;line-height:16px;font-size:11px;overflow:auto}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>button{min-width:0!important;max-width:none;width:100%;height:44px;min-height:44px!important;max-height:44px;font-size:11px;line-height:15px;padding:3px}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>.pgSelectionNew{display:block}
+}
+@media print{.pgSurface #pgSelectionInfo{display:none!important}}
+
+@media screen and (max-width:720px),screen and (pointer:coarse){body.sheetWorkspace #planGridSurface #pgSelectionInfo .pgButtonFull{display:none}body.sheetWorkspace #planGridSurface #pgSelectionInfo .pgButtonShort{display:inline}}
+
+.pgSurface #pgSelectionInfo>button[hidden]{display:none!important}
+
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
 .pgDateHead .pgDateSelect.pgMonthStart{border-left:2px solid #839eaf}
@@ -432,7 +454,7 @@ body.sheetWorkspace .pgSurface .pgWorkerChoices input[type=checkbox]{flex:0 0 16
 .pgTimeline .pgDateSelect.pgColumnSelected::after{border-top:2px solid #0780b5;border-bottom:2px solid #0780b5}
 .pgDateHead .pgAxisLabel.pgDateSelectionLabel{display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:center;align-items:center;gap:2px 4px;padding:3px 6px}
 .pgDateSelectionLabel>b{grid-column:1;font-size:.7rem}
-.pgDateHead .pgDateSelectionLabel>[data-pg-date-selection]{grid-column:1;font-size:.6rem;line-height:1.2;white-space:normal;color:#086792;overflow-wrap:anywhere}
+.pgDateHead .pgDateSelectionLabel>[data-pg-date-selection]{grid-column:1;font-size:.6rem;line-height:1.2;white-space:normal;color:#086792;overflow-wrap:anywhere;height:2.4em;max-height:2.4em;overflow:hidden}
 .pgDateSelectionLabel>[data-pg-clear-date]{grid-column:2;grid-row:1/span 2;min-height:25px;padding:3px 4px;border:1px solid #90b8cb;border-radius:4px;background:#fff;color:#075e8a;font-size:.6rem}
 .pgDateSelectionLabel>[data-pg-clear-date][hidden]{display:block;visibility:hidden;pointer-events:none}
 .pgSurface .pgDateSelect:focus-visible{outline:2px solid #075e8a;outline-offset:-3px;z-index:5}
@@ -4180,7 +4202,7 @@ function pgSpec(rows){return{
  ],
  inspect:pgInspect,commit:pgCommit,reconcileDraft:pgReconcileCalendarDraft,rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
  summary:d=>`작업 ${pgKeep(d).length}건 · 휴일 변경 ${pgCalendarChanges(d.baseCalendar||{},d.calendar||{}).length}칸 · 누적·잔여·종료·건조일은 생산기록과 작업조건에서 계산`,
- onSelect:(row,g)=>{pgView().selected=row.id;pgView().selectionActive=true;pgView().timelineSelection=null;pgDetail(g);pgInlineManual(g);pgMarkSelection(g)},
+ onSelect:(row,g)=>{pgView().selected=row.id;pgView().selectionActive=true;pgView().timelineSelection=g._pgTimelineChoice||null;pgDetail(g);pgInlineManual(g);pgMarkSelection(g)},
  onChange:g=>pgRefresh(g)
 }}
 scheduleView=function(){
@@ -4199,7 +4221,7 @@ scheduleView=function(){
  </div>
  <div class="pgLegend"><span><i class="pgSwatch pgRunning"></i>생산 중</span><span><i class="pgSwatch pgWaiting"></i>미착수</span><span><i class="pgSwatch pgComplete"></i>생산 종료</span><span><i class="pgSwatch pgManual"></i>미착수 예약</span><span><i class="pgSwatch pgFactory"></i>공장 휴무</span><span><i class="pgDryLegend">호</i>생산 종료 후 건조</span><span><i class="pgDryLegend projected">호</i>예상 건조</span><span style="color:#bd2525">→ 같은 호기 B/R 건조 짝</span><span class="pgHandoffLegend"><i>← →</i>작업 넘김</span><span><i class="pgSwatch pgOtherWork"></i>다른 업무</span></div>
  <div id="pgDrySearchPanel" class="pgDrySearch" role="search" aria-label="건조일 호기 찾기"><label for="pgDryQuery">건조 호기</label><input type="search" id="pgDryQuery" placeholder="예: 13호" title="Enter를 다시 누르면 다음 결과로 이동하고, 마지막 다음에는 처음으로 돌아갑니다." value="${esc(v.dryQuery||'')}" maxlength="40" autocomplete="off" enterkeyhint="search" aria-describedby="pgDrySearchStatus"><button data-pg-command="dry-find" title="가장 최근 건조일부터 찾기">찾기</button><button data-pg-command="dry-newer" aria-label="더 최근 건조 결과" title="더 최근 결과" disabled>←</button><button data-pg-command="dry-older" aria-label="이전 건조 결과" title="이전 날짜의 결과" disabled>→</button><span id="pgDrySearchStatus" role="status" aria-live="polite">현재 표 · 건조일 최신순 (예상 포함)</span></div>
- <div id="pgSelectionInfo" class="pgSelectionInfo" role="status" hidden><span id="pgSelectionText"></span><button class="pgSelectionEdit" data-pg-command="edit-selected">선택 일정 수정</button><button data-pg-command="job-conditions" id="pgSelectionConditions">호기·하루 조 수정</button><button data-pg-command="handoff" class="pgHandoffOpenButton" disabled>작업 넘기기</button><button data-pg-command="clear-selection">선택 해제 · Esc</button></div><div class="pgMobileActions"><span id="pgMobileSelected" role="status">막대를 누르면 작업이 선택됩니다.</span><div><button data-pg-command="edit-selected" id="pgMobileEdit" disabled>선택 일정 수정</button><button data-pg-command="handoff" class="pgHandoffOpenButton" disabled>작업 넘기기</button><button data-pg-command="mobile-new">+ 수기 일정</button></div></div><div id="pgTimeline" class="pgTimeline" tabindex="0" aria-label="작업자별 생산일정, 가로로 이동해 다음달 확인"></div><div id="pgDryDateHint" class="pgDryDateHint" role="status" hidden></div><dialog id="pgCumulativeInfoDialog" class="pgCumulativeInfoDialog" aria-labelledby="pgCumulativeInfoTitle"></dialog><div id="pgScrollDock" class="pgScrollDock" hidden aria-label="일정표 가로 이동"><span>좌우 이동</span><button type="button" data-pg-command="scroll-left" aria-label="일정표 왼쪽으로 이동">◀</button><div id="pgScrollTrack" class="pgScrollTrack" tabindex="0" role="region" aria-label="일정표 가로 스크롤"><div id="pgScrollSizer" class="pgScrollSizer"></div></div><button type="button" data-pg-command="scroll-right" aria-label="일정표 오른쪽으로 이동">▶</button></div><div id="pgManualInline" class="pgManualInline" aria-label="수기 계획기간 직접 편집"></div><div id="pgWarnings"></div></section>
+ <div id="pgSelectionInfo" class="pgSelectionInfo" aria-label="선택 일정 도구"><span id="pgSelectionText" tabindex="0" role="status" aria-label="선택 일정 안내">기간바나 건조 호기를 누르면 작업과 날짜를 확인할 수 있습니다.</span><button class="pgSelectionEdit" id="pgMobileEdit" data-pg-command="edit-selected">선택 일정 수정</button><button data-pg-command="job-conditions" id="pgSelectionConditions">호기·하루 조 수정</button><button data-pg-command="handoff" class="pgHandoffOpenButton" disabled>작업 넘기기</button><button data-pg-command="clear-selection" aria-label="선택 해제 · Esc">선택 해제</button><button data-pg-command="mobile-new" class="pgSelectionNew">+ 수기 일정</button></div><div class="pgMobileActions"><span id="pgMobileSelected" role="status">막대를 누르면 작업이 선택됩니다.</span></div><div id="pgTimeline" class="pgTimeline" tabindex="0" aria-label="작업자별 생산일정, 가로로 이동해 다음달 확인"></div><div id="pgDryDateHint" class="pgDryDateHint" role="status" hidden></div><dialog id="pgCumulativeInfoDialog" class="pgCumulativeInfoDialog" aria-labelledby="pgCumulativeInfoTitle"></dialog><div id="pgScrollDock" class="pgScrollDock" hidden aria-label="일정표 가로 이동"><span>좌우 이동</span><button type="button" data-pg-command="scroll-left" aria-label="일정표 왼쪽으로 이동">◀</button><div id="pgScrollTrack" class="pgScrollTrack" tabindex="0" role="region" aria-label="일정표 가로 스크롤"><div id="pgScrollSizer" class="pgScrollSizer"></div></div><button type="button" data-pg-command="scroll-right" aria-label="일정표 오른쪽으로 이동">▶</button></div><div id="pgManualInline" class="pgManualInline" aria-label="수기 계획기간 직접 편집"></div><div id="pgWarnings"></div></section>
  ${form}<section class="card pgDetail" id="pgDetail" aria-label="선택 작업의 호기와 기간"></section>
  <p class="footerNote">생산실적과 시작 계획수량은 생산 입력 원장을 사용합니다. 자동 종료·건조일은 직접 수정하지 않고 하루 조수·호기 배정·휴일로 조정합니다. ${m().closed?'마감된 자료는 보관된 결과로 표시합니다.':''}</p></div>`;
 };
@@ -4330,8 +4352,10 @@ function pgChooseTimeline(g,element,{scroll=false,toggleDate=false}={}){
  if(!marker&&!period)return false;
  const sameMarker=marker&&v.timelineSelection?.kind==='dry'&&v.timelineSelection.key===dryKey;
  const id=marker?.jobId||period?.jobId,editable=pgKeep(g.draft).some(r=>r.id===id);
- if(editable)g.select(id);else{v.selected='';g.selected='';pgDetail(g);pgInlineManual(g)}
- v.selectionActive=true;v.timelineSelection=marker?{kind:'dry',key:dryKey}:{kind:'period',key:periodKey};if(marker)pgChooseDate(marker.dry,timeline,{toggle:toggleDate&&sameMarker});pgMarkSelection(g);
+ v.selectionActive=true;v.timelineSelection=marker?{kind:'dry',key:dryKey}:{kind:'period',key:periodKey};
+ if(marker)pgChooseDate(marker.dry,timeline,{toggle:toggleDate&&sameMarker});
+ if(editable){g._pgTimelineChoice=v.timelineSelection;try{g.select(id)}finally{delete g._pgTimelineChoice}}else{v.selected='';g.selected='';pgDetail(g);pgInlineManual(g)}
+ pgMarkSelection(g);
  const bar=scroll?timeline.querySelector('.pgBar.pgSelected'):null;bar?.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'});return true;
 }
 // Search only the drying marks actually displayed; never change filters or source dates.
@@ -4578,20 +4602,20 @@ function pgMarkSelection(g){
  for(const b of timeline?.querySelectorAll('.pgBar')||[]){const active=keys.has(b.dataset.pgPeriodKey);b.classList.toggle('pgSelected',active);b.setAttribute('aria-pressed',String(active))}
  for(const b of timeline?.querySelectorAll('.pgDryMarker')||[]){const active=related.has(b.dataset.pgDryKey)||b.dataset.pgDryKey===choice?.key;b.classList.toggle('pgSelected',active);b.classList.toggle('pgDryPicked',b.dataset.pgDryKey===choice?.key);b.setAttribute('aria-pressed',String(active))}
  const visible=!!timeline?.querySelector('.pgBar.pgSelected');timeline?.classList.toggle('pgHasPeriodSelection',visible);
- const info=$('#pgSelectionInfo'),text=$('#pgSelectionText');if(info&&text){info.hidden=!keys.size&&!choice;const spans=selected.map(r=>r.start+' ~ '+r.end).filter((value,index,all)=>all.indexOf(value)===index);text.textContent=marker?marker.worker+' · '+(marker.product||'품명 미연결')+' '+marker.machine+' · 건조 '+marker.dry+' → '+(spans.length?'생산 '+spans.join(' / ')+(visible?'':' · 표 범위 밖'):'원본에서 연결할 생산기간을 찾지 못했습니다.'):selected.length?selected[0].worker+' · '+selected[0].barText+' · '+pgPeriodPresentation(selected[0]).label+' · '+pgPeriodPresentation(selected[0]).progress+' · '+spans.join(' / '):'현재 표시 범위에 선택한 생산기간이 없습니다.';const conflicts=selected.flatMap(r=>r.caseConflicts||[]);if(conflicts.length)text.textContent+=' · 케이스 중복: '+conflicts.slice(0,3).map(r=>r.product+' / '+r.worker+' / '+r.start+(r.end!==r.start?' ~ '+r.end:'')).join(' ; ')+(conflicts.length>3?' 외 '+(conflicts.length-3)+'건':'')}
+ const info=$('#pgSelectionInfo'),text=$('#pgSelectionText');if(info&&text){info.hidden=false;info.classList.toggle('pgSelectionEmpty',!keys.size&&!choice);const spans=selected.map(r=>r.start+' ~ '+r.end).filter((value,index,all)=>all.indexOf(value)===index);text.textContent=marker?marker.worker+' · '+(marker.product||'품명 미연결')+' '+marker.machine+' · 건조 '+marker.dry+' → '+(spans.length?'생산 '+spans.join(' / ')+(visible?'':' · 표 범위 밖'):'원본에서 연결할 생산기간을 찾지 못했습니다.'):selected.length?selected[0].worker+' · '+selected[0].barText+' · '+pgPeriodPresentation(selected[0]).label+' · '+pgPeriodPresentation(selected[0]).progress+' · '+spans.join(' / '):v.selectionActive?'현재 표시 범위에 선택한 생산기간이 없습니다.':'기간바나 건조 호기를 누르면 작업과 날짜를 확인할 수 있습니다.';const conflicts=selected.flatMap(r=>r.caseConflicts||[]);if(conflicts.length)text.textContent+=' · 케이스 중복: '+conflicts.slice(0,3).map(r=>r.product+' / '+r.worker+' / '+r.start+(r.end!==r.start?' ~ '+r.end:'')).join(' ; ')+(conflicts.length>3?' 외 '+(conflicts.length-3)+'건':'')}
  if(text&&!marker&&selected.length>1&&selected.some(p=>p.explicitRouting)){text.textContent=selected[0].worker+' · '+selected.map(p=>p.barText+' · '+pgPeriodPresentation(p).label+' · '+pgPeriodPresentation(p).progress+' · '+p.start+' ~ '+p.end).join(' / ')}
  if(text&&!marker&&selected.length)text.textContent=pgSelectionNoteText(selected,text.textContent);
  if(typeof pgSyncPairHighlights==='function')pgSyncPairHighlights(timeline);
  if(typeof pgHandoffSync==='function')pgHandoffSync(g);
- pgSyncDrySearch();const row=pgKeep(g.draft).find(r=>r.id===v.selected),conditions=$('#pgSelectionConditions');if(conditions){conditions.hidden=!row;conditions.textContent=g.locked()?'호기·작업조건 확인':'호기·하루 조 수정'}const edit=$('.pgSelectionEdit');if(edit){edit.hidden=!row;edit.disabled=!row;edit.textContent=$('#pgMobileEdit')?.textContent||(g.locked()?'작업조건 확인':'선택 일정 수정')}if(row&&g.selected!==row.id){g.selected=row.id;g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',el.dataset.row===row.id))}else if(!row)g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',false));
- const mobileLabel=$('#pgMobileSelected');if(mobileLabel)mobileLabel.textContent=pgMobileSelectionText(row);pgSyncDryDateHint();
+ pgSyncDrySearch();const row=pgKeep(g.draft).find(r=>r.id===v.selected),conditions=$('#pgSelectionConditions');if(conditions){conditions.hidden=false;conditions.disabled=!row;pgButtonLabel(conditions,g.locked()?'호기·작업조건 확인':'호기·하루 조 수정','작업조건')}const edit=$('.pgSelectionEdit');if(edit){edit.hidden=false;edit.disabled=!row;pgButtonLabel(edit,edit.getAttribute('aria-label')||(g.locked()?'작업조건 확인':'선택 일정 수정'),g.locked()?'조건 확인':'일정 수정')}if(row&&g.selected!==row.id){g.selected=row.id;g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',el.dataset.row===row.id))}else if(!row)g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',false));
+ if(text){text.title=text.textContent;text.scrollTop=0}const clear=info?.querySelector('[data-pg-command="clear-selection"]');if(clear)clear.disabled=!v.selectionActive&&!choice;const mobileLabel=$('#pgMobileSelected');if(mobileLabel)mobileLabel.textContent=pgMobileSelectionText(row);pgSyncDryDateHint();
 }
 function pgSaveState(g){const {n:count,info}=g.status(),invalid=info?.ok===false;return{count,disabled:g.locked(),label:g.loading?'초안 확인 중…':g.saving?'저장 중…':g.spec.readonly?'마감 · 조회 전용':invalid?'입력 확인 · '+(info.errors?.[0]?.message||'작업조건을 확인하세요.'):`변경 ${count}건${g.dirty&&count?' · 저장 전':''}`}}
 function pgMobileSelectionText(row){
  const choice=pgView().timelineSelection,marker=choice?.kind==='dry'?($('#pgTimeline')?._pgDryRows||[]).find(r=>pgDryKey(r)===choice.key):null;
  return marker?'건조 '+marker.dry+' · '+marker.machine+' · '+marker.worker+' · '+(marker.product||'품명 미연결'):row?(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(row):row.worker)+' · '+row.product+' · '+(pgInputDate(row,'start')||'시작일 미입력'):'막대를 누르면 작업이 선택됩니다.';
 }
-function pgMobileSelection(g,cachedJobs=null){if(typeof pgHandoffSync==='function')pgHandoffSync(g);const selected=pgSelectedRow(g),row=selected&&(pgWorkerAllowed(selected.worker)||pgWorkerAllowed(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(selected):selected.worker))?selected:null,label=$('#pgMobileSelected'),button=$('#pgMobileEdit');if(label)label.textContent=pgMobileSelectionText(row);if(button){const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row),cachedJobs):null;button.disabled=!row;button.textContent=g.locked()?'작업조건 확인':access?.ok?'선택 일정 수정':'호기·하루 조 수정';button.title=access?.ok?'':row?'실적 날짜를 유지하며 호기와 하루 조수를 확인합니다.':''}}
+function pgMobileSelection(g,cachedJobs=null){if(typeof pgHandoffSync==='function')pgHandoffSync(g);const selected=pgSelectedRow(g),row=selected&&(pgWorkerAllowed(selected.worker)||pgWorkerAllowed(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(selected):selected.worker))?selected:null,label=$('#pgMobileSelected'),button=$('#pgMobileEdit');if(label)label.textContent=pgMobileSelectionText(row);if(button){const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row),cachedJobs):null;button.disabled=!row;pgButtonLabel(button,g.locked()?'작업조건 확인':access?.ok?'선택 일정 수정':'호기·하루 조 수정',g.locked()?'조건 확인':'일정 수정');button.title=access?.ok?'':row?'실적 날짜를 유지하며 호기와 하루 조수를 확인합니다.':''}}
 function pgShowJobConditions(g){
  const row=pgSelectedRow(g);if(!row)return false;if(pgView().focus)pgSetFocus(false);pgDetail(g);const target=$('#pgDetail');target?.scrollIntoView({block:'start',behavior:'smooth'});const input=target?.querySelector('[data-pg-job-field="daily"]');if(input&&!input.disabled)input.focus({preventScroll:true});return true;
 }
