@@ -395,12 +395,17 @@ textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
   .roster-person .quiet-btn{font-size:13px}.roster-person small{display:block;color:var(--ink-dim)}
   #workerDetails{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
   #workerDetails>summary{cursor:pointer;min-height:30px;font-size:15px}
-  #quickProducts{margin:18px 0 10px}#quickProducts>h3{font-size:16px;margin:0 0 6px}
-  .quick-hint{font-size:13px;color:var(--ink-dim);margin:4px 0 10px}
-  .quick-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;align-items:center;gap:10px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0}
-  .quick-open{text-align:left;min-width:0;min-height:50px;padding:0}.quick-open b{display:block;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;color:var(--ink-dim);font-size:12px;margin-top:4px}
-  .quick-qty input{width:100%;height:48px;border:1.5px solid var(--line-in);border-radius:10px;text-align:center;background:var(--surface);font-size:20px;font-weight:700}
-  .quick-qty span{display:block;font-size:12px;color:var(--ink-dim);text-align:center;margin-bottom:3px}
+  #quickProducts{margin:18px 0 10px}
+  .quick-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px}.quick-head h3{font-size:17px;margin:0}
+  .quick-total{display:inline-flex;align-items:center;min-height:34px;padding:5px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}.quick-total.warn{background:var(--warn-soft);color:var(--warn)}
+  .quick-hint{font-size:13px;color:var(--ink-dim);margin:4px 0 10px;line-height:1.45}
+  .quick-row{display:grid;grid-template-columns:minmax(0,1fr) 156px;align-items:center;gap:8px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0;min-width:0}
+  .quick-open{text-align:left;min-width:0;min-height:52px;padding:2px 0}.quick-open b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-dim);font-size:12px;margin-top:4px}
+  .quick-control{min-width:0}.quick-qty-label{display:block;font-size:12px;color:var(--ink-dim);text-align:center;margin-bottom:3px;white-space:nowrap}
+  .quick-stepper{display:grid;grid-template-columns:44px minmax(56px,1fr) 44px;gap:4px;min-width:0}
+  .quick-stepper button,.quick-stepper input{height:48px;min-width:44px;border:1.5px solid var(--line-in);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit}
+  .quick-stepper button{font-size:24px;font-weight:700;line-height:1}.quick-stepper input{width:100%;min-width:0;text-align:center;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  .quick-stepper button:active:not(:disabled){background:var(--accent-soft);color:var(--accent-ink)}.quick-stepper button:disabled{opacity:.42}.quick-row.quick-locked{background:var(--surface2)}.quick-row.quick-locked .quick-qty-label{color:var(--accent-ink);font-weight:700}
   .pb-toggle{min-height:44px;flex:1;text-align:left;padding:3px 0}.pb-toggle small{display:block;color:var(--ink-dim);font-weight:400;font-size:12px;margin-top:4px}
   #entryOv [hidden],.pb-body[hidden],#quickProducts[hidden]{display:none!important}
   .whead{flex-wrap:wrap}.whead .quiet-btn{margin-left:auto;font-size:13px}
@@ -2994,6 +2999,19 @@ function syncCompletionControls(el){
   const label=el.querySelector('.pb-completion-plan'),q=Number(el.dataset.productionPlanQty);
   label.hidden=!(end&&q>0);label.textContent=end&&q>0?`시작 계획 ${r2(q)}조를 보존합니다. 종료 표시와 실제 생산량은 따로 기록됩니다.`:'';
 }
+function setProductQuantity(el,value){
+  const input=el&&el.querySelector('.pb-prod');
+  if(!input||input.readOnly||input.disabled)return false;
+  input.value=String(value);
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  return true;
+}
+function stepProductQuantity(el,delta){
+  const input=el&&el.querySelector('.pb-prod');
+  if(!input||input.readOnly||input.disabled)return false;
+  const current=numOr(input.value,0)||0;
+  return setProductQuantity(el,Math.max(0,current+delta));
+}
 function syncQuickProducts(){
   const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
   box.hidden=S.entryMode==='case' || !els.length;
@@ -3001,24 +3019,31 @@ function syncQuickProducts(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<h3>제품별 생산량</h3><p class="quick-hint">수량을 모아서 입력하세요. 제품명을 누르면 계획·호기·검사 상세를 입력할 수 있습니다.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><label class="quick-qty"><span>생산량 (조)</span><input inputmode="numeric" aria-label="제품 ${i+1} 생산량"></label></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>오늘 생산량 입력</h3><output class="quick-total" aria-live="polite"></output></div><p class="quick-hint">− / + 버튼이나 가운데 숫자를 눌러 입력하세요. 품명을 누르면 검사·불량·호기 상세가 열립니다.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><div class="quick-control"><span class="quick-qty-label">생산량 (조)</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 생산량 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 생산량 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 생산량"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 생산량 1 늘리기">＋</button></div></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
-      row.querySelector('input').oninput=e=>{const inp=el.querySelector('.pb-prod');inp.value=e.target.value;inp.dispatchEvent(new Event('input',{bubbles:true}));};
+      row.querySelector('.quick-minus').onclick=()=>stepProductQuantity(el,-1);
+      row.querySelector('.quick-plus').onclick=()=>stepProductQuantity(el,1);
+      row.querySelector('input').oninput=e=>setProductQuantity(el,e.target.value);
       row.querySelector('input').addEventListener('focus',e=>e.target.select());
     });
   }
+  let total=0,invalid=false;
+  const rows=[...box.querySelectorAll('.quick-row')];
   els.forEach((el,i)=>{
-    const row=box.children[i+2], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input');
+    const row=rows[i], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input'),text=qty.value.trim().replace(/,/g,'');
     row.querySelector('b').textContent=p||`제품 ${i+1} 선택`;
     const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
     row.querySelector('small').textContent=manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
     if(document.activeElement!==input) input.value=qty.value;
-    input.placeholder=qty.placeholder;input.readOnly=qty.readOnly;input.title=qty.readOnly?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
+    const locked=qty.readOnly||qty.disabled;input.placeholder=qty.placeholder;input.readOnly=locked;input.title=locked?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
+    row.querySelector('.quick-qty-label').textContent=locked?'호기별 실적 합계':'생산량 (조)';row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
+    if(text){const value=Number(text);if(/^\d+(?:\.\d+)?$/.test(text)&&Number.isFinite(value))total+=value;else invalid=true;}
     el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
   });
+  const summary=box.querySelector('.quick-total');summary.textContent=`${els.length}개 품목 · 오늘 총 ${r2(total)}조${invalid?' · 수량 확인':''}`;summary.classList.toggle('warn',invalid);
 }
 const segSetB = (el,k,v) => el.querySelectorAll(`.seg[data-k="${k}"] button`).forEach(b=>{ const on = b.dataset.v===v; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); });
 const segGetB = (el,k) => { const b = el.querySelector(`.seg[data-k="${k}"] button.sel`); return b ? b.dataset.v : ''; };
@@ -3313,8 +3338,8 @@ function addBlock(row){
     const n = (e.target.closest('.stepper,.f-row,.gasa-custom') || e.target).nextElementSibling;
     if(n && n.classList.contains('f-err')) n.remove();
   });
-  el.querySelector('.pb-pm').onclick = () => { const i=el.querySelector('.pb-prod'); i.value = Math.max(0,(numOr(i.value,0)||0)-1); };
-  el.querySelector('.pb-pp').onclick = () => { const i=el.querySelector('.pb-prod'); i.value = (numOr(i.value,0)||0)+1; };
+  el.querySelector('.pb-pm').onclick = () => stepProductQuantity(el,-1);
+  el.querySelector('.pb-pp').onclick = () => stepProductQuantity(el,1);
   const planEl = el.querySelector('.pb-plan'), pz = el.querySelector('.pb-planzero');
   const applyPz = on => {
     if(on&&!el.dataset.productionPlanQty){
