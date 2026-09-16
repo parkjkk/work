@@ -4236,7 +4236,8 @@ function pgReconcileCalendarDraft(d){
  return d;
 }
 // Refresh the ledger under a draft without publishing that draft. Untouched
-// fields follow the remote state; edited fields keep their original conflict base.
+// fields follow the remote state; edited fields keep their original base so a
+// final save can distinguish user input from a newly loaded ledger value.
 function pgRefreshDraft(source,draft,key=month){
  const d=C.clone(draft),latest=pgRows(source,key),base=new Map(d.baseRows.map(r=>[r.id,r])),now=new Map(latest.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),rows=[],bases=[];
  if(base.size!==d.baseRows.length||now.size!==latest.length||new Set(d.rows.map(r=>r.id)).size!==d.rows.length)throw Error('작업 ID가 중복되어 최신 실적 받기를 보류했습니다.');
@@ -4252,6 +4253,18 @@ function pgRefreshDraft(source,draft,key=month){
  d.rows=rows;d.baseRows=bases;
  const oldCalendar=d.baseCalendar||pgCalendar(source),calendar=pgCalendarMerge(oldCalendar,d.calendar,pgCalendar(source));if(d.calendarEditUndo)d.calendarEditUndo=pgCalendarMerge(oldCalendar,d.calendarEditUndo,pgCalendar(source)).calendar;d.calendar=calendar.calendar;d.baseCalendar=calendar.baseline;
  if(pgEqual(d.scheduleAsOf,d.baseScheduleAsOf))d.scheduleAsOf=d.baseScheduleAsOf=source.months[key]?.scheduleAsOf||null;
+ return d;
+}
+// A schedule save is an explicit request to apply the fields that are editable
+// on this surface. Rebase those local values onto the newest job while keeping
+// identity, deletion, calendar and unknown-field conflicts protected.
+const pgCommitFields=new Set(['start','end','plan','daily','group','machines','note','manualSource','manualEndMode','duration','afterPrevious','routing','handoffs','stoppedAt']);
+function pgPrepareCommitDraft(source,draft,key=month){
+ const d=pgRefreshDraft(source,C.clone(draft),key),latest=pgRows(source,key),base=new Map(d.baseRows.map(r=>[r.id,r])),current=new Map(latest.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),identity=['product','worker','sourceRowId','originId','_ownerMonth'];
+ for(const local of d.rows){const original=base.get(local.id),remote=current.get(local.id);if(!original||!remote||deleted.has(local.id))continue;
+  if(identity.some(field=>!pgEqual(original[field],remote[field])))continue;
+  for(const field of pgCommitFields)if(!pgEqual(local[field],original[field])&&!pgEqual(remote[field],original[field])){if(Object.hasOwn(remote,field))original[field]=C.clone(remote[field]);else delete original[field]}
+ }
  return d;
 }
 function pgFresh(rows){if(P.captureSourceBaseline)P.captureSourceBaseline(state);return{baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0,calendar:pgCalendar(state),baseCalendar:pgCalendar(state),scheduleAsOf:m().scheduleAsOf||null,baseScheduleAsOf:m().scheduleAsOf||null}}
@@ -4369,11 +4382,11 @@ function pgCalendarChanges(base,next){
  const a=map(base),b=map(next),changed=[];for(const key of new Set([...a.keys(),...b.keys()]))if(!pgEqual(a.get(key)?.value,b.get(key)?.value))changed.push({key,date:(a.get(key)||b.get(key)).date});return changed;
 }
 function pgInspect(d){
- const errors=pgCalendarMerge(d.baseCalendar,d.calendar).conflicts.map(conflict=>({id:'',field:'calendar',message:pgCalendarConflictText(conflict)})),conflicts=[],base=new Map(d.baseRows.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),changedRows=d.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),all=changedRows.length||d.deleted.length?pgAllJobs(state):null,latest=all?pgRows(state,month,all):[];
- if(all)try{sheetApply(d,latest)}catch(e){conflicts.push(...(e.errors||[{id:'',field:'',message:e.message}]))}
- for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(d))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
+ const prepared=pgPrepareCommitDraft(state,d,month),errors=pgCalendarMerge(d.baseCalendar,d.calendar).conflicts.map(conflict=>({id:'',field:'calendar',message:pgCalendarConflictText(conflict)})),conflicts=[],base=new Map(prepared.baseRows.map(r=>[r.id,r])),deleted=new Set(prepared.deleted.map(r=>r.id)),changedRows=prepared.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),all=changedRows.length||prepared.deleted.length?pgAllJobs(state):null,latest=all?pgRows(state,month,all):[];
+ if(all)try{sheetApply(prepared,latest)}catch(e){conflicts.push(...(e.errors||[{id:'',field:'',message:e.message}]))}
+ for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(prepared))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
  errors.push(...conflicts);
- for(const entry of d.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
+ for(const entry of prepared.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
  const calendarChanges=pgCalendarChanges(d.baseCalendar||{},d.calendar||{});
  for(const changed of calendarChanges)if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
  for(const [id,message]of Object.entries(d.manualRateErrors||{}))if(!deleted.has(id)&&d.rows.some(r=>r.id===id))errors.push({id,field:'daily',message});
@@ -4385,10 +4398,9 @@ function pgInspect(d){
 async function pgCommit(d){
  if(m().closed)throw Error('마감월은 수정할 수 없습니다.');
  // A save may follow automatic actuals refresh or a restored device draft
- // without another render. Rebase untouched fields at the final boundary.
- // Fields changed both locally and remotely keep their old base so the real
- // same-field conflict check in sheetApply still blocks the save.
- d=pgRefreshDraft(state,C.clone(d),month);
+ // without another render. Apply explicit schedule edits over the newest job;
+ // protected identity, deletion, calendar and actual validation still block.
+ d=pgPrepareCommitDraft(state,d,month);
  const check=pgInspect(d);if(!check.ok){const e=Error(check.errors[0].message);e.errors=check.errors;throw e}
  const calChanged=!pgEqual(d.baseCalendar,d.calendar),basisChanged=!pgEqual(d.baseScheduleAsOf,d.scheduleAsOf);
  if(basisChanged&&!pgEqual(d.baseScheduleAsOf,m().scheduleAsOf||null))throw Error('편집 중 계산 기준일이 변경되었습니다. 초안을 보관하고 다시 확인해 주세요.');
