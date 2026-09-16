@@ -4250,18 +4250,18 @@ function pgReconcileCalendarDraft(d){
 // fields follow the remote state; edited fields keep their original base so a
 // final save can distinguish user input from a newly loaded ledger value.
 function pgRefreshDraft(source,draft,key=month){
- const d=C.clone(draft),latest=pgRows(source,key),base=new Map(d.baseRows.map(r=>[r.id,r])),now=new Map(latest.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),rows=[],bases=[];
+ const d=C.clone(draft),latest=pgRows(source,key),base=new Map(d.baseRows.map(r=>[r.id,r])),now=new Map(latest.map(r=>[r.id,r])),deleted=new Set(d.deleted.map(r=>r.id)),resolvedDeleted=new Set(),rows=[],bases=[];
  if(base.size!==d.baseRows.length||now.size!==latest.length||new Set(d.rows.map(r=>r.id)).size!==d.rows.length)throw Error('작업 ID가 중복되어 최신 실적 받기를 보류했습니다.');
  for(const local of d.rows){const original=base.get(local.id),remote=now.get(local.id);
   if(!original){rows.push(local);continue}
-  if(!remote){if(!pgEqual(local,original)||deleted.has(local.id)){rows.push(local);bases.push(original)}continue}
+  if(!remote){if(deleted.has(local.id)){resolvedDeleted.add(local.id);continue}if(!pgEqual(local,original)){rows.push(local);bases.push(original)}continue}
   const value=C.clone(local),baseline=C.clone(original),identityChanged=['product','worker','sourceRowId','originId','_ownerMonth'].some(k=>!pgEqual(original[k],remote[k]));
   if(identityChanged&&!pgEqual(local,original)){rows.push(value);bases.push(baseline);continue}
   if(!deleted.has(local.id))for(const field of new Set([...Object.keys(original),...Object.keys(local),...Object.keys(remote)]))if(pgEqual(local[field],original[field])){if(Object.hasOwn(remote,field)){value[field]=C.clone(remote[field]);baseline[field]=C.clone(remote[field])}else{delete value[field];delete baseline[field]}}
   rows.push(value);bases.push(baseline);
  }
  const seen=new Set(d.rows.map(r=>r.id));for(const remote of latest)if(!seen.has(remote.id)&&!base.has(remote.id)){rows.push(C.clone(remote));bases.push(C.clone(remote))}
- d.rows=rows;d.baseRows=bases;
+ d.rows=rows;d.baseRows=bases;if(resolvedDeleted.size)d.deleted=d.deleted.filter(entry=>!resolvedDeleted.has(entry.id));
  const oldCalendar=d.baseCalendar||pgCalendar(source),calendar=pgCalendarMerge(oldCalendar,d.calendar,pgCalendar(source));if(d.calendarEditUndo)d.calendarEditUndo=pgCalendarMerge(oldCalendar,d.calendarEditUndo,pgCalendar(source)).calendar;d.calendar=calendar.calendar;d.baseCalendar=calendar.baseline;
  if(pgEqual(d.scheduleAsOf,d.baseScheduleAsOf))d.scheduleAsOf=d.baseScheduleAsOf=source.months[key]?.scheduleAsOf||null;
  return d;
