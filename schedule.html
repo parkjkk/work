@@ -5291,7 +5291,11 @@ function pgDirectPaint(lightweight=false){
 function pgDirectOpenForm(){
  const session=pgDirectState.session,g=pgDirectState.g;if(!session)return;
  const creating=session.command.type==='create',original=creating?session.command:pgKeep(g.draft).find(r=>r.id===session.command.id),period=session.period||{start:session.command.start,end:session.command.end};
- session.form??={...C.clone(original),...(session.command.fields||{}),start:session.conversion?session.command.fields?.start||period.start:period.start||original.start,end:session.conversion?session.command.fields?.end||period.end:period.end||original.end,machines:C.clone(session.command.fields?.machines||original.machines||[{name:'',qty:null}])};
+ const protectedActual=session.history&&!session.conversion;
+ // Calculated bars can begin on the first actual date while the saved plan keeps
+ // its original requested date. Keep display dates in previewPeriod only so an
+ // untouched actual-backed job is never submitted as a start/end edit.
+ session.form??={...C.clone(original),...(session.command.fields||{}),start:protectedActual?original.start:session.conversion?session.command.fields?.start||period.start:period.start||original.start,end:protectedActual?original.end:session.conversion?session.command.fields?.end||period.end:period.end||original.end,machines:C.clone(session.command.fields?.machines||original.machines||[{name:'',qty:null}])};
  if(!session.initialForm&&original?.handoffs?.length&&typeof pgHandoffDailyValue==='function')session.form.daily=pgHandoffDailyValue(original);
  session.initialForm??=C.clone(session.form);pgDirectPreviewRate(g,'preview');pgDirectRenderForm(g);
 }
