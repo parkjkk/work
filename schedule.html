@@ -4560,6 +4560,16 @@ function pgPeriodPresentation(period){
  const products=[...new Set(parts.flatMap(r=>r.reservationConflictProducts||[]))],note=blocked?[...new Set(parts.map(row=>row.reservationLayout?.reason||row.description).filter(Boolean))].join(' / '):partialActual?reasons+' · 확인된 호기의 생산기간·건조일은 그대로 표시합니다.':actualOnly?reasons+' · 막대의 마지막 날짜는 최근 생산일이며 예상 종료일이 아닙니다.':conflict?'실제 '+products.join(' / ')+' 생산구간에는 실제 생산 막대를 표시합니다. 원래 예상은 작업 목록에 보관됩니다.':'';
  return{cls:period.handoffOut?'pgTransferred':cls,label:period.handoffOut?'작업 넘김':label,progress,note:[note,...new Set(parts.filter(r=>!r.actualOnly&&!r.reservationBlocked&&r.reservationLayout?.status==='manual').map(r=>r.reservationLayout.reason).filter(Boolean)),...(period.caseConflicts||[]).map(r=>'케이스 중복 · '+r.product+' · '+r.worker+' · '+r.start+(r.end!==r.start?' ~ '+r.end:''))].filter(Boolean).join(' / ')};
 }
+function pgPeriodMemoLines(snapshot,period){
+ if(typeof ScheduleBatch==='undefined'||typeof ScheduleBatch.memoValue!=='function')return[];
+ const lines=[],seen=new Set();
+ for(const part of period.parts||[period]){
+  let product='';try{product=String(C.catalogName(snapshot,part.product)||part.product||'').trim()}catch{product=String(part.product||'').trim()}
+  if(!product||seen.has(product))continue;seen.add(product);
+  try{const memo=ScheduleBatch.memoValue(snapshot,{},product);if(String(memo??'').trim())lines.push(product+' 메모\n'+String(memo))}catch{}
+ }
+ return lines;
+}
 function pgSelectionNoteText(selected,summary){
  const needsReview=p=>(p.parts||[p]).some(r=>r.actualOnly||r.reservationBlocked),review=selected.filter(needsReview),ordered=review.length?[...review,...selected.filter(p=>!needsReview(p))]:selected,notes=[...new Set(ordered.map(p=>pgPeriodPresentation(p).note).filter(Boolean))];
  if(!notes.length)return summary;return review.length?notes.join(' ')+' · '+summary:summary+' · '+notes.join(' ');
@@ -4782,7 +4792,7 @@ function pgTimeline(g,preview){
  const body=workers.map(worker=>{
   const periods=allPeriods.filter(r=>r.worker===worker&&r.start&&r.end&&r.start<=last&&(r.dry||r.end)>=first),lanes=pgTimelineLanes(periods);
   const production=lanes.map((lane,i)=>`<div class="pgGridRow pgProductionRow">${label(i?'':worker,lane.routingKey?'호기별 기간':i?'생산기간 '+(i+1):'생산기간')}<div class="pgRail"><div class="pgRailGrid">${dateCells(d=>`<div class="pgDay${dayClass(d)}${P.holiday(preview.state,worker,d)?' pgWorkerOff':''}" data-pg-day="${d}"></div>`)}</div>${lane.map(r=>{
-   const presentation=pgPeriodPresentation(r),cls=presentation.cls,readonly=!r.otherWork&&!r.orphanActual&&(!!r.archived||!!r.history||!pgKeep(g.draft).some(j=>j.id===r.jobId)),title=`${r.worker} · ${r.barText}\n${presentation.label}${presentation.progress?' · '+presentation.progress:''}\n${r.start} ~ ${r.end}${r.projected?' 예상':''}${r.explicitRouting?' · '+r.routingLane+'번 줄 / '+r.routingOrder+'번째':''}${presentation.note?'\n'+presentation.note:''}${typeof pgHandoffAssignmentText==='function'&&pgHandoffAssignmentText(r)?'\n'+pgHandoffAssignmentText(r):''}\n${r.parts.filter(p=>p.dry).map(p=>p.machine+' '+p.product+' 건조 '+p.dry).join(' / ')}\n${r.otherWork?'누르면 다른 업무 기간 확인':r.orphanActual?'누르면 해당 생산일보 입력행으로 이동':readonly?'보관된 완료 일정 · 조회 전용':'누르면 작업조건 선택'} · 주말·휴일 포함 연속 표시`;
+   const presentation=pgPeriodPresentation(r),cls=presentation.cls,readonly=!r.otherWork&&!r.orphanActual&&(!!r.archived||!!r.history||!pgKeep(g.draft).some(j=>j.id===r.jobId)),handoff=typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(r):'',dry=r.parts.filter(p=>p.dry).map(p=>p.machine+' '+p.product+' 건조 '+p.dry).join(' / '),title=[r.worker+' · '+r.barText,presentation.label+(presentation.progress?' · '+presentation.progress:''),r.start+' ~ '+r.end+(r.projected?' 예상':'')+(r.explicitRouting?' · '+r.routingLane+'번 줄 / '+r.routingOrder+'번째':''),presentation.note,handoff,dry,...pgPeriodMemoLines(preview.state,r)].filter(Boolean).join('\n');
    const pieces=r.displaySegments.filter(p=>p.end>=first&&p.start<=last);
    return pieces.map((part,index)=>{const left=Math.max(0,idx(part.start)),right=Math.min(dayCount,idx(part.end)+1);return`<button class="pgBar ${cls}${r.handoffIn||r.handoffOut?' pgHandoffBar':''}${r.caseConflicts.length?' pgCaseConflict':''}${readonly?' pgArchived':''}" style="left:calc(${left} * var(--pg-day));width:calc(${right-left} * var(--pg-day) - 3px)" ${r.otherWork?`data-pg-otherwork="${esc(r.id)}"`:r.orphanActual?`data-pg-actual-row="${esc(r.sourceRowId)}"`:readonly?'data-pg-history="true"':`data-pg-select="${esc(r.jobId)}"`} data-pg-period-key="${esc(pgPeriodKey(r))}" data-pg-status="${esc(presentation.label)}" data-pg-month="${esc(r.editMonth||r.start.slice(0,7))}" data-pg-start="${r.start}" data-pg-end="${r.end}" data-pg-segment-start="${part.start}" data-pg-segment-end="${part.end}" data-pg-first="${index===0&&part.start>=first&&part.start===r.start}" data-pg-last="${index===pieces.length-1&&part.end<=last&&part.end===r.end}" data-pg-members="${esc(JSON.stringify(r.memberIds))}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${r.caseConflicts.length?'<span class="pgCaseBadge">⚠ 케이스 중복</span> ':''}${typeof pgHandoffBarHTML==='function'?pgHandoffBarHTML(r,presentation,part):`<span class="pgBarState">${esc(presentation.label)}</span> ${esc(r.barText)}`}${r.start<first?' ◀':''}${r.end>last?' ▶':''}</button>`}).join('');
   }).join('')}</div></div>`).join('');
@@ -5381,9 +5391,7 @@ function pgDirectDecorate(g,preview){
  for(const button of root.querySelectorAll('.pgBar')){
   if(button.dataset.pgHistory!=null||!button.dataset.pgSelect){button.dataset.directReadonly='true';continue}
   const id=button.dataset.pgSelect,access=pgDirectAccess(g,id,button.dataset.pgMonth||month,preview.result.jobs);button.dataset.directJob=id;button.classList.toggle('pgDirectMovable',access.ok&&!pgRoutingFollower(pgKeep(g.draft).find(r=>r.id===id),pgKeep(g.draft)));button.setAttribute('aria-keyshortcuts','Enter ArrowLeft ArrowRight');
-  button.title=button.title.replace('누르면 작업조건 선택',access.ok||access.editable?'더블클릭 또는 Enter로 표 안 수정':'기간 조회 전용');
-  if(!access.ok){button.title+='\n'+access.reason;button.setAttribute('aria-label',button.title.replaceAll('\n',' '));continue}
-  button.title+='\n더블클릭/Enter: 표 안에서 수정 · '+(pgRoutingFollower(pgKeep(g.draft).find(r=>r.id===id),pgKeep(g.draft))?'앞 품목 종료 후 자동 시작':'좌우 끌기/방향키: 이동')+'\n'+access.notice;button.setAttribute('aria-label',button.title.replaceAll('\n',' '));
+  if(!access.ok){if(access.reason&&!button.title.includes(access.reason))button.title+='\n'+access.reason;button.setAttribute('aria-label',button.title.replaceAll('\n',' '));continue}
   if(access.members.some(pgRouting))continue;
   const period=pgDirectPeriod(g,access.members,preview.result.rows),matches=period.bars.filter(r=>r.jobId===id),text=button.textContent;const segment=C.iso(button.dataset.pgStart)&&C.iso(button.dataset.pgEnd)?{start:button.dataset.pgStart,end:button.dataset.pgEnd}:matches.find(r=>text.startsWith(r.machine+' '+r.product));
   if(button.dataset.pgFirst!=null?button.dataset.pgFirst==='true':segment?.start===period.start){const h=document.createElement('span');h.className='pgDirectHandle start';h.dataset.directEdge='start';h.title='시작일 조절';button.append(h)}
