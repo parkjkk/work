@@ -4268,6 +4268,12 @@ function pgRefreshDraft(source,draft,key=month,all=null){
  }
  const seen=new Set(d.rows.map(r=>r.id));for(const remote of latest)if(!seen.has(remote.id)&&!base.has(remote.id)){rows.push(C.clone(remote));bases.push(C.clone(remote))}
  d.rows=rows;d.baseRows=bases;if(resolvedDeleted.size)d.deleted=d.deleted.filter(entry=>!resolvedDeleted.has(entry.id));
+ // Once production has started, start/end belong to the production ledger and
+ // are read-only on this surface. Older device drafts could still contain a
+ // calculated bar date in those fields; discard only those protected dates so
+ // valid daily, machine, routing and note edits can be saved normally.
+ const refreshed=new Map(latest.map(r=>[r.id,r])),refreshedBase=new Map(d.baseRows.map(r=>[r.id,r]));
+ for(const local of d.rows){const remote=refreshed.get(local.id),baseline=refreshedBase.get(local.id),owner=remote&&pgJobMonth(remote),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===local.id)?.job;if(!remote||!baseline||!actual?.firstActual)continue;for(const field of['start','end'])if(!pgEqual(local[field],remote[field])||!pgEqual(baseline[field],remote[field])){if(Object.hasOwn(remote,field)){local[field]=C.clone(remote[field]);baseline[field]=C.clone(remote[field])}else{delete local[field];delete baseline[field]}}}
  const oldCalendar=d.baseCalendar||pgCalendar(source),calendar=pgCalendarMerge(oldCalendar,d.calendar,pgCalendar(source));if(d.calendarEditUndo)d.calendarEditUndo=pgCalendarMerge(oldCalendar,d.calendarEditUndo,pgCalendar(source)).calendar;d.calendar=calendar.calendar;d.baseCalendar=calendar.baseline;
  if(pgEqual(d.scheduleAsOf,d.baseScheduleAsOf))d.scheduleAsOf=d.baseScheduleAsOf=source.months[key]?.scheduleAsOf||null;
  return d;
