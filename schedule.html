@@ -1806,6 +1806,23 @@ async function localRequest(key,value,writing,options){
 async function localGet(key){return localRequest(key,undefined,false)}
 async function localSet(key,value,options){return localRequest(key,value,true,options)}
 function equal(a,b){return JSON.stringify(a??null)===JSON.stringify(b??null)}
+const own=(value,key)=>Object.prototype.hasOwnProperty.call(value||{},key);
+function recordField(record,key){return own(record,key)?{present:true,value:record[key]}:{present:false}}
+function mergeField(base,local,remote){if(equal(local,base))return{value:remote};if(equal(remote,base)||equal(local,remote))return{value:local};return{conflict:true}}
+function memoSemantic(record){if(!record)return record;const value=clone(record);delete value.rev;return value}
+// A memo record stores independent catalog fields in values[]: shared memo,
+// machine/quantity, location, target stock and legacy extensions. Merge those
+// slots independently so an unrelated catalog edit cannot block a memo save.
+function mergeMemoRecord(base,local,remote){
+ if(!base||!local||!remote||base.kind!=='memos'||local.kind!=='memos'||remote.kind!=='memos'||base.deleted||local.deleted||remote.deleted)return null;
+ const bs=memoSemantic(base),ls=memoSemantic(local),rs=memoSemantic(remote);if(equal(ls,bs))return{record:remote};if(equal(rs,bs))return{record:local};if(equal(ls,rs))return{record:remote};
+ for(const key of['id','kind','product','deleted'])if(!equal(recordField(local,key),recordField(base,key))||!equal(recordField(remote,key),recordField(base,key)))return{conflict:true,field:key};
+ const record={},keys=new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)]);keys.delete('rev');keys.delete('values');
+ for(const key of keys){const merged=mergeField(recordField(base,key),recordField(local,key),recordField(remote,key));if(merged.conflict)return{conflict:true,field:key};if(merged.value.present)record[key]=clone(merged.value.value)}
+ const values=[],arrays=[base.values,local.values,remote.values].map(value=>Array.isArray(value)?value:[]),length=Math.max(...arrays.map(value=>value.length));
+ for(let i=0;i<length;i++){const merged=mergeField(...arrays.map(value=>i<value.length?{present:true,value:value[i]}:{present:false}));if(merged.conflict)return{conflict:true,field:'values['+i+']'};if(merged.value.present)values[i]=clone(merged.value.value)}
+ while(values.length&&!own(values,values.length-1))values.pop();record.values=values;record.rev=Math.max(0,...[base.rev,local.rev,remote.rev].map(value=>Number.isFinite(Number(value))?Number(value):0))+1;return{record};
+}
 function preserveServerIntegration(candidate,remote,rejectUnknown=false){
  if(candidate?.kind!=='month'||remote?.kind!=='month')return{record:candidate};
  const fields=['sourceIntegration','integrationOutbound'];let result=candidate;
@@ -1827,6 +1844,7 @@ function mergeRecords(base,local,remote){
  const maps=[base,local,remote].map(xs=>new Map(xs.map(x=>[x.id,x]))),ids=new Set(maps.flatMap(m=>[...m.keys()])),result=[],conflicts=[];
  for(const id of ids){
   let[b,l,r]=maps.map(m=>m.get(id));if(b&&!l)l={id,deleted:true,rev:(b.rev||0)+1};
+  const memo=mergeMemoRecord(b,l,r);if(memo){if(memo.conflict){conflicts.push({id,base:b,local:l,remote:r,field:memo.field});if(r)result.push(r)}else if(memo.record)result.push(memo.record);continue}
   if(equal(l,b)){if(r)result.push(r);continue}
   // Only the integration service owns link baselines and outgoing receipts.
   // Preserve the newest server value, including ACK removal, while retaining
@@ -3594,12 +3612,17 @@ const sheetScope=()=>workspace?.key||'migration-preview';
 const sheetContext=id=>sheetScope()+':'+month+':'+id;
 const sheetEqual=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
 function sheetEditor(id){return sheetRegistry.get(sheetContext(id))}
+function sheetConflictMessage(conflicts){
+ const memo=(conflicts||[]).find(item=>item?.base?.kind==='memos'||item?.local?.kind==='memos'||item?.remote?.kind==='memos');if(!memo)return'';
+ const product=memo.remote?.product||memo.local?.product||memo.base?.product||'해당 품명',labels={'values[0]':'공용 메모','values[1]':'호기·조수','values[2]':'보관장소','values[3]':'목표재고',product:'품명 연결'};
+ return product+'의 '+(labels[memo.field]||'보관정보')+'가 다른 기기에서도 변경되었습니다. 입력 내용은 이 기기에 남겨 두었습니다. 최신자료를 확인한 뒤 어느 내용을 사용할지 확인해 주세요.';
+}
 async function sheetAwaitRemoteAck(){
  const client=typeof workspace==='undefined'?null:workspace;
  if(!client||client.pendingMigration||client.closed||typeof client.flush!=='function')return false;
  await client.flush();
  if(client.envelope?.queue?.length){
-  const conflict=client.lastError?.conflicts?.length,e=Error(conflict?'다른 기기에서도 같은 자료를 바꿨습니다. 삭제·수정 내용은 이 기기에 보관했습니다. 최신자료를 확인한 뒤 다시 저장해 주세요.':'서버 저장을 완료하지 못했습니다. 변경 내용은 이 기기에 보관했습니다. 연결 상태를 확인하고 다시 전송해 주세요.');
+  const conflicts=client.lastError?.conflicts||[],conflict=conflicts.length,e=Error(conflict?(sheetConflictMessage(conflicts)||'다른 기기에서도 같은 자료를 바꿨습니다. 삭제·수정 내용은 이 기기에 보관했습니다. 최신자료를 확인한 뒤 다시 저장해 주세요.'):'서버 저장을 완료하지 못했습니다. 변경 내용은 이 기기에 보관했습니다. 연결 상태를 확인하고 다시 전송해 주세요.');
   if(conflict)e.conflicts=client.lastError.conflicts;throw e;
  }
  return true;
