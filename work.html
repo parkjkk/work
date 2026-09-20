@@ -676,7 +676,7 @@ async function fieldSettings(cfg){
  document.body.append(d);d.showModal();d.querySelector('[data-field-close]').focus();run(async()=>{await list();if(current()){d.querySelector('[data-field-tools]').hidden=false;d.querySelector('[data-field-token] input').focus()}});
 }
 function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(!adminReady()){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren();continue}if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
-root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings','/api/management-sync','/api/field-memo'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
+root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings','/api/management-sync','/api/field-memo','/api/field-lots','/api/management-lots'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
  el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error('오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true);return}if(version===lockVersion)success(j)}catch(err){if(version===lockVersion)message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
@@ -2244,6 +2244,10 @@ let loadSeq = 0, refreshing = 0;   /* refreshing = 진행 중인 조회 수 (저
 function pendingRowsFor(date){
   return outboxAll().filter(i => i.date === date).flatMap(i => i.rows || []);
 }
+function pendingWorkerNames(date,rows=S.rows){
+  const ids=new Set(pendingRowsFor(date).map(r=>r.id));
+  return new Set(rows.filter(r=>ids.has(r.id)).flatMap(productionPeople));
+}
 function pendingRemovedFor(date){
   return new Set(outboxAll().filter(i => i.date === date).flatMap(i => i.removeIds || []));
 }
@@ -2552,7 +2556,7 @@ function renderMyDay(){
   }
   const mine=S.rows.filter(r=>r.worker===name), production=mine.filter(r=>!r.off);
   const together=S.rows.filter(r=>!r.off&&r.worker!==name&&productionPeople(r).includes(name));
-  const pending=driver.mode==='gh' && pendingRowsFor(S.date).some(r=>productionPeople(r).includes(name));
+  const pending=driver.mode==='gh' && pendingWorkerNames(S.date).has(name);
   const draft=draftsAll()[name];
   const status=pending?'전송 대기 · 기기에 보관됨':!S.dayLoaded?'기록 확인 중':production.length?`${production.length}개 제품 · 생산 ${r2(production.reduce((s,r)=>s+(Number(r.prod)||0),0))}조`:together.length?together.map(r=>r.worker+'와 '+fieldProductName(r)+' 공동작업').join(' · '):mine.length?offLabel(mine[0]):'아직 작성하지 않았습니다';
   const action=production.length?'오늘 기록 한꺼번에 수정':draft?'작성하던 내용 이어쓰기':together.length?'공동작업 기록 확인·수정':mine.length?'기록 확인·수정':'내 일보 쓰기';
@@ -2574,7 +2578,7 @@ function renderMeChips(){
     return;
   }
   h3.hidden = false;
-  const names = [...new Set([...activeWorkers(), ...S.rows.map(r=>r.worker)])].filter(Boolean);
+  const names = [...new Set([...activeWorkers(), ...S.rows.flatMap(productionPeople)])].filter(Boolean);
   const html = names.map(n => `<button class="chip ${n===S.me.worker?'sel':''}" data-n="${esc(n)}">${esc(n)}</button>`).join('') ||
     `<span class="empty-note" style="padding:4px">일보를 작성할 때 이름을 입력하면 여기에 나타납니다</span>`;
   box.innerHTML = html;
@@ -2660,22 +2664,24 @@ function renderMissing(){
   if(miss === null){ card.hidden = true; }
   else{
     card.hidden = false;
-    const waiting = new Set(driver.mode==='gh'?pendingRowsFor(S.date).map(r=>r.worker):[]);
+    const waiting = driver.mode==='gh'?pendingWorkerNames(S.date):new Set();
     const people=activeWorkers().filter(n=>!(S.presets.since?.[n] && S.date<S.presets.since[n])).map(name=>{
-      const rows=S.rows.filter(r=>r.worker===name);
+      const rows=S.rows.filter(r=>productionPeople(r).includes(name));
       const kind=rows.some(r=>!r.off)?'prod':rows.some(r=>r.off&&!isRest(r))?'case':rows.length?'off':'missing';
-      return {name,kind,rows};
+      const production=rows.filter(r=>!r.off),together=production.filter(r=>r.worker!==name);
+      const description=kind==='prod'?(together.length===production.length?'공동작업 · '+[...new Set(together.map(r=>r.worker))].join(', ')+'와 ':together.length?'공동작업 포함 · ':'')+production.length+'개 제품':kind==='case'?'시간 확인·수정':'휴무 표시 해제';
+      return {name,kind,rows,production,together,description};
     });
     const filters=[['missing','미작성'],['prod','생산 작성'],['case','케이스 교체'],['off','휴무'],['pending','전송 대기']];
     const filter=S.rosterFilter||'missing';
     const chosen=people.filter(p=>filter==='pending'?waiting.has(p.name):p.kind===filter);
     const open=!!LS.get('ilbo.rosterOpen',false);
-    card.innerHTML=`<h3>부서 확인 · ${dayWord} ${miss.length?`미작성 ${miss.length}명`:'전원 확인 완료'}</h3><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?waiting.size:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div><details class="roster-details" ${open?'open':''}><summary>${filters.find(x=>x[0]===filter)[1]} 이름 보기</summary>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${p.kind==='prod'?p.rows.filter(r=>!r.off).length+'개 제품':p.kind==='case'?'시간 확인·수정':'휴무 표시 해제'}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}<p class="quick-hint">부서 이동·파견 종료는 설정의 부서 명단에서 변경합니다.</p></details>`;
+    card.innerHTML=`<h3>부서 확인 · ${dayWord} ${miss.length?`미작성 ${miss.length}명`:'전원 확인 완료'}</h3><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div><details class="roster-details" ${open?'open':''}><summary>${filters.find(x=>x[0]===filter)[1]} 이름 보기</summary>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${esc(p.description)}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}<p class="quick-hint">부서 이동·파견 종료는 설정의 부서 명단에서 변경합니다.</p></details>`;
     card.querySelector('details').ontoggle=e=>LS.set('ilbo.rosterOpen',e.target.open);
     card.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{S.rosterFilter=b.dataset.filter;LS.set('ilbo.rosterOpen',true);renderMissing();});
     card.querySelectorAll('.person-open').forEach(b=>b.onclick=()=>{
       const p=people.find(p=>p.name===b.dataset.n);
-      if(p.kind==='prod') openWorkerEntry(p.name); else if(p.kind==='case') openCaseEntry(p.name,p.rows.find(r=>r.off&&!isRest(r))); else if(p.kind==='off'){if(confirm(`${p.name}님 휴무 표시를 해제할까요?`)) deleteRow(p.rows[0].id).catch(e=>toast(e.message));} else openEntryFor(p.name);
+      if(p.kind==='prod'){if(p.production.some(r=>r.worker===p.name))openWorkerEntry(p.name);else openEntry(p.together[0]);} else if(p.kind==='case') openCaseEntry(p.name,p.rows.find(r=>r.off&&!isRest(r))); else if(p.kind==='off'){if(confirm(`${p.name}님 휴무 표시를 해제할까요?`)) deleteRow(p.rows[0].id).catch(e=>toast(e.message));} else openEntryFor(p.name);
     });
     card.querySelectorAll('.off-btn').forEach(b=>b.onclick=()=>markDayOff(b.dataset.n,b.dataset.k));
   }
