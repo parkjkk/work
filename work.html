@@ -206,11 +206,14 @@ main.wide{max-width:none}
 .rowcard.has-bad{border-left:4px solid var(--bad); padding-left:9px}
 .rc-chev{color:var(--ink-faint); font-size:20px; line-height:1; flex:none}
 .rowcard .rc-main{flex:1; min-width:0}
-.rowcard .rc-prod{font-weight:700; font-size:16px}
+.rowcard .rc-prod{font-weight:700; font-size:16px;min-width:0;overflow-wrap:anywhere}
+.rowcard .rc-title{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0}
+.rowcard .rc-previous{font-size:12px;font-weight:500;line-height:1.4;color:var(--ink-dim);background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:2px 7px;max-width:100%;overflow-wrap:anywhere}
+@media print{.rc-previous{display:none!important}}
 .product-memo-link{display:flex;align-items:center;width:100%;max-width:100%;min-width:0;min-height:34px;margin:1px 0;padding:2px 0;border:0;background:transparent;color:var(--ink-dim);font-size:14px;text-align:left;cursor:pointer}
 .rowcard:has(.memo-preview){display:grid;grid-template-columns:minmax(0,1fr) auto 10px;gap:2px 8px}
 .rowcard:has(.memo-preview) .rc-main{display:contents}
-.rowcard:has(.memo-preview) .rc-prod{grid-area:1/1}
+.rowcard:has(.memo-preview) .rc-title{grid-area:1/1}
 .rowcard:has(.memo-preview) .rc-marks{grid-area:1/2}
 .rowcard:has(.memo-preview) .rc-chev{grid-area:1/3}
 .rowcard:has(.memo-preview) .product-memo-link{grid-column:1/-1;grid-row:2}
@@ -2854,6 +2857,7 @@ function renderNotice(){
 }
 function renderInput(){return withProjectedReadScope(renderInputContents);}
 function renderInputContents(){
+  if(S.rows.some(r=>!r.off))void ensureProductHistory();
   renderGypsumLots();
   renderMissing();
   renderGuide();
@@ -2888,7 +2892,7 @@ function renderInputContents(){
         const bad = (Number(r.defQty)||0) > 0 || (Number(r.scrapKg)||0) > 0;
         return `<div class="rowcard ${bad?'has-bad':''} ${S.flashIds && S.flashIds.has(r.id) ? 'flash' : ''}" data-id="${esc(r.id)}" tabindex="0" role="button">
           <div class="rc-main">
-            <div class="rc-prod">${esc(fieldProductName(r))}</div>
+            <div class="rc-title"><div class="rc-prod">${esc(fieldProductName(r))}</div>${previousProducerBadge(r)}</div>
             ${productMemoLink(r)}
             ${productionTeamMembers(r).length?`<div class="team-badge">${esc(productionTeamText(r))}</div>`:''}
             <div class="rc-sub">
@@ -3004,7 +3008,15 @@ function previousProduction(product,date){
  return null;
 }
 
-function previousProductionText(product,date){const prev=previousProduction(product,date);return prev?(productHistory.error?'확인된 이전 생산 · ':'직전 생산 · ')+fmtMD(prev.date)+' · '+prev.workers.join(' + ')+(prev.pending?' (전송 대기)':''):'';}
+function previousProductionLabel(prev){return prev?(productHistory.error?'확인된 이전 생산 · ':'직전 생산 · ')+fmtMD(prev.date)+' · '+prev.workers.join(' + ')+(prev.pending?' (전송 대기)':''):'';}
+function previousProductionText(product,date){return previousProductionLabel(previousProduction(product,date));}
+function previousProducerCard(row){
+ const previous=previousProduction(row,S.date),current=productHistory.epoch===storeEpoch&&productHistory.anchor===S.date.slice(0,7);
+ if(previous)return{text:'전 작업: '+previous.workers.join(' + ')+(previous.pending?' · 전송 대기':''),title:previousProductionLabel(previous)+' · 선택 날짜 이전 같은 품목의 실제 생산기록'};
+ const ready=current&&productHistory.ready;return{text:ready?(productHistory.error?'전 작업 확인 필요':'전 작업 기록 없음'):'전 작업 확인 중…',title:ready?(productHistory.error?'이전 생산기록을 모두 불러오지 못했습니다.':S.productionProgress?.history?'선택 날짜 이전에 같은 품목의 생산기록이 없습니다.':'최근 3개월에 앞선 생산기록이 없습니다.'):'이전 생산기록을 확인하고 있습니다.'};
+}
+function previousProducerBadge(row){const info=previousProducerCard(row);return '<span class="rc-previous" title="'+esc(info.title)+'">'+esc(info.text)+'</span>';}
+function updateCardPreviousProducers(){if(S.tab!=='input'||!AppAccess.unlocked)return;const rows=new Map(S.rows.map(r=>[String(r.id),r]));$$('#rowList .rowcard .rc-previous').forEach(host=>{const row=rows.get(host.closest('.rowcard').dataset.id);if(!row)return;const info=previousProducerCard(row);host.textContent=info.text;host.title=info.title;});}
 function updatePreviousProducer(el){const host=el.querySelector('.pb-previous'),name=el.querySelector('.pb-product').value.trim();if(!host)return;host.hidden=!name;if(!name)return;
  const value=previousProductionText(name,S.date),current=productHistory.epoch===storeEpoch&&productHistory.anchor===S.date.slice(0,7);
  host.textContent=value||(current&&productHistory.ready?(productHistory.error?'직전 생산 기록을 모두 확인하지 못했습니다.':(S.productionProgress?.history?'앞선 생산 기록이 없습니다.':'최근 3개월에 앞선 생산 기록이 없습니다.')):'직전 생산자 확인 중…');host.title=S.productionProgress?.history?'선택 날짜 이전, 저장된 같은 품목의 실제 생산일보 기준':'선택 날짜 이전, 최근 3개월의 같은 관리 품목 실제 생산일보 기준'+(S.offline?' · 보관한 자료':'');
@@ -3014,11 +3026,11 @@ function ensureProductHistory(){
  const own={epoch,anchor,days:{},ready:false,promise:null,error:false};productHistory=own;
  if(S.productionProgress?.history&&S.productionProgressMode==='ready'){own.ready=true;return Promise.resolve();}
  own.promise=(async()=>{await Promise.all(historyMonths(date).map(async ym=>{try{const cached=monthCache[ym],days=cached&&Date.now()-cached.t<600000?cached.days:await drv.monthDays(ym);if(epoch!==storeEpoch||productHistory!==own)return;for(const [d,rows]of Object.entries(days||{})){if(!Array.isArray(rows)){own.error=true;continue}own.days[d]=rows;}}catch{own.error=true}}));
-  if(epoch!==storeEpoch||productHistory!==own)return;own.ready=true;own.promise=null;if($('#entryOv').classList.contains('open'))$$('#prodBlocks .pb').forEach(updatePreviousProducer);if(S.tab==='sheet')renderSheet();
+  if(epoch!==storeEpoch||productHistory!==own)return;own.ready=true;own.promise=null;if($('#entryOv').classList.contains('open'))$$('#prodBlocks .pb').forEach(updatePreviousProducer);updateCardPreviousProducers();
  })();return own.promise;
 }
 function printedTeamKey(row){return JSON.stringify([row.worker,row.hours,productionTeamMembers(row)])}
-function printedRemark(row,date){const previous=previousProductionText(row,date).replace('직전 생산 · ','직전: ').replace(' · ',' ');return [previous,row.remark||''].filter(Boolean).join(' / ')}
+function printedRemark(row){return row.remark||''}
 
 function blockHTML(){
   return `
@@ -4074,7 +4086,7 @@ async function saveEntry(){
 
 /* ================= 인쇄 시트 ================= */
 const SHEET_ROWS = 17;
-const PRINT_LAYOUT_VERSION = 'production-team-previous-v2';
+const PRINT_LAYOUT_VERSION = 'production-team-card-previous-v3';
 /* 열 폭(%): 원본 실측값. 2026-09-02 사용자 요청으로 ○△Ⅹ 열 6개(가사시간·CASE·틈새·주입구·제품면·기포)는
    합계(26.97%)를 유지한 채 같은 폭 4.495%(=12.95mm)로 균등 배분 — 표 전체 폭 288mm 불변.
    분동검사 1·2호의 5.199%씩은 비고 12.023%에 합산하고 원장·입력·TSV 값은 보존한다. */
@@ -4146,12 +4158,12 @@ function sheetPage(dateStr, rows, showWorkerFirst){
   </div>`;
 }
 function rowsHash(){
-  const s = JSON.stringify([PRINT_LAYOUT_VERSION,orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.remark,r.productionTeam,printedLotText(S.date),previousProductionText(r,S.date)])]);
+  const s = JSON.stringify([PRINT_LAYOUT_VERSION,orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.remark,r.productionTeam,printedLotText(S.date)])]);
   let h = 0; for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h;
 }
 function renderSheet(){
   if(!fieldLots.promise)void loadFieldLots();
-  ensureProductHistory();renderPrintChecks();
+  renderPrintChecks();
   /* 날짜와 데이터가 안 맞으면(로딩 전·불러오기 실패) 빈 시트 + 안내 — 엉뚱한 날짜 인쇄 방지 */
   const stale = S.rowsDate !== S.date;
   const wrap = $('#sheetwrap');
@@ -4943,7 +4955,7 @@ function init(){
   };
   $('#printBtn').onclick = async () => {
     const btn = $('#printBtn'); btn.disabled = true; btn.textContent = '최신 내용 확인 중…';
-    try{ await Promise.all([refreshDay(true, true),ensureProductHistory(),loadFieldLots(true)]); } finally { btn.disabled = false; btn.textContent = '🖨 인쇄하기'; }
+    try{ await Promise.all([refreshDay(true, true),loadFieldLots(true)]); } finally { btn.disabled = false; btn.textContent = '🖨 인쇄하기'; }
     renderSheet();
     if(S.rowsDate !== S.date){ toast('이 날짜 기록을 불러오지 못해 인쇄할 수 없습니다 — 연결 확인 후 ↻ 다시 시도'); return; }
     if(S.rowsPartial && !confirm('이 날짜는 서버 기록을 한 번도 받지 못했습니다.\n이 기기에 보관된 기록만 인쇄됩니다 — 다른 사람 기록은 빠집니다.\n\n[확인] 그래도 인쇄\n[취소] 연결 확인 후 다시')) return;
