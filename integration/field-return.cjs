@@ -5,7 +5,7 @@ const {hash,stable,sourceFiles,productIndex,completionValue,machineActuals,outbo
 const clone=x=>JSON.parse(JSON.stringify(x)),own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k),same=(a,b)=>stable(a??null)===stable(b??null),clean=x=>String(x??'').trim();
 const POLICY='daily-two-way-v1';
 const DETAIL_FIELDS=['defPart','gasa','cs','gap','inlet','face','bubble','b1','b2','remark'];
-const FIELDS={pours:'prod',plan:'plan',productionCompletion:'productionCompletion',productionPlanQty:'productionPlanQty',machineActuals:'machineActuals',scheduleTarget:'scheduleTarget',fieldScrapKg:'scrapKg',fieldDefQty:'defQty'};
+const FIELDS={productionTeam:'productionTeam',pours:'prod',plan:'plan',productionCompletion:'productionCompletion',productionPlanQty:'productionPlanQty',machineActuals:'machineActuals',scheduleTarget:'scheduleTarget',fieldScrapKg:'scrapKg',fieldDefQty:'defQty'};
 const numeric=new Set(['pours','plan','productionPlanQty','fieldScrapKg','fieldDefQty']);
 function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value}
 function planFieldReturn(input,snapshot,forwardReport,options={}){
@@ -23,6 +23,7 @@ function planFieldReturn(input,snapshot,forwardReport,options={}){
    if(!own(row,target)||!created&&same(row[target],baseline[target]))continue;
    let value=row[target];if(numeric.has(target)&&value!==null&&!(typeof value==='number'&&Number.isFinite(value)&&value>=0))throw Error(target);
    if(target==='pours'&&value==null||target==='productionPlanQty'&&value!==null&&!(value>0))throw Error(target);
+   if(target==='productionTeam')try{value=require('./schedule-core.cjs').productionTeamValue(value,row.worker)}catch{throw Error(target)}
    if(target==='productionCompletion')try{completionValue(value)}catch{throw Error(target)}
    if(target==='scheduleTarget')try{value=require('./schedule-core.cjs').scheduleTargetValue(value)}catch{throw Error(target)}
    next[source]=clone(rawNumber(value,target));changed.push(target);

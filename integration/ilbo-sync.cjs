@@ -56,7 +56,7 @@ function projectCatalog(products,prior,now=new Date().toISOString(),memos=[]){
 }
 function newMonth(id){return{id,rev:1,name:id,modern:true,closed:false,rows:[],issues:[],stocks:[],plans:[],jobs:[],history:[],auditSessions:[],operations:[],headerRows:[],plaster:[],auditStamp:'',openingSource:null}}
 function rowBody(row){const x=clone(row);delete x.sourceIntegration;delete x.integrationOutbound;delete x.rev;return x}
-function outboundTarget(row){const target={};for(const field of['date','worker','product','pours','plan','hours','productionCompletion','productionPlanQty','machineActuals','scheduleTarget','fieldScrapKg','fieldDefQty','fieldPlanIntent','fieldDetails'])if(own(row,field))target[field]=clone(row[field]);return target}
+function outboundTarget(row){const target={};for(const field of['date','worker','product','pours','plan','hours','productionTeam','productionCompletion','productionPlanQty','machineActuals','scheduleTarget','fieldScrapKg','fieldDefQty','fieldPlanIntent','fieldDetails'])if(own(row,field))target[field]=clone(row[field]);return target}
 function detailOf(r){const x={};for(const k of['defPart','gasa','cs','gap','inlet','face','bubble','b1','b2','remark','sourceProduct'])if(own(r,k))x[k]=r[k];return x}
 function sourceFiles(snapshot){
  if(!snapshot||typeof snapshot.repo!=='string'||!snapshot.commit||!snapshot.files||snapshot.complete===false)throw Error('Complete source snapshot required');
@@ -98,6 +98,7 @@ function planSync(state,snapshot,options={}){
   if(!clean(raw.product)&&!raw.productId){issue('missing-product',ctx);continue}
   let p;try{p=ix.resolve(raw)}catch{issue('product-id-name-conflict',ctx);continue}if(!p){issue('unknown-product',ctx);continue}
   const values={date:f.date,worker:clean(raw.worker),product:p.name};
+  if(own(raw,'productionTeam')){try{values.productionTeam=require('./schedule-core.cjs').productionTeamValue(raw.productionTeam,values.worker)}catch{issue('invalid-production-team',ctx);continue}}
   try{
    if(own(raw,'prod')){const n=number(raw.prod,'prod');if(n!==null)values.pours=n}
    if(own(raw,'plan'))values.plan=number(raw.plan,'plan');
