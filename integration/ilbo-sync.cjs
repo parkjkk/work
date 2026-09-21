@@ -316,8 +316,8 @@ function planSync(state,snapshot,options={}){
  let planning;const supportJobs=new Map(),supportContext={jobs:new Map()};
  for(const [month,m]of Object.entries(next.months))for(const row of m.rows||[]){
   const si=row.sourceIntegration;if(m.closed||m.closeSnapshot||row.deleted||!row.scheduleTarget||si?.repo!==snapshot.repo||report.issues.some(value=>value.path===si.path&&value.id===si.id))continue;
-  planning??=require('./schedule-planning.cjs');if(!supportJobs.has(month))supportJobs.set(month,planning.jobs(next,month,supportContext));
-  if(supportJobs.get(month).filter(job=>planning.recordMatchesJob(job,row,next)).length===1)continue;
+  planning??=require('./schedule-planning.cjs');let owner=month;try{const target=require('./schedule-core.cjs').scheduleTargetValue(row.scheduleTarget);if(target.month>month)owner=target.month}catch{}if(next.months[owner]&&!supportJobs.has(owner))supportJobs.set(owner,planning.jobs(next,owner,supportContext));
+  if((supportJobs.get(owner)||[]).filter(job=>planning.recordMatchesJob(job,row,next)).length===1)continue;
   issue('schedule-target-review',{path:si.path,id:si.id,date:row.date,worker:row.worker,sourceProduct:si.sourceProduct||row.product},{fields:['scheduleTarget'],effect:'schedule-only',message:'일보 실적은 보존했으며 일정 연결은 보류했습니다. 품목의 담당 작업을 다시 선택해 주세요.'});
  }
  report.qualityWarnings.sort((a,b)=>(a.date+'\0'+a.worker).localeCompare(b.date+'\0'+b.worker));

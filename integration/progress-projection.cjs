@@ -21,8 +21,8 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  const identityFor=job=>[job.originId||job.id,job.worker,ix.byName(job.product)?.id].join('\0');
  const jobChains=new Map(),latestJobs=new Map();
  const participantsFor=job=>[...new Set((jobChains.get(identityFor(job))||[{job}]).flatMap(({job:j})=>[j.worker,...(j.handoffs||[]).flatMap(h=>[h.from,h.to]),...(j.records||[]).map(row=>row.worker)]).filter(value=>typeof value==='string'&&value.trim()))].sort();
- if(typeof planning.targetForJob==='function')for(const month of Object.keys(state.months||{}).filter(month=>month<=asOf.slice(0,7)).sort()){
-  const groups=new Map();for(const job of jobsFor(month)){const product=ix.byName(job.product),identity=[job.originId||job.id,job.worker,product?.id].join('\0');if(!groups.has(identity))groups.set(identity,[]);groups.get(identity).push(job)}
+ if(typeof planning.targetForJob==='function')for(const month of Object.keys(state.months||{}).sort()){
+  const groups=new Map();for(const job of jobsFor(month)){if(month>asOf.slice(0,7)&&!(job.manual&&typeof job.start==='string'&&job.start<=asOf))continue;const product=ix.byName(job.product),identity=[job.originId||job.id,job.worker,product?.id].join('\0');if(!groups.has(identity))groups.set(identity,[]);groups.get(identity).push(job)}
   for(const [identity,jobs]of groups){latestJobs.set(identity,{month,job:jobs.length===1?jobs[0]:null});if(jobs.length===1&&!jobs[0].carryBlocked&&!jobs[0].handoffBlocked){if(!jobChains.has(identity))jobChains.set(identity,[]);jobChains.get(identity).push({month,job:jobs[0]})}}
  }
  function holdSourceTarget(source){
@@ -35,7 +35,9 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  function jobFor(link,progress){
   if(typeof planning.jobs!=='function'||!progress?.jobId||progress.warning)return null;
   const month=progress.progressMonth||link.month,m=state.months[month];if(!m)return null;
-  const origin=progress.originId||progress.jobId,source=link.row.scheduleTarget&&month!==link.month?jobsFor(link.month).filter(j=>(j.originId||j.id)===origin&&recordMatches(j,link.row)&&!j.carryBlocked&&!j.handoffBlocked):null;
+  const origin=progress.originId||progress.jobId;let target=null;try{if(link.row.scheduleTarget)target=require('./schedule-core.cjs').scheduleTargetValue(link.row.scheduleTarget)}catch{}
+  if(target&&target.month===month&&month!==link.month){const matches=jobsFor(month).filter(j=>hash(targetFor(month,j))===hash(target)&&recordMatches(j,link.row));return matches.length===1&&!matches[0].carryBlocked&&!matches[0].handoffBlocked?matches[0]:null}
+  const source=target&&target.month<month?jobsFor(link.month).filter(j=>(j.originId||j.id)===origin&&recordMatches(j,link.row)&&!j.carryBlocked&&!j.handoffBlocked):null;
   const matches=jobsFor(month).filter(j=>(j.originId||j.id)===origin&&(source?source.length===1&&j.carried&&identityFor(j)===identityFor(source[0]):recordMatches(j,link.row)));
   return matches.length===1&&!matches[0].carryBlocked&&!matches[0].handoffBlocked?matches[0]:null;
  }
