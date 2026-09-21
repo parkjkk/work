@@ -2258,7 +2258,10 @@ function resolveScheduleTargets(s,k,m,out,context){
   if(t.month===k&&t.jobId!==job.id||t.month!==k&&(!job.carried||job.originId!==t.originId))continue;
   const bases=baselines.get(job.id)||[];if(bases.length!==1)continue;const base=bases[0],prior=(base.records||[]).filter(r=>r.date<row.date),today=(base.records||[]).filter(r=>r.date===row.date),previous=base.carried?(base.effectivePreviousProduced??base.previousProduced??0):0,earlier=(accepted.get(job.id)||[]).filter(r=>r.date<row.date);
   if(base.carryBlocked||base.handoffBlocked||base.carryTerminal||prior.some(endsProduction)||earlier.some(endsProduction)||base.totalPlan>0&&previous+C.sum(prior,r=>r.pours)+C.sum(earlier,r=>r.pours)>=base.totalPlan)continue;
-  const began=previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
+  // A verified target on the first positive daily record is itself the start
+  // evidence. Requiring an older actual left the reservation orange and drew
+  // the same production again as an unlinked blue actual-only bar.
+  const began=C.num(row.pours)>0||previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
   if(began){resolvedScheduleTargets.set(row,job.id);if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
  }
 }
@@ -5059,7 +5062,17 @@ function pgAssignmentDisplayKey(row){
 }
 function pgTimelineBarLabel(parts,full){
  const products=[...new Set(parts.map(row=>String(row.product||'').trim()).filter(Boolean))],machines=[...new Set(parts.map(row=>String(row.machine||'').trim()).filter(Boolean))];
- if(products.length>1)return products[0]+' 외 '+(products.length-1)+'품목';
+ if(products.length>1){
+  // Do not hide a production flow behind "외 N품목". For routed groups,
+  // arrows mean sequential work on one line and + means simultaneous lines.
+  if(parts.some(row=>row.explicitRouting)){
+   const lanes=new Map();
+   for(const row of parts){const product=String(row.product||'').trim();if(!product)continue;const lane=Number(row.routingLane)||1,order=Number(row.routingOrder)||1,key=order+'\0'+product;if(!lanes.has(lane))lanes.set(lane,new Map());if(!lanes.get(lane).has(key))lanes.get(lane).set(key,{order,product});}
+   const flow=[...lanes.entries()].sort((a,b)=>a[0]-b[0]).map(([,items])=>[...items.values()].sort((a,b)=>a.order-b.order||a.product.localeCompare(b.product,'ko')).map(item=>item.product).join(' → ')).filter(Boolean).join(' + ');
+   if(flow)return flow;
+  }
+  return products.join(' · ');
+ }
  if(products.length===1&&machines.length>1)return products[0]+' · '+machines.length+'개 호기';
  return full;
 }

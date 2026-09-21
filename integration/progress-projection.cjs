@@ -75,17 +75,30 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   entries.push({path:source.file.path,id:source.row.id,worker:row.worker,productId:row.sourceIntegration.productId||source.row.productId||null,product:row.product,jobId:progress.jobId||null,plan:number(progress.plan),produced:number(progress.produced),remaining:number(progress.remaining),unproduced:number(progress.unproduced),percent:number(progress.percent),complete:progress.complete===true,completedAt:progress.completedAt||null,reason:progress.reason||null,stockQty:number(progress.stockQty),note:completionRow?.productionCompletion?.note||'',warning:progress.warning||null,...(handoff?{handoff}:{}),source:Object.fromEntries(SOURCE_FIELDS.filter(k=>own(source.row,k)).map(k=>[k,copy(source.row[k])]))});
  }
  for(const entry of entries){const link=linked.get(entry.path+'\0'+entry.id)[0],progress=progressFor(link);entry.originId=progress.originId||progress.jobId||null;entry.progressMonth=progress.progressMonth||link.month;const job=jobFor(link,progress),target=job&&targetFor(entry.progressMonth,job);if(target){entry.scheduleTarget=target;entry.scheduleWorker=workerAt(job,link.row.date);entry.participants=participantsFor(job)}const schedule=scheduleFor(link,progress);if(schedule)entry.schedule=schedule;}
- // The catalog includes active legacy jobs before a helper has a linked daily
- // row. It exposes only this job's production scope and validated conditions.
+ // Publish one shared catalog for both apps. A manual routing group is exposed
+ // as a whole while one of its members is active, so the field app can show
+ // the current parallel work and its next sequential item without importing
+ // the future item early. Running legacy jobs remain available as before.
+ const targetCandidates=[];
  for(const {month,job}of latestJobs.values()){
   const m=state.months[month];if(!job||m.closed||m.closeSnapshot||job.carryBlocked||job.handoffBlocked)continue;
   const target=targetFor(month,job),product=ix.byName(job.product);if(!target||!product||unsafeJobs.has(jobKey({originId:job.originId||job.id,jobId:job.id},month)))continue;
   const handoff=handoffFor(job),owners=handoff?[handoff.originalWorker,...handoff.changes.map(h=>h.to)]:[job.worker];if(owners.some(worker=>unlinkedProducts.has(String(worker||'').trim()+'\0'+product.id)))continue;
   const records=(job.records||[]).filter(row=>row.date<=asOf),progress=records.map(row=>progressFor({month:row.date.slice(0,7),row})).find(value=>value?.jobId&&(value.originId||value.jobId)===(job.originId||job.id));
-  if(progress?.warning||progress?.complete||!progress&&job.complete)continue;
+  if(progress?.warning)continue;
   const start=typeof planning.productionStartDate==='function'?planning.productionStartDate(job):job.previousStart||job.firstActual||job.start,produced=progress?.produced??job.previousProduced??0,plan=progress?.plan??job.totalPlan;
-  if(!(typeof start==='string'&&start<=asOf)||!(records.some(row=>Number.isFinite(row.pours)&&row.pours>0)||Number.isFinite(job.previousProduced)&&job.previousProduced>0)||!Number.isFinite(produced)||!Number.isFinite(plan)||plan<=0)continue;
-  const schedule=scheduleForJob(month,job),value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom:start,plan,produced,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
+  const hasActual=records.some(row=>Number.isFinite(row.pours)&&row.pours>0)||Number.isFinite(job.previousProduced)&&job.previousProduced>0;
+  const schedule=scheduleForJob(month,job),route=schedule?.conditions?.routing,routeKey=route?.group?month+'\0'+job.worker+'\0'+route.group:null;
+  if(!Number.isFinite(produced)||!Number.isFinite(plan)||plan<=0||!hasActual&&!job.manual||hasActual&&!(typeof start==='string'&&start<=asOf))continue;
+  const scheduleActive=!!schedule&&schedule.start<=asOf&&(!schedule.end||asOf<=schedule.end),complete=progress?.complete===true||!progress&&job.complete===true;
+  targetCandidates.push({month,job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete});
+ }
+ const activeRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&candidate.scheduleActive&&!candidate.complete).map(candidate=>candidate.routeKey));
+ for(const candidate of targetCandidates){
+  const {job,target,product,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete}=candidate;
+  if(!(hasActual&&!complete||job.manual&&(scheduleActive&&!complete||routeKey&&activeRouteKeys.has(routeKey))))continue;
+  const activeFrom=schedule?.start||start;if(typeof activeFrom!=='string'||activeFrom>asOf&&!routeKey)continue;
+  const value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom,plan,produced,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
  }
  entries.sort((a,b)=>(a.path+'\0'+a.id).localeCompare(b.path+'\0'+b.id));
  targets.sort((a,b)=>[a.target.originId,a.target.month,a.target.jobId].join('\0').localeCompare([b.target.originId,b.target.month,b.target.jobId].join('\0')));

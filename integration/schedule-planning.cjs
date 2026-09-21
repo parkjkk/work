@@ -43,7 +43,10 @@ function resolveScheduleTargets(s,k,m,out,context){
   if(t.month===k&&t.jobId!==job.id||t.month!==k&&(!job.carried||job.originId!==t.originId))continue;
   const bases=baselines.get(job.id)||[];if(bases.length!==1)continue;const base=bases[0],prior=(base.records||[]).filter(r=>r.date<row.date),today=(base.records||[]).filter(r=>r.date===row.date),previous=base.carried?(base.effectivePreviousProduced??base.previousProduced??0):0,earlier=(accepted.get(job.id)||[]).filter(r=>r.date<row.date);
   if(base.carryBlocked||base.handoffBlocked||base.carryTerminal||prior.some(endsProduction)||earlier.some(endsProduction)||base.totalPlan>0&&previous+C.sum(prior,r=>r.pours)+C.sum(earlier,r=>r.pours)>=base.totalPlan)continue;
-  const began=previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
+  // A verified target on the first positive daily record is itself the start
+  // evidence. Requiring an older actual left the reservation orange and drew
+  // the same production again as an unlinked blue actual-only bar.
+  const began=C.num(row.pours)>0||previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
   if(began){resolvedScheduleTargets.set(row,job.id);if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
  }
 }
@@ -472,8 +475,8 @@ function actualMachineSpans(s,k,j,alloc,today){
  let before=0;return alloc.map(a=>{const target=before+a.qty,start=points.find(p=>p.after>before),finish=points.find(p=>p.after>=target),span={start:before<initial?null:start?.date||null,end:target<=initial?null:finish?.date||null,actualEnd:!!finish?.actual};before=target;return span});
 }
 function normalizeRouting(value){
- if(!value||value.schema!==1||!['sequential','parallel'].includes(value.mode)||typeof value.group!=='string'||value.group.length>120||value.group!==''&&!/^(?:[1-9]\d*|manual:[A-Za-z0-9_.:-]+)$/.test(value.group)||/^\d+$/.test(value.group)&&!Number.isSafeInteger(Number(value.group))||!Number.isInteger(value.lane)||value.lane<1||value.lane>20||!Number.isInteger(value.order)||value.order<1||value.order>50)throw Error('생산 방식·묶음·생산줄·순서를 확인해 주세요.');
- if(value.barDisplay!==undefined&&!['combined','separate'].includes(value.barDisplay))throw Error('기간바 표시 방식을 확인해 주세요.');
+ if(!value||value.schema!==1||!['sequential','parallel'].includes(value.mode)||typeof value.group!=='string'||value.group.length>120||value.group!==''&&!/^(?:[1-9]\d*|manual:[A-Za-z0-9_.:-]+)$/.test(value.group)||/^\d+$/.test(value.group)&&!Number.isSafeInteger(Number(value.group))||!Number.isInteger(value.lane)||value.lane<1||value.lane>20||!Number.isInteger(value.order)||value.order<1||value.order>50)throw Error('품목이 같이 시작하는지, 앞 품목 뒤에 시작하는지 확인해 주세요.');
+ if(value.barDisplay!==undefined&&!['combined','separate'].includes(value.barDisplay))throw Error('일정표에 보이는 모양을 확인해 주세요.');
  return{schema:1,mode:value.mode,group:value.group,lane:value.lane,order:value.order,...(value.barDisplay!==undefined?{barDisplay:value.barDisplay}:{})};
 }
 function routingMachineName(value){if(typeof value!=='string')throw Error('호기 이름을 확인해 주세요.');const name=value.trim(),match=/^(\d+)\s*(?:호(?:기)?)?$/.exec(name);if(!name||name.length>60||/[\x00-\x1f\x7f]/.test(name)||/^-\d/.test(name)||match&&!Number.isSafeInteger(Number(match[1])))throw Error('호기 이름을 확인해 주세요.');return match?Number(match[1])+'호':name}
@@ -489,7 +492,7 @@ function validateRoutingJob(job,peers=[]){
  if(!machines.length||machines.some(m=>!routingMachineName(m.name)||m.qty==null||!Number.isFinite(m.qty)||m.qty<0)||new Set(machines.map(m=>routingMachineName(m.name))).size!==machines.length)throw Error('호기와 배정 조수를 확인해 주세요.');
  if(!Number.isFinite(totalPlan)||totalPlan<0)throw Error('유효한 품목 계획 조수를 입력해 주세요.');
  if(!job.complete){if(routing.mode==='parallel'){if(machines.some(m=>m.qty>0&&!(Number.isFinite(m.daily??(machines.length===1?job.daily:null))&&(m.daily??job.daily)>0)))throw Error('여러 호기를 함께 사용하면 각 호기의 하루 조수를 입력해 주세요.');}else if(!(Number.isFinite(job.daily)&&job.daily>0))throw Error('순차생산의 예상 하루 조수를 입력해 주세요.');}
- if(!job.complete&&routing.group&&peers.some(p=>p.id!==job.id&&(p.originId||p.id)!==(job.originId||job.id)&&p.worker===job.worker&&p.routing?.group===routing.group&&p.routing.lane===routing.lane&&p.routing.order===routing.order&&(!p._ownerMonth||!job._ownerMonth||p._ownerMonth===job._ownerMonth)))throw Error('같은 생산줄 안의 순서가 중복됩니다. 새 작업의 생산 묶음 또는 순서를 지정해 주세요.');
+ if(!job.complete&&routing.group&&peers.some(p=>p.id!==job.id&&(p.originId||p.id)!==(job.originId||job.id)&&p.worker===job.worker&&p.routing?.group===routing.group&&p.routing.lane===routing.lane&&p.routing.order===routing.order&&(!p._ownerMonth||!job._ownerMonth||p._ownerMonth===job._ownerMonth)))throw Error('두 품목의 시작 자리가 겹칩니다. 같이 시작할지 앞 품목 뒤에 시작할지 다시 선택해 주세요.');
  return true;
 }
 // Explicit routing is opt-in. Legacy jobs retain their original scheduling path.
@@ -635,7 +638,7 @@ function preserveSourceDryDates(s,key,rows,asOfOverride=null){
  const baseline=s.scheduleSourceBaseline,verified=baseline?.version===1&&baseline.sourceHash===s.sourceHash,signatures=verified?baseline.signatures?.[key]:null,equivalence=verified&&baseline.dryEquivalence?.version===1?baseline.dryEquivalence.months?.[key]:null,source=sourceDryRows(s),valid=new Map();
  return rows.map(row=>{
   if(row.actualOnly)return{...row,dry:null,drySource:'실제 생산일만 표시'};
-  if(row.explicitRouting)return{...row,dry:row.dry,drySource:'생산줄 계산 건조일'};
+  if(row.explicitRouting)return{...row,dry:row.dry,drySource:'생산 흐름 계산 건조일'};
   if(row.actualMachineEndAdjusted)return{...row,dry:C.dryDate(row.end,factory(s)),drySource:'재계산 건조일'};
   // A new pending manual reservation uses the current weekday policy, even if
   // its imported inputs still match the old workbook's saved drying marker.
