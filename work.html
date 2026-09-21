@@ -462,6 +462,10 @@ table.mon tr.wk{cursor:default}
 table.mon tr.wk td{background:var(--surface2); color:var(--ink-dim); font-weight:700; font-size:13px}
 table.mon tr.wk td.d{background:var(--surface2)}
 table.mon td.who{font-size:13px}
+table.mon .worker-qty{display:block;line-height:1.6}
+table.mon .worker-qty-label{font-size:12px;color:var(--ink-dim);margin-right:6px}
+table.mon .worker-team-qty{display:block;margin-top:3px;font-size:12px;line-height:1.6;color:var(--ink-dim)}
+.product-detail table.mon .worker-team-qty{white-space:normal;max-width:180px}
 .mon-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:12px}
 table.mon th, table.mon td{white-space:nowrap}
 @media (max-width:480px){
@@ -4436,11 +4440,11 @@ function drawMonth(rawDays, y, m){
 
   /* ── 작업자별 ── */
   const wNames = Object.keys(workerStat).sort((a,b) => workerStat[b].miss - workerStat[a].miss || a.localeCompare(b, 'ko'));
-  const wTable = wNames.length ? `<table class="mon">
+  const wTable = wNames.length ? `<table class="mon" data-month-table="worker">
       <thead><tr><th>작업자</th><th>작업일</th><th>휴무</th><th>교체</th><th>미작성</th><th>시간(hr)</th><th>생산량(조)</th></tr></thead>
       <tbody>${wNames.map(n => { const w = workerStat[n]; return `<tr>
         <td class="d"><button class="product-link" data-worker-detail="${esc(n)}">${esc(n)} ›</button></td><td>${w.days.size}일</td><td>${w.off || ''}</td><td>${w.kase || ''}</td><td>${w.miss ? `<b style="color:var(--warn)">${w.miss}일</b>` : ''}</td><td>${r2(w.hours) || ''}</td>
-        <td>${r2(w.prod)}${w.team?`<small>공동 참여 ${r2(w.team)}조</small>`:''}</td></tr>`; }).join('')}</tbody>
+        <td><span class="worker-qty"><span class="worker-qty-label">본인 기록</span><b>${r2(w.prod)}조</b></span>${w.team?`<span class="worker-team-qty">함께 참여 ${r2(w.team)}조</span>`:''}</td></tr>`; }).join('')}</tbody>
       <tfoot><tr><td class="d">합계</td><td></td><td>${toff || ''}</td><td>${tcase || ''}</td><td>${tmiss || ''}</td><td>${r2(wNames.reduce((a,n)=>a+workerStat[n].hours,0)) || ''}</td><td>${r2(tp)}</td></tr></tfoot>
     </table>` : `<div class="empty-note">작업자 기록이 없습니다</div>`;
 
@@ -4449,7 +4453,7 @@ function drawMonth(rawDays, y, m){
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
     `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">기본순: 생산중은 진행률 높은 순 · 종료는 최근 종료일순 · 대기·확인은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}<br>같은 제품의 생산중 작업이 여러 개면 가장 높은 진행률 기준 · 진행률 미상은 생산중 목록 끝에 표시</div>${showManaged?wrapT(renderManagedProgressTable(days,managedMonth)):''}<div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
-    `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
+    `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}<div class="mon-note" style="text-align:left">본인 기록은 해당 작업자 이름으로 저장한 생산량입니다.${wNames.some(n=>workerStat[n].team)?' 함께 참여한 수량은 원래 담당자의 생산량에 포함되어 전체 합계에 다시 더하지 않습니다.':''}</div></div><section class="product-detail" id="monthDetail" hidden></section>`;
   body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
   body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
   bindMonthTableSorts(body);
@@ -4471,7 +4475,7 @@ function showMonthDetail(kind,name){
   if(monthDataYm!==S.month || !monthData) return;
   const box=$('#monthDetail'), entries=[],sortKey='detail-'+kind;
   Object.keys(monthData).sort().forEach(d=>{if(Array.isArray(monthData[d]))monthData[d].filter(r=>kind==='product'?!r.off&&fieldProductIdentity(r)===fieldProductIdentity(name):productionPeople(r).includes(name)).forEach(r=>entries.push({d,r}));});
-  box.innerHTML=`<header><h3>${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p>${monthSortTools(sortKey,'상세 기록 정렬')}<div class="mon-scroll" role="region" tabindex="0" aria-label="일자별 상세 기록"><table class="mon" data-month-table="${sortKey}"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr data-sort-date="${esc(d)}" data-sort-name="${esc(kind==='product'?r.worker:r.off?offLabel(r):fieldProductName(r))}" data-sort-qty="${esc(r.prod??'')}" data-detail-id="${esc(r.id)}"><td class="d"><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?productionPeople(r).join(' + '):r.off?offLabel(r):fieldProductName(r))}${kind==='worker'&&r.worker!==name?'<small>공동 참여 · 합계 제외</small>':''}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
+  box.innerHTML=`<header><h3>${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p>${monthSortTools(sortKey,'상세 기록 정렬')}<div class="mon-scroll" role="region" tabindex="0" aria-label="일자별 상세 기록"><table class="mon" data-month-table="${sortKey}"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr data-sort-date="${esc(d)}" data-sort-name="${esc(kind==='product'?r.worker:r.off?offLabel(r):fieldProductName(r))}" data-sort-qty="${esc(r.prod??'')}" data-detail-id="${esc(r.id)}"><td class="d"><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?productionPeople(r).join(' + '):r.off?offLabel(r):fieldProductName(r))}${kind==='worker'&&r.worker!==name?'<small class="worker-team-qty">함께 참여 · 원래 담당자 합계에 포함</small>':''}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
   box.hidden=false;$('#closeMonthDetail').onclick=()=>{box.hidden=true;};
   box.querySelectorAll('[data-detail-date]').forEach(b=>b.onclick=()=>{setDate(b.dataset.detailDate);setTab('input');});
   bindMonthTableSorts(box);

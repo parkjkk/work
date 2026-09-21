@@ -6037,8 +6037,8 @@ function secondaryIssueGrid(key){
  return sheetGrid('issue-ledger',{
   title:key+' 교체·불출 장부',rows:secondaryIssueRows(mm),readonly:mm.closed,dateSort:{key:'date'},
   columns:[{key:'date',label:'날짜',type:'date',width:132},{key:'product',label:'품명',type:'text',options:state.products.map(p=>p.name).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0),width:124},{key:'machine',label:'호기',width:68},{key:'replacement',label:'교체 조 · 재고 차감',type:'number',width:86},{key:'issued',label:'불출 조 · 별도 기록',type:'number',width:86},{key:'reason',label:'사유',width:180}],
-  hint:'한 달의 기록을 표에서 함께 편집합니다. 교체 수량만 재고에서 차감하며 불출 수량은 별도 기록합니다.',
-  addRow:previous=>({id:C.id(),date:previous?.date||(today().startsWith(key)?today():key+'-01'),product:'',machine:previous?.machine||'',replacement:null,issued:null,reason:''}),
+  hint:'한 달의 기록을 표에서 함께 편집합니다. 교체 수량만 재고에서 차감하며 불출 수량은 별도 기록합니다.'+(today().slice(0,7)!==key?' 새 행은 오늘 날짜로 시작합니다. 오늘 기록은 오늘이 속한 월에서 입력하세요.':''),
+  addRow:previous=>({id:C.id(),date:today(),product:'',machine:previous?.machine||'',replacement:null,issued:null,reason:''}),
   validateRow:validate,inspect:d=>secondaryInspect(d,validate),
   summary:d=>{const data=secondaryLedgerCurrentData(key,d);return'보이는 '+data.rows.length+'건 합계 · 교체 '+secondaryLedgerQuantity(data.totals,'replacement')+' / 별도 불출 '+secondaryLedgerQuantity(data.totals,'issued')},
   onChange:g=>{secondaryLedgerFocus(g);const button=document.querySelector('[data-ledger-csv]');if(button)button.disabled=!!(g.loading||g.saving||busy)},
