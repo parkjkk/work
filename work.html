@@ -406,7 +406,7 @@ textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
   .quick-total{display:inline-flex;align-items:center;min-height:34px;padding:5px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}.quick-total.warn{background:var(--warn-soft);color:var(--warn)}
   .quick-hint{font-size:13px;color:var(--ink-dim);margin:4px 0 10px;line-height:1.45}
   .quick-row{display:grid;grid-template-columns:minmax(0,1fr) 164px;align-items:center;gap:8px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0;min-width:0}
-  .quick-open{text-align:left;min-width:0;min-height:52px;padding:2px 0}.quick-open b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-dim);font-size:12px;margin-top:4px}
+  .quick-open{text-align:left;min-width:0;min-height:52px;padding:2px 0}.quick-open b{display:block;overflow-wrap:anywhere;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;white-space:normal;color:var(--ink-dim);font-size:12px;margin-top:4px;line-height:1.5}
   .quick-control{min-width:0}.quick-qty-label{display:block;font-size:12px;color:var(--ink-dim);text-align:center;margin-bottom:3px;white-space:nowrap}
   .quick-stepper{display:grid;grid-template-columns:44px minmax(56px,1fr) 44px;gap:4px;min-width:0}
   .quick-stepper button,.quick-stepper input{height:48px;min-width:44px;border:1.5px solid var(--line-in);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit}
@@ -414,6 +414,7 @@ textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
   .quick-stepper button:active:not(:disabled){background:var(--accent-soft);color:var(--accent-ink)}.quick-stepper button:disabled{opacity:.42}.quick-row.quick-locked{background:var(--surface2)}.quick-row.quick-locked .quick-qty-label{color:var(--accent-ink);font-weight:700}
   .quick-machine{width:100%;min-height:36px;margin-top:5px;padding:5px 7px;border:1px solid var(--line-in);border-radius:8px;background:var(--surface2);color:var(--accent-ink);font-size:12px;font-weight:700}.quick-machine:active{background:var(--accent-soft)}
   .pb-toggle{min-height:44px;flex:1;text-align:left;padding:3px 0}.pb-toggle small{display:block;color:var(--ink-dim);font-weight:400;font-size:12px;margin-top:4px}
+  .pb.pb-collapsed{padding:8px 12px;margin:8px 0}.pb.pb-collapsed .pb-head{margin:0}.pb.pb-collapsed .pb-del{visibility:hidden}.pb-toggle:after{content:'접기 ∧';font-size:12px;color:var(--ink-dim);margin-left:8px}.pb-collapsed .pb-toggle:after{content:'상세 입력 ∨'}.quick-machine{min-height:44px}#entryReservationFlow{margin:14px 0 8px}#entryReservationFlow .pb-route-flow{margin:0}.pb-route-flow-node small{white-space:normal}
   #entryOv [hidden],.pb-body[hidden],#quickProducts[hidden]{display:none!important}
   .whead{flex-wrap:wrap}.whead .quiet-btn{margin-left:auto;font-size:13px}
   main.month-wide{max-width:1120px}
@@ -804,6 +805,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     </div>
 
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
+    <div id="entryReservationFlow" hidden></div>
     <div id="quickProducts" hidden></div>
     <div id="entryRoutingTools"><button type="button" id="entryRouting">여러 품목 일정 묶기</button><span id="entryRoutingNote" role="status">기존 예약은 자동 연결 · 새로 묶을 때만 사용</span></div>
     <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
@@ -1304,7 +1306,10 @@ async function ghFetch(url, opts={}, ms=15000){
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try{
-    return await fetch(url, {...opts, signal: ctl.signal});
+    const response=await fetch(url, {...opts, signal: ctl.signal});
+    // Keep the deadline active until the body arrives, not just the headers.
+    const body=await response.arrayBuffer();
+    return new Response([204,205,304].includes(response.status)?null:body,{status:response.status,statusText:response.statusText,headers:response.headers});
   }catch(e){
     const err = (e && e.name === 'AbortError') ? new Error('네트워크 응답이 없습니다 (시간 초과)')
       : (e && e.name === 'TypeError') ? new Error('서버에 연결할 수 없습니다 (인터넷 연결 확인)') : e;
@@ -3073,10 +3078,10 @@ function printedRemark(row){return row.remark||''}
 
 function blockHTML(){
   return `
-  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품·계획·호기·검사 상세</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>생산 종료 · 호기 · 검사 · 함께 작업한 사람</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <div class="pb-body">
   <div class="pb-previous" role="status" hidden></div>
   <details class="pb-team"><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
-  <div class="pb-body">
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
   <div class="pb-product-memo" hidden></div>
@@ -3158,6 +3163,7 @@ function expandProduct(el, open=true){
   if(!el) return;
   if(!open&&el.querySelector('.pb-schedule-conflict:not([hidden])'))open=true;
   el.querySelector('.pb-body').hidden=!open;
+  el.classList.toggle('pb-collapsed',!open);
   el.querySelector('.pb-toggle').setAttribute('aria-expanded',String(open));
 }
 function syncPlanMode(el){
@@ -3197,6 +3203,7 @@ function quickScheduleStatus(el){
 }
 function syncQuickProducts(){
   const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
+  renderEntryReservationFlow(els);
   box.hidden=S.entryMode==='case' || !els.length;
   if(box.hidden) return;
   const signature=els.map(el=>el.dataset.rid).join('|');
@@ -3213,7 +3220,7 @@ function syncQuickProducts(){
       row.querySelector('.quick-machine').onclick=()=>{expandProduct(el,true);const details=el.querySelector('.pb-schedule'),toggle=el.querySelector('.pb-use-machine-actuals');details.open=true;if(!toggle.checked){toggle.checked=true;toggle.dispatchEvent(new Event('change',{bubbles:true}));}details.scrollIntoView({block:'start',behavior:'smooth'});requestAnimationFrame(()=>el.querySelector('.pb-machine-actual')?.focus({preventScroll:true}));};
     });
   }
-  let total=0,invalid=false;
+  let total=0,invalid=false,missing=0;
   const rows=[...box.querySelectorAll('.quick-row')];
   els.forEach((el,i)=>{
     const row=rows[i], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input'),text=qty.value.trim().replace(/,/g,'');
@@ -3224,10 +3231,10 @@ function syncQuickProducts(){
     if(document.activeElement!==input) input.value=qty.value;
     const locked=qty.readOnly||qty.disabled;input.placeholder=qty.placeholder;input.readOnly=locked;input.title=locked?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
     row.querySelector('.quick-qty-label').textContent=locked?'호기별 수량 합계':'오늘 만든 조수';row.querySelector('.quick-machine').textContent=locked?'호기별 수량 수정':'여러 호기에 나눠 입력';row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
-    if(text){const value=Number(text);if(/^\d+(?:\.\d+)?$/.test(text)&&Number.isFinite(value))total+=value;else invalid=true;}
+    if(text){const value=Number(text);if(/^\d+(?:\.\d+)?$/.test(text)&&Number.isFinite(value))total+=value;else invalid=true;}else missing++;
     el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
   });
-  const summary=box.querySelector('.quick-total');summary.textContent=`${els.length}개 품목 · 오늘 총 ${r2(total)}조${invalid?' · 수량 확인':''}`;summary.classList.toggle('warn',invalid);
+  const summary=box.querySelector('.quick-total');summary.textContent=`${els.length}개 품목 · 오늘 총 ${r2(total)}조${missing?' · '+missing+'개 미입력':''}${invalid?' · 수량 확인':''}`;summary.classList.toggle('warn',invalid||missing>0);
 }
 const segSetB = (el,k,v) => el.querySelectorAll(`.seg[data-k="${k}"] button`).forEach(b=>{ const on = b.dataset.v===v; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on); });
 const segGetB = (el,k) => { const b = el.querySelector(`.seg[data-k="${k}"] button.sel`); return b ? b.dataset.v : ''; };
@@ -3307,8 +3314,19 @@ function activeReservationTargets(worker,date=S.date){
   }).sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(ar?.group||scheduleTargetKey(a.target)).localeCompare(String(br?.group||scheduleTargetKey(b.target)))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1)||String(a.product).localeCompare(String(b.product),'ko');});
 }
 function reservationFlowHTML(targets,date=S.date,title='예약 생산 흐름'){
-  const lines=new Map();for(const target of targets){const route=target.schedule?.conditions?.routing,key=route?.group?route.group+'#'+route.lane:'one#'+scheduleTargetKey(target.target);if(!lines.has(key))lines.set(key,[]);lines.get(key).push(target);}
+  const ordered=[...targets].sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(a.target.month).localeCompare(String(b.target.month))||String(ar?.group||'').localeCompare(String(br?.group||''))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1);});
+  const lines=new Map();for(const target of ordered){const route=target.schedule?.conditions?.routing,key=route?.group?target.target.month+'#'+route.group+'#'+route.lane:'one#'+scheduleTargetKey(target.target);if(!lines.has(key))lines.set(key,[]);lines.get(key).push(target);}
   return`<div class="pb-route-flow"><div class="pb-route-flow-title">${esc(title)}</div>${[...lines.values()].map(items=>{items.sort((a,b)=>(a.schedule?.conditions?.routing?.order||1)-(b.schedule?.conditions?.routing?.order||1));return`<div class="pb-route-flow-line"><span class="pb-route-flow-tag">같이 시작</span>${items.map((target,index)=>{const upcoming=(target.activeFrom||target.start)>date,status=reservationComplete(target)?'완료':upcoming?'다음':'오늘 입력',qty=Number.isFinite(Number(target.plan))?' '+r2(Number(target.plan))+'조':'';return`${index?'<span class="pb-route-flow-arrow" aria-hidden="true">→</span>':''}<span class="pb-route-flow-node${upcoming?' reservation-upcoming':''}">${esc(target.product)}${esc(qty)} <small>· ${status}</small></span>`;}).join('')}</div>`;}).join('')}</div>`;
+}
+function renderEntryReservationFlow(els){
+ const box=$('#entryReservationFlow');if(!box)return;
+ const selected=els.map(el=>scheduleTargetForms.get(el)?.target).filter(Boolean),keys=new Set(selected.map(scheduleTargetKey));
+ const targets=S.productionProgressMode==='ready'&&!S.offline&&!driver.offline?(S.productionProgress?.targets||[]):[];
+ const groupKey=t=>JSON.stringify([t.target.month,t.schedule?.conditions?.routing?.group]),groups=new Set(targets.filter(t=>keys.has(scheduleTargetKey(t.target))&&t.schedule?.conditions?.routing?.group).map(groupKey));
+ const flow=targets.filter(t=>keys.has(scheduleTargetKey(t.target))||groups.has(groupKey(t)));
+ const visible=S.entryMode!=='case'&&flow.length>0;box.hidden=!visible;
+ const html=visible?reservationFlowHTML(flow,S.date,'이 예약을 이어서 생산합니다'):'';
+ if(box._flow!==html){box.innerHTML=html;box._flow=html;}
 }
 function renderReservationLoad(auto=false){
   const box=$('#reservationLoad');if(!box)return false;const worker=$('#fWorker').value.trim();

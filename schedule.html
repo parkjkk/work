@@ -681,10 +681,11 @@ body.pgFocusMode #ilboSyncStatus{display:none!important}
 @media print{
  .workspaceFocusBar,.workspaceFocusSave,.workspaceFocusOptions{display:none!important}
 }
-#ilboSyncStatus{padding:6px 12px;margin:0 0 10px;font-size:.76rem}
+#ilboSyncStatus{padding:10px 12px;margin:0 0 10px;font-size:.76rem;border-radius:12px}
 #ilboSyncStatus .toolbar{margin:0;gap:8px;align-items:center}
-#ilboSyncStatus button{min-height:30px;padding:4px 9px;font-size:.74rem}
+#ilboSyncStatus button{min-height:44px;padding:8px 12px;font-size:.76rem}
 #ilboSyncStatus p{margin:6px 0 0}
+#ilboSyncStatus .ilboStatusLead{flex:1;min-width:160px;display:flex;gap:5px 10px;align-items:center;flex-wrap:wrap}#ilboSyncStatus .ilboStatusLead small{flex-basis:100%;font-size:.72rem;opacity:.85}#ilboSyncStatus .ilboStatusHeadline{font-weight:600}#ilboSyncStatus>details{margin-top:7px;border-top:1px solid var(--line);padding-top:3px}#ilboSyncStatus>details>summary{min-height:36px;display:flex;align-items:center;cursor:pointer;gap:6px}#ilboSyncStatus>details>summary:before{content:'›';font-size:18px}#ilboSyncStatus>details[open]>summary:before{content:'⌄'}#ilboSyncStatus .ilboSyncSteps{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}#ilboSyncStatus .ilboSyncSteps span{padding:6px 8px;border:1px solid var(--line);border-radius:6px}#ilboSyncStatus [data-two-way-state][data-kind=permission],#ilboSyncStatus [data-two-way-state][data-kind=configuration],#ilboSyncStatus .ilboStatusProblem{font-weight:700}#ilboSyncStatus [data-two-way-state]{border-left:3px solid currentColor;padding-left:8px}
 @media print{#ilboSyncStatus{display:none!important}}
 
 .stats[hidden]{display:none!important}
@@ -6774,6 +6775,7 @@ document.addEventListener?.('click',e=>{const s=workspaceFocusScreen.session;if(
 // Trusted application automation synchronizes the private ledgers; shared worker tokens stay separate.
 let ilboStatus=null,ilboStatusScope='',ilboStatusClient=null,ilboAppliedRevision='',ilboAppliedLedgerRevision='',ilboRefreshRun=null,ilboRefreshPending=false,ilboStatusError='',ilboInitialClient=null,ilboManualChecked=null,ilboAccessVersion=0;
 const ilboIssueMessages={
+ 'invalid-production-team':'함께 작업한 사람의 이름과 작업시간을 확인해 주세요. 기존 생산량은 보존됩니다.',
  'invalid-schedule-target':'생산량을 반영할 작업 연결을 다시 선택해 주세요. 실제 작업자 기록은 유지합니다.',
  'schedule-target-review':'일보 실적은 보존했습니다. 반영할 작업의 품명·생산기간·이월 연결을 확인해 주세요.',
  'management-link-review':'날짜를 옮기거나 새로 입력한 기록의 연결을 확인해 주세요. 기존 기록은 보존했습니다.',
@@ -6896,18 +6898,21 @@ async function ilboMergeDrafts({automatic=false,revision='',ledgerRevision=''}={
 function ilboRenderStatus(){
  if(!ilboAccessReady())return;
  ilboEnsureScope();const main=$('#main');if(!main||!['daily','schedule','master','settings'].includes(page)||!workspace&&page!=='settings')return;
- let box=$('#ilboSyncStatus');if(!box){box=document.createElement('section');box.id='ilboSyncStatus';box.className='notice blue';const anchor=main.querySelector('.top');if(anchor)anchor.after(box);else main.prepend(box)}
+ let box=$('#ilboSyncStatus');if(!box){box=document.createElement('section');box.id='ilboSyncStatus';box.className='notice blue ilboSyncCard';const anchor=main.querySelector('.top');if(anchor)anchor.after(box);else main.prepend(box)}
  const report=ilboStatus,issues=report?.issues||[],quality=report?.qualityWarnings||[],stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'',index=issues.length?ilboSourceLookup():null;
- const guide='<p>어느 앱에서 저장해도 생산량·계획·호기별 생산량·근무시간·불량·현장 메모를 서로 반영합니다. 일정은 관리에서 계산한 날짜와 조건을 함께 보여줍니다. 같은 항목을 양쪽에서 다르게 고치면 덮지 않고 확인할 기록에 표시합니다. 화면을 보는 동안 5초마다 새 자료를 확인하고 자동 반영합니다. 작성 중인 일정·휴일·일보 입력은 유지하며, 입력창이나 드래그 조작을 마치면 이어서 반영합니다.</p>';
- let html='<div class="toolbar"><span><b>두 앱 연동</b> · '+(workspace?(when?'자동 연동 확인 '+esc(when):'자동 반영 상태를 확인 중입니다.'):'관리 저장소에 연결하면 현장일보가 자동 반영됩니다.')+(issues.length?' · 미반영 '+issues.length+'건':'')+(quality.length?' · 원자료 확인 '+quality.length+'건':'')+'</span>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>최신자료 확인</button>':'')+'</div>'+(ilboStatusError?'<p>'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>새 자료가 있습니다. 현재 화면의 입력은 유지됩니다. 일정·일보의 입력창이나 드래그 조작이 끝나면 자동 반영합니다. 다른 표의 편집·전송 대기는 먼저 마쳐 주세요.</p>':'')+'<details><summary>'+(issues.length?'미반영 기록 확인 · '+issues.length+'건':'어떤 내용이 서로 반영되나요?')+'</summary>'+guide+(issues.length?table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])})):page==='settings'?'<p>현장 기록은 별도 일보 저장소에서 가져옵니다. 관리 품명과 다른 이름은 관리 탭에서 연결합니다.</p>':'')+'</details>';
- if(quality.length)html+='<details><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
+ const queued=workspace?.envelope?.queue?.length||0,dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty),headline=queued?'GitHub 전송 대기 '+queued+'건':dirty?'저장 전 입력이 있습니다':ilboStatusError?'연결 확인 필요':issues.length?'미반영 '+issues.length+'건':ilboRefreshPending?'새 자료 확인 대기':when?'최근 연동 결과 확인':'연동 결과 확인 중';
+ const guide='<div class="ilboSyncSteps"><span>① 일보·예약 입력</span><span>② 변경 저장</span><span>③ 두 앱에 자동 반영</span></div><p>생산량·계획·호기별 생산량·근무시간·불량·현장 메모가 서로 반영됩니다. 같은 항목을 다르게 고친 경우만 확인이 필요합니다. 화면을 보는 동안 5초마다 확인하며 작성 중인 입력은 유지합니다.</p>';
+ let html='<div class="toolbar"><div class="ilboStatusLead"><b>두 앱 연동</b><span class="ilboStatusHeadline">'+esc(headline)+'</span><small>'+(workspace?(when?'마지막 연동 '+esc(when):'입력을 다시 저장하지 않아도 됩니다.'):'관리 저장소 연결 후 자동 반영됩니다.')+'</small></div>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>'+(ilboRefreshRun?'확인 중…':'최신자료 확인')+'</button>':'')+'</div>'+(ilboStatusError?'<p class="ilboStatusProblem" role="status">'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>입력한 내용은 그대로입니다. 입력창이나 드래그 조작을 마치면 새 자료를 이어서 반영합니다.</p>':'');
+ if(issues.length)html+='<details data-ilbo-detail="issues"><summary>미반영 기록 확인 · '+issues.length+'건</summary>'+table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])}))+'</details>';
+ if(quality.length)html+='<details data-ilbo-detail="quality"><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
+ html+='<details data-ilbo-detail="guide"><summary>저장·자동 반영 안내</summary>'+guide+'</details>';
  const manualSummary=ilboManualSummary();if(manualSummary)html+='<p data-ilbo-manual-result>'+esc(manualSummary)+'</p>';
  if(workspace&&ilboRefreshPending&&['daily','schedule'].includes(page)&&[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty)){
   const blocked=ilboDraftMergeBlock(workspace);html+='<div class="toolbar"><button id="ilboMergeDrafts" '+(blocked?'disabled':'')+'>입력 유지하고 최신자료 받기</button><span>작성 중인 입력을 유지하고 새 현장 기록을 가져옵니다.</span></div>'+(blocked&&!ilboRefreshRun?'<p>'+esc(blocked)+'</p>':'');
  }
  if(ilboRefreshRun?.merge&&!ilboRefreshRun.automatic&&!ilboRefreshRun.adopted)html+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
- if(box._ilboMarkup!==html){box.innerHTML=html;box._ilboMarkup=html}
- const button=$('#ilboRefreshNow');if(button)button.onclick=()=>page==='schedule'?ilboReceiveLatest():ilboCheck(true);
+ if(box._ilboMarkup!==html){const opened=new Set([...(box.querySelectorAll?.('details[data-ilbo-detail][open]')||[])].map(el=>el.dataset.ilboDetail)),focused=document.activeElement,focusId=box.contains?.(focused)?focused?.id:'';box.innerHTML=html;box._ilboMarkup=html;for(const el of box.querySelectorAll?.('details[data-ilbo-detail]')||[])if(opened.has(el.dataset.ilboDetail))el.open=true;if(focusId)document.getElementById?.(focusId)?.focus?.({preventScroll:true})}
+ const button=$('#ilboRefreshNow');if(button)button.onclick=()=>['daily','schedule'].includes(page)?ilboReceiveLatest():ilboCheck(true);
  const merge=$('#ilboMergeDrafts');if(merge)merge.onclick=()=>ilboMergeDrafts();const cancel=$('#ilboMergeCancel');if(cancel)cancel.onclick=()=>{if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted){ilboRefreshRun.cancelled=true;ilboRenderStatus()}};
 }
 async function ilboCheck(manual=false){
@@ -6952,35 +6957,54 @@ window.addEventListener('production:login',()=>ilboCheck());
 
 // Request the fixed integration service only after management changes are saved.
 // All source data and conflict decisions remain in the shared server engine.
-const twoWayState={client:null,generation:0,timer:null,poll:null,running:false,message:'',last:0};
+const twoWayState={client:null,generation:0,timer:null,poll:null,running:false,message:'',last:0,intent:null,status:'',storageWarning:''};
+const twoWayMessages={pending:'관리 저장 완료 · 현장일보에 반영 중',running:'관리 저장 완료 · 현장일보에 반영 중',applied:'두 앱 반영 완료',review:'두 앱 반영 완료 · 서로 다른 입력은 확인이 필요합니다.',permission:'관리 저장 완료 · 연결 권한 확인이 필요합니다. 관리자에게 알려 주세요.',configuration:'관리 저장 완료 · 연동 서버의 연결 설정을 확인해 주세요.',source:'관리 저장 완료 · 원자료 확인이 필요합니다. 미반영 기록을 확인해 주세요.',retry:'관리 저장 완료 · 연결 후 다시 확인합니다. 입력을 다시 저장할 필요는 없습니다.',conflict:'관리 저장 완료 · 다른 변경과 합쳐 다시 반영 중'};
 function twoWayClient(){const c=workspace;if(!c||c.closed||c.pendingMigration||c.config?.owner!=='parkjkk'||c.config.repo!=='schedule-data'||(c.config.branch||'main')!=='main'||typeof c.config.token!=='string'||!c.config.token||typeof shareViewSession!=='undefined'&&shareViewSession.active)return null;return c}
-function twoWayClear(){twoWayState.generation++;clearTimeout(twoWayState.timer);clearTimeout(twoWayState.poll);twoWayState.timer=null;twoWayState.poll=null;twoWayState.client=null;twoWayState.running=false;twoWayState.message=''}
-function twoWayRender(){const box=document.querySelector('#ilboSyncStatus');if(!box)return;let text=box.querySelector('[data-two-way-state]');if(!twoWayState.message||twoWayState.client!==workspace){text?.remove();return}if(!text){text=document.createElement('p');text.dataset.twoWayState='';text.setAttribute('role','status');box.querySelector('.toolbar')?.after(text)}text.textContent=twoWayState.message}
+// The retry marker contains no credential or business record; requests remain scope-bound.
+function twoWayKey(client){return 'production.two-way.v1:'+encodeURIComponent([client.config.owner,client.config.repo,client.config.branch||'main'].join('/'))+':'}
+function twoWayRead(client){try{const prefix=twoWayKey(client),items=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;try{const item=JSON.parse(localStorage.getItem(key));if(item?.schema===1&&typeof item.id==='string'&&key===prefix+item.id&&['request','status'].includes(item.stage))items.push(item)}catch{}}return items.sort((a,b)=>(a.stage==='request'?0:1)-(b.stage==='request'?0:1)||b.id.localeCompare(a.id))[0]||null}catch{return null}}
+// Separate keys prevent an old window's ACK from deleting a newer window's request.
+function twoWayStore(client,item,removeId){try{if(item)localStorage.setItem(twoWayKey(client)+item.id,JSON.stringify(item));else if(removeId)localStorage.removeItem(twoWayKey(client)+removeId);twoWayState.storageWarning=''}catch{twoWayState.storageWarning='자동 재시도를 기기에 보관하지 못했습니다. 창을 닫기 전에 최신자료 확인을 눌러 주세요.'}}
+function twoWayClear(){twoWayState.generation++;clearTimeout(twoWayState.timer);clearTimeout(twoWayState.poll);Object.assign(twoWayState,{timer:null,poll:null,client:null,running:false,message:'',intent:null,status:'',storageWarning:''})}
+function twoWayUse(client){if(twoWayState.client!==client){twoWayClear();twoWayState.client=client;twoWayState.intent=twoWayRead(client)}}
+function twoWayMark(client){twoWayUse(client);const item={schema:1,id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2),stage:'request'};twoWayState.intent=item;twoWayStore(client,item);return item}
+function twoWayRender(){const box=document.querySelector('#ilboSyncStatus');if(!box)return;let text=box.querySelector('[data-two-way-state]');if(!twoWayState.message||twoWayState.client!==workspace){text?.remove();return}if(!text){text=document.createElement('p');text.dataset.twoWayState='';text.setAttribute('role','status');box.querySelector('.toolbar')?.after(text)}text.textContent=twoWayState.message+(twoWayState.storageWarning?' '+twoWayState.storageWarning:'');text.dataset.kind=twoWayState.status}
+function twoWayLater(attempt=0,delay){clearTimeout(twoWayState.poll);const client=twoWayState.client,generation=twoWayState.generation;twoWayState.poll=setTimeout(()=>{twoWayState.poll=null;if(workspace===client&&twoWayState.generation===generation)return twoWayRequest('resume',attempt)},delay??(attempt<8?5000:30000))}
 async function twoWayRequest(action='request',attempt=0){
- const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked||navigator.onLine===false||client.envelope?.queue?.length||client.resolving)return;
- if(twoWayState.client!==client){twoWayClear();twoWayState.client=client}if(twoWayState.running)return;
- const generation=twoWayState.generation,current=()=>twoWayState.client===client&&workspace===client&&twoWayState.generation===generation&&twoWayClient()===client&&(typeof AppAccess==='undefined'||AppAccess.unlocked);
- twoWayState.running=true;twoWayState.last=Date.now();twoWayState.message='관리 저장 완료 · 현장일보에 반영 중';twoWayRender();
+ const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked)return;
+ twoWayUse(client);if(action==='request')twoWayMark(client);else twoWayState.intent=twoWayRead(client)||twoWayState.intent;
+ if(!twoWayState.intent||twoWayState.running)return;
+ if(navigator.onLine===false||document.hidden||client.envelope?.queue?.length||client.resolving){twoWayLater(attempt+1,30000);return}
+ clearTimeout(twoWayState.timer);clearTimeout(twoWayState.poll);twoWayState.timer=null;twoWayState.poll=null;
+ const generation=twoWayState.generation,intent={...twoWayState.intent},current=()=>twoWayState.client===client&&workspace===client&&twoWayState.generation===generation&&twoWayClient()===client&&(typeof AppAccess==='undefined'||AppAccess.unlocked);
+ twoWayState.running=true;twoWayState.last=Date.now();twoWayState.message=twoWayMessages.pending;twoWayState.status='pending';twoWayRender();let retry=true,delay;
  try{
-  const r=await fetch('https://parkjkk-production-view.pjk3742.chatgpt.site/api/management-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,token:client.config.token}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(12000)});
+  const r=await fetch('https://parkjkk-production-view.pjk3742.chatgpt.site/api/management-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:intent.stage,token:client.config.token}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(12000)});
   const result=await r.json();if(!current())return;
-  if(!r.ok)throw Error('sync-unavailable');
-  const complete=['applied','review'].includes(result.status);
-  twoWayState.message=complete?(result.status==='review'?'두 앱 반영 완료 · 서로 다른 입력은 확인이 필요합니다.':'두 앱 반영 완료'):'관리 저장 완료 · 현장일보에 반영 중';
-  if(!complete&&attempt<8){clearTimeout(twoWayState.poll);twoWayState.poll=setTimeout(()=>twoWayRequest('status',attempt+1),5000)}
-  else if(!complete)twoWayState.message='관리 저장 완료 · 현장일보 반영을 다시 확인 중입니다.';
- }catch{if(current())twoWayState.message='관리 저장 완료 · 현장일보 반영은 연결 후 다시 확인합니다.'}
- finally{if(current()){twoWayState.running=false;twoWayRender()}}
+  if(!r.ok){const status=[401,403].includes(r.status)?'permission':[400,413].includes(r.status)?'configuration':r.status===409?'conflict':'retry';twoWayState.status=status;twoWayState.message=twoWayMessages[status];delay=['permission','configuration'].includes(status)?60000:30000;return}
+  if(!Object.hasOwn(twoWayMessages,result?.status))throw Error('sync-unavailable');
+  const newest=twoWayRead(client)||twoWayState.intent,changed=newest?.id!==intent.id;
+  if(changed){twoWayStore(client,null,intent.id);twoWayState.intent=newest;twoWayState.message=twoWayMessages.pending;delay=700}
+  else{
+   const complete=['applied','review'].includes(result.status);twoWayState.status=result.status;twoWayState.message=twoWayMessages[result.status];
+   twoWayState.intent=complete?null:{...intent,stage:'status'};twoWayStore(client,twoWayState.intent,intent.id);retry=!complete;
+   if(complete){const remaining=twoWayRead(client);if(remaining){twoWayState.intent=remaining;twoWayState.message=twoWayMessages.pending;retry=true;delay=700}}
+   if(['permission','configuration','source'].includes(result.status))delay=60000;
+  }
+ }catch{if(current()){twoWayState.status='retry';twoWayState.message=twoWayMessages.retry;delay=30000}}
+ finally{if(current()){twoWayState.running=false;if(retry&&twoWayState.intent)twoWayLater(attempt+1,delay);twoWayRender()}}
 }
-function twoWaySchedule(){if(!twoWayClient())return;clearTimeout(twoWayState.timer);twoWayState.timer=setTimeout(()=>twoWayRequest(),700)}
+function twoWaySchedule(){const client=twoWayClient();if(!client)return;twoWayMark(client);clearTimeout(twoWayState.timer);twoWayState.timer=setTimeout(()=>{twoWayState.timer=null;return twoWayRequest('resume')},700)}
+function twoWayResume(){const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked)return;twoWayUse(client);twoWayState.intent=twoWayRead(client)||twoWayState.intent;if(twoWayState.intent&&!twoWayState.running&&!twoWayState.timer&&!twoWayState.poll)twoWayLater(0,700)}
 const twoWayOriginalStatus=setStatus;
 setStatus=function(message){twoWayOriginalStatus(message);if(message==='GitHub 저장 완료')twoWaySchedule()};
 const twoWayOriginalRender=ilboRenderStatus;
-ilboRenderStatus=function(){twoWayOriginalRender();twoWayRender()};
+ilboRenderStatus=function(){twoWayOriginalRender();twoWayRender();twoWayResume()};
 const twoWayOriginalCheck=ilboCheck;
 ilboCheck=async function(manual=false){if(manual)await twoWayRequest();return twoWayOriginalCheck(manual)};
 window.addEventListener('production:lock',()=>{twoWayClear();twoWayRender()});
-window.addEventListener('online',()=>{if(Date.now()-twoWayState.last>10000)twoWaySchedule()});
+for(const event of ['online','focus'])window.addEventListener(event,twoWayResume);
+document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)twoWayResume()});
 
 // Responsive organization only: move existing controls, never copy input values or ledger rows.
 const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dateSorts:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
