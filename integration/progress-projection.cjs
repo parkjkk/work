@@ -57,7 +57,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   const conditions={schema:1,machines,daily:Number.isFinite(daily)&&daily>0?daily:null};
   if(j.routing)try{conditions.routing=planning.normalizeRouting(j.routing)}catch{return null}
   if(!conditions.machines.length&&!conditions.daily&&!conditions.routing)return null;
-  if(!conditionSchedules.has(month)){if(typeof planning.scheduleAll==='function')allSchedules??=planning.scheduleAll(state,asOf);const result=allSchedules?.[month]||(typeof planning.schedule==='function'?planning.schedule(state,month,asOf):{rows:[]});conditionSchedules.set(month,result.rows)}
+  if(!conditionSchedules.has(month)){if(typeof planning.scheduleAll==='function')allSchedules??=planning.scheduleAll(state,asOf,{asOf});const result=allSchedules?.[month]||(typeof planning.schedule==='function'?planning.schedule(state,month,asOf,{asOf}):{rows:[]});conditionSchedules.set(month,result.rows)}
   if(conditionSchedules.get(month).some(r=>r.jobId===j.id&&r.reservationBlocked))return null;
   const periods=conditionSchedules.get(month).filter(r=>r.jobId===j.id&&!r.actualOnly&&!r.reservationOnly&&r.start&&r.end),start=periods.map(r=>r.start).sort()[0]||j.firstActual||j.previousStart||j.start||null,end=periods.map(r=>r.end).sort().at(-1)||j.end||null;
   if(typeof start!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(start)||!Number.isFinite(Date.parse(start+'T00:00:00Z'))||new Date(start+'T00:00:00Z').toISOString().slice(0,10)!==start)return null;
