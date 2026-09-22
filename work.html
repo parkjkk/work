@@ -624,7 +624,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   #view-input,#view-month{display:none !important}
   #view-sheet{display:block !important}
   .sheetwrap{overflow:visible !important; height:auto !important}
-  .sheetzoom{transform:none !important; width:auto !important; height:auto !important}
+  .sheetzoom{transform:none !important; zoom:1 !important; width:auto !important; height:auto !important}
   .sheet{box-shadow:none; margin:0 auto; break-after:page}
   .sheet:last-child{break-after:auto}
 }
@@ -633,6 +633,16 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 /* 화면 구조: 주요 동작 → 기록 → 필요할 때 여는 보조 도구. 원장과 인쇄표에는 적용하지 않는다. */
 @media screen{
   main{max-width:1120px;padding-bottom:90px}
+  main.wide{max-width:1180px}
+  .print-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+  #view-sheet .screen-heading{max-width:none;margin:0;flex:1 1 240px}
+  #view-sheet .sheet-toolbar{max-width:none;margin:0;flex:0 0 auto}
+  #view-sheet .sheet-toolbar .print{flex:0 0 auto;padding:0 28px}
+  #view-sheet .print-help,#view-sheet .preflight{max-width:none}
+  .sheetwrap{padding:12px 8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);overflow-x:auto;overflow-y:hidden}
+  .sheetzoom{display:flow-root;width:297mm;margin:0 auto;transform:none}
+  .sheetzoom .sheet:last-child{margin-bottom:0}
+  @media(max-width:700px){#view-sheet .sheet-toolbar{flex:1 1 100%}#view-sheet .sheet-toolbar .print{flex:1}}
   #topbar{padding:6px 12px}.tb-row1{max-width:1096px}.tb-title{letter-spacing:-.02em}
   .tb-date[hidden]{display:none}
   #netBanner{max-width:1096px}
@@ -719,7 +729,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
     #view-input .notice-card.card{margin-bottom:20px}
   }
 }
-@media print{.screen-heading,.section-heading,.view-help,.screen-tools{display:none!important}}
+@media print{.print-header,.screen-heading,.section-heading,.view-help,.screen-tools{display:none!important}}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -849,13 +859,15 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 
   <!-- 일보 (인쇄) -->
   <section id="view-sheet" style="display:none">
+    <div class="print-header">
     <div class="screen-heading"><h2>일보 미리보기</h2><div class="screen-meta"><span id="pageInfo"></span><span id="syncInfo"></span></div></div>
     <div class="sheet-toolbar">
       <button class="print" id="printBtn" title="최신 내용 확인 후 인쇄 (Ctrl+P)">🖨 인쇄하기</button>
-      <button class="tool" id="zoomBtn" title="화면맞춤 ↔ 100% 전환">화면맞춤</button>
+      <button class="tool" id="zoomBtn" title="현재: 화면 맞춤 — 누르면 실제 크기(100%)로 전환">화면 맞춤</button>
+    </div>
     </div>
     <details class="view-help print-help"><summary>인쇄 방법</summary><p class="print-tip"><span class="tip-pc">인쇄 창에서 <b>여백: 기본값(또는 없음)</b> · <b>배율: 100%</b>을 확인하세요. A4 가로 방향은 자동으로 맞춥니다. Ctrl+P도 같은 절차입니다.</span><span class="tip-mobile">인쇄는 <b>PC 크롬·엣지</b>를 이용하세요. 휴대폰에서는 여백이 달라질 수 있습니다.</span></p></details>
-    <div class="warnbar" id="missInfo" style="max-width:680px; margin:0 auto 10px; text-align:center; font-weight:700" hidden></div>
+    <div class="warnbar" id="missInfo" style="margin:0 0 10px; text-align:center; font-weight:700" hidden></div>
     <details class="card preflight" id="printChecks"><summary>인쇄 전 확인</summary><div id="printCheckList"></div></details>
     <div class="sheetwrap" id="sheetwrap"><div class="sheetzoom" id="sheetzoom"></div></div>
   </section>
@@ -4412,17 +4424,15 @@ function applyZoom(){
   const wrap = $('#sheetwrap'), zoom = $('#sheetzoom');
   const sheet = zoom.querySelector('.sheet');
   if(!sheet || !sheet.offsetWidth || !wrap.clientWidth) return;
-  if(S.fit){
-    const sw = sheet.offsetWidth;
-    const scale = Math.min(1, (wrap.clientWidth-2) / sw);
-    zoom.style.transform = `scale(${scale})`;
-    zoom.style.width = sw+'px';
-    wrap.style.height = (zoom.scrollHeight*scale+10)+'px';
-    $('#zoomBtn').textContent = '100%';
-  }else{
-    zoom.style.transform = 'none'; zoom.style.width=''; wrap.style.height='';
-    $('#zoomBtn').textContent = '화면맞춤';
-  }
+  const sw=parseFloat(getComputedStyle(sheet).width),style=getComputedStyle(wrap);
+  const available=wrap.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+  const scale=S.fit?Math.min(1,Math.max(1,available-1)/sw):1;
+  /* Layout-aware scaling keeps page margins and every page in the document flow. Print always resets zoom to 1. */
+  zoom.style.transform='none';zoom.style.width=sw+'px';zoom.style.zoom=String(scale);wrap.style.height='';
+  if(S.fit)wrap.scrollLeft=0;
+  const button=$('#zoomBtn');button.textContent=S.fit?'화면 맞춤':'실제 크기';
+  button.title=S.fit?'현재: 화면 맞춤 — 누르면 실제 크기(100%)로 전환':'현재: 실제 크기(100%) — 누르면 화면에 맞게 축소';
+  button.setAttribute('aria-label',button.title);
 }
 
 /* ================= 현황 ================= */
