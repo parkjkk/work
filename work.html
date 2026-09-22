@@ -253,9 +253,8 @@ main.wide{max-width:none}
 .pb-completion{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface2)}
 .pb-completion .f-label{margin-top:8px}.pb-completion .hint{display:block;line-height:1.5}.pb-completion-note{min-height:58px;resize:vertical}
 #addBtn{
-  position:fixed; right:14px; bottom:calc(64px + env(safe-area-inset-bottom)); z-index:29;
-  height:54px; padding:0 22px; border-radius:99px; background:var(--accent); color:var(--on-accent);
-  font-size:17px; font-weight:700; box-shadow:0 4px 14px rgba(0,0,0,.25);
+  min-height:44px; padding:8px 12px; border-radius:10px; background:var(--accent-soft); color:var(--accent-ink);
+  font-size:14px; font-weight:700;
   display:flex; align-items:center; gap:6px;
 }
 .daysum{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px}
@@ -631,6 +630,96 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 }
 
 #fieldLots{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px 12px;font-size:13px}#fieldLots small{flex-basis:100%}.field-lot-dialog{max-width:440px;width:calc(100% - 32px);box-sizing:border-box;padding:20px;border:1px solid #8495a0;border-radius:16px;background:var(--surface);color:var(--ink)}.field-lot-dialog label{display:block;margin:12px 0}.field-lot-dialog p{font-size:13px;line-height:1.6}.field-lot-dialog button{min-height:44px}.field-lot-dialog .actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.field-lot-dialog .f-input{box-sizing:border-box;width:100%;min-height:44px}.field-lot-dialog [name=overlap]{width:20px;height:20px;vertical-align:middle}.field-lot-feedback{box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:40px;background:var(--surface2);color:var(--ink)}.field-lot-feedback.success{background:var(--good-soft);border-color:var(--good);color:var(--good);font-weight:700}.field-lot-feedback.pending{background:var(--warn-soft);color:var(--warn)}.field-lot-error,.field-lot-feedback.error{color:var(--bad)}.field-lot-dialog [data-save]{font-weight:700;background:var(--accent);color:var(--on-accent);border:1px solid var(--line);border-radius:8px;padding:8px 14px}.field-lot-dialog [data-save]:disabled{opacity:.5}.field-lot-dialog [hidden]{display:none}
+/* 화면 구조: 주요 동작 → 기록 → 필요할 때 여는 보조 도구. 원장과 인쇄표에는 적용하지 않는다. */
+@media screen{
+  main{max-width:1120px;padding-bottom:90px}
+  #topbar{padding:6px 12px}.tb-row1{max-width:1096px}.tb-title{letter-spacing:-.02em}
+  .tb-date[hidden]{display:none}
+  #netBanner{max-width:1096px}
+  .card{box-shadow:none;padding:14px}
+  .day-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+  .day-overview,.day-records{min-width:0}
+  .day-overview>:last-child{margin-bottom:0}
+  .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
+  .section-heading h2,.screen-heading h2{font-size:18px;margin:0;letter-spacing:-.03em}
+  .screen-heading{max-width:900px;margin:0 auto 14px}
+  .screen-meta{font-size:12px;line-height:1.7;color:var(--ink-dim);margin-top:5px}
+  .my-day{border:1px solid var(--line);border-top:3px solid var(--accent)}
+  .my-day h3{color:var(--ink);font-size:18px}
+  .my-day-head .quiet-btn{background:none;border:0;font-size:12px;padding:6px}
+  .my-actions{align-items:center}.my-actions .btn.pri{flex:1 1 150px}.my-actions .btn.sec{flex:0 1 auto;background:none;border:0;font-size:13px;padding:6px 8px}
+  .daysum,#daysum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 0;margin:0 0 10px}
+  .daysum .ds,#daysum .ds{display:block;text-align:center;min-width:0;background:none;border:0;border-radius:0;box-shadow:none;padding:2px 4px}
+  .daysum .ds+.ds,#daysum .ds+.ds{border-left:1px solid var(--line)}
+  .daysum .ds b,#daysum .ds b{display:block;font-size:21px;margin-bottom:4px}
+  .daysum .ds span,#daysum .ds span{display:block;font-size:11px;white-space:normal}
+  #fieldLots{background:none;border:0;border-bottom:1px solid var(--line);color:var(--ink-dim);padding:0 2px 8px;margin:0 0 14px;gap:4px}
+  #fieldLots .quiet-btn{margin-left:auto;background:none;border:0;color:var(--accent-ink);font-size:12px}
+  .field-sync-strip{background:none;padding:8px 2px;border:0;border-top:1px solid var(--line);gap:6px}
+  .field-sync-strip .field-sync-copy{min-width:0}.field-sync-strip button{padding:5px 8px;font-size:11px;background:none;border-color:var(--line)}
+  .field-sync-copy>details>summary{font-size:11px;min-height:32px;cursor:pointer;padding:6px 0}
+  #missCard{padding:0 12px;background:var(--surface);border-color:var(--line)}
+  #missCard .roster-details>summary{font-size:13px;line-height:1.7;color:var(--ink-dim)}
+  #missCard .roster-details>summary b{color:var(--warn)}
+  .status-filters{gap:4px;margin:2px 0 8px}.status-filters button{font-size:12px;min-height:44px;padding:6px 8px}
+  .view-help{font-size:12px;color:var(--ink-dim);margin:8px 0}
+  .view-help>summary{cursor:pointer;min-height:44px;padding:12px 2px}
+  .view-help p,.view-help ol{line-height:1.7;margin:0 0 12px}.view-help ol{padding-left:20px}
+  .view-help button{min-height:44px}.guide-card{border:0;background:none;padding:0 4px;font-size:12px}
+  .rowcard{box-shadow:none;padding:12px;margin-bottom:8px}.wgroup{margin-bottom:18px}
+  .whead .quiet-btn{background:none;border:0;color:var(--ink-dim);font-size:12px;padding:4px 6px}
+  .rowcard .rc-sub{font-size:12px;line-height:1.6}.rowcard .rc-previous{font-size:11px}
+  .product-memo-link.is-empty{min-height:32px}
+  .screen-tools{position:relative;font-size:13px;color:var(--ink-dim)}
+  .screen-tools>summary{cursor:pointer;min-height:44px;padding:12px 8px;border-radius:8px}
+  .screen-tools>div{position:absolute;right:0;top:100%;width:240px;z-index:10;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
+  .screen-tools button{width:100%}.screen-tools p{margin:8px 0 0;font-size:12px}
+  .mon-nav{justify-content:flex-start;gap:6px;margin:0 0 16px}.mon-nav #thisMon{margin-left:auto!important}
+  .mon-note{font-size:12px;line-height:1.6}.mon-pills{margin-top:14px}
+  .mon-sec h3{font-size:14px;margin:18px 0 8px;color:var(--ink-dim)}
+  .month-help{margin:4px 0 8px}.month-help summary{min-height:36px;padding:8px 2px}
+  .sheet-toolbar,.print-help{max-width:900px}.print-help{margin:0 auto 6px}.print-tip{text-align:left;margin:0 0 10px}
+  .preflight{padding:0 8px}.preflight summary{font-size:13px;min-height:44px;color:var(--ink-dim)}
+  .entry-basics{display:grid;grid-template-columns:minmax(0,1fr) minmax(140px,.75fr);gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+  #workerDetails{padding:0;border:0;min-width:0}#workerDetails>summary{min-height:64px;line-height:1.7;padding:8px 0;font-size:13px}
+  #entryWorkerLabel{display:inline-block;font-size:15px}.detail-hint{display:block;font-size:11px;color:var(--ink-dim);font-weight:400}
+  .entry-hours{min-width:0}.entry-hours .f-label{font-size:12px;color:var(--ink-dim);margin:0 0 5px}
+  .entry-hours .stepper{gap:4px}.entry-hours .stepper button{width:44px;min-width:44px;height:44px}.entry-hours .stepper input{width:100%;min-width:0;height:44px;font-size:18px}
+  .entry-basics:has(#workerDetails[open]){grid-template-columns:minmax(0,1fr)}
+  .entry-basics:has(#workerDetails[open]) .entry-hours{max-width:280px}
+  #quickProducts{margin:20px 0}.quick-head h3{font-size:17px}.quick-total{background:none;padding:0;min-height:26px;font-size:12px}
+  .quick-row{padding:12px;gap:12px;grid-template-columns:minmax(0,1fr) 156px}.quick-open small{font-size:11px;line-height:1.6}
+  .quick-machine{background:none;border:0;font-weight:500;margin:2px 0 -6px;font-size:12px;color:var(--ink-dim)}
+  .entry-detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:18px 0 6px;color:var(--ink-dim)}
+  .entry-detail-heading h3{margin:0;font-size:14px}.entry-detail-heading span{font-size:11px}
+  .pb.pb-collapsed{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:4px 0;margin:0}
+  .pb-collapsed .pb-toggle small{display:none}.pb-collapsed .pb-title{font-size:14px}.pb-collapsed .pb-del{display:none}
+  .pb-toggle:after{float:right;font-size:11px}.pb.pb-collapsed .pb-toggle{padding:10px 2px}
+  .entry-extra-tools{display:flex;gap:8px;align-items:start;flex-wrap:wrap;margin:12px 0}
+  #addProdBlock{flex:1;min-width:120px;width:auto;min-height:44px;margin:0;border:1px solid var(--line);border-radius:10px;font-size:13px;background:var(--surface);color:var(--ink)}
+  #entryRoutingTools{flex:0 1 200px;min-width:160px;border:0;padding:0;margin:0;background:none;gap:2px}
+  #entryRouting{width:100%;border:0;background:none;color:var(--ink-dim);font-size:12px;padding:8px}
+  #entryRoutingNote{font-size:11px;line-height:1.5;padding:4px 2px}
+  #entryRoutingNote:empty{display:none}
+  #entryOv:has(#caseNote:not([hidden])) .entry-detail-heading{display:none}
+  #setOv .ov-body{padding-top:18px}
+  .settings-group{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin:10px 0;overflow:hidden}
+  .settings-group>summary{min-height:64px;cursor:pointer;padding:16px;font-size:15px;font-weight:700}
+  .settings-group>summary small{display:block;font-weight:400;color:var(--ink-dim);font-size:12px;margin-top:4px}
+  .settings-group>.settings-content{padding:0 16px 16px}
+  .settings-group #data-access-settings{margin:0}
+  #setStatus{margin:0 0 16px;background:none;padding:0;font-size:12px}
+  .settings-group .set-note{background:none;padding:6px 0;font-size:12px}
+  #ghAdv{margin:0}.settings-group #rosterList{box-shadow:none}
+  @media(min-width:900px){
+    #topbar{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:8px max(20px,calc((100vw - 1096px)/2))}
+    .tb-row1{flex:1;margin:0}.tb-date{margin:0;max-width:none;flex:none}
+    .day-layout{grid-template-columns:300px minmax(0,1fr);gap:28px}
+    main{padding-top:22px}.day-overview .my-actions .btn.pri{flex-basis:100%}.day-overview .my-actions .btn.sec{margin-left:auto}
+    #view-input .notice-card.card{margin-bottom:20px}
+  }
+}
+@media print{.screen-heading,.section-heading,.view-help,.screen-tools{display:none!important}}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -740,25 +829,32 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
   <section id="view-input">
     <div id="dateWarn" class="warnbar" style="border-radius:12px; margin-bottom:10px" hidden></div>
     <div class="card notice-card" id="noticeCard" hidden></div>
+    <div class="day-layout">
+    <aside class="day-overview" aria-label="내 일보와 부서 확인">
     <div class="card my-day" id="myDayCard"></div>
-    <div class="daysum" id="daysum"></div>
-    <div class="field-sync-strip" id="fieldSyncStatus" role="status" hidden></div>
-    <div class="card" id="missCard" hidden></div>
-    <div class="card">
+    <div class="card" id="workerPicker">
       <h3>내 이름 선택</h3>
       <div class="chips" id="meChips"></div>
     </div>
+    <div class="card" id="missCard" hidden></div>
+    <div class="field-sync-strip" id="fieldSyncStatus" role="status" hidden></div>
+    </aside>
+    <div class="day-records">
+    <div class="section-heading"><h2>부서 일보</h2><button id="addBtn">＋ 일보 작성</button></div>
+    <div class="daysum" id="daysum"></div>
     <div id="rowList"></div>
+    </div>
+    </div>
   </section>
 
   <!-- 일보 (인쇄) -->
   <section id="view-sheet" style="display:none">
+    <div class="screen-heading"><h2>일보 미리보기</h2><div class="screen-meta"><span id="pageInfo"></span><span id="syncInfo"></span></div></div>
     <div class="sheet-toolbar">
       <button class="print" id="printBtn" title="최신 내용 확인 후 인쇄 (Ctrl+P)">🖨 인쇄하기</button>
       <button class="tool" id="zoomBtn" title="화면맞춤 ↔ 100% 전환">화면맞춤</button>
-      <button class="tool" id="reloadBtn" title="최신 내용 다시 불러오기" aria-label="일보 새로고침">↻</button>
     </div>
-    <p class="print-tip"><span class="tip-pc">인쇄 창에서 <b>여백: 기본값(또는 없음)</b> · <b>배율: 100%</b> 두 가지만 확인하세요 — A4 가로·배경색·머리글 제거는 자동입니다. (Ctrl+P도 같은 절차)</span><span class="tip-mobile">인쇄는 <b>PC 크롬/엣지</b>에서 하세요 — 폰 인쇄는 여백이 틀어집니다</span><span id="pageInfo"></span><span id="syncInfo"></span></p>
+    <details class="view-help print-help"><summary>인쇄 방법</summary><p class="print-tip"><span class="tip-pc">인쇄 창에서 <b>여백: 기본값(또는 없음)</b> · <b>배율: 100%</b>을 확인하세요. A4 가로 방향은 자동으로 맞춥니다. Ctrl+P도 같은 절차입니다.</span><span class="tip-mobile">인쇄는 <b>PC 크롬·엣지</b>를 이용하세요. 휴대폰에서는 여백이 달라질 수 있습니다.</span></p></details>
     <div class="warnbar" id="missInfo" style="max-width:680px; margin:0 auto 10px; text-align:center; font-weight:700" hidden></div>
     <details class="card preflight" id="printChecks"><summary>인쇄 전 확인</summary><div id="printCheckList"></div></details>
     <div class="sheetwrap" id="sheetwrap"><div class="sheetzoom" id="sheetzoom"></div></div>
@@ -766,16 +862,14 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 
   <!-- 현황 -->
   <section id="view-month" style="display:none">
+    <div class="section-heading"><h2>월별 현황</h2><details class="screen-tools"><summary>더보기</summary><div><button id="monCopy" class="quiet-btn" title="이 달 기록 전체를 엑셀에 붙여넣을 수 있게 복사">월 기록 복사</button><p class="quick-hint">복사한 내용을 엑셀에 붙여넣으세요.</p></div></details></div>
     <div class="mon-nav">
-      <button id="prevMon" title="지난달">◀</button><b id="monLabel"></b><button id="nextMon" title="다음달">▶</button>
+      <button id="prevMon" title="지난달" aria-label="지난달">◀</button><b id="monLabel"></b><button id="nextMon" title="다음달" aria-label="다음달">▶</button>
       <button id="thisMon" class="tool" style="height:44px; padding:0 12px; margin-left:6px; font-size:13px" title="이번 달로">이번 달</button>
-      <button id="monCopy" class="tool" style="height:44px; padding:0 12px; font-size:13px" title="이 달 기록 전체를 엑셀에 붙여넣을 수 있게 복사">월 기록 복사</button>
     </div>
     <div id="monBody"></div>
   </section>
 </main>
-
-<button id="addBtn">＋ 일보 작성</button>
 
 <nav id="tabbar">
   <button data-tab="input" class="active"><span class="ti"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>일보 작성</button>
@@ -789,28 +883,32 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
   <div class="ov-body">
     <div id="draftBar" class="warnbar info" hidden>📝 작성하다 만 내용을 불러왔습니다 <button type="button" id="draftClear">임시작성 비우기</button></div>
     <div id="fieldEntrySyncStatus" class="warnbar info" role="status" aria-live="polite" hidden></div>
-    <details id="workerDetails"><summary>작업자 <b id="entryWorkerLabel"></b> · 이름 변경</summary>
+    <div class="entry-basics">
+    <details id="workerDetails"><summary>작업자 <b id="entryWorkerLabel"></b><span class="detail-hint">이름 변경</span></summary>
     <div class="f-label">작업자 <span class="req">*</span></div>
     <input class="f-input" id="fWorker" placeholder="이름" autocomplete="off">
     <div class="chips" id="fWorkerChips" style="margin-top:7px"></div>
     </details>
-    <div id="reservationLoad" hidden></div>
-    <div id="recentLoad" hidden></div>
-
-    <div class="f-label">작업시간 (시간)</div>
+    <div class="entry-hours"><label class="f-label" for="fHours">작업시간</label>
     <div class="stepper">
       <button id="hrMinus" type="button" aria-label="작업시간 0.5시간 줄이기">−</button>
       <input id="fHours" inputmode="decimal" value="10" aria-label="작업시간 (시간)">
       <button id="hrPlus" type="button" aria-label="작업시간 0.5시간 늘리기">＋</button>
     </div>
+    </div>
+    </div>
+    <div id="reservationLoad" hidden></div>
+    <div id="recentLoad" hidden></div>
 
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
     <div id="entryReservationFlow" hidden></div>
     <div id="quickProducts" hidden></div>
-    <div id="entryRoutingTools"><button type="button" id="entryRouting">여러 품목 일정 묶기</button><span id="entryRoutingNote" role="status">기존 예약은 자동 연결 · 새로 묶을 때만 사용</span></div>
+    <div class="entry-detail-heading"><h3>품목 상세</h3><div id="entryRoutingTools"><button type="button" id="entryRouting">여러 품목 일정 묶기</button><span id="entryRoutingNote" role="status"></span></div></div>
     <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
     <div id="prodBlocks"></div>
-    <button type="button" id="addProdBlock">＋ 같은 작업자 제품 추가</button>
+    <div class="entry-extra-tools">
+    <button type="button" id="addProdBlock">＋ 품목 추가</button>
+    </div>
     <div id="entryErr" role="alert" hidden></div>
   </div>
   <div class="ov-actions">
@@ -823,10 +921,8 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 <div class="overlay" id="setOv" role="dialog" aria-modal="true" aria-label="관리자 설정">
   <div class="ov-head"><b>관리자 설정</b><button class="x" id="setClose" aria-label="설정 닫기">✕</button></div>
   <div class="ov-body">
-    <div id="data-access-settings" data-access-settings class="set-sec"></div>
-    <div class="set-sec">
-      <div class="set-note" id="setStatus" style="margin-bottom:12px"></div><button id="fieldServerSettings" type="button" class="btn sec" onclick="AppAccess.fieldSettings(ghCfg())" hidden>서버 연결 · 토큰 · 공유 링크 관리</button>
-      <h4>일보 작성 대상 명단 <span id="rosterCount" style="font-weight:400; color:var(--ink-dim); font-size:13px"></span></h4>
+    <div class="set-note" id="setStatus"></div>
+    <details class="settings-group" id="rosterSettings"><summary>작성 대상 명단 <span id="rosterCount" style="font-weight:400; color:var(--ink-dim); font-size:13px"></span><small>이름 추가 · 부서 이동 · 휴직</small></summary><div class="settings-content">
       <div class="set-note" style="margin-bottom:8px">
         <b>체크한 사람</b>을 기준으로 미작성자를 확인합니다. 부서 이동·퇴사자는 체크를 끄세요. 과거 기록은 남으며, 다시 일보를 쓰면 작성 대상에 포함됩니다.
       </div>
@@ -835,7 +931,9 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
         <input class="f-input" id="rosterAdd" placeholder="이름 추가" autocomplete="off">
         <button type="button" class="qzero" id="rosterAddBtn">명단 추가</button>
       </div>
-      <div class="f-label" style="margin-top:22px"></div>
+    </div></details>
+    <details class="settings-group" id="connectionSettings"><summary>저장 연결 · 공유 · 공지<small>연결 정보와 작업자 접속 링크</small></summary><div class="settings-content">
+      <button id="fieldServerSettings" type="button" class="btn sec" onclick="AppAccess.fieldSettings(ghCfg())" hidden>서버 연결 · 토큰 · 공유 링크 관리</button>
       <details id="ghAdv">
         <summary style="cursor:pointer; font-weight:700; padding:6px 0">저장소 연결 · 공지</summary>
         <div class="set-note">연결 정보를 확인하고 수정합니다. 설정을 닫으면 관리자 인증이 종료됩니다.</div>
@@ -876,9 +974,8 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
         <button class="btn pri" id="shareLink">📋 공유 링크 복사</button>
       </div>
       <input class="f-input" id="shareLinkOut" readonly placeholder="위 버튼을 누르면 여기에 링크가 나옵니다" style="margin-top:8px">
-    </div>
-    <div class="set-sec">
-      <h4>자료 백업 · 인터넷 없이 작업</h4>
+    </div></details>
+    <details class="settings-group" id="backupSettings"><summary>자료 백업 · 오프라인<small>파일 보관 · 별도 사본으로 작업</small></summary><div class="settings-content set-sec">
       <h5 class="set-step-title">1. 백업 파일 내려받기</h5>
       <div class="set-note" id="backupScopeNote">전체 자료 백업은 연결된 저장소의 모든 일보·명단·관리 품목·진행 자료를 읽습니다. 이 기기 보관분은 일부 기록일 수 있습니다. 연결 암호와 토큰은 백업에 넣지 않습니다.</div>
       <div class="btnrow">
@@ -893,7 +990,8 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
       <h5 class="set-step-title">3. 이전에 열었던 사본 이어서 작업하기</h5>
       <div class="f-row" style="margin-top:12px"><select class="f-input" id="offlineWorkspaceSelect" aria-label="보관한 오프라인 작업공간"></select><button class="btn sec" onclick="openSavedOfflineWorkspace()">보관 사본 열기</button></div>
       <div class="set-note" id="backupStatus" role="status" aria-live="polite"></div>
-    </div>
+    </div></details>
+    <details class="settings-group" id="loginSettings"><summary>로그인 · 화면 잠금<small>비밀번호 변경 · 앱 파일 보관</small></summary><div class="settings-content"><div id="data-access-settings" data-access-settings class="set-sec"></div></div></details>
   </div>
 </div>
 
@@ -1135,7 +1233,7 @@ const fieldTarget = c => !!(c && String(c.owner).toLowerCase()==='parkjkk' && St
 const bridgeConfig = c => !!(fieldTarget(c) && c.transport==='bridge' && typeof c.bridgeKey==='string' && /^[A-Za-z0-9_-]{43}$/.test(c.bridgeKey));
 const connectedConfig = c => !!(c && c.owner && c.repo && (bridgeConfig(c) || (c.transport!=='bridge' && c.token)));
 const scopeFor = c => connectedConfig(c) ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
-const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|productMemoDrafts$|progress$)/.test(k);
+const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|productMemoDrafts$|progress$|gypsumLots$)/.test(k);
 let activeScope = 'local', legacyScope = '', storeEpoch = 0;
 const storageKey = (k, scope=activeScope) => scopedItem(k) ? 'ilbo.store.'+encodeURIComponent(scope)+'.'+k : k;
 function contextError(){ const e = new Error('연결된 저장소가 바뀌었습니다. 현재 연결에서 기록을 다시 열어 주세요.'); e.contextChanged = true; return e; }
@@ -2190,7 +2288,9 @@ function renderFieldInteractionStatusContents(){
   const syncNotes={pending:'저장 직후 생산관리에 반영을 요청했습니다.',running:'생산관리에 반영 중입니다. 완료되면 자동으로 확인합니다.',applied:'서버 반영 완료 · 현재 기록의 집계를 확인하고 있습니다.',review:'서버 반영 완료 · 관리 앱의 미반영 기록을 확인해 주세요.',permission:'일보는 저장됐습니다. 관리자에게 서버 연결의 저장 권한 확인을 요청해 주세요.',configuration:'일보는 저장됐습니다. 관리자에게 관리 서버 연결 확인을 요청해 주세요.',source:'일보는 저장됐습니다. 관리 자료 확인 후 다시 반영합니다.',retry:'일보는 저장됐습니다. 관리 반영을 다시 시도하고 있습니다.',conflict:'다른 변경과 합쳐 관리에 다시 반영하고 있습니다.'};
   const syncing=fieldManagementSync?.epoch===storeEpoch?syncNotes[fieldManagementSync.status]:null;
   const blocked=fieldRefreshBlocked(),note=counts.pending?'이 기기에 보관한 기록이 있습니다. 위의 지금 전송으로 먼저 보내 주세요.':blocked?'입력한 내용은 그대로 유지됩니다. 작성·저장을 마치면 최신 자료를 다시 확인합니다.':fieldRemotePending?'최신 자료 확인을 기다리고 있습니다. 잠시 후 자동으로 확인하거나 아래 버튼을 눌러 주세요.':counts.waiting?(syncing||'일보는 저장됐습니다. 생산관리 반영을 기다리는 중이므로 다시 입력하지 않아도 됩니다.'):progressSourceNote();
-  host.innerHTML=`<div class="field-sync-copy"><b>${esc(parts.join(' · ')||'현장일보 · 생산관리 공유')}</b><small>${esc(note)}</small></div><button id="progressRefresh" type="button"${fieldProgressReviewBusy||blocked?' disabled':''} title="${esc(blocked?'작성·저장·전송을 마친 뒤 확인할 수 있습니다.':'다른 기기에서 바뀐 일보와 생산관리 집계를 다시 불러옵니다. 입력 내용은 저장하지 않습니다.')}" >${fieldProgressReviewBusy?'확인 중…':'최신 자료 확인'}</button>`;
+  const syncNeedsReview=fieldManagementSync?.epoch===storeEpoch&&['permission','configuration','source','review'].includes(fieldManagementSync.status);
+  const noteOpen=host.querySelector('details')?.open||counts.pending||counts.review||counts.cached||syncNeedsReview||fieldRemotePending||S.offline;
+  host.innerHTML=`<div class="field-sync-copy"><b>${esc(parts.join(' · ')||'현장일보 · 생산관리 공유')}</b><details${noteOpen?' open':''}><summary>연동 안내</summary><small>${esc(note)}</small></details></div><button id="progressRefresh" type="button"${fieldProgressReviewBusy||blocked?' disabled':''} title="${esc(blocked?'작성·저장·전송을 마친 뒤 확인할 수 있습니다.':'다른 기기에서 바뀐 일보와 생산관리 집계를 다시 불러옵니다. 입력 내용은 저장하지 않습니다.')}" >${fieldProgressReviewBusy?'확인 중…':'최신 자료 확인'}</button>`;
   host.querySelector('button').onclick=refreshFieldInteraction;
 }
 async function refreshFieldInteraction(){
@@ -2540,6 +2640,7 @@ function setTab(t){
   $('#view-input').style.display = t==='input' ? '' : 'none';
   $('#view-sheet').style.display = t==='sheet' ? '' : 'none';
   $('#view-month').style.display = t==='month' ? '' : 'none';
+  document.querySelector('.tb-date').hidden=t==='month';
   $('#addBtn').style.display = t==='input' ? '' : 'none';
   $$('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab===t));
   document.querySelector('main').classList.toggle('wide', t==='sheet');
@@ -2578,7 +2679,7 @@ function renderMyDay(){
   const pending=driver.mode==='gh' && pendingWorkerNames(S.date).has(name);
   const draft=draftsAll()[name];
   const status=pending?'전송 대기 · 기기에 보관됨':!S.dayLoaded?'기록 확인 중':production.length?`${production.length}개 제품 · 생산 ${r2(production.reduce((s,r)=>s+(Number(r.prod)||0),0))}조`:together.length?together.map(r=>r.worker+'와 '+fieldProductName(r)+' 공동작업').join(' · '):mine.length?offLabel(mine[0]):'아직 작성하지 않았습니다';
-  const action=production.length?'오늘 기록 한꺼번에 수정':draft?'작성하던 내용 이어쓰기':together.length?'공동작업 기록 확인·수정':mine.length?'기록 확인·수정':'내 일보 쓰기';
+  const action=production.length?'내 일보 수정':draft?'이어서 작성':together.length?'공동작업 확인·수정':mine.length?'기록 확인·수정':'내 일보 작성';
   box.innerHTML=`<div class="my-day-head"><h3>${S.date===todayStr()?'오늘':'선택 날짜'} · ${esc(name)}</h3><button class="quiet-btn" id="myChange">이름 변경</button></div><p class="my-state">${esc(status)}${draft&&production.length?' · 새 기록 임시저장 있음':''}</p><div class="my-actions"><button class="btn pri" id="myWrite">${action}</button>${production.length?'<button class="btn sec" id="myExtra">제품 추가</button>':''}</div>`;
   $('#myChange').onclick=()=>{S.meEdit=true;renderMeChips();$('#meChips').scrollIntoView({block:'center'});};
   $('#myWrite').onclick=()=>{if(production.length) openWorkerEntry(name); else if(together.length)openEntry(together[0]); else if(mine[0] && !isRest(mine[0])) openCaseEntry(name,mine[0]); else openEntryFor(name,{auto:!draft});};
@@ -2696,7 +2797,7 @@ function renderMissing(){
     const filter=S.rosterFilter||'missing';
     const chosen=people.filter(p=>filter==='pending'?waiting.has(p.name):p.kind===filter);
     const open=!!LS.get('ilbo.rosterOpen',false);
-    card.innerHTML=`<h3>부서 확인 · ${dayWord} ${miss.length?`미작성 ${miss.length}명`:'전원 확인 완료'}</h3><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div><details class="roster-details" ${open?'open':''}><summary>${filters.find(x=>x[0]===filter)[1]} 이름 보기</summary>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${esc(p.description)}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}<p class="quick-hint">부서 이동·파견 종료는 설정의 부서 명단에서 변경합니다.</p></details>`;
+    card.innerHTML=`<details class="roster-details" ${open?'open':''}><summary>작성 현황 · ${dayWord} ${miss.length?`<b>미작성 ${miss.length}명</b>`:'전원 확인 완료'}</summary><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${esc(p.description)}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}</details>`;
     card.querySelector('details').ontoggle=e=>LS.set('ilbo.rosterOpen',e.target.open);
     card.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{S.rosterFilter=b.dataset.filter;LS.set('ilbo.rosterOpen',true);renderMissing();});
     card.querySelectorAll('.person-open').forEach(b=>b.onclick=()=>{
@@ -2715,16 +2816,15 @@ function renderGuide(){
   const old = $('#guideCard'); if(old) old.remove();
   if(LS.get('ilbo.guideDone', false)) return;
   $('#missCard').insertAdjacentHTML('beforebegin', `
-    <div class="card guide-card" id="guideCard">
-      <b>처음이세요? 이렇게 쓰면 됩니다</b>
+    <details class="view-help guide-card" id="guideCard">
+      <summary>처음 사용하는 분께</summary>
       <ol>
         <li><b>내 이름</b>을 한 번 선택한 뒤 <b>내 일보</b>에서 작성하세요. 다른 사람 기록은 <b>부서 작성 현황</b>을 펼쳐 확인할 수 있습니다.</li>
         <li><b>제품명</b> 버튼을 누르고 <b>생산량</b> 숫자만 넣으세요 (검사는 기본 ○ · 불량이 있으면 제품 칸 아래 <b>불량 있음</b>)</li>
-        <li>맨 아래 <b>저장</b> — 끝. 제품이 여러 개면 <b>＋ 제품 추가</b></li>
+        <li>맨 아래 <b>일보 저장</b>을 누르세요. 제품이 여러 개면 <b>＋ 품목 추가</b>를 이용하세요.</li>
       </ol>
-      <div style="margin-top:6px; font-size:13px; font-weight:400">📱 카톡에서 열었다면 오른쪽 위 ⋮ → <b>다른 브라우저로 열기</b> → 크롬 메뉴 ⋮ → <b>홈 화면에 추가</b>하면 다음부터 앱처럼 바로 열립니다</div>
       <button type="button" id="guideOk">알겠어요</button>
-    </div>`);
+    </details>`);
   $('#guideOk').onclick = () => { LS.set('ilbo.guideDone', true); $('#guideCard').remove(); };
 }
 /* ── 기물 진행 상황: 시작일(계획>0 기록)부터 누적 생산을 세어 '생산 종료(0)'까지 — 달이 바뀌어도 이어짐 ── */
@@ -2892,7 +2992,7 @@ function renderInputContents(){
   if(!rows.length){
     $('#rowList').innerHTML = (S.loading && !S.dayLoaded)
       ? `<div class="empty-note">불러오는 중…</div>`
-      : `<div class="empty-note">아직 기록이 없습니다.<br>아래 <b>＋ 일보 작성</b>을 눌러 시작하세요.</div>`;
+      : `<div class="empty-note">아직 기록이 없습니다.<br><b>내 일보 작성</b> 또는 <b>＋ 일보 작성</b>으로 시작하세요.</div>`;
     return;
   }
   const groups = [];
@@ -2968,12 +3068,19 @@ const api={validDate,event,events,at,edit};root.GypsumLots=api;if(typeof module!
 
 let fieldLots={epoch:-1,events:[],loaded:0,promise:null,error:'',generation:0,notice:null};
 let fieldLotsAuthVersion=0,fieldLotSession=null;
+function fieldLocalLotEvents(){
+ /* Workspace values win, including an explicit empty list. Never assign the old global value to another workspace. */
+ let raw=localStorage.getItem(storageKey('ilbo.gypsumLots'));
+ if(raw===null&&fieldOffline)return GypsumLots.events(fieldOffline.packet.local?.gypsumLots||[]);
+ if(raw===null&&activeScope===legacyScope)raw=localStorage.getItem('ilbo.gypsumLots');
+ try{return GypsumLots.events(raw===null?[]:JSON.parse(raw));}catch(e){throw Error('기기에 보관한 석고 로트를 읽지 못했습니다. 기존 값은 그대로 두었습니다.');}
+}
 async function loadFieldLots(force=false){
  if(!AppAccess.unlocked)return false;
  const epoch=storeEpoch,drv=driver,auth=fieldLotsAuthVersion;if(fieldLots.epoch!==epoch)fieldLots={epoch,events:[],loaded:0,promise:null,error:'',generation:0,notice:null};const scope=fieldLots,generation=scope.generation;
  if(scope.promise)return scope.promise;if(!force&&Date.now()-scope.loaded<30000)return !scope.error;
  const current=()=>epoch===storeEpoch&&driver===drv&&fieldLots===scope&&generation===scope.generation&&auth===fieldLotsAuthVersion&&AppAccess.unlocked;
- const request=(async()=>{await Promise.resolve();try{const result=drv.mode==='local'||drv.offline?{events:LS.get('ilbo.gypsumLots',[])}:await drv.sharedLots({action:'read'});if(!current())return false;scope.events=GypsumLots.events(result.events);scope.error='';return true;}catch(e){if(current())scope.error=e.message;return false;}finally{if(scope.promise===request)scope.promise=null;if(current()){scope.loaded=Date.now();renderGypsumLots(false);if(S.tab==='sheet')renderSheet();}}})();scope.promise=request;return request;
+ const request=(async()=>{await Promise.resolve();try{const result=drv.mode==='local'||drv.offline?{events:fieldLocalLotEvents()}:await drv.sharedLots({action:'read'});if(!current())return false;scope.events=GypsumLots.events(result.events);scope.error='';return true;}catch(e){if(current())scope.error=e.message;return false;}finally{if(scope.promise===request)scope.promise=null;if(current()){scope.loaded=Date.now();renderGypsumLots(false);if(S.tab==='sheet')renderSheet();}}})();scope.promise=request;return request;
 }
 function fieldLotCurrent(s){return fieldLotSession===s&&s.epoch===storeEpoch&&s.drv===driver&&s.date===S.date&&s.auth===fieldLotsAuthVersion&&AppAccess.unlocked&&s.dialog.isConnected}
 function closeFieldLotDialog(){const s=fieldLotSession;if(!s)return;fieldLotSession=null;s.read++;if(s.dialog.open)s.dialog.close();s.dialog.remove()}
@@ -2996,7 +3103,7 @@ function openFieldLots(){
   if(!fieldLotCurrent(s)||s.busy||!s.ready||!s.dirty)return;const auth=s.auth;let value;
   try{value=GypsumLots.event({date:s.date,lot:input.value,overlap:overlap.checked});GypsumLots.edit(s.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'})),{date:s.date,base:s.base,value});}catch(e){error.textContent=e.message;return;}
   s.busy=true;fieldLots.generation++;fieldLots.promise=null;fieldLots.notice={date:s.date,kind:'pending',text:'석고 로트 저장 중…'};status.className='field-lot-feedback pending';status.textContent='저장 중입니다. 잠시 기다려 주세요…';error.textContent='';buttons();renderGypsumLots(false);fieldWrites++;
-  try{const request={action:'save',date:s.date,base:s.base,value};let result;if(s.drv.mode==='local'||s.drv.offline){const records=GypsumLots.edit(LS.get('ilbo.gypsumLots',[]).map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'})),request).records,next=GypsumLots.events(records);if(!LS.set('ilbo.gypsumLots',next))throw Error('기기 저장 공간을 확인해 주세요.');result={events:next};}else result=await s.drv.sharedLots(request);
+  try{const request={action:'save',date:s.date,base:s.base,value};let result;if(s.drv.mode==='local'||s.drv.offline){const records=GypsumLots.edit(fieldLocalLotEvents().map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'})),request).records,next=GypsumLots.events(records);if(!LS.set('ilbo.gypsumLots',next))throw Error('기기 저장 공간을 확인해 주세요.');result={events:next};}else result=await s.drv.sharedLots(request);
    if(!fieldLotCurrent(s)||auth!==s.auth)return;const accepted=GypsumLots.events(result.events);if(JSON.stringify(accepted.find(e=>e.date===s.date)||null)!==JSON.stringify(value))throw Error('저장 결과를 확인하지 못했습니다. 입력 내용을 유지했으니 다시 저장해 주세요.');fieldLots.events=accepted;fieldLots.loaded=Date.now();fieldLots.error='';s.events=accepted.map(e=>({...e}));s.base=s.events.find(e=>e.date===s.date)||null;s.dirty=false;const message=s.drv.mode==='local'||s.drv.offline?'저장 완료 · 이 작업공간에 저장했습니다.':'저장 완료 · 생산관리에도 적용됩니다.';fieldLots.notice={date:s.date,kind:'success',text:message};status.className='field-lot-feedback success';status.textContent=message;renderGypsumLots(false);if(S.tab==='sheet')renderSheet();
   }catch(e){if(fieldLotCurrent(s)&&auth===s.auth){status.className='field-lot-feedback';status.textContent='입력 내용은 그대로 있습니다.';error.textContent=e.message;fieldLots.notice={date:s.date,kind:'error',text:'로트 저장 실패 · 입력창에서 다시 저장해 주세요.'};renderGypsumLots(false);}}
   finally{fieldWrites--;if(auth===s.auth){s.busy=false;if(fieldLotCurrent(s))buttons()}}
@@ -3222,7 +3329,7 @@ function syncQuickProducts(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<div class="quick-head"><h3>오늘 만든 조수 입력</h3><output class="quick-total" aria-live="polite"></output></div><p class="quick-hint">기존 수기예약의 호기·순서는 자동으로 이어집니다. 품목마다 오늘 만든 조수만 입력하세요.</p>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
@@ -3911,7 +4018,7 @@ function openEntry(row, presetName, mode){
   renderProductCatalogNote();
   const isCase = S.entryMode === 'case';
   $('#prodBlocks').hidden = isCase; $('#addProdBlock').hidden = isCase; $('#caseNote').hidden = !isCase;
-  $('#entryRoutingTools').hidden=isCase;$('#entryRoutingNote').textContent='기존 예약은 자동 연결 · 새로 묶을 때만 사용';
+  $('#entryRoutingTools').hidden=isCase;$('#entryRoutingNote').textContent='';
   S.draftKey = undefined; S.draftOwn = false;
   S.editId = row ? row.id : null;
   S.caseRowId = row ? row.id : uid();
@@ -4532,8 +4639,8 @@ function drawMonth(rawDays, y, m){
   const body = $('#monBody');
   body.innerHTML = tiles + pills +
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
-    `<div class="mon-sec" data-sec="prod"><div class="mon-note" style="text-align:left">기본순: 생산중은 진행률 높은 순 · 종료는 최근 종료일순 · 대기·확인은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}<br>같은 제품의 생산중 작업이 여러 개면 가장 높은 진행률 기준 · 진행률 미상은 생산중 목록 끝에 표시</div>${showManaged?wrapT(renderManagedProgressTable(days,managedMonth)):''}<div class="mon-note" style="text-align:left">${pNote}</div>${wrapT(pTable)}</div>` +
-    `<div class="mon-sec" data-sec="worker"><div class="mon-note" style="text-align:left">미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</div>${wrapT(wTable)}<div class="mon-note" style="text-align:left">본인 기록은 해당 작업자 이름으로 저장한 생산량입니다.${wNames.some(n=>workerStat[n].team)?' 함께 참여한 수량은 원래 담당자의 생산량에 포함되어 전체 합계에 다시 더하지 않습니다.':''}</div></div><section class="product-detail" id="monthDetail" hidden></section>`;
+    `<div class="mon-sec" data-sec="prod"><details class="view-help month-help"><summary>집계 · 정렬 기준</summary><p>기본순: 생산중은 진행률 높은 순 · 종료는 최근 종료일순 · 대기·확인은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}<br>같은 제품의 생산중 작업이 여러 개면 가장 높은 진행률 기준 · 진행률 미상은 생산중 목록 끝에 표시</p><p>${pNote}</p></details>${showManaged?'<h3>생산관리와 연결된 작업</h3>'+wrapT(renderManagedProgressTable(days,managedMonth)):''}<h3>이달 제품별 생산</h3>${wrapT(pTable)}</div>` +
+    `<div class="mon-sec" data-sec="worker"><details class="view-help month-help"><summary>작업일 · 생산량 집계 기준</summary><p>미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</p><p>본인 기록은 해당 작업자 이름으로 저장한 생산량입니다.${wNames.some(n=>workerStat[n].team)?' 함께 참여한 수량은 원래 담당자의 생산량에 포함되어 전체 합계에 다시 더하지 않습니다.':''}</p></details>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
   body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
   body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
   bindMonthTableSorts(body);
@@ -4578,6 +4685,7 @@ function renderPrintChecks(){
   }
   $('#printChecks summary').textContent=checks.length?`인쇄 전 확인 · ${checks.length}개 항목`:'인쇄 전 확인 · 미작성·입력 누락 경고 없음';
   box.innerHTML=checks.map((c,i)=>`<button data-check="${i}">${esc(c.text)}</button>`).join('')||'<p class="quick-hint">자동 점검 결과입니다. 인쇄 미리보기에서 날짜와 내용을 한 번 더 확인하세요.</p>';
+  $('#printChecks').classList.toggle('has-checks',checks.length>0);
   box.querySelectorAll('[data-check]').forEach(b=>b.onclick=checks[Number(b.dataset.check)].action);
 }
 function copyMonthTSV(){
@@ -4688,6 +4796,7 @@ function fillFieldConnection(){
 }
 async function requestFieldConnection(){
   if(!fieldSettingsReady()) return false;
+  $('#connectionSettings').open = true;
   if(fieldConnectionReady()) return true;
   fillFieldConnection(); $('#ghAdv').open = true;
   return fieldConnectionReady();
@@ -4940,7 +5049,7 @@ function offlineWorkspaceDriver(id){
 }
 function fieldLocalSnapshot(){
   const printed={};for(const key of LS.keys('ilbo.printed.')){const date=key.slice(13);if(fieldDate(date))printed[date]=LS.get(key,null);}
-  return{...(fieldOffline?.packet.local||{}),outbox:fieldCopy(outboxAll()),drafts:LS.get('ilbo.drafts',{}),presetsRetry:LS.get('ilbo.presetsRetry',{}),gypsumLots:fieldCopy(fieldLots.epoch===storeEpoch?fieldLots.events:LS.get('ilbo.gypsumLots',[])),printed};
+  return{...(fieldOffline?.packet.local||{}),outbox:fieldCopy(outboxAll()),drafts:LS.get('ilbo.drafts',{}),presetsRetry:LS.get('ilbo.presetsRetry',{}),gypsumLots:fieldCopy(driver.mode==='local'||driver.offline?fieldLocalLotEvents():fieldLots.epoch===storeEpoch?fieldLots.events:LS.get('ilbo.gypsumLots',[])),printed};
 }
 async function buildFieldBackup(partial=false){
   const epoch=storeEpoch,drv=driver,cfg=ghCfg(),local=fieldLocalSnapshot();let files={},coverage;
@@ -5025,6 +5134,7 @@ function init(){
   $('#entryClose').onclick = () => requestCloseEntry(false);
   $('#entrySave').onclick = saveEntry;
   $('#entryRouting').onclick = openEntryRouting;
+  $('#connectionSettings').addEventListener('toggle',()=>{if(!$('#connectionSettings').open)clearFieldConnection();});
   $('#fWorker').addEventListener('change', () => {$('#entryWorkerLabel').textContent=$('#fWorker').value||'선택 안 됨';updateRecentBtn(false);});
   $('#entryOv').addEventListener('input', saveDraft);
   ['#fWorker','#fHours'].forEach(sel => $(sel).addEventListener('input', e => {   /* 이름·시간 칸의 오류 표시도 입력하면 사라지게 */
@@ -5081,7 +5191,6 @@ function init(){
     setTimeout(()=>window.print(), 100);
   };
   $('#zoomBtn').onclick = () => { S.fit = !S.fit; applyZoom(); };
-  $('#reloadBtn').onclick = refreshVisibleView;
   $('#prevMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m-2,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#nextMon').onclick = () => { const [y,m]=S.month.split('-').map(Number); const d=new Date(y,m,1); S.month=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; renderMonth(); };
   $('#thisMon').onclick = () => { S.month = todayStr().slice(0,7); renderMonth(); };
