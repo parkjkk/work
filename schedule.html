@@ -1421,6 +1421,102 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
  body.sheetWorkspace.workspaceFocused .workspaceFocusOptions .sheetDatePicker{flex:1 1 160px;min-width:140px;max-width:100%}
 }
 
+/* Management workspace hierarchy. Screen only: no ledger or print geometry changes. */
+@media screen{
+ body.sheetWorkspace{--ui-ink:#243247;--ui-muted:#59677a;--ui-accent:#4057b8;--ui-accent-text:#304699;--ui-accent-soft:#edf1fd;background:#f3f5f8}
+ body.sheetWorkspace>header{background:#233248;border-bottom-color:#33465f}
+ body.sheetWorkspace .brand .mark{background:#4960bc}
+ body.sheetWorkspace .layout>aside{border-bottom:1px solid #dce2eb}
+ body.sheetWorkspace #nav button{font-size:14px;color:#536176;min-height:44px}
+ body.sheetWorkspace #nav button.active{background:#edf1fd;color:#304699;box-shadow:inset 0 -3px #4057b8}
+ body.sheetWorkspace:not(.workspaceFocused) #main{padding-top:18px;padding-bottom:28px}
+ body.sheetWorkspace:not(.workspaceFocused)[data-workspace-page=daily] #main{max-width:1360px}
+ body.sheetWorkspace:not(.workspaceFocused):is([data-workspace-page=stock],[data-workspace-page=report],[data-workspace-page=home],[data-workspace-page=audit]) #main{max-width:1240px}
+ body.sheetWorkspace:not(.workspaceFocused)[data-workspace-page=master] #main{max-width:1160px}
+ body.sheetWorkspace .top{align-items:center;gap:14px;margin-bottom:12px}
+ body.sheetWorkspace .top h1{font-size:22px;font-weight:750;line-height:1.4;margin-bottom:3px;color:#243247}
+ body.sheetWorkspace .top .subtle{font-size:13px;line-height:1.6;color:#59677a}
+ body.sheetWorkspace .top .actions{gap:8px}
+ body.sheetWorkspace .top :is(button,select){min-height:38px;font-size:13px;padding:7px 12px}
+ body.sheetWorkspace .workspaceTools{margin:0 0 12px;gap:8px}
+ body.sheetWorkspace .workspaceTools button{border-color:transparent;background:transparent;color:#52647b;font-size:12px}
+ body.sheetWorkspace .workspaceTools button:hover{background:#e8edf5;border-color:#d5dce8}
+ body.sheetWorkspace .workspaceScope{font-size:12px;color:#59677a}
+ body.sheetWorkspace button.primary{background:#4057b8;border-color:#4057b8;color:#fff}
+ body.sheetWorkspace button.primary:hover:not(:disabled){background:#334898;border-color:#334898;color:#fff}
+ body.sheetWorkspace button.primary:disabled{opacity:1;background:#e4e8f0;border-color:#dce2ec;color:#59677a}
+ body.sheetWorkspace :is(button,summary,input,select,textarea):focus-visible{outline:3px solid #4057b8;outline-offset:2px}
+ body.sheetWorkspace .sheetEditor{border-color:#d5dde8;border-radius:12px}
+ body.sheetWorkspace .sheetToolbar{padding:10px 12px;background:#fff;gap:8px;border-bottom:1px solid #dce2eb}
+ body.sheetWorkspace .sheetToolbar strong{font-size:14px;color:#283b53}
+ body.sheetWorkspace .sheetToolbar button{font-size:12px;min-height:34px;padding:6px 10px}
+ body.sheetWorkspace .sheetToolbar [data-sheet-command=save]{min-width:92px;font-weight:700}
+ body.sheetWorkspace .sheetFilters{padding:8px 12px;background:#fafbfd;gap:10px;font-size:12px}
+ body.sheetWorkspace :is(.sheetMessage,.sheetBottom,.secondaryScope,.secondaryGridNotice,.footerNote){font-size:12px;line-height:1.6;color:#59677a}
+ body.sheetWorkspace .inputSheet{font-size:13px}
+ body.sheetWorkspace .inputSheet thead th{background:#eaf0f7;color:#40516b;font-size:12px;font-weight:650;padding:9px 6px}
+ body.sheetWorkspace .inputSheet td.calculated{color:#465b74;background:#f3f6fa}
+ body.sheetWorkspace .inputSheet tr.selected:not(.deleted)>td:not(.cellError){background:#eaf0ff}
+ body.sheetWorkspace .inputSheet .rowActions button{color:#9c3439}
+ body.sheetWorkspace .inputSheet .rowActions button:hover:not(:disabled){background:#fff0f0;border-color:#dca9ad;color:#83252b}
+ body.sheetWorkspace .workspaceTabs{gap:6px;padding:0 0 8px;margin:6px 0 14px}
+ body.sheetWorkspace .workspaceTabs button{font-size:13px;min-height:38px;padding:8px 14px}
+ body.sheetWorkspace .workspaceTabs button[aria-selected=true]{background:#edf1fd;color:#304699;box-shadow:inset 0 -2px #4057b8}
+ body.sheetWorkspace .pgTopActions{border-radius:12px;padding:10px 12px}
+ body.sheetWorkspace .pgTopActions button{font-size:13px}
+ body.sheetWorkspace .pgTopActions #pgSaveChanges{font-size:14px;font-weight:700}
+ body.sheetWorkspace .pgSurface #pgSelectionInfo{display:flex;align-items:center;gap:6px}
+ body.sheetWorkspace .pgSurface #pgSelectionText{flex:1;min-width:0}
+ body.sheetWorkspace .pgSurface #pgSelectionInfo>button{flex:0 0 auto}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>button[hidden]{display:none!important}
+ body.sheetWorkspace #pgSelectionInfo>#pgSelectionConditions[data-pg-duplicate-conditions=true]{display:none!important}
+ body.sheetWorkspace .pgSurface #pgSelectionInfo>.pgSelectionNew{display:none}
+ body.sheetWorkspace .workspaceMoreItems>button{text-align:left;min-height:40px;padding:9px 12px}
+ body.sheetWorkspace .workspaceMore>button::after{content:'';display:inline-block;width:6px;height:6px;margin-left:9px;margin-bottom:2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+ body.sheetWorkspace .workspaceMore.open>button{background:#edf1fd;color:#304699;border-color:#b4c0e5}
+ body.sheetWorkspace .pgCustomRange{position:relative;align-self:flex-end;min-width:140px}
+ body.sheetWorkspace .pgCustomRange>summary{list-style:none;cursor:pointer;border:1px solid #ccd4df;border-radius:7px;padding:10px 12px;background:#fff;color:#465267;font-size:13px;line-height:20px;min-height:42px}
+ body.sheetWorkspace .pgCustomRange>summary::after{content:'＋';float:right;margin-left:8px}
+ body.sheetWorkspace .pgCustomRange[open]>summary::after{content:'−'}
+ body.sheetWorkspace .pgCustomRange>div{position:absolute;right:0;top:calc(100% + 6px);width:320px;max-width:calc(100vw - 44px);display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px;background:#fff;border:1px solid #ccd4df;border-radius:10px;box-shadow:0 8px 24px #24324720;z-index:35}
+ body.sheetWorkspace .pgCustomRange label{min-width:0;max-width:none!important;width:auto!important}
+ body.sheetWorkspace .pgCustomRange input{width:100%;min-width:0}
+ body.sheetWorkspace .pgFocused .pgCustomRange>div{left:0;right:auto}
+}
+@media screen and (min-width:721px){
+ body.sheetWorkspace .sheetViewport:has(.inputSheet){border-top:1px solid #e0e6ee}
+ body.sheetWorkspace .sheetToolbar>.actions{gap:7px}
+ body.sheetWorkspace .sheetFilters input[type=search]{min-width:210px}
+}
+@media screen and (max-width:720px){
+ /* All nine destinations stay visible in two rows; no hidden management tab. */
+ body.sheetWorkspace #nav{grid-template-columns:repeat(5,minmax(0,1fr));gap:2px}
+ body.sheetWorkspace #nav button{font-size:12px;line-height:1.35;padding:5px 2px;min-height:44px;word-break:keep-all}
+ body.sheetWorkspace .layout>aside{padding:4px 6px}
+ body.sheetWorkspace:not(.workspaceFocused) #main{padding:12px 10px 24px}
+ body.sheetWorkspace:not(.workspaceFocused) .top{align-items:flex-start;gap:8px;margin-bottom:8px}
+ body.sheetWorkspace .top h1{font-size:19px;line-height:1.45;margin:8px 0 0}
+ body.sheetWorkspace:not(.workspaceFocused) .top .subtle{display:none}
+ body.sheetWorkspace:not(.workspaceFocused) .top>.actions{justify-content:flex-end;gap:6px;flex:1 1 210px}
+ body.sheetWorkspace .top :is(button,select){font-size:12px;padding:7px 9px}
+ body.sheetWorkspace .workspaceTools{margin:0 0 8px;gap:4px}
+ body.sheetWorkspace .workspaceTools>div{gap:2px}
+ body.sheetWorkspace .workspaceTools button{font-size:11px;padding:5px 7px}
+ body.sheetWorkspace .workspaceScope{font-size:11px}
+ body.sheetWorkspace .sheetToolbar{padding:8px;gap:6px}
+ body.sheetWorkspace .sheetFilters{padding:8px;gap:6px}
+ body.sheetWorkspace .sheetToolbar [data-sheet-command=save]{min-width:80px}
+ body.sheetWorkspace .workspaceTabs button{font-size:12px;padding:8px 10px}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo{display:flex;flex-wrap:wrap;gap:4px;height:90px;min-height:90px;padding:4px;margin:4px 0}
+ body.sheetWorkspace #planGridSurface #pgSelectionText{flex:0 0 100%;height:32px;max-height:32px}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>button{flex:1 1 0;width:auto;min-width:0!important;max-width:none}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>.pgSelectionNew{display:block}
+ body.sheetWorkspace .pgCustomRange{min-width:0;width:100%;align-self:end}
+ body.sheetWorkspace .pgCustomRange>summary{font-size:12px;min-height:44px;padding:10px}
+ body.sheetWorkspace .pgCustomRange>div{left:0;right:auto;width:min(320px,calc(100vw - 48px))}
+ body.sheetWorkspace .pgFocusRangeControls .pgCustomRange>div{position:static;width:100%;max-width:none;grid-template-columns:1fr;box-shadow:none;margin-top:4px}
+}
+
 .summaryPanel{background:var(--card,#fff);border:1px solid var(--line,#d6dfeb);border-radius:12px;min-width:0;overflow:hidden}
 .summaryFilters{display:flex;align-items:end;gap:12px;padding:16px 16px 10px;flex-wrap:wrap}
 .summaryFilters label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted,#5f7084);font-weight:600;flex:1 1 160px;min-width:0}
@@ -3713,7 +3809,7 @@ function enrich(s,book){s.calendar={factory:[],workers:[]};s.migrationWarnings=[
 })(globalThis);
 </script><script>(function(){'use strict';
 const C=ScheduleCore,S=ScheduleStorage,$=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt=(n,d=1)=>n==null?'—':Number(n).toLocaleString('ko-KR',{maximumFractionDigits:d}),today=()=>new Date(Date.now()+9*3600000).toISOString().slice(0,10);
-const tabs=[['daily','생산일보'],['schedule','생산일정'],['scheduleSummary','생산일정 요약'],['stock','재고·불출'],['audit','몰드 실사'],['report','월마감·보고서'],['master','관리'],['home','선택월 요약'],['source','원본·전환 점검'],['settings','🔒 설정·연결·백업']];
+const tabs=[['daily','생산일보'],['schedule','생산일정'],['scheduleSummary','일정 요약'],['stock','재고·불출'],['audit','몰드 실사'],['report','마감·보고서'],['master','품목·작업자'],['home','월 현황'],['source','원본·전환 점검'],['settings','설정·백업']];
 let state=null,month='',page='daily',filter='',draftProducts=[],busy=false,workspace=null,connectionStatus='기기자료 확인 중…',booting=true,localReadError='',connectionOpening=null,connectionPreview=null,connectionBusyBefore=false;
 const m=()=>state?.months[month];
 function ensureLocalState(){if(state)return;state=ScheduleNative.emptyState();state.source='웹 직접 입력';month=today().slice(0,7);state.months[month]=ScheduleNative.newMonth(month)}
@@ -4964,7 +5060,7 @@ scheduleView=function(){
  const form=sheetGrid(pgId,pgSpec(rows));
  return head('생산일정','작업조건과 휴일을 한 화면에서 바꾸고, 변경 저장으로 함께 반영합니다.',btn('gypsumLots','석고 로트')+btn('lotSummary','생산일정 요약')+btn('csvSchedule','저장된 일정 내려받기')+btn('dryCalc','건조일 계산')+btn('undoJobs','직전 작업조건 저장 되돌리기','',m().closed))+
  `<div class="pgSurface" id="planGridSurface"><div class="pgFocusToolbar" aria-label="확대 일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">기본 화면으로</button><button data-pg-command="focus-tools" aria-expanded="${!!v.focusTools}">도구·설명</button><button data-pg-command="dry-tools" aria-expanded="false" aria-controls="pgDrySearchPanel">호기 찾기</button><button data-pg-command="fit-width" aria-pressed="${pgFitEnabled(v)}">${pgFitEnabled(v)?"날짜 칸 넓히기":"전체 기간 맞춤"}</button></div><div class="pgTopActions" aria-label="일정 변경 저장 도구막대"><div class="actions"><button data-pg-command="add" ${m().closed?'disabled':''}>+ 생산량 기준 일정</button><button data-pg-command="manual" ${m().closed?'disabled':''}>+ 날짜 지정 일정</button><button data-pg-command="focus-conditions">작업 목록 편집</button></div><div class="pgSaveControls"><span id="pgSaveStatus" role="status" aria-live="polite">${m().closed?'마감 · 조회 전용':'변경 0건'}</span><button data-pg-command="save" id="pgSaveChanges" class="primary" disabled>일정 변경 저장</button></div></div>
- <section class="card pgCalendarPanel"><div class="toolbar pgTimelineToolbar"><div><h2>작업자별 생산일정</h2></div><div class="actions">${pgWorkerFilterHTML()}<label>표시 기간<select id="pgSpan"><option value="2" ${v.twoMonths&&!v.rangeStart?'selected':''}>이번달 + 다음달</option><option value="year" ${v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12'?'selected':''}>올해 전체</option><option value="custom" disabled ${v.rangeStart&&!(v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12')?'selected':''}>선택한 기간</option><option value="1" ${!v.twoMonths&&!v.rangeStart?'selected':''}>이번달</option></select></label><label>표 시작월<input type="month" id="pgRangeStart" value="${pgRangeInfo().first.slice(0,7)}"></label><label>표 종료월<input type="month" id="pgRangeEnd" value="${pgRangeInfo().last.slice(0,7)}"></label><button data-pg-command="today">오늘로 이동</button></div></div>
+ <section class="card pgCalendarPanel"><div class="toolbar pgTimelineToolbar"><div><h2>작업자별 생산일정</h2></div><div class="actions">${pgWorkerFilterHTML()}<label>표시 기간<select id="pgSpan"><option value="2" ${v.twoMonths&&!v.rangeStart?'selected':''}>이번달 + 다음달</option><option value="year" ${v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12'?'selected':''}>올해 전체</option><option value="custom" disabled ${v.rangeStart&&!(v.rangeStart===month.slice(0,4)+'-01'&&v.rangeEnd===month.slice(0,4)+'-12')?'selected':''}>선택한 기간</option><option value="1" ${!v.twoMonths&&!v.rangeStart?'selected':''}>이번달</option></select></label><details class="pgCustomRange" ${v.rangeStart?'open':''}><summary>기간 직접 선택</summary><div><label>표 시작월<input type="month" id="pgRangeStart" value="${pgRangeInfo().first.slice(0,7)}"></label><label>표 종료월<input type="month" id="pgRangeEnd" value="${pgRangeInfo().last.slice(0,7)}"></label></div></details><button data-pg-command="today">오늘로 이동</button></div></div>
  <div class="pgDisplayTools" aria-label="일정표 도구"><button data-pg-command="focus-mode" aria-pressed="${!!v.focus}">${v.focus?'기본 화면으로':'표 크게 보기'}</button><button data-pg-command="fit-width" aria-pressed="${!!v.fit}">${v.fit?'날짜 칸 넓히기':'화면 너비에 맞춤'}</button><details class="pgViewOptions"><summary>표 표시</summary><div><button data-pg-command="compact" aria-pressed="${!!v.compact}">${v.compact?'행 높이 늘리기':'행 높이 줄이기'}</button><button data-pg-command="overview" aria-pressed="${!!v.overview}">${v.overview?'휴일 행 보이기':'휴일 행 숨기기'}</button><label class="pgActiveFilter" title="끄면 선택하거나 가리킨 건조 호기의 짝만 연결합니다."><input type="checkbox" id="pgPairsAll" ${v.pairsAll?'checked':''}>건조 연결선 모두 보기</label><label class="pgActiveFilter"><input type="checkbox" id="pgActiveOnly" ${v.activeOnly?'checked':''}>일정이 있는 작업자만</label></div></details><button data-pg-command="calendar-tools" aria-expanded="${!!v.calendarExpanded}" aria-controls="pgCalendarExtras">휴일 편집</button><details class="pgGuide"><summary>사용 방법</summary><div><p><b>일정 수정</b> 막대를 두 번 누르거나 Enter로 열기 · 끌어서 이동 · 양끝을 끌어 기간 변경. 모바일에서는 막대 선택 후 ‘선택 일정 수정’을 누르세요.</p><p><b>선택 해제</b> Esc · 날짜 머리글이나 같은 건조 호기를 다시 누르면 날짜 열 강조가 해제됩니다.</p><p><b>기간 계산</b> 생산 작업일수는 표시한 작업자·공장 휴일만 제외하며, 토·일도 휴일 표시가 없으면 포함합니다. 막대는 휴일을 가로질러 이어집니다. 건조일 계산은 노란 공장 휴일만 제외합니다.</p>
   <div class="pgBasis"><span id="pgBasisLabel">계산 기준 ${esc(P.asOf(state,month,today()))}</span><button data-pg-command="recalculate" ${m().closed?'disabled':''} title="입력하지 않은 기간의 생산을 임의로 추가하지 않고 오늘까지의 실적으로 다시 계산">오늘 기준 재계산</button><span>날짜만 지나도 계획이 밀리지 않습니다.</span></div>
  </div></details><span id="pgFitHint" class="subtle"></span></div>
@@ -5395,7 +5491,7 @@ function pgMarkSelection(g){
  if(text&&!marker&&selected.length)text.textContent=pgSelectionNoteText(selected,text.textContent);
  if(typeof pgSyncPairHighlights==='function')pgSyncPairHighlights(timeline);
  if(typeof pgHandoffSync==='function')pgHandoffSync(g);
- pgSyncDrySearch();const row=pgKeep(g.draft).find(r=>r.id===v.selected),conditions=$('#pgSelectionConditions');if(conditions){conditions.hidden=false;conditions.disabled=!row;pgButtonLabel(conditions,g.locked()?'호기·작업조건 확인':'호기·하루 조 수정','작업조건')}const edit=$('.pgSelectionEdit');if(edit){edit.hidden=false;edit.disabled=!row;pgButtonLabel(edit,edit.getAttribute('aria-label')||(g.locked()?'작업조건 확인':'선택 일정 수정'),g.locked()?'조건 확인':'일정 수정')}if(row&&g.selected!==row.id){g.selected=row.id;g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',el.dataset.row===row.id))}else if(!row)g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',false));
+ pgSyncDrySearch();const row=pgKeep(g.draft).find(r=>r.id===v.selected),conditions=$('#pgSelectionConditions');if(conditions){conditions.disabled=!row;pgButtonLabel(conditions,g.locked()?'호기·작업조건 확인':'호기·하루 조 수정','작업조건')}const edit=$('.pgSelectionEdit');if(edit){edit.hidden=false;edit.disabled=!row;pgButtonLabel(edit,edit.getAttribute('aria-label')||(g.locked()?'작업조건 확인':'선택 일정 수정'),g.locked()?'조건 확인':'일정 수정')}if(row&&g.selected!==row.id){g.selected=row.id;g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',el.dataset.row===row.id))}else if(!row)g.host()?.querySelectorAll('tbody tr[data-row]').forEach(el=>el.classList.toggle('selected',false));
  if(text){text.title=text.textContent;text.scrollTop=0}const clear=info?.querySelector('[data-pg-command="clear-selection"]');if(clear)clear.disabled=!v.selectionActive&&!choice;const mobileLabel=$('#pgMobileSelected');if(mobileLabel)mobileLabel.textContent=pgMobileSelectionText(row);pgSyncDryDateHint();
 }
 function pgSaveState(g){const {n:count,info}=g.status(),invalid=info?.ok===false;return{count,disabled:g.locked(),label:g.loading?'초안 확인 중…':g.saving?'저장 중…':g.spec.readonly?'마감 · 조회 전용':invalid?'입력 확인 · '+(info.errors?.[0]?.message||'작업조건을 확인하세요.'):`변경 ${count}건${g.dirty&&count?' · 저장 전':''}`}}
@@ -5403,7 +5499,16 @@ function pgMobileSelectionText(row){
  const choice=pgView().timelineSelection,marker=choice?.kind==='dry'?($('#pgTimeline')?._pgDryRows||[]).find(r=>pgDryKey(r)===choice.key):null;
  return marker?'건조 '+marker.dry+' · '+marker.machine+' · '+marker.worker+' · '+(marker.product||'품명 미연결'):row?(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(row):row.worker)+' · '+row.product+' · '+(pgInputDate(row,'start')||'시작일 미입력'):'막대를 누르면 작업이 선택됩니다.';
 }
-function pgMobileSelection(g,cachedJobs=null){if(typeof pgHandoffSync==='function')pgHandoffSync(g);const selected=pgSelectedRow(g),row=selected&&(pgWorkerAllowed(selected.worker)||pgWorkerAllowed(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(selected):selected.worker))?selected:null,label=$('#pgMobileSelected'),button=$('#pgMobileEdit');if(label)label.textContent=pgMobileSelectionText(row);if(button){const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row),cachedJobs):null;button.disabled=!row;pgButtonLabel(button,g.locked()?'작업조건 확인':access?.ok?'선택 일정 수정':'호기·하루 조 수정',g.locked()?'조건 확인':'일정 수정');button.title=access?.ok?'':row?'실적 날짜를 유지하며 호기와 하루 조수를 확인합니다.':''}}
+function pgMobileSelection(g,cachedJobs=null){
+ if(typeof pgHandoffSync==='function')pgHandoffSync(g);
+ const selected=pgSelectedRow(g),row=selected&&(pgWorkerAllowed(selected.worker)||pgWorkerAllowed(typeof pgHandoffSelectedWorker==='function'?pgHandoffSelectedWorker(selected):selected.worker))?selected:null,label=$('#pgMobileSelected'),button=$('#pgMobileEdit');
+ if(label)label.textContent=pgMobileSelectionText(row);
+ const access=row&&typeof pgDirectAccess==='function'?pgDirectAccess(g,row.id,pgJobMonth(row),cachedJobs):null,conditionsOnly=g.locked()||!access?.ok&&!access?.editable;
+ if(button){button.disabled=!row;pgButtonLabel(button,g.locked()?'작업조건 확인':!row?'선택 일정 수정':conditionsOnly?'호기·하루 조 수정':'선택 일정 수정',g.locked()?'조건 확인':conditionsOnly&&row?'작업조건':'일정 수정');button.title=conditionsOnly&&row?'실적 날짜를 유지하며 호기와 하루 조수를 확인합니다.':''}
+ // The two commands open the same conditions dialog for actual-only/locked jobs.
+ // Keep one entry point there; manual schedules retain both distinct editors.
+ const conditions=$('#pgSelectionConditions');if(conditions){conditions.dataset.pgDuplicateConditions=String(!row||conditionsOnly);conditions.hidden=!row||conditionsOnly}
+}
 function pgShowJobConditions(g){
  const row=pgSelectedRow(g);if(!row)return false;if(pgView().focus)pgSetFocus(false);pgDetail(g);const target=$('#pgDetail');target?.scrollIntoView({block:'start',behavior:'smooth'});const input=target?.querySelector('[data-pg-job-field="daily"]');if(input&&!input.disabled)input.focus({preventScroll:true});return true;
 }
@@ -6752,7 +6857,10 @@ function workspaceSettings(main){
 function workspaceDailyActions(top){
  const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')&&!el.hasAttribute('data-workspace-primary')):[];if(!buttons.length)return;
  const menu=document.createElement('div'),toggle=document.createElement('button'),items=document.createElement('div');menu.className='workspaceMore';toggle.type='button';toggle.textContent='더 보기';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','workspaceDailyMore');items.id='workspaceDailyMore';items.className='workspaceMoreItems';actions.append(menu);menu.append(toggle,items);items.append(...buttons);
- toggle.onclick=()=>{const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))};items.addEventListener('click',e=>{if(e.target.closest('button')){menu.classList.remove('open');toggle.setAttribute('aria-expanded','false')}});
+ const close=(restore=false)=>{menu.classList.remove('open');toggle.setAttribute('aria-expanded','false');if(restore)toggle.focus()};
+ toggle.onclick=()=>{const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))};items.addEventListener('click',e=>{if(e.target.closest('button'))close()});
+ menu.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu.classList.contains('open')){e.preventDefault();e.stopPropagation();close(true)}});
+ menu.addEventListener('focusout',e=>{if(e.relatedTarget&&!menu.contains(e.relatedTarget))close()});
 }
 function bindWorkspaceUI(){
  workspaceRestoreFocus();
@@ -6771,6 +6879,10 @@ function bindWorkspaceUI(){
 }
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&workspaceScreen.focusPage&&!document.querySelector('dialog[open]')){e.preventDefault();if(workspaceFocusScreen.session&&!workspaceFocusScreen.session.options.hidden){workspaceFocusOptions(false);workspaceFocusScreen.session.toggle.focus()}else workspaceSetFocus(false)}});
 document.addEventListener?.('click',e=>{const s=workspaceFocusScreen.session;if(s&&!s.options.hidden&&!s.options.contains(e.target)&&!s.toggle.contains(e.target)&&!e.target.closest('dialog'))workspaceFocusOptions(false)});
+document.addEventListener?.('click',e=>{for(const menu of document.querySelectorAll('.workspaceMore.open'))if(!menu.contains(e.target)){menu.classList.remove('open');menu.querySelector(':scope>button')?.setAttribute('aria-expanded','false')}});
+document.addEventListener?.('keydown',e=>{if(e.key==='Escape'&&!document.querySelector('dialog[open]'))for(const menu of document.querySelectorAll('.workspaceMore.open')){menu.classList.remove('open');menu.querySelector(':scope>button')?.setAttribute('aria-expanded','false')}});
+document.addEventListener?.('click',e=>{for(const range of document.querySelectorAll('.pgCustomRange[open]'))if(!range.contains(e.target))range.open=false});
+document.addEventListener?.('keydown',e=>{if(e.key!=='Escape'||document.querySelector('dialog[open]'))return;const range=document.querySelector('.pgCustomRange[open]');if(range){e.preventDefault();e.stopPropagation();range.open=false;range.querySelector('summary').focus()}},true);
 
 // Trusted application automation synchronizes the private ledgers; shared worker tokens stay separate.
 let ilboStatus=null,ilboStatusScope='',ilboStatusClient=null,ilboAppliedRevision='',ilboAppliedLedgerRevision='',ilboRefreshRun=null,ilboRefreshPending=false,ilboStatusError='',ilboInitialClient=null,ilboManualChecked=null,ilboAccessVersion=0;
