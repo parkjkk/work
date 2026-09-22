@@ -1958,7 +1958,7 @@ function openProductMemo(id){
       const accepted=result.memo,pendingSaved=productMemoPut('ilbo.cache.productMemoPending',s.id,{baseRevision:S.productCatalog.revision,catalogRevision:result.catalogRevision||null,memo:accepted},s.scope),product=S.productCatalog.products.find(p=>p.id===s.id);
       if(product){product.memo=accepted;delete product.memoUnavailable}LS.set('ilbo.cache.productCatalog',S.productCatalog,s.scope);
       s.input.value=accepted;s.baseMemo=accepted;s.baseRevision=S.productCatalog.revision;const draftCleared=productMemoPut('ilbo.productMemoDrafts',s.id,null,s.scope);
-      renderInput();$$('#prodBlocks .pb').forEach(updateProductMemo);s.status.textContent='생산관리에 저장했습니다.'+(result.syncPending?' 공유 표시를 갱신 중입니다.':'')+(!pendingSaved||!draftCleared?' 이 기기의 보관 상태를 다시 확인해 주세요.':'');
+      renderInput();$$('#prodBlocks .pb').forEach(updateProductMemo);s.status.textContent='생산관리에 저장했습니다. 창을 닫아도 됩니다.'+(result.syncPending?' 두 앱의 메모 표시는 자동 갱신 중입니다.':'')+(!pendingSaved||!draftCleared?' 이 기기의 보관 상태를 다시 확인해 주세요.':'');
     }catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code==='memo-conflict'&&typeof error.currentMemo==='string'){s.conflict=error.currentMemo;dialog.querySelector('.memo-current').textContent=error.currentMemo||'(빈 메모)';dialog.querySelector('.memo-conflict').hidden=false;s.status.textContent='다른 곳에서 메모가 바뀌었습니다. 입력 내용은 그대로 유지했습니다.';}else s.status.textContent=(error.isNetwork?'연결이 끊겨 작성 내용을 보관했습니다. 연결 후 메모 저장을 다시 눌러 주세요.':error.message);}
     finally{fieldWrites--;s.busy=false;if(productMemoCurrent(s))buttons()}
   };
@@ -2078,6 +2078,7 @@ function parseProductionProgress(value){
   for(const e of entries){bySource.set(e.path+'#'+e.id,e);const key=progressIdentity(e);if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(e);for(const worker of new Set([e.worker,e.scheduleTarget?.worker,e.scheduleWorker,...(e.participants||[]),...(e.handoff?[e.handoff.originalWorker,...e.handoff.changes.map(h=>h.to)]:[])])){if(!byWorker.has(worker))byWorker.set(worker,[]);byWorker.get(worker).push(e);}}
   if(value.receipts!=null){if(!Array.isArray(value.receipts))throw Error('관리 반영 확인 형식을 확인해 주세요.');const seen=new Set();result.receipts=value.receipts.map(r=>{const key=r?.path+'#'+r?.id;if(typeof r?.path!=='string'||!/^data\/\d{4}-\d{2}-\d{2}\.json$/.test(r.path)||!validDate(r.path.slice(5,15))||typeof r.id!=='string'||!r.id||seen.has(key)||!r.source||r.source.id!==r.id)throw Error('관리 반영 확인 형식을 확인해 주세요.');seen.add(key);return{path:r.path,id:r.id,source:receiptSourceFields(r.source)};});}
   if(value.history!=null){if(!Array.isArray(value.history))throw Error('이전 생산 이력을 확인해 주세요.');result.history=value.history.map(r=>{if(!validDate(r?.date)||typeof r.id!=='string'||typeof r.product!=='string'||typeof r.productId!=='string'||!Number.isFinite(r.qty)||r.qty<=0||!Array.isArray(r.people)||!r.people.length||r.people.some(p=>typeof p.worker!=='string'||!p.worker||p.hours!==null&&(!Number.isFinite(p.hours)||p.hours<0||p.hours>24)))throw Error('이전 생산 이력을 확인해 주세요.');return r;});}
+  for(const r of result.history||[])if(r.productionStart!==undefined&&(!validDate(r.productionStart)||r.productionStart>r.date||!r.source||r.source.id!==r.id||typeof r.source.worker!=='string'||r.source.worker!==r.people[0].worker))throw Error('이전 생산의 작업 시작일을 확인해 주세요.');
   if(value.hoursHistory!=null){if(!Array.isArray(value.hoursHistory)||value.hoursHistory.some(r=>!validDate(r?.date)||typeof r.worker!=='string'||!r.worker||!Number.isFinite(r.hours)||r.hours<0||r.hours>24))throw Error('이전 작업시간 이력을 확인해 주세요.');result.hoursHistory=value.hoursHistory;}
   Object.defineProperty(result,'_receiptBySource',{value:new Map((result.receipts||[]).map(r=>[r.path+'#'+r.id,r]))});
   // Lookup indexes are memory-only; the cached/public data format stays JSON.
@@ -3046,9 +3047,20 @@ function queuedProductionTeams(date,rows,edits){for(const row of rows){const pen
 let productHistory={epoch:-1,anchor:'',days:{},ready:false,promise:null,error:false};
 function historyMonths(date){const d=parseDate(date);d.setDate(1);return Array.from({length:3},(_,i)=>{const x=new Date(d);x.setMonth(x.getMonth()-i);return x.getFullYear()+'-'+pad2(x.getMonth()+1)});}
 function mergePendingRowsForHistory(date,rows){return effectiveMonthDays({[date]:rows},date.slice(0,7))[date]||[];}
+function previousProductionBoundary(row,date){
+ if(!row||typeof row!=='object')return null;
+ if(row.planIntent==='start')return date;
+ const history=S.productionProgressMode==='ready'?S.productionProgress?.history||[]:[],exact=history.find(r=>r.date===date&&r.id===row.id&&r.productionStart&&r.source&&progressStable(progressSourceFields(r.source))===progressStable(progressSourceFields(row)));
+ if(exact&&!outboxAll().some(i=>i.date===date&&((i.rows||[]).some(r=>r.id===row.id)||(i.removeIds||[]).includes(row.id))))return exact.productionStart;
+ const local=progOf(row,row.worker,date);
+ if(local&&!local.ambiguous&&local.plan>0&&local.start<=date)return local.start;
+ if(Number(row.plan)>0&&row.planIntent!=='continue')return date;
+ return null;
+}
 function previousProduction(product,date){
- const key=fieldProductIdentity(product),history=(S.productionProgress?.history||[]).filter(r=>r.date<date&&fieldProductIdentity(r)===key),days={...(productHistory.epoch===storeEpoch?productHistory.days:{}),...(S.progressDays||{}),...dayCache,...(S.rowsDate?{[S.rowsDate]:S.rows}:{})},dates=[...new Set([...Object.keys(days).filter(d=>d<date),...history.map(r=>r.date),...outboxAll().filter(i=>i.date<date).map(i=>i.date)])].sort().reverse();
- for(const ds of dates){const pending=outboxAll().some(i=>i.date===ds);if(Object.hasOwn(days,ds)||pending){const rows=mergePendingRowsForHistory(ds,Array.isArray(days[ds])?days[ds]:[]).filter(r=>!r.off&&Number(r.prod)>0&&fieldProductIdentity(r)===key);if(rows.length)return{date:ds,workers:[...new Set(rows.flatMap(productionPeople))],pending,qty:rows.reduce((n,r)=>n+(Number(r.prod)||0),0)}}else{const entries=history.filter(r=>r.date===ds);if(entries.length)return{date:ds,workers:[...new Set(entries.flatMap(r=>r.people.map(p=>p.worker)))],pending:false,qty:entries.reduce((n,r)=>n+r.qty,0)}}}
+ const before=previousProductionBoundary(product,date);if(!before)return null;
+ const key=fieldProductIdentity(product),history=(S.productionProgress?.history||[]).filter(r=>r.date<before&&fieldProductIdentity(r)===key),days={...(productHistory.epoch===storeEpoch?productHistory.days:{}),...(S.progressDays||{}),...dayCache,...(S.rowsDate?{[S.rowsDate]:S.rows}:{})},dates=[...new Set([...Object.keys(days).filter(d=>d<before),...history.map(r=>r.date),...outboxAll().filter(i=>i.date<before).map(i=>i.date)])].sort().reverse();
+ for(const ds of dates){const pending=outboxAll().some(i=>i.date===ds),cached=Object.hasOwn(days,ds)||pending,entries=history.filter(r=>r.date===ds&&(!cached||r.origin==='management')),rows=cached?mergePendingRowsForHistory(ds,Array.isArray(days[ds])?days[ds]:[]).filter(r=>!r.off&&Number(r.prod)>0&&fieldProductIdentity(r)===key):[];if(rows.length||entries.length)return{date:ds,workers:[...new Set([...rows.flatMap(productionPeople),...entries.flatMap(r=>r.people.map(p=>p.worker))])],pending,qty:rows.reduce((n,r)=>n+Number(r.prod),0)+entries.reduce((n,r)=>n+r.qty,0),productionStart:before};}
  return null;
 }
 
@@ -3056,14 +3068,15 @@ function previousProductionLabel(prev){return prev?(productHistory.error?'확인
 function previousProductionText(product,date){return previousProductionLabel(previousProduction(product,date));}
 function previousProducerCard(row){
  const previous=previousProduction(row,S.date),current=productHistory.epoch===storeEpoch&&productHistory.anchor===S.date.slice(0,7);
- if(previous)return{text:'전 작업: '+previous.workers.join(' + ')+(previous.pending?' · 전송 대기':''),title:previousProductionLabel(previous)+' · 선택 날짜 이전 같은 품목의 실제 생산기록'};
+ if(previous)return{text:'전 작업: '+previous.workers.join(' + ')+(previous.pending?' · 전송 대기':''),title:previousProductionLabel(previous)+' · 이번 생산('+fmtMD(previous.productionStart)+' 시작)을 제외한 이전 생산기록'};
+ if(current&&productHistory.ready&&!previousProductionBoundary(row,S.date))return{text:'전 작업 확인 필요',title:'이번 생산의 시작일을 확인한 뒤 이전 작업자를 표시합니다.'};
  const ready=current&&productHistory.ready;return{text:ready?(productHistory.error?'전 작업 확인 필요':'전 작업 기록 없음'):'전 작업 확인 중…',title:ready?(productHistory.error?'이전 생산기록을 모두 불러오지 못했습니다.':S.productionProgress?.history?'선택 날짜 이전에 같은 품목의 생산기록이 없습니다.':'최근 3개월에 앞선 생산기록이 없습니다.'):'이전 생산기록을 확인하고 있습니다.'};
 }
 function previousProducerBadge(row){const info=previousProducerCard(row);return '<span class="rc-previous" title="'+esc(info.title)+'">'+esc(info.text)+'</span>';}
 function updateCardPreviousProducers(){if(S.tab!=='input'||!AppAccess.unlocked)return;const rows=new Map(S.rows.map(r=>[String(r.id),r]));$$('#rowList .rowcard .rc-previous').forEach(host=>{const row=rows.get(host.closest('.rowcard').dataset.id);if(!row)return;const info=previousProducerCard(row);host.textContent=info.text;host.title=info.title;});}
 function updatePreviousProducer(el){const host=el.querySelector('.pb-previous'),name=el.querySelector('.pb-product').value.trim();if(!host)return;host.hidden=!name;if(!name)return;
- const value=previousProductionText(name,S.date),current=productHistory.epoch===storeEpoch&&productHistory.anchor===S.date.slice(0,7);
- host.textContent=value||(current&&productHistory.ready?(productHistory.error?'직전 생산 기록을 모두 확인하지 못했습니다.':(S.productionProgress?.history?'앞선 생산 기록이 없습니다.':'최근 3개월에 앞선 생산 기록이 없습니다.')):'직전 생산자 확인 중…');host.title=S.productionProgress?.history?'선택 날짜 이전, 저장된 같은 품목의 실제 생산일보 기준':'선택 날짜 이전, 최근 3개월의 같은 관리 품목 실제 생산일보 기준'+(S.offline?' · 보관한 자료':'');
+ const prior=S.rows.find(r=>r.id===el.dataset.rid&&fieldProductIdentity(r)===fieldProductIdentity(name)),starting=el.querySelector('.pb-planmode')?.value==='start'&&(!prior||el.dataset.planModeChanged==='1'),row=starting?{product:name,planIntent:'start'}:prior||{product:name,worker:$('#fWorker').value.trim()},value=previousProductionText(row,S.date),current=productHistory.epoch===storeEpoch&&productHistory.anchor===S.date.slice(0,7);
+ host.textContent=value||(current&&productHistory.ready?(!previousProductionBoundary(row,S.date)?'이번 생산의 시작일 확인 후 전 작업자를 표시합니다.':productHistory.error?'직전 생산 기록을 모두 확인하지 못했습니다.':(S.productionProgress?.history?'앞선 생산 기록이 없습니다.':'최근 3개월에 앞선 생산 기록이 없습니다.')):'직전 생산자 확인 중…');host.title='이번 생산 전체를 제외한 같은 품목의 이전 실제 생산기록'+(S.offline?' · 보관한 자료':'');
 }
 function ensureProductHistory(){
  const epoch=storeEpoch,date=S.date,anchor=date.slice(0,7),drv=driver;if(productHistory.epoch===epoch&&productHistory.anchor===anchor&&(productHistory.ready||productHistory.promise))return productHistory.promise;

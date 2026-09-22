@@ -105,7 +105,27 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  entries.sort((a,b)=>(a.path+'\0'+a.id).localeCompare(b.path+'\0'+b.id));
  targets.sort((a,b)=>[a.target.originId,a.target.month,a.target.jobId].join('\0').localeCompare([b.target.originId,b.target.month,b.target.jobId].join('\0')));
  const receipts=[];for(const [key,links]of linked){const source=raw.get(key);if(links.length!==1||!source||links[0].row.sourceIntegration.sourceHash!==hash(source.row))continue;receipts.push({path:source.file.path,id:source.row.id,source:Object.fromEntries([...SOURCE_FIELDS,'hours','productionTeam','t','ts'].filter(k=>own(source.row,k)).map(k=>[k,copy(source.row[k])]))});}receipts.sort((a,b)=>(a.path+'#'+a.id).localeCompare(b.path+'#'+b.id));
- const history=[];for(const {file,row}of raw.values()){if(row.off||file.date>asOf||!(Number(row.prod)>0)||!Number.isFinite(Number(row.prod)))continue;let product,team;try{product=ix.resolve(row);team=require('./schedule-core.cjs').productionTeamValue(row.productionTeam,String(row.worker||'').trim())}catch{continue}if(!product||!row.worker)continue;const hours=v=>v!==''&&v!=null&&Number.isFinite(Number(v))&&Number(v)>=0&&Number(v)<=24?Number(v):null;history.push({date:file.date,id:row.id,productId:product.id,product:product.name,qty:Number(row.prod),people:[{worker:String(row.worker).trim(),hours:hours(row.hours)},...(team?.members||[]).map(m=>({worker:m.worker,hours:hours(m.hours)}))]})}history.sort((a,b)=>(a.date+'#'+a.id).localeCompare(b.date+'#'+b.id));
+ const history=[],historyJobIndexes=new Map();
+ function historyStart(month,row){
+  if(!historyJobIndexes.has(month)){const index=new Map();for(const job of jobsFor(month)){if(job.carryBlocked||job.handoffBlocked)continue;for(const record of job.records||[]){if(!index.has(record.id))index.set(record.id,[]);index.get(record.id).push(job)}}historyJobIndexes.set(month,index)}
+  const candidates=historyJobIndexes.get(month).get(row.id)||[];if(candidates.length!==1)return null;
+  const job=candidates[0],start=typeof planning.productionStartDate==='function'?planning.productionStartDate(job):job.previousStart||job.firstActual||job.start;
+  return typeof start==='string'&&require('./schedule-core.cjs').iso(start)&&start<=row.date?start:null;
+ }
+ function addHistory(row,date,id,qty,extra={}){
+  if(row.deleted||row.off||!require('./schedule-core.cjs').iso(date)||date>asOf||!Number.isFinite(Number(qty))||!(Number(qty)>0))return;
+  let product,team;try{product=ix.resolve(row);team=require('./schedule-core.cjs').productionTeamValue(row.productionTeam,String(row.worker||'').trim())}catch{return}if(!product||!row.worker)return;
+  const hours=v=>v!==''&&v!=null&&Number.isFinite(Number(v))&&Number(v)>=0&&Number(v)<=24?Number(v):null;
+  history.push({date,id,productId:product.id,product:product.name,qty:Number(qty),people:[{worker:String(row.worker).trim(),hours:hours(row.hours)},...(team?.members||[]).map(m=>({worker:m.worker,hours:hours(m.hours)}))],...extra});
+ }
+ for(const {file,row}of raw.values()){
+  const links=linked.get(file.path+'\0'+row.id),link=links?.length===1&&links[0],start=link&&link.row.sourceIntegration.sourceHash===hash(row)?historyStart(link.month,link.row):null;
+  addHistory(row,file.date,row.id,row.prod,start?{productionStart:start,source:Object.fromEntries(SOURCE_FIELDS.filter(k=>own(row,k)).map(k=>[k,copy(row[k])]))}:{});
+ }
+ // Pre-field-app actuals remain in management. Do not duplicate mirrors, deleted
+ // rows, reservations, carry totals or unrelated administrative memo fields.
+ for(const [month,value]of Object.entries(state.months||{}))for(const row of value.rows||[]){if(row.sourceIntegration)continue;addHistory(row,row.date,'management:'+hash([month,row.id]),row.pours,{origin:'management'});}
+ history.sort((a,b)=>(a.date+'#'+a.id).localeCompare(b.date+'#'+b.id));
  const hourGroups=new Map();for(const {file,row}of raw.values()){if(file.date>asOf||!row.worker||row.off&&row.offKind!=='케이스 교체')continue;let team;try{team=require('./schedule-core.cjs').productionTeamValue(row.productionTeam,row.worker)}catch{team=null}for(const person of [{worker:row.worker,hours:row.hours},...(team?.members||[])]){if(person.hours==null||person.hours===''||!Number.isFinite(Number(person.hours))||Number(person.hours)<0||Number(person.hours)>24)continue;const key=file.date+'#'+person.worker;if(!hourGroups.has(key))hourGroups.set(key,{date:file.date,worker:person.worker,values:new Set()});hourGroups.get(key).values.add(Number(person.hours))}}
  const hoursHistory=[...hourGroups.values()].filter(r=>r.values.size===1).map(r=>({date:r.date,worker:r.worker,hours:[...r.values][0]})).sort((a,b)=>(a.date+'#'+a.worker).localeCompare(b.date+'#'+b.worker));
  const revision=hash({asOf,entries,targets,receipts,history,hoursHistory});if(previous?.schema===1&&previous.kind==='schedule-production-progress'&&previous.revision===revision&&hash({asOf:previous.asOf,entries:previous.entries,targets:previous.targets,receipts:previous.receipts,history:previous.history,hoursHistory:previous.hoursHistory})===revision)return copy(previous);
