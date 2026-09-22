@@ -1517,6 +1517,14 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
  body.sheetWorkspace .pgFocusRangeControls .pgCustomRange>div{position:static;width:100%;max-width:none;grid-template-columns:1fr;box-shadow:none;margin-top:4px}
 }
 
+/* Current stock is the result column, distinct from inputs and production-row badges. */
+@media screen{
+ body.sheetWorkspace .stockMemoEditor .inputSheet thead th[data-sheet-col=current]{background:#f3dfae;color:#674008;font-weight:750;border-inline-color:#e5c478}
+ body.sheetWorkspace .stockMemoEditor .inputSheet tbody tr>td.calculated[data-result=current]{background:#fff8e6;color:#744b0a;font-weight:750;border-inline-color:#e5c478}
+ body.sheetWorkspace .stockMemoEditor .inputSheet tbody tr.selected>td.calculated[data-result=current]{background:#ffedbd}
+ body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked td[data-result=current]::before{color:#674008;font-weight:700}
+}
+
 .summaryPanel{background:var(--card,#fff);border:1px solid var(--line,#d6dfeb);border-radius:12px;min-width:0;overflow:hidden}
 .summaryFilters{display:flex;align-items:end;gap:12px;padding:16px 16px 10px;flex-wrap:wrap}
 .summaryFilters label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted,#5f7084);font-weight:600;flex:1 1 160px;min-width:0}
