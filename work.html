@@ -3073,7 +3073,7 @@ function fieldLocalLotEvents(){
  let raw=localStorage.getItem(storageKey('ilbo.gypsumLots'));
  if(raw===null&&fieldOffline)return GypsumLots.events(fieldOffline.packet.local?.gypsumLots||[]);
  if(raw===null&&activeScope===legacyScope)raw=localStorage.getItem('ilbo.gypsumLots');
- try{return GypsumLots.events(raw===null?[]:JSON.parse(raw));}catch(e){throw Error('기기에 보관한 석고 로트를 읽지 못했습니다. 기존 값은 그대로 두었습니다.');}
+ try{const events=raw===null?[]:JSON.parse(raw);if(!Array.isArray(events))throw Error('Invalid LOT list');return GypsumLots.events(events);}catch(e){throw Error('기기에 보관한 석고 로트를 읽지 못했습니다. 기존 값은 그대로 두었습니다.');}
 }
 async function loadFieldLots(force=false){
  if(!AppAccess.unlocked)return false;
@@ -4992,7 +4992,7 @@ function validateFieldBackup(input){
   }
   packet.local ||= {};
   if(typeof packet.local!=='object'||Array.isArray(packet.local))throw new Error('기기 보관분 형식이 올바르지 않습니다.');
-  if(packet.local.gypsumLots!==undefined)GypsumLots.events(packet.local.gypsumLots);
+  if(packet.local.gypsumLots!==undefined){if(!Array.isArray(packet.local.gypsumLots))throw new Error('석고 로트 백업의 목록 형식이 올바르지 않습니다.');GypsumLots.events(packet.local.gypsumLots);}
   if(packet.local.outbox!==undefined&&!Array.isArray(packet.local.outbox))throw new Error('전송 대기 목록이 올바르지 않습니다.');
   for(const item of packet.local.outbox||[]){if(!fieldDate(item.date))throw new Error('전송 대기 날짜가 올바르지 않습니다.');fieldBackupRows(item.rows||[]);if(item.removeIds!==undefined&&(!Array.isArray(item.removeIds)||item.removeIds.some(x=>typeof x!=='string')))throw new Error('삭제 예약 목록이 올바르지 않습니다.');}
   for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length&&!edit.guardActuals&&!edit.guardTarget&&!edit.teamBefore||edit.fields.length>4||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily','routing','machineActuals'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');if(edit.teamBefore&&(typeof edit.teamBefore.present!=='boolean'||edit.teamBefore.present&&edit.teamBefore.value!==null&&!productionTeamValue(edit.teamBefore.value)))throw new Error('공동작업 변경 기준이 손상되었습니다.');if(edit.guardTarget&&(!edit.targetBefore||typeof edit.targetBefore.present!=='boolean'||edit.targetBefore.present&&edit.targetBefore.value!==null&&!fieldScheduleTarget(edit.targetBefore.value)))throw new Error('반영할 작업의 변경 기준이 손상되었습니다.');if((edit.guardActuals||edit.fields?.includes('machineActuals'))&&(!edit.beforeActuals||typeof edit.beforeActuals.present!=='boolean'))throw new Error('호기별 실적의 변경 기준이 손상되었습니다.');}}
