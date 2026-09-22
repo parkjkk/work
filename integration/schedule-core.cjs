@@ -1,6 +1,8 @@
 (function(root){
 'use strict';
 const text=x=>x==null?'':String(x).trim(), num=x=>x==null||String(x).trim()===''?null:(Number.isFinite(Number(x))?Number(x):null);
+// field-preparation-v1: blank is not zero and must not start, stop or reconfigure production.
+const fieldPreparation=r=>!!r?.sourceIntegration&&(r.pours==null||typeof r.pours==='string'&&!r.pours.trim());
 const col=n=>{let s='';while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s};
 const ci=s=>[...s].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0);
 const val=(s,a)=>s?.cells?.[a]?.v??null;
@@ -236,6 +238,6 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={fieldPreparation,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);

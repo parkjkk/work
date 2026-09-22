@@ -16,13 +16,13 @@ function planFieldReturn(input,snapshot,forwardReport,options={}){
  for(const f of files)for(const row of f.rows)sourceRows.set(key(f.path,row.id),{file:f,row});
  for(const [month,m]of Object.entries(state.months||{}))for(const row of m.rows||[]){const si=row.sourceIntegration;if(!row.deleted&&si?.repo===snapshot.repo){const k=key(si.path,si.id);if(!links.has(k))links.set(k,[]);links.get(k).push({month,m,row})}}
  const issue=(code,row,si,fields=[])=>issues.push({code,path:si?.path||'data/'+row.date+'.json',id:si?.id||row.id,date:row.date,worker:row.worker,sourceProduct:row.product,fields});
- const rawNumber=(value,field)=>value==null&&(field==='plan'||field==='fieldScrapKg'||field==='fieldDefQty')?'':value;
+ const rawNumber=(value,field)=>value==null&&['pours','plan','fieldScrapKg','fieldDefQty'].includes(field)?'':value;
  function patchRow(row,raw,baseline,product,created=false){
   const next=clone(raw),changed=[];
   for(const [target,source]of Object.entries(FIELDS)){
    if(!own(row,target)||!created&&same(row[target],baseline[target]))continue;
    let value=row[target];if(numeric.has(target)&&value!==null&&!(typeof value==='number'&&Number.isFinite(value)&&value>=0))throw Error(target);
-   if(target==='pours'&&value==null||target==='productionPlanQty'&&value!==null&&!(value>0))throw Error(target);
+   if(target==='productionPlanQty'&&value!==null&&!(value>0))throw Error(target);
    if(target==='productionTeam')try{value=require('./schedule-core.cjs').productionTeamValue(value,row.worker)}catch{throw Error(target)}
    if(target==='productionCompletion')try{completionValue(value)}catch{throw Error(target)}
    if(target==='scheduleTarget')try{value=require('./schedule-core.cjs').scheduleTargetValue(value)}catch{throw Error(target)}
@@ -102,7 +102,7 @@ function planFieldReturn(input,snapshot,forwardReport,options={}){
 }
 function withReturnReport(report,returned,previous=null,changedMonths=[]){
  const next=clone(report);next.policyVersion='ilbo-sync-3';next.twoWay={policy:POLICY,pendingRows:returned.changedRows,issues:returned.issues};
- if(previous&&changedMonths.length===0&&previous.policyVersion===next.policyVersion&&same(previous.sourceFiles,next.sourceFiles)&&previous.sourceCommit===next.sourceCommit&&same(previous.qualityWarnings,next.qualityWarnings)&&same(previous.twoWay,next.twoWay)&&same(previous.issues,[...next.issues,...returned.issues]))return clone(previous);
+ if(previous&&changedMonths.length===0&&previous.policyVersion===next.policyVersion&&previous.quantityPolicy===next.quantityPolicy&&same(previous.preparations,next.preparations)&&same(previous.sourceFiles,next.sourceFiles)&&previous.sourceCommit===next.sourceCommit&&same(previous.qualityWarnings,next.qualityWarnings)&&same(previous.twoWay,next.twoWay)&&same(previous.issues,[...next.issues,...returned.issues]))return clone(previous);
  next.issues=[...next.issues,...returned.issues];next.counts.held=next.issues.length;next.status=next.issues.length?'review':returned.changedRows?'pending':'ok';next.revision=hash({...next,revision:undefined});return next;
 }
 module.exports={planFieldReturn,withReturnReport,POLICY,DETAIL_FIELDS};

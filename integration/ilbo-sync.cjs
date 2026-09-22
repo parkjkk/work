@@ -72,7 +72,7 @@ function sourceFiles(snapshot){
 }
 function planSync(state,snapshot,options={}){
  const next=clone(state),ix=productIndex(next.products),files=sourceFiles(snapshot),now=options.now||snapshot.readAt||new Date().toISOString();
- const report={schema:1,kind:'ilbo-sync-report',policyVersion:'ilbo-sync-3',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},issues:[],qualityWarnings:[],updatedAt:now};
+ const report={schema:1,kind:'ilbo-sync-report',policyVersion:'ilbo-sync-3',quantityPolicy:'field-preparation-v1',sourceRepo:snapshot.repo,sourceCommit:snapshot.commit,sourceFiles:Object.fromEntries(files.map(f=>[f.path,f.sha])),counts:{added:0,linked:0,updated:0,deleted:0,attendance:0,held:0},preparations:[],issues:[],qualityWarnings:[],updatedAt:now};
  const touched=new Set(),seenKeys=new Set(),days=new Set(files.map(f=>f.path)),claimed=new Set(),prepared=[];
  const targetDeleted=new Set();
  for(const m of Object.values(next.months))for(const event of m.history||[]){
@@ -100,7 +100,8 @@ function planSync(state,snapshot,options={}){
   const values={date:f.date,worker:clean(raw.worker),product:p.name};
   if(own(raw,'productionTeam')){try{values.productionTeam=require('./schedule-core.cjs').productionTeamValue(raw.productionTeam,values.worker)}catch{issue('invalid-production-team',ctx);continue}}
   try{
-   if(own(raw,'prod')){const n=number(raw.prod,'prod');if(n!==null)values.pours=n}
+   // An explicit blank withdraws the daily actual; an absent property is a legacy no-op.
+   if(own(raw,'prod'))values.pours=number(raw.prod,'prod');
    if(own(raw,'plan'))values.plan=number(raw.plan,'plan');
    if(own(raw,'planIntent')){
     const valid=own(raw,'plan')&&(['continue','start','end'].includes(raw.planIntent))&&(raw.planIntent==='continue'?values.plan===null:raw.planIntent==='start'?values.plan>0:values.plan===0);
@@ -132,7 +133,7 @@ function planSync(state,snapshot,options={}){
    prepared.push({...ctx,month,p,values,hours,group:f.date+'\0'+values.worker});
   }catch{issue('invalid-source-number',ctx)}
  }
- const sourceMatches=new Map();for(const c of prepared.filter(c=>!c.attendance)){const key=c.group+'\0'+c.p.id;sourceMatches.set(key,(sourceMatches.get(key)||0)+1)}
+ const sourceMatches=new Map();for(const c of prepared.filter(c=>!c.attendance&&c.values.pours!=null)){const key=c.group+'\0'+c.p.id;sourceMatches.set(key,(sourceMatches.get(key)||0)+1)}
  const outboundFor=row=>row?.sourceIntegration?.outbound||row?.integrationOutbound;
  const sentReceipt=(row,c)=>{const receipt=outboundFor(row);return receipt?.schema===1&&receipt.repo===snapshot.repo&&receipt.path===c.path&&receipt.sourceId===c.raw.id&&c.raw.managementReceipt?.schema===1&&c.raw.managementReceipt.id===receipt.id?receipt:null};
  const matchProduction=c=>{
@@ -140,7 +141,7 @@ function planSync(state,snapshot,options={}){
   if(m?.closed)return{code:'closed-month'};
   if(targetDeleted.has(c.key)&&!matches.length)return{code:'target-deleted'};
   if(attendanceLinks.has(c.key))return{code:'source-record-kind-changed'};
-  if(!matches.length&&!own(c.values,'pours'))return{code:'missing-production-quantity'};
+  if(!matches.length&&c.values.pours==null)return{code:'missing-production-quantity'};
   if(matches.length>1)return{code:'duplicate-source-link'};
   if(matches[0]&&matches[0].m.id!==c.month)return{code:'source-month-moved'};
   let row=matches[0]?.row,initial=false;
@@ -228,6 +229,7 @@ function planSync(state,snapshot,options={}){
   c.match=matchProduction(c);
   // A blank first field report must not hide a recorded legacy defect amount.
   const row=c.match.row;
+  if(row&&own(c.values,'pours')&&c.values.pours===null&&!own(c.values,'machineActuals')&&row.machineActuals!=null)c.values.machineActuals=null;
   const receipt=sentReceipt(row,c);
   if(row&&receipt){
    if(receipt.sentHash!==hash(c.raw)&&!same(outboundTarget(row),receipt.target))c.match.code='outbound-source-conflict';
@@ -255,12 +257,13 @@ function planSync(state,snapshot,options={}){
   for(const c of cs)c.values.hours=c===owner?hours[0]:null;
  }
  for(const c of prepared){
+  if(!c.attendance&&!locate(c.key).length&&c.values.pours==null){report.preparations.push({path:c.path,id:c.raw.id,date:c.date,worker:c.values.worker,sourceProduct:c.values.product});continue}
   let m=next.months[c.month];if(m?.closed){issue('closed-month',c);continue}
   if(targetDeleted.has(c.key)&&!locate(c.key).length){issue('target-deleted',c);continue}
   const opposite=Object.values(next.months).flatMap(mm=>(mm[c.attendance?'rows':'fieldAttendance']||[])).find(r=>r.sourceIntegration?.key===c.key);
   if(opposite){issue('source-record-kind-changed',c);continue}
   if(!c.attendance&&!locate(c.key).length&&sourceMatches.get(c.group+'\0'+c.p.id)>1){issue('multiple-source-match',c);continue}
-  if(!c.attendance&&!locate(c.key).length&&!own(c.values,'pours')){issue('missing-production-quantity',c);continue}
+  if(!c.attendance&&!locate(c.key).length&&c.values.pours==null){issue('missing-production-quantity',c);continue}
   if(!m){m=next.months[c.month]=newMonth(c.month);touched.add(c.month)}
   if(c.attendance){
    const rows=m.fieldAttendance||(m.fieldAttendance=[]),matches=rows.filter(r=>r.sourceIntegration?.key===c.key);if(matches.length>1){issue('duplicate-attendance-link',c);continue}
@@ -274,7 +277,7 @@ function planSync(state,snapshot,options={}){
   if(row&&claimed.has(row.id)){issue('multiple-source-match',c);continue}
   const before=row?clone(row):null;
   if(!row){
-   if(!own(c.values,'pours')){issue('missing-production-quantity',c);continue}
+   if(c.values.pours==null){issue('missing-production-quantity',c);continue}
    row={id:'ilbo:'+hash(c.key).slice(0,24),rev:0,date:c.date,worker:c.values.worker,product:c.p.name,lot:'',hours:null,plan:null,pours:null,cases:c.p.cases??null,waterRatio:c.p.waterRatio??null,plaster:c.p.kg??null,defectUnit:null,defectCount:null,defectPart:'',unitSources:{cases:'catalog',plaster:'catalog'},explicit:{day:true,worker:true,hours:own(c.values,'hours')&&c.values.hours!==null,pours:true,lot:false},source:'work.html'};
   }
   claimed.add(row.id);
@@ -315,7 +318,7 @@ function planSync(state,snapshot,options={}){
  // returned normally on the next pass without rewriting actual workers.
  let planning;const supportJobs=new Map(),supportContext={jobs:new Map()};
  for(const [month,m]of Object.entries(next.months))for(const row of m.rows||[]){
-  const si=row.sourceIntegration;if(m.closed||m.closeSnapshot||row.deleted||!row.scheduleTarget||si?.repo!==snapshot.repo||report.issues.some(value=>value.path===si.path&&value.id===si.id))continue;
+  const si=row.sourceIntegration;if(m.closed||m.closeSnapshot||row.deleted||row.pours==null||!row.scheduleTarget||si?.repo!==snapshot.repo||report.issues.some(value=>value.path===si.path&&value.id===si.id))continue;
   planning??=require('./schedule-planning.cjs');let owner=month;try{const target=require('./schedule-core.cjs').scheduleTargetValue(row.scheduleTarget);if(target.month>month)owner=target.month}catch{}if(next.months[owner]&&!supportJobs.has(owner))supportJobs.set(owner,planning.jobs(next,owner,supportContext));
   if((supportJobs.get(owner)||[]).filter(job=>planning.recordMatchesJob(job,row,next)).length===1)continue;
   issue('schedule-target-review',{path:si.path,id:si.id,date:row.date,worker:row.worker,sourceProduct:si.sourceProduct||row.product},{fields:['scheduleTarget'],effect:'schedule-only',message:'일보 실적은 보존했으며 일정 연결은 보류했습니다. 품목의 담당 작업을 다시 선택해 주세요.'});
@@ -323,8 +326,8 @@ function planSync(state,snapshot,options={}){
  report.qualityWarnings.sort((a,b)=>(a.date+'\0'+a.worker).localeCompare(b.date+'\0'+b.worker));
  report.issues.sort((a,b)=>stable(a).localeCompare(stable(b)));
  const previous=options.previousReport;
- report.status=report.issues.length?'review':'ok';report.revision=hash({policyVersion:report.policyVersion,sourceCommit:report.sourceCommit,sourceFiles:report.sourceFiles,issues:report.issues,qualityWarnings:report.qualityWarnings,months:[...touched].sort(),at:now});
- const finalReport=previous&&previous.policyVersion===report.policyVersion&&previous.sourceCommit===report.sourceCommit&&same(previous.sourceFiles,report.sourceFiles)&&same(previous.issues,report.issues)&&same(previous.qualityWarnings,report.qualityWarnings)&&touched.size===0?clone(previous):report;
+ report.status=report.issues.length?'review':'ok';report.revision=hash({policyVersion:report.policyVersion,quantityPolicy:report.quantityPolicy,preparations:report.preparations,sourceCommit:report.sourceCommit,sourceFiles:report.sourceFiles,issues:report.issues,qualityWarnings:report.qualityWarnings,months:[...touched].sort(),at:now});
+ const finalReport=previous&&previous.policyVersion===report.policyVersion&&previous.quantityPolicy===report.quantityPolicy&&same(previous.preparations,report.preparations)&&previous.sourceCommit===report.sourceCommit&&same(previous.sourceFiles,report.sourceFiles)&&same(previous.issues,report.issues)&&same(previous.qualityWarnings,report.qualityWarnings)&&touched.size===0?clone(previous):report;
  return{state:next,report:finalReport,changedMonths:[...touched].sort(),changed:!same(next,state)||!same(finalReport,previous)};
 }
 module.exports={planSync,projectCatalog,productIndex,sourceFiles,hash,stable,newMonth,completionValue,machineActuals,workingHours,outboundTarget};

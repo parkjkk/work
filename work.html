@@ -1218,7 +1218,7 @@ function fieldProductIdentity(value,catalog=S.productCatalog){
 }
 function progressCatalogRevision(catalog=S.productCatalog){return (catalog?.revision||'legacy')+':'+PRODUCT_NAME_POLICY;}
 function validLocalProgress(progress,catalog=S.productCatalog){
-  return progress?.policyVersion==='completion-worker-phase-3'&&progress.catalogRevision===progressCatalogRevision(catalog);
+  return progress?.policyVersion==='completion-worker-phase-4'&&progress.catalogRevision===progressCatalogRevision(catalog);
 }
 function catalogProductNames(catalog,recent=[]){
   if(!catalog)return [...new Set(recent.map(n=>legacyProductName(n&&typeof n==='object'?n.product:n)).filter(Boolean))].slice(0,40);
@@ -2242,6 +2242,7 @@ async function loadProductionProgress(background=false){
 }
 let projectedReadScope=null;
 function projectedPairKey(row){return JSON.stringify([row.worker,fieldProductIdentity(row)]);}
+function fieldPreparation(row){return !row.off&&(row.prod==null||row.prod==='');}
 function withProjectedReadScope(fn){
   if(projectedReadScope)return fn();
   projectedReadScope=buildProjectedReadScope();
@@ -2254,7 +2255,7 @@ function buildProjectedReadScope(){
   const today=todayStr(),known={...(S.progressDays||{}),...dayCache,...(S.rowsDate?{[S.rowsDate]:S.rows}:{})},byDay=new Map();
   for(const[ds,rows]of Object.entries(known))if(Array.isArray(rows)){
     const ids=new Map();byDay.set(ds,ids);
-    for(const row of rows){if(!ids.has(row.id))ids.set(row.id,row);if(ds<=today&&!row.off&&!scope.match(row,ds)){scope.invalidPairs.add(projectedPairKey(row));if(row.scheduleTarget)scope.invalidPairs.add(projectedPairKey({...row,worker:row.scheduleTarget.worker}));}}
+    for(const row of rows){if(!ids.has(row.id))ids.set(row.id,row);if(ds<=today&&!row.off&&!fieldPreparation(row)&&!scope.match(row,ds)){scope.invalidPairs.add(projectedPairKey(row));if(row.scheduleTarget)scope.invalidPairs.add(projectedPairKey({...row,worker:row.scheduleTarget.worker}));}}
   }
   for(const item of scope.queue){
     if(item.date>today)continue;
@@ -2283,7 +2284,11 @@ function fieldRecordSyncState(row,date=S.date){
   const queue=projectedReadScope?.queue||outboxAll(),own=queue.find(item=>item.date===date&&((item.rows||[]).some(r=>r.id===row.id)||(item.removeIds||[]).includes(row.id)));
   if(own)return{kind:'pending',text:(own.removeIds||[]).includes(row.id)?'삭제 예약 · 전송 대기':'기기에 보관 · 전송 대기'};
   if(S.rowsDate!==date||!S.dayLoaded||S.rowsPartial)return{kind:'waiting',text:'서버 원본 확인 대기'};
-  if(row.prod===''||row.prod==null)return{kind:'review',text:'생산량 입력 필요',note:'일보는 저장되어 있습니다. 생산량을 입력하면 관리에 반영됩니다. 실제 생산 없음은 0으로 입력하세요.'};
+  if(fieldPreparation(row)){
+    const previous=[...(S.productionProgress?.entries||[]),...(S.productionProgress?.receipts||[])].find(e=>e.path==='data/'+date+'.json'&&e.id===row.id&&!fieldPreparation(e.source));
+    if(previous&&!fieldRecordDelivered(row,date))return{kind:'waiting',text:'실적 취소 반영 대기',note:'수량을 비워 저장했습니다. 관리 실적을 취소하는 중입니다.'};
+    return{kind:'prepared',text:'생산 준비 · 수량 미입력',note:'모델과 계획은 미리 확인할 정보입니다. 수량을 입력하기 전에는 생산일정표에 반영하지 않습니다.'};
+  }
   const run=recordProjectedProgress(row,date),entry=run?.managed;
   if(entry&&(!entry.jobId||entry.produced===null||entry.warning))return{kind:'review',text:'관리 연결 확인 필요',note:entry.warning||'관리 앱에서 작업 연결을 확인하세요.'};
   const queuedPeer=queue.some(item=>(item.rows||[]).some(r=>r.worker===row.worker&&fieldProductIdentity(r)===fieldProductIdentity(row))||(item.removeIds||[]).some(id=>(S.productionProgress?.entries||[]).some(e=>e.path==='data/'+item.date+'.json'&&e.id===id&&e.worker===row.worker&&fieldProductIdentity(e)===fieldProductIdentity(row))));
@@ -2298,7 +2303,7 @@ function renderFieldInteractionStatusContents(){
   const entryNote=$('#fieldEntrySyncStatus');if(entryNote){entryNote.hidden=driver.mode!=='gh'||!!driver.offline||!fieldRemotePending;entryNote.textContent=entryNote.hidden?'':'최신 자료 확인을 기다리고 있습니다. 입력한 내용은 그대로 유지됩니다. 작성을 마치면 자동으로 다시 확인합니다.';}
   const host=$('#fieldSyncStatus');if(!host)return;host.hidden=driver.mode!=='gh'||!!driver.offline;if(host.hidden)return;
   const states=S.rows.filter(r=>!r.off&&r.product).map(r=>fieldRecordSyncState(r)),counts={confirmed:0,pending:0,review:0,waiting:0,cached:0};for(const item of states)counts[item.kind]=(counts[item.kind]||0)+1;
-  const parts=[counts.confirmed?'관리 반영 '+counts.confirmed+'건':'',counts.pending?'전송 대기 '+counts.pending+'건':'',counts.review?'연결 확인 '+counts.review+'건':'',counts.waiting?'관리 반영 대기 '+counts.waiting+'건':'',counts.cached?'보관자료 '+counts.cached+'건':''].filter(Boolean);
+  const parts=[counts.confirmed?'관리 반영 '+counts.confirmed+'건':'',counts.prepared?'생산 준비 '+counts.prepared+'건':'',counts.pending?'전송 대기 '+counts.pending+'건':'',counts.review?'연결 확인 '+counts.review+'건':'',counts.waiting?'관리 반영 대기 '+counts.waiting+'건':'',counts.cached?'보관자료 '+counts.cached+'건':''].filter(Boolean);
   const syncNotes={pending:'저장 직후 생산관리에 반영을 요청했습니다.',running:'생산관리에 반영 중입니다. 완료되면 자동으로 확인합니다.',applied:'서버 반영 완료 · 현재 기록의 집계를 확인하고 있습니다.',review:'서버 반영 완료 · 관리 앱의 미반영 기록을 확인해 주세요.',permission:'일보는 저장됐습니다. 관리자에게 서버 연결의 저장 권한 확인을 요청해 주세요.',configuration:'일보는 저장됐습니다. 관리자에게 관리 서버 연결 확인을 요청해 주세요.',source:'일보는 저장됐습니다. 관리 자료 확인 후 다시 반영합니다.',retry:'일보는 저장됐습니다. 관리 반영을 다시 시도하고 있습니다.',conflict:'다른 변경과 합쳐 관리에 다시 반영하고 있습니다.'};
   const syncing=fieldManagementSync?.epoch===storeEpoch?syncNotes[fieldManagementSync.status]:null;
   const blocked=fieldRefreshBlocked(),note=counts.pending?'이 기기에 보관한 기록이 있습니다. 위의 지금 전송으로 먼저 보내 주세요.':blocked?'입력한 내용은 그대로 유지됩니다. 작성·저장을 마치면 최신 자료를 다시 확인합니다.':fieldRemotePending?'최신 자료 확인을 기다리고 있습니다. 잠시 후 자동으로 확인하거나 아래 버튼을 눌러 주세요.':counts.waiting?(syncing||'일보는 저장됐습니다. 생산관리 반영을 기다리는 중이므로 다시 입력하지 않아도 됩니다.'):progressSourceNote();
@@ -2846,7 +2851,7 @@ function computeProgress(daysMap,asOf=todayStr(),catalog=S.productCatalog){
   const runs = Object.create(null), phases=Object.create(null), byRecord=Object.create(null), byWorkerProduct=Object.create(null), products=new Map(), starts=new Map();let phase=0;
   Object.keys(daysMap).filter(d => d<=asOf&&Array.isArray(daysMap[d])).sort().forEach(ds => {
     orderRows(daysMap[ds]).forEach(r => {
-      if(r.off || !r.product) return;
+      if(r.off || !r.product || fieldPreparation(r)) return;
       const pn = fieldProductName(r,catalog);
       const preserved=r.productionPlanQty,plan = String(r.plan)==='0'&&typeof preserved==='number'&&Number.isFinite(preserved)&&preserved>0?preserved:numOr(r.plan, '');
       const worker=String(r.worker||'').trim(),key=JSON.stringify([worker,pn]);let run=phases[byWorkerProduct[key]];
@@ -2893,6 +2898,7 @@ function progText(pr){
   return {state:'on', pct, remain};
 }
 function planBadge(r){
+  if(fieldPreparation(r))return '<span class="badge plan" title="오늘 만든 조수를 입력하기 전에는 일정표에 반영하지 않습니다.">생산 준비'+(Number(r.plan)>0?' · 계획 '+esc(r.plan)+'조':'')+'</span>';
   const managed=recordProjectedProgress(r);
   if(managed){const e=managed.managed,state=e.complete?'관리 확인 · 생산 종료':managedProductionLabel(e),handoff=projectedHandoffText(e),attribution=projectedAttributionText(e);return `<span class="badge ${e.complete?'end':!e.jobId||e.produced===0?'plan':'on'}" title="${esc([progressSourceNote(),handoff,attribution].filter(Boolean).join(' · '))}">${state}${e.produced===null?'':` · ${handoff||e.scheduleTarget?'작업 누적':'실제'} ${r2(e.produced)} / ${e.plan===null?'계획 미기록':r2(e.plan)}조${e.percent===null?'':' · '+r2(e.percent)+'%'}`}${e.complete&&e.reason?' · '+esc(productionCompletionLabel(managed.completion)):''}${e.warning?' · '+esc(e.warning):''}${handoff?`<small class="handoff-note">${esc(handoff)}</small>`:''}${attribution?`<small class="handoff-note">${esc(attribution)}</small>`:''}</span>`;}
   const pr = progOf(r), t = progText(pr);
@@ -2972,7 +2978,7 @@ async function ensureProgress(opt){
     }
     assertContext(epoch);
     if(!opt.quick) S.progressSpan = span;
-    S.progress = {policyVersion:'completion-worker-phase-3',catalogRevision:progressCatalogRevision(),computedAt: (opt.quick && validLocalProgress(S.progress)) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct:runs,phases:runs._phases,byRecord:runs._byRecord,byWorkerProduct:runs._byWorkerProduct};
+    S.progress = {policyVersion:'completion-worker-phase-4',catalogRevision:progressCatalogRevision(),computedAt: (opt.quick && validLocalProgress(S.progress)) ? S.progress.computedAt : (hadErr ? 0 : Date.now()), byProduct:runs,phases:runs._phases,byRecord:runs._byRecord,byWorkerProduct:runs._byWorkerProduct};
     S.progressDays=all;
     if(!hadErr) LS.set('ilbo.progress', S.progress);   /* 불러오기 실패가 섞인 결과는 보관하지 않음(다음에 다시 계산) */
     if(S.tab === 'input') renderInput();
@@ -3378,7 +3384,7 @@ function productProgressView(el){
   if(run.last>S.date)return pendingProductProgress('선택일 이후 실적 포함 · 오늘 날짜에서 확인');
   const phase=Object.keys(progress.phases||{}).find(key=>progress.phases[key]===run),refs=Object.entries(progress.byRecord||{}).filter(([,ref])=>ref.phase===phase),days={...(S.progressDays||{}),...dayCache,...(S.rowsDate?{[S.rowsDate]:S.rows}:{})};
   if(!refs.length||refs.some(([key,ref])=>{const ds=key.slice(0,10),row=days[ds]?.find(r=>r.id===key.slice(11));return !row||row.prod==null||row.prod===''||!Number.isFinite(Number(row.prod))||progressStable(ref.source)!==progressStable(progressSourceFields(row));}))return pendingProductProgress('저장된 생산 기록 확인 필요');
-  if(Object.entries(days).some(([ds,rows])=>ds<=S.date&&Array.isArray(rows)&&rows.some(row=>!row.off&&row.worker===worker&&fieldProductIdentity(row)===fieldProductIdentity(product)&&!progress.byRecord[ds+'#'+row.id])))return pendingProductProgress('새 생산 기록 반영 대기');
+  if(Object.entries(days).some(([ds,rows])=>ds<=S.date&&Array.isArray(rows)&&rows.some(row=>!row.off&&!fieldPreparation(row)&&row.worker===worker&&fieldProductIdentity(row)===fieldProductIdentity(product)&&!progress.byRecord[ds+'#'+row.id])))return pendingProductProgress('새 생산 기록 반영 대기');
   return savedProductProgress(run.plan,run.made,!!run.end,'이 기기에 저장된 실적');
 }
 function quickScheduleStatus(el,view){
@@ -4297,7 +4303,7 @@ async function saveEntry(){
   const noQty = datas.map((d,i) => ({d,i})).filter(x => x.d.prod === '');
   if(noQty.length){
     const nm = noQty.map(x => `제품 ${x.i+1} ${x.d.product}`).join(', ');
-    if(!confirm(`${nm} 의 생산량이 비어 있습니다.\n\n[확인] 생산량 없이 저장\n[취소] 돌아가서 수량 입력 (없으면 0)`)){
+    if(!confirm(`${nm} 의 오늘 만든 조수가 비어 있습니다.\n\n모델·계획은 생산 준비 정보로 보관하며 일정표에는 반영하지 않습니다. 이미 저장한 수량을 지웠다면 그날 실적도 취소됩니다.\n\n[확인] 준비 정보로 저장\n[취소] 돌아가서 수량 입력`)){
       const el = els[noQty[0].i]; expandProduct(el); el.scrollIntoView({block:'center'}); el.querySelector('.pb-prod').focus(); return;
     }
   }

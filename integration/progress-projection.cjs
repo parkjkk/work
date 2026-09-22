@@ -31,7 +31,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   if(!state.months[target.month]||jobsFor(target.month).filter(job=>hash(targetFor(target.month,job))===hash(target)).length!==1)return;
   for(const {month,job}of latestJobs.values())if(job&&typeof planning.scheduleTargetMatches==='function'&&planning.scheduleTargetMatches(job,row,state))unsafeJobs.add(jobKey({originId:job.originId||job.id,jobId:job.id},month));
  }
- for(const [key,source]of raw){if(linked.has(key)||source.row.off||source.file.date>asOf)continue;const r=source.row;if(r.scheduleTarget){holdSourceTarget(source);continue}const products=new Set([ix.ids.get(r.productId),ix.byName(r.product)].filter(Boolean));for(const product of products)unlinkedProducts.add(String(r.worker||'').trim()+'\0'+product.id);}
+ for(const [key,source]of raw){if(linked.has(key)||source.row.off||source.row.prod==null||source.row.prod===''||source.file.date>asOf)continue;const r=source.row;if(r.scheduleTarget){holdSourceTarget(source);continue}const products=new Set([ix.ids.get(r.productId),ix.byName(r.product)].filter(Boolean));for(const product of products)unlinkedProducts.add(String(r.worker||'').trim()+'\0'+product.id);}
  function jobFor(link,progress){
   if(typeof planning.jobs!=='function'||!progress?.jobId||progress.warning)return null;
   const month=progress.progressMonth||link.month,m=state.months[month];if(!m)return null;
@@ -71,6 +71,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   // Closed rows retain their original spelling. Compare the catalog identity so
   // a renamed product cannot reuse old totals while a new source row is held.
   let product;try{product=ix.resolve({productId:row.sourceIntegration.productId,product:row.product})}catch{continue}
+  if(require('./schedule-core.cjs').fieldPreparation(row))continue;
   const progress=progressFor(links[0]),job=jobFor(links[0],progress),handoff=handoffFor(job),workers=handoff?[handoff.originalWorker,...handoff.changes.map(h=>h.to)]:[job?.worker||row.worker];if(!product||!progress||unsafeJobs.has(jobKey(progress,month))||workers.some(worker=>unlinkedProducts.has(String(worker||'').trim()+'\0'+product.id)))continue;
   const number=value=>typeof value==='number'&&Number.isFinite(value)?value:null;
   const completionRow=progress.completionRowId&&rowsById.get(progress.completionRowId);
