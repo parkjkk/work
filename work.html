@@ -400,12 +400,13 @@ textarea.f-input.need{border-color:var(--bad); background:var(--bad-soft)}
   .roster-person .quiet-btn{font-size:13px}.roster-person small{display:block;color:var(--ink-dim)}
   #workerDetails{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
   #workerDetails>summary{cursor:pointer;min-height:30px;font-size:15px}
-  #quickProducts{margin:18px 0 10px}
+  #quickProducts{margin:18px 0 10px;scroll-margin-top:78px}
   .quick-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px}.quick-head h3{font-size:17px;margin:0}
   .quick-total{display:inline-flex;align-items:center;min-height:34px;padding:5px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}.quick-total.warn{background:var(--warn-soft);color:var(--warn)}
   .quick-hint{font-size:13px;color:var(--ink-dim);margin:4px 0 10px;line-height:1.45}
   .quick-row{display:grid;grid-template-columns:minmax(0,1fr) 164px;align-items:center;gap:8px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0;min-width:0}
   .quick-open{text-align:left;min-width:0;min-height:52px;padding:2px 0}.quick-open b{display:block;overflow-wrap:anywhere;color:var(--accent-ink);font-size:16px}.quick-open small{display:block;white-space:normal;color:var(--ink-dim);font-size:12px;margin-top:4px;line-height:1.5}
+  .quick-remaining{display:block;margin-top:5px;font-size:15px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}.quick-progress-note{display:block;margin-top:3px;font-size:11px;line-height:1.5;color:var(--ink-dim);overflow-wrap:anywhere}.quick-remaining[data-pending="true"]{font-size:12px;color:var(--ink-dim);font-weight:500}
   .quick-control{min-width:0}.quick-qty-label{display:block;font-size:12px;color:var(--ink-dim);text-align:center;margin-bottom:3px;white-space:nowrap}
   .quick-stepper{display:grid;grid-template-columns:44px minmax(56px,1fr) 44px;gap:4px;min-width:0}
   .quick-stepper button,.quick-stepper input{height:48px;min-width:44px;border:1.5px solid var(--line-in);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit}
@@ -2237,6 +2238,7 @@ async function loadProductionProgress(background=false){
   if(S.tab==='month'&&lastDraw&&`${lastDraw.y}-${pad2(lastDraw.m)}`===S.month)drawMonth(lastDraw.days,lastDraw.y,lastDraw.m);
   $$('#prodBlocks .pb').forEach(updateProdProg);
   renderReservationLoad(false);
+  if($('#entryOv').classList.contains('open'))syncQuickProducts();
 }
 let projectedReadScope=null;
 function projectedPairKey(row){return JSON.stringify([row.worker,fieldProductIdentity(row)]);}
@@ -2912,7 +2914,7 @@ function updateProdProgContents(el){
   const previous=S.rows.find(r=>r.id===el.dataset.rid);
   const worker=$('#fWorker').value.trim(),sameProduct=previous&&String(previous.worker||'').trim()===worker&&fieldProductIdentity(pn)===fieldProductIdentity(previous);
   const chosen=scheduleTargetForms.get(el)?.target,selected=chosen&&scheduleTargetDescriptor(chosen);
-  if(selected){const pending=projectedReadScope&&[selected.target.worker,...selected.participants].some(w=>projectedReadScope.invalidPairs.has(projectedPairKey({worker:w,product:selected.product,productId:selected.target.productId})));box.innerHTML=`<b>${esc(projectedWorkerAt(selected,S.date))} 작업 누적</b> · ${pending?'일보 변경 반영 대기':`${r2(selected.produced)} / ${selected.plan===null?'계획 미기록':r2(selected.plan)}조`}<br><small>일보의 개인 실적은 ${esc(worker)}에게 남습니다. ${esc(progressSourceNote())}</small>`;box.hidden=false;return;}
+  if(selected){const view=targetProgressView(selected);box.innerHTML=`<b>${esc(projectedWorkerAt(selected,S.date))} 작업 누적</b> · ${esc(view.label)}<br><small>${esc(view.note)} · 일보의 개인 실적은 ${esc(worker)}에게 남습니다. ${esc(progressSourceNote())}</small>`;box.hidden=false;return;}
   if(!previous){
     const references=knownManagedRuns(pn,worker);
     if(references.length){box.innerHTML=`<b>저장된 연결 작업 참고</b> · 현재 입력은 아직 연결 전${references.map(run=>{const e=run.managed;return `<br>${esc(fieldProductName(e))} · 실제 ${e.produced===null?'—':r2(e.produced)} / 계획 ${e.plan===null?'미기록':r2(e.plan)}조${e.percent===null?'':' ('+r2(e.percent)+'%)'} · <b>${esc(managedProductionLabel(e))}</b>${run.completion?' · '+esc(productionCompletionLabel(run.completion)):''}${e.handoff?`<small class="handoff-note">${esc(projectedHandoffText(e,S.date))}</small>`:''}`;}).join('')}<br><small>${esc(progressSourceNote())} · 읽기 전용</small>`;box.hidden=false;return;}
@@ -2975,7 +2977,7 @@ async function ensureProgress(opt){
     if(!hadErr) LS.set('ilbo.progress', S.progress);   /* 불러오기 실패가 섞인 결과는 보관하지 않음(다음에 다시 계산) */
     if(S.tab === 'input') renderInput();
     if(S.tab === 'month' && lastDraw && `${lastDraw.y}-${pad2(lastDraw.m)}` === S.month) drawMonth(lastDraw.days, lastDraw.y, lastDraw.m);
-    if($('#entryOv').classList.contains('open')) $$('#prodBlocks .pb').forEach(updateProdProg);
+    if($('#entryOv').classList.contains('open')){$$('#prodBlocks .pb').forEach(updateProdProg);syncQuickProducts();}
   }catch(e){}
   finally{ if(epoch===storeEpoch) progressBusy = false; }
 }
@@ -3240,14 +3242,14 @@ function blockHTML(){
     <input class="pb-prod" inputmode="numeric" placeholder="0" aria-label="오늘 만든 조수">
     <button type="button" class="pb-pp" aria-label="오늘 만든 조수 1 늘리기">＋</button>
   </div>
-  <div class="pb-today-guide"><b>평소에는 오늘 만든 총 조수만 입력하세요.</b>기존 수기예약과 연결된 품목은 예약의 호기와 일정 막대를 자동으로 이어서 표시합니다.</div>
+  <div class="pb-today-guide"><b>평소에는 오늘 만든 총 조수만 입력하세요.</b>이전 작업과 연결된 품목은 같은 호기와 일정 막대를 이어서 표시합니다.</div>
   <details class="pb-schedule">
     <summary>일정표·호기 입력 <span class="pb-schedule-summary">필요할 때만</span></summary>
     <span class="hint">예약과 다른 호기를 썼거나 새 일정을 만들 때만 수정하세요. 기존 예약과 연결되면 저장된 호기와 순서를 그대로 사용합니다.</span>
     <div class="pb-schedule-reference" hidden></div><div class="pb-handoff-lock pb-schedule-note" hidden role="status"></div><div class="pb-schedule-conflict" hidden role="alert"></div>
     <details class="pb-routing"><summary>일정 막대와 호기 사용 순서</summary>
       <div class="pb-routing-fields">
-        <label class="pb-route-wide">호기가 여러 개일 때<select class="f-input pb-route-mode"><option value="">기존 예약대로</option><option value="sequential">위에 적은 호기부터 차례로</option><option value="parallel">적은 호기를 같은 날 함께</option></select></label>
+        <label class="pb-route-wide">호기가 여러 개일 때<select class="f-input pb-route-mode"><option value="">기존 작업 방식 유지</option><option value="sequential">위에 적은 호기부터 차례로</option><option value="parallel">적은 호기를 같은 날 함께</option></select></label>
         <label class="pb-route-wide">일정표에 보이는 모양<select class="f-input pb-route-display"><option value="">한 막대로 표시 (기본)</option><option value="combined">한 막대로 표시</option><option value="separate">품목·호기별로 따로 표시</option></select></label><span class="hint pb-route-wide">막대 모양을 바꿔도 실제 생산 순서와 호기별 건조일은 바뀌지 않습니다.</span>
         <details class="pb-route-wide pb-route-id"><summary>기존 일정 연결 정보 · 보통은 열지 않음</summary><div class="pb-route-position"><label>예약 연결 이름<input class="f-input pb-route-group" placeholder="기존 예약 연결값" maxlength="120"></label><label>같이 시작하는 줄<input class="f-input pb-route-lane" inputmode="numeric" value="1" aria-label="같이 시작하는 줄"></label><label>그 줄에서 만드는 순서<input class="f-input pb-route-order" inputmode="numeric" value="1" aria-label="그 줄에서 만드는 순서"></label></div><small>기존 예약 연결을 복구할 때만 사용합니다. 새 묶음은 아래 버튼으로 만드세요.</small></details>
       </div>
@@ -3327,13 +3329,62 @@ function stepProductQuantity(el,delta){
   const current=numOr(input.value,0)||0;
   return setProductQuantity(el,Math.max(0,current+delta));
 }
-function quickScheduleStatus(el){
-  if(scheduleTargetForms.get(el)?.target)return'예약 자동 연결';
+// Read-only, saved-work progress. Never subtract an unsaved form quantity (or today's saved quantity twice).
+function pendingProductProgress(note,phase='작업 연결 확인'){return{remaining:null,label:'남은 수량 확인 중',note,phase};}
+function savedProductProgress(plan,produced,complete,basis){
+  if(typeof plan!=='number'||!Number.isFinite(plan)||plan<=0)return pendingProductProgress('계획 수량 확인 필요');
+  if(typeof produced!=='number'||!Number.isFinite(produced)||produced<0)return pendingProductProgress('누적 생산 수량 확인 필요');
+  const shortfall=r2(Math.max(0,plan-produced)),remaining=complete?0:shortfall;
+  return{remaining,label:complete?'생산 종료':`남은 ${remaining}조`,phase:complete?'생산 종료':produced>=plan?'계획 달성':produced>0?'이전 작업 이어서':'예정된 작업 시작',note:`계획 ${r2(plan)} · 누적 ${r2(produced)}조${complete&&shortfall?' · 미생산 '+shortfall+'조':''} · ${basis}`};
+}
+function targetProgressView(target){return withProjectedReadScope(()=>{
+  const projection=S.productionProgress,scope=projectedReadScope;
+  if(!target||!projection||S.productionProgressMode!=='ready'||S.offline||driver.offline)return pendingProductProgress('최신 작업 자료 확인 필요');
+  if(projection.asOf>S.date)return pendingProductProgress('선택일 이후 실적 포함 · 오늘 날짜에서 확인');
+  const owners=[target.worker,target.target.worker,...(target.participants||[]),...(target.handoff?[target.handoff.originalWorker,...target.handoff.changes.map(h=>h.to)]:[])].filter(Boolean);
+  if(owners.some(worker=>scope.invalidPairs.has(projectedPairKey({worker,product:target.product,productId:target.target.productId}))))return pendingProductProgress('일보 변경 반영 대기');
+  let complete=target.complete===true;
+  for(const [key,entry]of scope.latest){
+    if((entry.originId||entry.jobId)!==(target.target.originId||target.target.jobId)||fieldProductIdentity(entry)!==fieldProductIdentity({product:target.product,productId:target.target.productId}))continue;
+    const owner=entry.handoff?.originalWorker||entry.scheduleTarget?.worker||entry.scheduleWorker||entry.worker;
+    if(owner!==target.target.worker)continue;
+    if(scope.invalidOrigins.has(key))return pendingProductProgress('일보 변경 반영 대기');
+    if(entry.warning||entry.produced===null)return pendingProductProgress('누적 생산 수량 확인 필요');
+    complete=complete||entry.complete;
+  }
+  return savedProductProgress(target.plan,target.produced,complete,`저장된 실적 · ${fmtMD(projection.asOf)} 기준`);
+});}
+function productProgressView(el){
+  const product=el.querySelector('.pb-product').value.trim(),worker=$('#fWorker').value.trim(),previous=S.rows.find(row=>row.id===el.dataset.rid);
+  if(!product)return pendingProductProgress('품목을 선택하세요','오늘 조수만 입력');
+  if(el.querySelector('.pb-planmode').value==='start'&&(!previous||el.dataset.planModeChanged==='1'))return pendingProductProgress('첫 저장 후 남은 수량 표시','새 작업 시작');
+  const state=scheduleTargetForms.get(el);
+  if(state?.target)return targetProgressView(scheduleTargetDescriptor(state.target));
+  if(state?.ambiguous)return pendingProductProgress('품목 상세에서 이어갈 작업 선택');
+  const same=previous&&previous.worker===worker&&fieldProductIdentity(previous)===fieldProductIdentity(product),managed=same&&recordProjectedProgress(previous);
+  if(managed){
+    if(S.productionProgressMode!=='ready'||S.offline||driver.offline)return pendingProductProgress('최신 작업 자료 확인 필요');
+    if(S.productionProgress.asOf>S.date)return pendingProductProgress('선택일 이후 실적 포함 · 오늘 날짜에서 확인');
+    if(managed.managed.warning||!managed.managed.jobId)return pendingProductProgress('작업 누적 확인 필요');
+    return savedProductProgress(managed.plan,managed.made,managed.managed.complete,`저장된 실적 · ${fmtMD(managed.asOf)} 기준`);
+  }
+  if(driver.mode==='gh'||driver.offline)return pendingProductProgress('생산관리 반영 확인 후 표시');
+  const progress=S.progress,run=progOf(same?previous:product,worker);
+  if(!validLocalProgress(progress)||!progress.computedAt||!run||run.ambiguous||!same&&run.end)return pendingProductProgress('이어갈 작업과 계획 확인 필요');
+  if(run.last>S.date)return pendingProductProgress('선택일 이후 실적 포함 · 오늘 날짜에서 확인');
+  const phase=Object.keys(progress.phases||{}).find(key=>progress.phases[key]===run),refs=Object.entries(progress.byRecord||{}).filter(([,ref])=>ref.phase===phase),days={...(S.progressDays||{}),...dayCache,...(S.rowsDate?{[S.rowsDate]:S.rows}:{})};
+  if(!refs.length||refs.some(([key,ref])=>{const ds=key.slice(0,10),row=days[ds]?.find(r=>r.id===key.slice(11));return !row||row.prod==null||row.prod===''||!Number.isFinite(Number(row.prod))||progressStable(ref.source)!==progressStable(progressSourceFields(row));}))return pendingProductProgress('저장된 생산 기록 확인 필요');
+  if(Object.entries(days).some(([ds,rows])=>ds<=S.date&&Array.isArray(rows)&&rows.some(row=>!row.off&&row.worker===worker&&fieldProductIdentity(row)===fieldProductIdentity(product)&&!progress.byRecord[ds+'#'+row.id])))return pendingProductProgress('새 생산 기록 반영 대기');
+  return savedProductProgress(run.plan,run.made,!!run.end,'이 기기에 저장된 실적');
+}
+function quickScheduleStatus(el,view){
+  if(view&&(view.remaining!==null||scheduleTargetForms.get(el)?.target||view.phase==='새 작업 시작'))return view.phase;
   const routing=scheduleFormValues(el).routing;
   if(routing?.group)return routing.order>1?'앞 품목이 끝나면 시작':'다른 품목과 같이 시작';
   return'오늘 조수만 입력';
 }
-function syncQuickProducts(){
+function syncQuickProducts(){return withProjectedReadScope(syncQuickProductsContents);}
+function syncQuickProductsContents(){
   const box=$('#quickProducts'), els=[...$('#prodBlocks').children];
   renderEntryReservationFlow(els);
   box.hidden=S.entryMode==='case' || !els.length;
@@ -3341,7 +3392,7 @@ function syncQuickProducts(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<div class="quick-head"><h3>오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><small></small></button><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small></small></button><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
@@ -3359,7 +3410,8 @@ function syncQuickProducts(){
     row.querySelector('b').textContent=p||`제품 ${i+1} 선택`;
     const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
-    row.querySelector('small').textContent=quickScheduleStatus(el)+' · '+manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
+    const view=productProgressView(el),remaining=row.querySelector('.quick-remaining');remaining.textContent=view.label;remaining.dataset.pending=String(view.remaining===null);remaining.hidden=!p;row.querySelector('.quick-progress-note').textContent=p?view.note:'';
+    row.querySelector('small').textContent=quickScheduleStatus(el,view)+' · '+manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
     if(document.activeElement!==input) input.value=qty.value;
     const locked=qty.readOnly||qty.disabled;input.placeholder=qty.placeholder;input.readOnly=locked;input.title=locked?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
     row.querySelector('.quick-qty-label').textContent=locked?'호기별 수량 합계':'오늘 만든 조수';row.querySelector('.quick-machine').textContent=locked?'호기별 수량 수정':'여러 호기에 나눠 입력';row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
@@ -3445,10 +3497,10 @@ function activeReservationTargets(worker,date=S.date){
     const key=scheduleTargetKey(target.target);if(seen.has(key)||!reservationTargetAppliesToDate(target,date)||(target.activeFrom||target.start)>date||projectedWorkerAt(target,date)!==worker||reservationComplete(target))return false;seen.add(key);return true;
   }).sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(ar?.group||scheduleTargetKey(a.target)).localeCompare(String(br?.group||scheduleTargetKey(b.target)))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1)||String(a.product).localeCompare(String(b.product),'ko');});
 }
-function reservationFlowHTML(targets,date=S.date,title='예약 생산 흐름'){
+function reservationFlowHTML(targets,date=S.date,title='오늘 작업 흐름'){
   const ordered=[...targets].sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(a.target.month).localeCompare(String(b.target.month))||String(ar?.group||'').localeCompare(String(br?.group||''))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1);});
   const lines=new Map();for(const target of ordered){const route=target.schedule?.conditions?.routing,key=route?.group?target.target.month+'#'+route.group+'#'+route.lane:'one#'+scheduleTargetKey(target.target);if(!lines.has(key))lines.set(key,[]);lines.get(key).push(target);}
-  return`<div class="pb-route-flow"><div class="pb-route-flow-title">${esc(title)}</div>${[...lines.values()].map(items=>{items.sort((a,b)=>(a.schedule?.conditions?.routing?.order||1)-(b.schedule?.conditions?.routing?.order||1));return`<div class="pb-route-flow-line"><span class="pb-route-flow-tag">같이 시작</span>${items.map((target,index)=>{const upcoming=(target.activeFrom||target.start)>date,status=reservationComplete(target)?'완료':upcoming?'다음':'오늘 입력',qty=Number.isFinite(Number(target.plan))?' '+r2(Number(target.plan))+'조':'';return`${index?'<span class="pb-route-flow-arrow" aria-hidden="true">→</span>':''}<span class="pb-route-flow-node${upcoming?' reservation-upcoming':''}">${esc(target.product)}${esc(qty)} <small>· ${status}</small></span>`;}).join('')}</div>`;}).join('')}</div>`;
+  return withProjectedReadScope(()=>`<div class="pb-route-flow"><div class="pb-route-flow-title">${esc(title)}</div>${[...lines.values()].map(items=>{items.sort((a,b)=>(a.schedule?.conditions?.routing?.order||1)-(b.schedule?.conditions?.routing?.order||1));return`<div class="pb-route-flow-line"><span class="pb-route-flow-tag">${lines.size>1?'함께 진행':items.length>1?'생산 순서':'작업'}</span>${items.map((target,index)=>{const upcoming=(target.activeFrom||target.start)>date,view=targetProgressView(target),status=upcoming?'다음':view.remaining===null?'확인 중':view.phase==='이전 작업 이어서'?'이어서':view.phase==='예정된 작업 시작'?'시작':view.phase,qty=Number.isFinite(target.plan)?' '+r2(target.plan)+'조':'';return`${index?'<span class="pb-route-flow-arrow" aria-hidden="true">→</span>':''}<span class="pb-route-flow-node${upcoming?' reservation-upcoming':''}">${esc(target.product)}${esc(qty)} <small>· ${status}</small></span>`;}).join('')}</div>`;}).join('')}</div>`);
 }
 function renderEntryReservationFlow(els){
  const box=$('#entryReservationFlow');if(!box)return;
@@ -3457,7 +3509,7 @@ function renderEntryReservationFlow(els){
  const groupKey=t=>JSON.stringify([t.target.month,t.schedule?.conditions?.routing?.group]),groups=new Set(targets.filter(t=>keys.has(scheduleTargetKey(t.target))&&t.schedule?.conditions?.routing?.group).map(groupKey));
  const flow=targets.filter(t=>keys.has(scheduleTargetKey(t.target))||groups.has(groupKey(t)));
  const visible=S.entryMode!=='case'&&flow.length>0;box.hidden=!visible;
- const html=visible?reservationFlowHTML(flow,S.date,'이 예약을 이어서 생산합니다'):'';
+ const html=visible?reservationFlowHTML(flow,S.date):'';
  if(box._flow!==html){box.innerHTML=html;box._flow=html;}
 }
 function renderReservationLoad(auto=false){
@@ -3466,8 +3518,8 @@ function renderReservationLoad(auto=false){
   const active=activeReservationTargets(worker),existing=new Set([...$('#prodBlocks').children].map(el=>scheduleTargetForms.get(el)?.target).filter(Boolean).map(scheduleTargetKey)),missing=active.filter(target=>!existing.has(scheduleTargetKey(target.target)));
   if(!missing.length){box.hidden=true;box.innerHTML='';return false;}
   const routeKey=target=>target.target.month+'\0'+(target.schedule?.conditions?.routing?.group||''),groups=new Set(active.filter(target=>target.schedule?.conditions?.routing?.group).map(routeKey)),activeKeys=new Set(active.map(target=>scheduleTargetKey(target.target))),flow=(S.productionProgress.targets||[]).filter(target=>projectedWorkerAt(target,S.date)===worker&&(activeKeys.has(scheduleTargetKey(target.target))||groups.has(routeKey(target)))).sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1);});
-  $('#recentLoad').hidden=true;$('#recentLoad').innerHTML='';box.hidden=false;box.innerHTML=`<div class="reservation-load"><div class="reservation-load-head"><div><b>오늘 예약 ${missing.length}개를 찾았습니다</b><span>예약된 품목·호기·순서를 그대로 사용합니다.</span></div></div>${reservationFlowHTML(flow.length?flow:active)}<button type="button">예약대로 오늘 입력 시작</button><p class="reservation-load-note">품목을 다시 적거나 생산 순서를 만들 필요가 없습니다. 불러온 뒤 각 품목의 오늘 만든 조수만 입력하세요.</p></div>`;
-  const load=()=>{for(const target of missing){let el=[...$('#prodBlocks').children].find(block=>scheduleTargetKey(scheduleTargetForms.get(block)?.target)===scheduleTargetKey(target.target));if(!el)el=[...$('#prodBlocks').children].find(block=>!block.querySelector('.pb-product').value.trim())||addBlock(null);el.querySelector('.pb-product').value=target.product;el.querySelector('.pb-planmode').value='continue';el.querySelector('.pb-plan').value='';delete el.dataset.planModeChanged;const state=scheduleTargetForms.get(el)||{before:{present:false},changed:false,context:null};scheduleTargetForms.set(el,{...state,target:target.target,changed:true,ambiguous:false,context:null});updateProdProg(el);expandProduct(el,false);}box.hidden=true;box.innerHTML='';renumberBlocks();syncQuickProducts();const input=[...$('#quickProducts').querySelectorAll('.quick-row input')].find(item=>!item.value.trim());if(input){$('#quickProducts').scrollIntoView({block:'start'});input.focus({preventScroll:true});}toast('예약 품목을 불러왔습니다 — 오늘 만든 조수만 입력하세요.');if(auto){clearTimeout(draftTimer);entrySnap=formSnapshot();}else saveDraft();};
+  $('#recentLoad').hidden=true;$('#recentLoad').innerHTML='';box.hidden=false;box.innerHTML=`<div class="reservation-load"><div class="reservation-load-head"><div><b>오늘 생산할 품목 ${missing.length}개</b><span>기존 품목·호기·작업 순서를 그대로 불러옵니다.</span></div></div>${reservationFlowHTML(flow.length?flow:active)}<button type="button">오늘 작업 불러오기</button><p class="reservation-load-note">이전 작업은 이어서, 처음인 품목은 예정된 계획으로 시작합니다. 각 품목의 오늘 만든 조수만 입력하세요.</p></div>`;
+  const load=()=>{for(const target of missing){let el=[...$('#prodBlocks').children].find(block=>scheduleTargetKey(scheduleTargetForms.get(block)?.target)===scheduleTargetKey(target.target));if(!el)el=[...$('#prodBlocks').children].find(block=>!block.querySelector('.pb-product').value.trim())||addBlock(null);el.querySelector('.pb-product').value=target.product;el.querySelector('.pb-planmode').value='continue';el.querySelector('.pb-plan').value='';delete el.dataset.planModeChanged;const state=scheduleTargetForms.get(el)||{before:{present:false},changed:false,context:null};scheduleTargetForms.set(el,{...state,target:target.target,changed:true,ambiguous:false,context:null});updateProdProg(el);expandProduct(el,false);}box.hidden=true;box.innerHTML='';renumberBlocks();syncQuickProducts();const input=[...$('#quickProducts').querySelectorAll('.quick-row input')].find(item=>!item.value.trim());if(input){$('#quickProducts').scrollIntoView({block:'start'});input.focus({preventScroll:true});}toast('작업을 불러왔습니다 — 오늘 만든 조수만 입력하세요.');if(auto){clearTimeout(draftTimer);entrySnap=formSnapshot();}else saveDraft();};
   box.querySelector('button').onclick=load;if(auto)load();return true;
 }
 function updateScheduleTarget(el){
@@ -3484,8 +3536,8 @@ function updateScheduleTarget(el){
   select.innerHTML='<option value="">'+(state.ambiguous?'어느 작업에 더할지 선택하세요':'연결된 생산 작업 없음')+'</option>'+items.map((t,i)=>`<option value="${i+1}">${esc(projectedWorkerAt(t,S.date))} · ${esc((t.schedule?.conditions.machines||[]).map(m=>m.name).join(' / ')||t.product)}${t.start?' · '+fmtMD(t.start)+' 시작':''}</option>`).join('');
   const selected=state.target?items.findIndex(t=>scheduleTargetKey(t.target)===scheduleTargetKey(state.target)):-1;select.value=selected<0?'':String(selected+1);select.disabled=items.length<=1||!!previous?.scheduleTarget;select.closest('label').hidden=select.disabled;
   const owner=descriptor?projectedWorkerAt(descriptor,S.date):state.target?.worker;
-  note.textContent=owner===worker&&descriptor?.handoff&&S.productionProgressMode==='ready'?projectedHandoffText(descriptor,S.date)||'기존 예약 자동 연결 · 오늘 만든 조수가 기존 누적에 더해집니다.':owner===worker?'기존 예약 자동 연결 · 오늘 만든 조수만 입력하면 생산 중으로 이어집니다.':owner?`${owner}님의 기존 예약에 연결 · 오늘 생산자는 ${worker||'작업자 선택'}(으)로 기록됩니다.${!descriptor||S.productionProgressMode!=='ready'?' 연결을 다시 확인한 뒤 반영됩니다.':''}`:state.ambiguous?'같은 품목의 예약이 여러 개입니다. 오늘 생산한 예약을 선택하세요.':S.productionProgressMode==='ready'?'이어갈 예약이 없습니다. 새 작업이면 새 계획 시작을 선택하세요.':'관리 예약을 확인하지 못했습니다. 일보는 보관되며 연결이 확인되면 반영됩니다.';
-  select.onchange=()=>{const item=items[Number(select.value)-1];state.target=item?.target||null;state.changed=true;state.ambiguous=!state.target&&items.length>1;scheduleManagedForms.delete(el);scheduleTargetForms.set(el,state);updateProdProg(el);saveDraft();};
+  note.textContent=owner===worker&&descriptor?.handoff&&S.productionProgressMode==='ready'?projectedHandoffText(descriptor,S.date)||'이전 작업 이어서 · 오늘 만든 조수가 기존 누적에 더해집니다.':owner===worker?targetProgressView(descriptor).phase+' · 오늘 만든 조수만 입력하세요.':owner?`${owner}님의 작업에 이어서 · 오늘 생산자는 ${worker||'작업자 선택'}(으)로 기록됩니다.${!descriptor||S.productionProgressMode!=='ready'?' 연결을 다시 확인한 뒤 반영됩니다.':''}`:state.ambiguous?'같은 품목의 작업이 여러 개입니다. 오늘 생산한 작업을 선택하세요.':S.productionProgressMode==='ready'?'이어갈 작업이 없습니다. 새 작업이면 새 계획 시작을 선택하세요.':'연결할 작업을 확인하지 못했습니다. 일보는 보관되며 연결이 확인되면 반영됩니다.';
+  select.onchange=()=>{const item=items[Number(select.value)-1];state.target=item?.target||null;state.changed=true;state.ambiguous=!state.target&&items.length>1;scheduleManagedForms.delete(el);scheduleTargetForms.set(el,state);updateProdProg(el);syncQuickProducts();saveDraft();};
 }
 function collectScheduleTarget(el){
   updateScheduleTarget(el);const state=scheduleTargetForms.get(el),previous=S.rows.find(r=>r.id===el.dataset.rid);if(state?.ambiguous)throw Error('반영할 작업을 선택해 주세요.');
@@ -3655,7 +3707,7 @@ function updateScheduleSummary(el){
   try{data=normalizeScheduleInput(values);}catch(e){summary.textContent='입력 확인';note.classList.add('warn');note.textContent=e.message;return;}
   summary.textContent=data?scheduleDescription(data):scheduleReferences.get(el)?'이전 현장 조건 있음':'선택 입력';
   const plan=Number(el.querySelector('.pb-plan').value)||Number(el.dataset.productionPlanQty),allocated=(data?.machines||[]).reduce((n,m)=>n+(m.qty??0),0),partial=data?.machines.some(m=>m.qty===null),different=plan>0&&data?.machines.length&&(partial||Math.abs(allocated-plan)>0.000001);
-  const missingSpeed=data?.routing?.mode==='parallel'&&data.machines.some(m=>!(m.daily>0)&&!(data.machines.length===1&&data.daily>0));note.classList.toggle('warn',!!different||!!missingSpeed);note.textContent=different?`예약 전체 ${r2(plan)}조 · 호기에 나눈 합계 ${r2(allocated)}조${partial?' (비어 있는 호기 있음)':''}. 서로 맞는지 확인해 주세요.`:missingSpeed?'같은 날 여러 호기를 쓰면 각 호기에서 하루에 만들 조수를 입력해야 예상 종료일이 계산됩니다.':data?'저장하면 바꾼 일정 조건만 생산관리에 반영됩니다. 기존 예약을 불러온 내용은 그대로 이어집니다.':'입력하지 않아도 됩니다. 기존 예약과 오늘 만든 조수는 바뀌지 않습니다.';
+  const missingSpeed=data?.routing?.mode==='parallel'&&data.machines.some(m=>!(m.daily>0)&&!(data.machines.length===1&&data.daily>0));note.classList.toggle('warn',!!different||!!missingSpeed);note.textContent=different?`계획 전체 ${r2(plan)}조 · 호기에 나눈 합계 ${r2(allocated)}조${partial?' (비어 있는 호기 있음)':''}. 서로 맞는지 확인해 주세요.`:missingSpeed?'같은 날 여러 호기를 쓰면 각 호기에서 하루에 만들 조수를 입력해야 예상 종료일이 계산됩니다.':data?'저장하면 바꾼 일정 조건만 생산관리에 반영됩니다. 불러온 작업은 그대로 이어집니다.':'입력하지 않아도 됩니다. 기존 작업과 오늘 만든 조수는 바뀌지 않습니다.';
 }
 function changedScheduleFields(el,result){const base=JSON.parse(scheduleFormBaselines.get(el)||'{"machines":[],"daily":""}'),value=JSON.parse(scheduleFormSignature(scheduleFormValues(el)));return['machines','daily','routing'].filter(key=>progressStable(value[key])!==progressStable(base[key])&&(key==='machines'?result?.machines.length:key==='routing'?result?.routing:result?.daily!==null));}
 function collectScheduleFields(el){
