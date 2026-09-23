@@ -444,7 +444,7 @@ const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
 function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
 function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
-const reservationLayoutPolicy='manual-transition-gap-v4';
+const reservationLayoutPolicy='manual-transition-gap-v5';
 function afterProductionGap(s,worker,end){
  if(!C.iso(end))throw Error('앞 작업의 생산 종료일을 확인해 주세요.');
  let date=add(end,1);for(let i=0;i<3;i++){date=nextManualWork(s,worker,date);if(i<2)date=add(date,1)}return date;
@@ -574,7 +574,7 @@ function asOf(s,k){
 }
 function dryInputData(s,key,worker,asOfOverride=null,actualPriority=false){
  const fields=['id','originId','sourceRowId','product','worker','plan','start','end','previousStart','previousPlan','previousProduced','carried','daily','group','duration','afterPrevious','machines','manual','manualSource','stoppedAt','sourceStart','sourceEnd','handoffs'];
- const inputs=jobs(s,key).filter(job=>job.worker===worker&&(!actualPriority||!manualUsesCalendar(job)||C.num(job.produced)>0||C.num(job.previousProduced)>0)).map(job=>({...Object.fromEntries(fields.map(field=>[field,field==='product'?C.catalogIdentity(s,job.product):job[field]??null])),...(job.routing?{routing:job.routing}:{}),...(job.carryReconciliation||job.carryTerminal||job.carryBlocked?{carryActualRevision:[job.effectivePreviousProduced??null,job.carryTerminal||false,job.carryBlocked||false]}:{})}));
+ const inputs=jobs(s,key).filter(job=>job.worker===worker&&(!actualPriority||!manualUsesCalendar(job)||C.num(job.produced)>0||C.num(job.previousProduced)>0)).map(job=>({...Object.fromEntries(fields.map(field=>[field,field==='product'?C.catalogIdentity(s,job.product):job[field]??null])),...(job.manualStartMode?{manualStartMode:job.manualStartMode}:{}),...(job.routing?{routing:job.routing}:{}),...(job.carryReconciliation||job.carryTerminal||job.carryBlocked?{carryActualRevision:[job.effectivePreviousProduced??null,job.carryTerminal||false,job.carryBlocked||false]}:{})}));
  const creditOrigins=new Set(inputs.map(j=>j.originId||j.id));
  const actual=Object.keys(s.months||{}).sort().map(month=>[month,(s.months[month].rows||[]).filter(row=>row.worker===worker||row.scheduleTarget?.worker===worker&&creditOrigins.has(row.scheduleTarget.originId)).map(row=>({...Object.fromEntries(['id','date','worker','product','plan','pours','jobId','sourceRow','deleted'].map(field=>[field,field==='product'?C.catalogIdentity(s,row.product):row[field]??null])),...(row.scheduleTarget?{scheduleTarget:row.scheduleTarget}:{}),...(row.productionCompletion?{productionCompletion:row.productionCompletion}:{}),...(row.productionPlanQty>0?{productionPlanQty:row.productionPlanQty}:{}),...(Object.prototype.hasOwnProperty.call(row,'machineActuals')?{machineActuals:row.machineActuals}:{})})) ]).filter(([,rows])=>rows.length);
  return{version:1,asOf:C.iso(asOfOverride)?asOfOverride:asOf(s,key),jobs:inputs,actual};
@@ -722,6 +722,10 @@ function scheduleAllRead(s,requestedToday,options={}){
  const cursors=new Map(),pending=[],activeStarts=new Map();
  const predecessor=(group,end)=>({groupKey:group.key,jobIds:group.members.map(e=>e.job.id),products:[...new Set(group.members.map(e=>e.job.product))],ownerMonths:[group.owner],end:end||null});
  for(const group of groups.values()){
+  // Finished work still occupies the worker's last verified production date.
+  // Use assigned segments, not the original owner or a guessed carry balance.
+  const finished=group.members.filter(e=>e.job.complete&&hasActual(e.job)&&!e.job.carryBlocked&&!e.job.handoffBlocked);
+  for(const entry of finished){const verifiedEnd=entry.job.completedAt||entry.job.lastActual;if(!C.iso(verifiedEnd))continue;for(const row of rowsFor(entry)){if(row.reservationOnly||!C.iso(row.end)||row.end>verifiedEnd)continue;const current=cursors.get(row.worker);if(!current?.blocked&&(!current||row.end>current.end))cursors.set(row.worker,{end:row.end,blocked:false,predecessor:predecessor(group,row.end),reason:''});}}
   const active=group.members.some(e=>hasActual(e.job)&&!e.job.complete);
   if(active){const incomplete=group.members.filter(e=>!e.job.complete),parts=group.members.flatMap(rowsFor),workers=new Set([group.worker,...parts.map(row=>row.worker),...incomplete.map(e=>workerAt(e.job,asOf(s,e.owner)))]);
    for(const worker of workers){const ownedParts=parts.filter(row=>row.worker===worker),current=cursors.get(worker),unknown=incomplete.some(e=>(e.job.carryBlocked||e.job.handoffBlocked||!rowsFor(e).some(row=>!row.actualOnly&&!row.reservationOnly&&C.iso(row.end)))&&workerAt(e.job,asOf(s,e.owner))===worker),ends=ownedParts.filter(row=>!row.actualOnly||row.handoffOut||group.members.find(e=>e.job.id===row.jobId)?.job.complete).map(row=>row.end).filter(C.iso).sort(),end=ends.at(-1)||null;
@@ -738,7 +742,9 @@ function scheduleAllRead(s,requestedToday,options={}){
  for(const group of pending){const previous=cursors.get(group.worker),manualFallback=!!previous?.blocked,anchor=manualFallback?null:previous,status=manualFallback?'manual':previous?'chained':'first';let prepared=null,calculated=null,start=null,end=null,reason='';
   try{
    if(group.members.some(e=>e.job.carryBlocked))throw Error('이월 작업 연결을 확인해야 수기 일정을 배치할 수 있습니다.');
-   start=anchor?afterProductionGap(s,group.worker,anchor.end):group.requestedStart;if(!C.iso(start))throw Error('수기 작업의 시작일을 확인해 주세요.');
+   start=anchor?afterProductionGap(s,group.worker,anchor.end):group.requestedStart;
+   if(group.members.some(e=>e.job.manualStartMode==='date')&&C.iso(group.requestedStart)&&group.requestedStart>start)start=group.requestedStart;
+   if(!C.iso(start))throw Error('수기 작업의 시작일을 확인해 주세요.');
    const legacy=group.members.filter(e=>!e.job.routing),legacyEnds=legacy.map(e=>{const savedPeriod=manualFallback&&e.job.manualEndMode!=='daily'&&C.iso(e.job.start)&&C.iso(e.job.end)&&e.job.end>=e.job.start,duration=manualDuration(s,savedPeriod?{...e.job,manualEndMode:'date'}:e.job),calculatedEnd=manualDurationEnd(s,group.worker,start,duration),keepEnd=savedPeriod||!anchor&&e.job.manualEndMode==='date'&&C.iso(e.job.end);return keepEnd&&e.job.end>calculatedEnd?e.job.end:calculatedEnd}),legacyEnd=legacyEnds.sort().at(-1)||null;
    prepared=group.members.map(entry=>{const job=clone(entry.job);if(job.routing){const offset=C.iso(job.start)&&C.iso(group.requestedStart)?Math.round((Date.parse(job.start)-Date.parse(group.requestedStart))/86400000):0;job.start=add(start,offset)}else{job.start=start;job.end=legacyEnd;job.duration=null;job.afterPrevious=false}return job});
    calculated=scheduleBase(s,group.owner,requestedToday,settings(group.owner,{inputJobs:prepared,isolatedGroup:true,skipSourceDry:true}));
