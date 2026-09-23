@@ -438,7 +438,14 @@ function dailyProgress(s,k,options={}){
 }
 function factory(s){return (s.calendar?.factory||[]).map(r=>typeof r==='string'?r:r.date)}
 function holiday(s,worker,d){return(s.calendar?.workers||[]).some(r=>r.worker===worker&&r.date===d&&r.mark!==''&&!Number.isFinite(Number(r.mark)))}
-function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return Object.values(s.months).some(m=>m.rows.some(r=>!r.deleted&&r.worker===worker&&r.date===d&&r.pours>0))||creditedWork(s,worker,d);return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
+// saved-actual-day-v1: preserve calendar marks, but saved positive production
+// determines worked days. Reuse only within one synchronous calculation.
+function actualProductionDays(s){
+ const scope=assignmentCalendarScopes.get(s);if(scope?.actualDays)return scope.actualDays;
+ const values=new Set();for(const m of Object.values(s.months||{}))for(const r of m.rows||[])if(!r.deleted&&!C.fieldPreparation(r)&&C.iso(r.date)&&Number.isFinite(r.pours)&&r.pours>0)values.add(JSON.stringify([r.worker,r.date]));
+ if(scope)scope.actualDays=values;return values;
+}
+function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return actualProductionDays(s).has(JSON.stringify([worker,d]))||creditedWork(s,worker,d);return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
 function nextWork(s,w,d,today,force=null){for(let i=0;i<740;i++,d=add(d,1))if(work(s,w,d,today,force))return d;throw Error('2년 안에 작업 가능한 날짜가 없습니다.')}
 const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
@@ -832,4 +839,5 @@ function timelineCumulativeRead(s,k,result,first,last){
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
 root.SchedulePlanning={productionStartDate,productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,validateHandoffChange,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning.actualProductionDays=actualProductionDays;
 })(globalThis);

@@ -446,6 +446,8 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 @media screen and (max-width:720px),screen and (pointer:coarse){body.sheetWorkspace #planGridSurface #pgSelectionInfo .pgButtonFull{display:none}body.sheetWorkspace #planGridSurface #pgSelectionInfo .pgButtonShort{display:inline}}
 
 .pgSurface #pgSelectionInfo>button[hidden]{display:none!important}
+/* Actual production overrides the worker's retained holiday colour. */
+.pgHoliday.pgActualDay{background:#d9eee7!important;color:#145744;font-weight:800;box-shadow:inset 0 -2px #3b876e}.pgHoliday.pgActualDay:focus-visible{outline:2px solid #164a76;outline-offset:-2px}
 
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
@@ -692,6 +694,8 @@ body.pgFocusMode #ilboSyncStatus{display:none!important}
 @media print{#ilboSyncStatus{display:none!important}}
 
 .stats[hidden]{display:none!important}
+/* Acknowledgement hides informational notices only, never save/retry errors. */
+.ilboQualityNotice{display:flex;align-items:flex-start;gap:12px;border-top:1px solid #dbe4ef;padding-top:6px;margin-top:6px}.ilboQualityNotice>details{flex:1;min-width:0}.ilboQualityNotice>button{flex:none;min-height:40px}.ilboQualityNotice summary{padding:10px 0;cursor:pointer}.ilboQualityNotice .tableWrap{max-width:100%}
 
 .monthlyOverview{padding:20px;min-width:0;background:var(--paper,#fff)}
 .monthlyOverview .moHeading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
@@ -1661,6 +1665,70 @@ body.sheetWorkspace[data-workspace-page="audit"] .inputSheet td[data-result="pro
 .auditReconcileApply>p,.auditReconcileApplied>p{font-size:13px;line-height:1.6;margin:6px 0 10px}.auditOtherMethod{margin-top:12px;border-top:1px solid #dbe4eb;padding-top:10px}.auditOtherMethod>summary{cursor:pointer;font-size:13px;color:#51697c}.auditOtherMethod p{font-size:12px;line-height:1.6}.auditOtherControls{align-items:flex-end;flex-wrap:wrap}.auditOtherControls label{font-size:12px;min-width:150px}.auditOtherControls select{font-size:13px}
 dialog.auditReviewDialog{max-width:1120px;width:calc(100% - 24px);max-height:92dvh;overflow:auto;padding:20px}.auditReviewBody>p{font-size:13px;line-height:1.6}.auditEquation{padding:10px 12px;background:#edf7f2;border:1px solid #c5ded1;border-radius:6px;color:#205b44;font-weight:650}.auditReviewDialog table{font-size:12px}.auditReviewDialog th{white-space:normal;min-width:84px;line-height:1.45;text-align:center}.auditReviewDialog td.num{text-align:center}.auditReviewDialog td.auditOpeningResult{background:#edf7f2;color:#205b44;font-weight:700}.auditReviewDialog td.product{min-width:100px;font-weight:650}.auditReviewDialog .tableWrap{max-height:48dvh;overflow:auto;margin:8px 0 12px}.auditMonthlyCompare{margin:10px 0}.auditMonthlyCompare>summary{cursor:pointer;font-size:13px;font-weight:600;color:#335e7a;padding:8px 0}.auditDayComplete{display:flex;flex-direction:row;align-items:flex-start;gap:9px;background:#f4f7fa;border:1px solid #d5e0e9;border-radius:7px;padding:12px;margin:12px 0;font-size:13px}.auditDayComplete input{width:20px;height:20px;min-height:20px;flex:none;margin:1px 0 0}.auditDayComplete small{display:block;font-weight:400;font-size:12px;margin-top:4px}.auditReviewDialog>.actions{position:sticky;bottom:-20px;background:#fff;padding:12px 0 8px;justify-content:flex-end;border-top:1px solid #d8e2ea}
 @media(max-width:720px){.auditMonthFlow{gap:5px;padding:8px;justify-content:space-between}.auditMonthFlow b{font-size:12px;line-height:1.5;word-break:keep-all}.auditMonthFlow small{font-size:10px;line-height:1.4}.auditMonthFlow>span:not([aria-hidden]){min-width:0;flex:1}.auditReviewDialog{padding:12px!important}.auditReviewDialog h2{font-size:17px}.auditReviewDialog>.actions{bottom:-12px;gap:6px}.auditReviewDialog>.actions button{min-height:44px;font-size:13px;padding:8px 10px}.auditOtherControls{display:flex;flex-direction:column;align-items:stretch}.auditOtherControls select{min-height:44px;max-width:100%}.auditReconcileApply>.primary{width:100%;min-height:44px;font-size:14px}.auditReconcileApplied .actions{flex-wrap:wrap}.auditReconcileApplied button{min-height:44px}}
+
+/* Screen-only hierarchy. Keep all business data, input IDs and print sizes. */
+@media screen{
+ body.sheetWorkspace{--ui-muted:#59677b;--ui-ink:#243449;--ui-line:#dbe2e9;background:#f4f6f8}
+ body.sheetWorkspace .top h1{font-size:1.4rem;font-weight:750;letter-spacing:-.035em}
+ body.sheetWorkspace .top .subtle{font-size:.83rem;color:#586a7e}
+ body.sheetWorkspace .top{align-items:center;margin-bottom:14px}
+ body.sheetWorkspace .top button,body.sheetWorkspace .top select{min-height:40px;font-size:.85rem}
+ body.sheetWorkspace #nav button{font-size:.86rem;color:#465870}
+ body.sheetWorkspace .workspaceTools{margin:0 0 10px;min-height:0;gap:8px}
+ body.sheetWorkspace .workspaceTools button{font-size:.75rem;color:#637083;min-height:30px;padding:3px 7px}
+ body.sheetWorkspace .workspaceTools .workspaceScope{font-size:.72rem}
+ body.sheetWorkspace .sheetToolbar{padding:10px 12px;background:#fff;border-bottom:1px solid #dce3eb}
+ body.sheetWorkspace .sheetToolbar strong{font-size:.9rem;color:#233f59}
+ body.sheetWorkspace .sheetToolbar button{min-height:36px;font-size:.81rem;padding:6px 11px}
+ body.sheetWorkspace .sheetToolbar button.primary{min-width:92px;font-weight:700}
+ body.sheetWorkspace .sheetToolbar [data-sheet-status]{font-size:.77rem;font-variant-numeric:tabular-nums}
+ body.sheetWorkspace .sheetFilters{background:#f8fafc;padding:8px 12px;gap:10px}
+ body.sheetWorkspace .sheetFilters>span{font-size:.7rem;color:#63758a}
+ body.sheetWorkspace .inputSheet thead th{background:#edf2f7;color:#3f5269;font-size:.78rem;padding:9px 6px}
+ body.sheetWorkspace .inputSheet td,body.sheetWorkspace .inputSheet td input,body.sheetWorkspace .inputSheet td select{font-size:.85rem}
+ body.sheetWorkspace .inputSheet td input:focus,body.sheetWorkspace .inputSheet td textarea:focus{background:#fffef3;outline:2px solid #637ac2;outline-offset:-2px}
+ body.sheetWorkspace .sheetMessage[data-sheet-problem=true]{background:#fff3e4;border-left:3px solid #b85b16;padding:10px 12px;color:#8e4010;font-size:.83rem}
+ body.sheetWorkspace .sheetMessage:not([data-sheet-problem=true]){color:#526980;font-size:.75rem;line-height:1.5}
+ body.sheetWorkspace .sheetBottom{font-size:.76rem;color:#56667b}
+ body.sheetWorkspace .ilboSyncCard{padding:10px 13px;background:#f6f8fd;border-color:#dce3ef;margin:8px 0 12px}
+ body.sheetWorkspace .ilboSyncCard>.toolbar{margin-bottom:0}
+ body.sheetWorkspace .ilboSyncCard .ilboStatusLead{gap:4px}
+ body.sheetWorkspace .ilboSyncCard [data-ilbo-detail=guide]{font-size:.73rem}
+ body.sheetWorkspace .workspaceSecondaryHint{background:transparent;border:0;padding-left:0!important}
+ body.sheetWorkspace .auditFocusCompact{padding:0!important;overflow:hidden}
+ .auditWorkflow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;background:#f6f8fb;border-bottom:1px solid #dce4ed}
+ body.sheetWorkspace .auditWorkflow>button{margin:0;border:0;border-radius:0;background:transparent;color:#61718a;min-height:38px;font-size:.86rem;text-align:center;padding:8px 5px;font-weight:650;white-space:normal}
+ body.sheetWorkspace .auditWorkflow>button[aria-pressed=true]{background:#edf1ff;color:#2d448e;box-shadow:inset 0 -3px #4d63ba}
+ body.sheetWorkspace .auditFocusCompact .auditFocusTop{padding:12px 12px 0}
+ body.sheetWorkspace .auditFocusCompact .auditContextRow{padding:0 12px;margin:8px 0}
+ .auditContextRow:has(.auditCountContext[hidden]){display:none!important}
+ body.sheetWorkspace .auditFocusCompact .auditCountContext{font-size:.76rem!important;color:#556d7c}
+ body.sheetWorkspace .auditFocusCompact .auditFilters{margin:0!important;padding:8px 12px!important;border-top:1px solid #e6ebf1;background:#fbfcfe}
+ body.sheetWorkspace .auditReconcileTools{margin:0;padding:0 12px 12px}
+ .auditReconcileTools p{width:100%;font-size:.83rem;line-height:1.7;margin:0 0 6px;color:#3e556b}
+ .auditFocus [hidden],[data-audit-apply-context][hidden],body.sheetWorkspace[data-workspace-page=audit] :is(.sheetEditor,.secondaryAuditApply,.auditReconcileApplied)[hidden]{display:none!important}
+ body.sheetWorkspace[data-workspace-page=audit] .secondaryAuditHeader{margin-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=audit] .secondaryAuditApply{background:#fff!important;border:1px solid #cddbe8;padding:18px!important}
+ body.sheetWorkspace[data-workspace-page=audit] .secondaryAuditApply h2{font-size:1rem;margin-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=audit] .secondaryAuditApply label{font-size:.8rem}
+ body.sheetWorkspace[data-workspace-page=audit] .sheetEditor{margin-top:12px}
+ body.sheetWorkspace .moGroup>h3{font-size:.85rem}
+ body.sheetWorkspace .moMetric small{line-height:1.6}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace #nav button{font-size:.76rem;white-space:nowrap}
+ body.sheetWorkspace .top h1{font-size:1.2rem}
+ body.sheetWorkspace .top button,body.sheetWorkspace .top select,body.sheetWorkspace .sheetToolbar button{min-height:44px;font-size:.84rem}
+ body.sheetWorkspace .workspaceTools{margin:0 0 6px}
+ body.sheetWorkspace .workspaceTools button{min-height:36px;font-size:.72rem}
+ body.sheetWorkspace .auditWorkflow>button{font-size:.79rem;min-height:48px}
+ body.sheetWorkspace .auditFocusCompact .auditFocusTop{padding:10px 8px 0}
+ body.sheetWorkspace .auditFocusCompact .auditFilters{padding:6px 8px!important}
+ body.sheetWorkspace .auditFocusCompact .auditContextRow{padding:0 8px}
+ body.sheetWorkspace .auditReconcileTools{padding:0 8px 10px}
+ body.sheetWorkspace .inputSheet td input,body.sheetWorkspace .inputSheet td select{font-size:16px}
+ body.sheetWorkspace .auditCompactHeader>label{flex-basis:100%}
+}
 </style><script>(function(root){'use strict';
 // Login is independent of repository credentials. Offline verification cannot
 // learn a remote password change until this device reconnects.
@@ -2867,7 +2935,14 @@ function dailyProgress(s,k,options={}){
 }
 function factory(s){return (s.calendar?.factory||[]).map(r=>typeof r==='string'?r:r.date)}
 function holiday(s,worker,d){return(s.calendar?.workers||[]).some(r=>r.worker===worker&&r.date===d&&r.mark!==''&&!Number.isFinite(Number(r.mark)))}
-function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return Object.values(s.months).some(m=>m.rows.some(r=>!r.deleted&&r.worker===worker&&r.date===d&&r.pours>0))||creditedWork(s,worker,d);return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
+// saved-actual-day-v1: preserve calendar marks, but saved positive production
+// determines worked days. Reuse only within one synchronous calculation.
+function actualProductionDays(s){
+ const scope=assignmentCalendarScopes.get(s);if(scope?.actualDays)return scope.actualDays;
+ const values=new Set();for(const m of Object.values(s.months||{}))for(const r of m.rows||[])if(!r.deleted&&!C.fieldPreparation(r)&&C.iso(r.date)&&Number.isFinite(r.pours)&&r.pours>0)values.add(JSON.stringify([r.worker,r.date]));
+ if(scope)scope.actualDays=values;return values;
+}
+function work(s,worker,d,today,force=null){if(d===force)return true;if(d<=today)return actualProductionDays(s).has(JSON.stringify([worker,d]))||creditedWork(s,worker,d);return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
 function nextWork(s,w,d,today,force=null){for(let i=0;i<740;i++,d=add(d,1))if(work(s,w,d,today,force))return d;throw Error('2년 안에 작업 가능한 날짜가 없습니다.')}
 const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
@@ -3261,6 +3336,7 @@ function timelineCumulativeRead(s,k,result,first,last){
 function extendHolidays(s,worker,start,weeks){if(!C.iso(start)||!Number.isInteger(weeks)||weeks<1||weeks>26)throw Error('휴일 연장은 1~26주입니다.');s.calendar??={factory:[],workers:[]};const totals={};for(const d of days(add(start,-28),add(start,-1)))if(holiday(s,worker,d)){const dow=new Date(d).getUTCDay();totals[dow]=(totals[dow]||0)+1}const inserted=[];for(const d of days(start,add(start,weeks*7-1))){if(d.slice(0,4)!==start.slice(0,4))continue;const dow=new Date(d).getUTCDay();if(totals[dow]>=3&&!s.calendar.workers.some(r=>r.worker===worker&&r.date===d)){const r={id:C.id(),worker,date:d,mark:'휴'};s.calendar.workers.push(r);inserted.push(r.id)}}s.calendar.undo={year:start.slice(0,4),ids:inserted};return inserted.length}
 function undoHolidays(s,year){const undo=s.calendar?.undo;if(!undo||undo.year!==year)throw Error('같은 연도의 연장 이력이 없습니다.');s.calendar.workers=s.calendar.workers.filter(r=>!undo.ids.includes(r.id)||r.mark!=='휴');delete s.calendar.undo}
 root.SchedulePlanning={productionStartDate,productionTargetOptions,targetForJob,scheduleTargetMatches,recordMatchesJob,workerAt,dailyAt,handoffSegments,otherWorkPeriods,prepareHandoff,prepareQuantityHandoff,validateHandoffChange,normalizedHandoffs,add,days,parseInput,reservationLinks,reservationLinkOptions,captureReservationBindings,captureFieldScheduleOverrides,fieldScheduleOverrideMatches,productionGroupKey,jobs,dailyProgress,factory,holiday,work,nextWork,manualCalendarPolicy,manualWork,nextManualWork,reservationLayoutPolicy,afterProductionGap,machineQty,normalizeRouting,validateRoutingJob,machineActualValues,routingSchedule,asOf,dryInputSignature,captureSourceBaseline,preserveSourceDryDates,history,dryHistory,schedule,scheduleAll,timelineCumulative,extendHolidays,undoHolidays};if(typeof module!=='undefined')module.exports=root.SchedulePlanning;
+root.SchedulePlanning.actualProductionDays=actualProductionDays;
 })(globalThis);
 
 (function(root){'use strict';
@@ -5510,14 +5586,15 @@ function pgTimeline(g,preview){
  const bars=[...primary,...history,...otherPeriods].filter(r=>r.start&&r.end&&r.start<=last&&(r.dry||r.end)>=first),activeWorkers=new Set([...bars.map(r=>r.worker),...pgKeep(g.draft).filter(r=>!preview.result.jobs.find(j=>j.id===r.id)?.complete).map(r=>r.worker),...Object.values(preview.state.months).flatMap(m=>m.rows).filter(r=>r.date>=first&&r.date<=last&&r.pours!=null).map(r=>r.worker)]),selection=pgWorkerSelection(v),workers=[...new Set([...pgWorkerOptions(),...bars.map(r=>r.worker),...activeWorkers])].filter(w=>w&&(selection===null||selection.includes(w))&&(!v.activeOnly||selection!==null||activeWorkers.has(w))),factory=new Set(P.factory(preview.state)),t=today(),dow=d=>new Date(d+'T00:00:00Z').getUTCDay(),idx=d=>Math.floor((Date.parse(d)-Date.parse(first))/86400000);
  const groupedPeriods=[...pgTimelineGroups([...primary,...history],preview.result.jobs),...otherPeriods],allPeriods=groupedPeriods.map(r=>({...r,displaySegments:pgTimelineSegments(r,groupedPeriods)})),selectedDate=pgSelectedDate(),dryData=pgDryMarkers(preview),dayClass=d=>`${factory.has(d)?' pgFactory':''}${d===t?' pgToday':''}${d.endsWith('-01')?' pgMonthStart':''}${d===selectedDate?' pgColumnSelected':''}`;dryData.rows=pgVisibleDryRows(dryData.rows,allPeriods);const caseConflicts=pgCaseConflicts(preview.state,allPeriods,first,last);allPeriods.forEach((r,i)=>r.caseConflicts=caseConflicts[i]);
  const cumulative=new Map();for(const point of P.timelineCumulative(preview.state,month,{...preview.result,rows:[...primary,...history]},first,last)){if(!cumulative.has(point.worker))cumulative.set(point.worker,[]);cumulative.get(point.worker).push(point)}
+ const actualDays=P.actualProductionDays(preview.state),hasActual=(worker,date)=>actualDays.has(JSON.stringify([worker,date]));
  const dateCells=render=>dates.map((d,i)=>render(d,i)).join('');
  const label=(worker,kind)=>`<div class="pgAxisLabel"><b>${esc(worker)}</b><span>${esc(kind)}</span></div>`;
- const holidayRow=(worker,isFactory=false)=>`<div class="pgGridRow pgHolidayRow">${label(isFactory?'공장 전체':worker,isFactory?'생산·건조 제외일':'작업자 휴일')}<div class="pgDateCells">${dateCells(d=>{const mark=isFactory?factory.has(d)?'휴':'':preview.state.calendar.workers.find(r=>r.worker===worker&&r.date===d)?.mark||'',off=isFactory?factory.has(d):P.holiday(preview.state,worker,d),locked=g.locked()||preview.state.months[d.slice(0,7)]?.closed;return`<button class="pgDay pgHoliday${dayClass(d)}${off?' isHoliday':''}" data-pg-day="${d}" data-pg-date="${d}" data-pg-worker="${esc(worker)}" data-pg-factory="${isFactory?'1':'0'}" aria-label="${esc(isFactory?'공장 전체':worker)} ${d} ${off?'휴무, 누르면 해제':'휴무 아님, 누르면 표시'}" aria-pressed="${off}" ${locked?'disabled':''}>${esc(mark)}</button>`})}</div></div>`;
+ const holidayRow=(worker,isFactory=false)=>`<div class="pgGridRow pgHolidayRow">${label(isFactory?'공장 전체':worker,isFactory?'생산·건조 제외일':'생산 · 휴일')}<div class="pgDateCells">${dateCells(d=>{const mark=isFactory?factory.has(d)?'휴':'':preview.state.calendar.workers.find(r=>r.worker===worker&&r.date===d)?.mark||'',off=isFactory?factory.has(d):P.holiday(preview.state,worker,d),actual=!isFactory&&hasActual(worker,d),locked=g.locked()||preview.state.months[d.slice(0,7)]?.closed,description=`${isFactory?'공장 전체':worker} ${d} `+(actual?'실제 생산 · 생산일보 수량 우선. '+(mark?'원래 표시: '+mark+'. ':''):'')+(off?'휴무 표시, 누르면 표시 해제':'휴무 표시 없음, 누르면 표시');return`<button class="pgDay pgHoliday${dayClass(d)}${actual?' pgActualDay':off?' isHoliday':''}" data-pg-day="${d}" data-pg-date="${d}" data-pg-worker="${esc(worker)}" data-pg-factory="${isFactory?'1':'0'}" data-pg-actual="${actual}" title="${esc(description)}" aria-label="${esc(description)}" aria-pressed="${off}" ${locked?'disabled':''}>${actual?'생':esc(mark)}</button>`})}</div></div>`;
  const monthHead=`<div class="pgGridRow pgMonthHead">${label('일정표','휴일 칸 클릭 / 막대 선택')}<div class="pgMonths">${months.map(k=>`<b style="grid-column:span ${dates.filter(d=>d.startsWith(k)).length}">${k}</b>`).join('')}</div></div>`;
  const dayHead=`<div class="pgGridRow pgDateHead"><div class="pgAxisLabel pgDateSelectionLabel"><b>날짜</b><span data-pg-date-selection role="status">${esc(pgDateSelectionText(selectedDate,first,last))}</span><button type="button" data-pg-clear-date aria-label="선택 날짜 강조 해제" ${selectedDate?'':'hidden'}>해제</button></div><div class="pgDateCells">${dateCells(d=>`<button type="button" class="pgDay pgDateSelect${dayClass(d)}${[0,6].includes(dow(d))?' pgWeekend':''}" data-pg-day="${d}" data-pg-column-date="${d}" aria-label="${d} 모든 작업자의 날짜 열 강조" aria-pressed="${d===selectedDate}"><b>${Number(d.slice(8))}</b><small>${'일월화수목금토'[dow(d)]}</small></button>`)}</div></div>`;
  const body=workers.map(worker=>{
   const periods=allPeriods.filter(r=>r.worker===worker&&r.start&&r.end&&r.start<=last&&(r.dry||r.end)>=first),lanes=pgTimelineLanes(periods);
-  const production=lanes.map((lane,i)=>`<div class="pgGridRow pgProductionRow">${label(i?'':worker,lane.routingKey?'호기별 기간':i?'생산기간 '+(i+1):'생산기간')}<div class="pgRail"><div class="pgRailGrid">${dateCells(d=>`<div class="pgDay${dayClass(d)}${P.holiday(preview.state,worker,d)?' pgWorkerOff':''}" data-pg-day="${d}"></div>`)}</div>${lane.map(r=>{
+  const production=lanes.map((lane,i)=>`<div class="pgGridRow pgProductionRow">${label(i?'':worker,lane.routingKey?'호기별 기간':i?'생산기간 '+(i+1):'생산기간')}<div class="pgRail"><div class="pgRailGrid">${dateCells(d=>`<div class="pgDay${dayClass(d)}${!hasActual(worker,d)&&P.holiday(preview.state,worker,d)?' pgWorkerOff':''}" data-pg-day="${d}"></div>`)}</div>${lane.map(r=>{
    const presentation=pgPeriodPresentation(r),cls=presentation.cls,readonly=!r.otherWork&&!r.orphanActual&&(!!r.archived||!!r.history||!pgKeep(g.draft).some(j=>j.id===r.jobId)),handoff=typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(r):'',dry=r.parts.filter(p=>p.dry).map(p=>p.machine+' '+p.product+' 건조 '+p.dry).join(' / '),title=[r.worker+' · '+r.barText,presentation.label+(presentation.progress?' · '+presentation.progress:''),r.start+' ~ '+r.end+(r.projected?' 예상':'')+(r.explicitRouting?' · '+r.routingLane+'번 줄 / '+r.routingOrder+'번째':''),presentation.note,handoff,dry,...pgPeriodMemoLines(preview.state,r)].filter(Boolean).join('\n');
    const pieces=r.displaySegments.filter(p=>p.end>=first&&p.start<=last);
    return pieces.map((part,index)=>{const left=Math.max(0,idx(part.start)),right=Math.min(dayCount,idx(part.end)+1);return`<button class="pgBar ${cls}${r.handoffIn||r.handoffOut?' pgHandoffBar':''}${r.caseConflicts.length?' pgCaseConflict':''}${readonly?' pgArchived':''}" style="left:calc(${left} * var(--pg-day));width:calc(${right-left} * var(--pg-day) - 3px)" ${r.otherWork?`data-pg-otherwork="${esc(r.id)}"`:r.orphanActual?`data-pg-actual-row="${esc(r.sourceRowId)}"`:readonly?'data-pg-history="true"':`data-pg-select="${esc(r.jobId)}"`} data-pg-period-key="${esc(pgPeriodKey(r))}" data-pg-status="${esc(presentation.label)}" data-pg-month="${esc(r.editMonth||r.start.slice(0,7))}" data-pg-start="${r.start}" data-pg-end="${r.end}" data-pg-segment-start="${part.start}" data-pg-segment-end="${part.end}" data-pg-first="${index===0&&part.start>=first&&part.start===r.start}" data-pg-last="${index===pieces.length-1&&part.end<=last&&part.end===r.end}" data-pg-members="${esc(JSON.stringify(r.memberIds))}" title="${esc(title)}" aria-label="${esc(title.replaceAll('\n',' '))}">${r.caseConflicts.length?'<span class="pgCaseBadge">⚠ 케이스 중복</span> ':''}${typeof pgHandoffBarHTML==='function'?pgHandoffBarHTML(r,presentation,part):`<span class="pgBarState">${esc(presentation.label)}</span> ${esc(r.barLabel||r.barText)}`}${r.start<first?' ◀':''}${r.end>last?' ▶':''}</button>`}).join('');
@@ -6650,7 +6727,7 @@ function secondaryAuditGrid(a,key){
  const application=O.auditApplication(state,a.id);
  return sheetGrid('audit-items:'+a.id,{title:'센 수량 입력',view:{columns:c=>auditFocusColumns(a,c),filter:rows=>auditFocusRows(a,rows)},rows:secondaryAuditRows(a),readonly:secondaryAuditLocked(a,key),readonlyLabel:application?application.month+(application.pending?' 전달 확인 대기':' 반영 완료')+' · 조회 전용':'마감 · 조회 전용',allowDelete:false,
   columns:[{key:'product',label:'품명',width:124,options:state.products.map(p=>p.name).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0),readonly:r=>existingIds.has(r.id)},{key:'book',label:'실사 전 총재고',width:88,hideCalcLabel:true,calc:r=>fmt(existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0)},...a.locations.map((name,i)=>({key:'location'+i,label:name||'장소 '+(i+1),width:88})),{key:'total',label:'실사 입력 합계',width:88,hideCalcLabel:true,calc:r=>{try{return fmt(secondaryAuditTotal(r,a))}catch(e){return'입력 확인'}}},{key:'includedProduction',label:'실사에 넣은 당일 생산',width:152,type:'number'},{key:'includedReplacement',label:'실사에 반영한 당일 교체',width:152,type:'number'},{key:'difference',label:'차이',width:70,calc:r=>{try{const n=secondaryAuditTotal(r,a),book=existingIds.has(r.id)?r.book:C.inventory(state,key).find(x=>x.product===C.catalogName(state,r.product))?.current??0;return n==null?'미실사':fmt(n-(book||0))}catch(e){return'입력 확인'}}},{key:'machineReference',label:'호기·조수 참고',width:140,advanced:true,hideCalcLabel:true,calc:r=>typeof ScheduleBatch!=='undefined'?ScheduleBatch.stockMetaValue(state,{},r.product,'machineQty'):''},{key:'locationReference',label:'보관장소 참고',width:140,advanced:true,hideCalcLabel:true,calc:r=>typeof ScheduleBatch!=='undefined'?ScheduleBatch.stockMetaValue(state,{},r.product,'location'):''},{key:'registration',label:'품목 확인',width:125,advanced:true,calc:r=>!r.product?'':state.products.some(p=>p.name===C.catalogName(state,r.product))?'등록됨':'관리 등록 필요'},{key:'note',label:'비고',width:130,advanced:true}],
-  hint:'없으면 0 · 미확인은 빈칸 · 나눈 수량은 4+4+6. 예상 생산을 합계에 넣었다면 예상 생산 구분에서 적고 변경 저장하세요.',advancedLabel:'비고·참고 정보',
+  hint:'없으면 0 · 미확인은 빈칸 · 나눈 수량은 4+4+6. 미리 더하거나 뺀 수량은 2단계 합계 확인에서 적고 저장하세요.',advancedLabel:'비고·참고 정보',
   addRow:()=>secondaryAuditNewRow(a),blank:r=>secondaryAuditBlank(r,a),inspect,validateRow:validate,
   summary:d=>{try{const totals=d.rows.map(r=>secondaryAuditTotal(r,a)),counted=totals.filter(n=>n!=null);return'실사 '+counted.length+' / '+totals.length+'품목 · 실사 입력 합계 '+fmt(counted.reduce((x,y)=>x+y,0))+'조'}catch(e){return'수량 입력을 확인해 주세요.'}},
   onChange:g=>secondaryAuditControls(g,a),
@@ -6669,13 +6746,13 @@ function secondaryAuditGrid(a,key){
 }
 auditView=function(){
  const a=secondarySelectedAudit(),list=m().auditSessions||[],key=month;
- let html=head('몰드 실사','장소를 고르고 센 수량을 입력하세요.','<button class="primary" data-workspace-primary data-action="newAudit" '+(m().closed?'disabled':'')+'>+ 실사 시작</button>'+btn('locationSettings','장소 설정'));
+ let html=head('몰드 실사','장소를 고르고 센 수량을 입력하세요.','<button '+(!a?'class="primary" data-workspace-primary ':'')+'data-action="newAudit" '+(m().closed?'disabled':'')+'>'+(!a?'+ 실사 시작':'+ 새 실사')+'</button>'+btn('locationSettings','장소 설정'));
  if(!a)return html+'<section class="card empty">새 실사를 시작하면 기준 품목과 장부 수량을 불러옵니다.</section>';
  const application=O.auditApplication(state,a.id),targets=Object.keys(state.months).filter(k=>!state.months[k].closed).sort(),target=secondaryAuditTarget(a);
  html+='<div class="secondaryAuditHeader auditCompactHeader"><label>실사 기록<select id="secondaryAuditSelect">'+list.map(x=>'<option value="'+esc(x.id)+'" '+(x.id===a.id?'selected':'')+'>'+esc(x.countedAt)+' · '+(O.auditApplication(state,x.id)?'반영한 기록':'입력 중')+'</option>').join('')+'</select></label><span class="badge '+(application?'blue':'amber')+'">'+(application?esc(application.month)+(application.pending?' 전달 확인 대기':' 반영 완료'):m().closed?'마감 원본 · 수량 보존':'수량 입력 중')+'</span><button data-secondary-print>현장표 인쇄</button>';
  if(!secondaryAuditLocked(a,key))html+='<details class="auditExtraTools"><summary>품목 추가·장부 갱신</summary><div class="auditExtraBody"><div class="auditAddProduct"><label>추가할 품명<input id="secondaryAuditProduct" list="secondaryAuditProducts" placeholder="품목 선택 또는 직접 입력"></label><datalist id="secondaryAuditProducts">'+state.products.map(p=>'<option value="'+esc(p.name)+'">').join('')+'</datalist><button data-secondary-add>품목 추가</button></div><div class="auditRefreshBook"><button data-secondary-refresh>장부 수량 새로 읽기</button><span>센 수량·비고는 유지합니다.</span></div></div></details>';
  html+='</div>';
- html+=(typeof auditReconcileFlow==='function'?auditReconcileFlow(a):'')+auditFocusPanel(a)+secondaryAuditGrid(a,key);
+ html+=auditFocusPanel(a)+secondaryAuditGrid(a,key)+'<div data-audit-apply-context hidden>'+(typeof auditReconcileFlow==='function'?auditReconcileFlow(a):'')+'</div>';
  if(application?.pending)html+='<section class="card secondaryAuditApply"><p>원월의 실사 전달 기록은 있으나 '+esc(application.month)+' 반영을 아직 확인하지 못했습니다. 센 수량과 원본은 보존되어 있습니다.</p><button data-secondary-recover>실사 전달 다시 반영</button><p class="secondaryGridNotice">대상월 장부가 바뀌었으면 덮어쓰지 않고 확인을 요청합니다.</p></section>';
  if(!application&&a.status!=='applied')html+=typeof auditReconcileApplyPanel==='function'?auditReconcileApplyPanel(a):'';
  if(application&&!application.pending&&typeof auditReconcileAppliedPanel==='function')html+=auditReconcileAppliedPanel(application.audit);
@@ -6791,16 +6868,39 @@ function secondaryBindLedger(){
 }
 
 const auditFocusChoices=new Map();
-function auditFocusChoice(a){const key=sheetContext('audit-focus:'+a.id);if(!auditFocusChoices.has(key))auditFocusChoices.set(key,{place:'0',filter:'all'});return auditFocusChoices.get(key)}
+function auditFocusChoice(a){const key=sheetContext('audit-focus:'+a.id);if(!auditFocusChoices.has(key)){const place=String(Math.max(0,a.locations.findIndex(Boolean)));auditFocusChoices.set(key,{place,countPlace:place,filter:'all',step:a.status==='applied'||O.auditApplication(state,a.id)?'apply':'count'})}return auditFocusChoices.get(key)}
 function auditFocusColumns(a,c){const p=auditFocusChoice(a);if(p.place==='reconcile')return ['product','book','total','includedProduction','includedReplacement'].includes(c.key)||!!c.advanced;if(['includedProduction','includedReplacement'].includes(c.key))return false;return p.place==='all'||c.key==='product'||c.key==='book'||c.key==='location'+p.place||c.key==='note'||c.advanced}
 function auditFocusRows(a,rows){const p=auditFocusChoice(a);return rows.filter(r=>{if(p.filter==='all')return true;if(p.filter==='blank'){if(p.place==='reconcile'){try{return secondaryAuditTotal(r,a)!=null&&(!String(r.includedProduction??'').trim()||!String(r.includedReplacement??'').trim())}catch{return true}}return p.place==='all'?a.locations.some((name,i)=>name&&!String(r['location'+i]??'').trim()):!String(r['location'+p.place]??'').trim()}try{const total=secondaryAuditTotal(r,a);return total!=null&&total!==(Number(r.book)||0)}catch{return true}})}
-function auditFocusPanel(a){const p=auditFocusChoice(a);return `<section class="card auditFocus auditFocusCompact"><div class="auditFocusTop"><span class="auditPlaceLabel">실사 장소</span><div class="auditPlaces" role="group" aria-label="실사할 장소">${a.locations.map((name,i)=>name?`<button type="button" data-audit-place="${i}" aria-pressed="${p.place===String(i)}">${esc(name)}</button>`:'').join('')}<button type="button" data-audit-place="all" aria-pressed="${p.place==='all'}">전체 · 차이 확인</button></div></div><div class="auditContextRow"><p class="auditCountContext" data-audit-count-context>전재고: 전체 장소 합계 · 입력: 선택한 장소</p><button type="button" class="auditReconcileChoice" data-audit-place="reconcile" aria-pressed="${p.place==='reconcile'}">2 · 예상 생산 구분</button></div><div class="auditReconcileTools" data-audit-reconcile-tools ${p.place==='reconcile'?'':'hidden'}><button type="button" data-audit-zero-included>생산·교체 미포함으로 표시 (0)</button><span>수량을 입력한 품목의 빈칸만 채웁니다. 이미 적은 값은 유지합니다.</span></div><div class="auditFilters"><label><span class="auditFilterLabel">품목</span><select data-audit-filter aria-label="표시할 품목"><option value="all"${p.filter==='all'?' selected':''}>전체 품목</option><option value="blank"${p.filter==='blank'?' selected':''}>미입력 품목</option><option value="difference"${p.filter==='difference'?' selected':''}>차이 있는 품목</option></select></label><b data-audit-progress></b><details class="auditQuickHelp"><summary>실사 도움말</summary><p>① 장소별 수량 입력 → ② 예상 생산 구분·변경 저장 → ③ 실제 생산과 비교 후 다음 달 재고 반영.</p><p>없으면 <b>0</b>, 아직 확인하지 않았다면 빈칸으로 둡니다. 여러 묶음은 <b>4+4+6</b>처럼 입력하세요. 저장만으로 재고가 바뀌지 않습니다.</p><p>실사 전 총재고는 실사를 시작할 때 불러온 장부 수량이며 장소별 재고가 아닙니다. 실사 입력 합계에 당일 예상 생산을 더했다면 <b>예상 생산 구분</b>에서 이미 넣은 당일 생산량을 적으세요. 실제 생산과 예상을 합쳐 넣었다면 그 전체 수량을 적습니다. 당일 교체를 이미 뺐다면 그 수량도 적고, 포함하지 않은 항목은 <b>0</b>으로 표시하세요.</p><p>다음 달 시작재고에는 확인한 품목만 반영하고 미실사 품목은 그대로 둡니다. 다른 반영 방법은 미리보기 안내를 확인하세요. 비고·참고 정보의 호기·보관장소는 재고·불출에 저장된 현재 참고값입니다.</p></details></div></section>`}
+function auditFocusPanel(a){const p=auditFocusChoice(a);return `<section class="card auditFocus auditFocusCompact">
+ <nav class="auditWorkflow" aria-label="실사 진행 단계"><button type="button" data-audit-step="count">1 수량 입력</button><button type="button" data-audit-place="reconcile" data-audit-step="review">2 합계 확인</button><button type="button" data-audit-step="apply">3 재고 반영</button></nav>
+ <div class="auditFocusTop" data-audit-count-only><span class="auditPlaceLabel">장소 선택</span><div class="auditPlaces" role="group" aria-label="실사할 장소">${a.locations.map((name,i)=>name?`<button type="button" data-audit-place="${i}" aria-pressed="${p.place===String(i)}">${esc(name)}</button>`:'').join('')}<button type="button" data-audit-place="all" aria-pressed="${p.place==='all'}">전체 수량</button></div></div>
+ <div class="auditContextRow"><p class="auditCountContext" data-audit-count-context>센 수량만 입력하세요. 없으면 0, 아직 세지 않았으면 빈칸입니다.</p></div>
+ <div class="auditReconcileTools" data-audit-reconcile-tools hidden><p>입력한 합계에 <b>오늘 생산할 수량을 미리 더했거나 교체 수량을 뺐나요?</b><br>넣은 수량을 아래에 적으세요. 더하거나 뺀 적이 없다면 0으로 확인합니다.</p><button type="button" data-audit-zero-included>미리 더하거나 뺀 수량 없음 (0)</button><span>입력한 품목의 빈칸에만 0을 넣습니다. 이미 적은 값은 유지합니다.</span></div>
+ <div class="auditFilters" data-audit-input-only><label><span class="auditFilterLabel">품목</span><select data-audit-filter aria-label="표시할 품목"><option value="all"${p.filter==='all'?' selected':''}>전체 품목</option><option value="blank"${p.filter==='blank'?' selected':''}>미입력 품목</option><option value="difference"${p.filter==='difference'?' selected':''}>차이 있는 품목</option></select></label><b data-audit-progress></b><details class="auditQuickHelp"><summary>입력 도움말</summary><p>묶음별 수량은 <b>4+4+6</b>처럼 적어도 됩니다. 실사 전 총재고는 전체 장소의 장부 합계입니다. 입력한 수량을 저장해도 재고는 바로 바뀌지 않습니다.</p><p>합계에 실제·예상 생산을 더했다면 더한 당일 생산 전체를, 당일 교체를 뺐다면 뺀 수량을 2단계에 적으세요. 아무것도 넣지 않았다면 0으로 확인합니다.</p><p>3단계에서 실제 기록과 대조한 뒤 재고에 반영합니다. 미실사 품목은 기존 재고를 유지합니다.</p></details></div></section>`}
 
-function auditFocusProgress(g,a){const host=document.querySelector('[data-audit-progress]');if(!host||!g?.draft)return;const p=auditFocusChoice(a),reconcile=p.place==='reconcile',rows=g.draft.rows.filter(r=>r.product),count=rows.filter(r=>reconcile?String(r.includedProduction??'').trim()&&String(r.includedReplacement??'').trim():p.place==='all'?a.locations.every((name,i)=>!name||String(r['location'+i]??'').trim()):String(r['location'+p.place]??'').trim()).length;host.textContent=`${reconcile?'구분':'입력'} ${count} / ${rows.length}품목`;const context=document.querySelector('[data-audit-count-context]'),tools=document.querySelector('[data-audit-reconcile-tools]'),button=document.querySelector('[data-audit-zero-included]');if(context)context.textContent=reconcile?'합계에 포함한 당일 수량 · 없으면 0':'전재고: 전체 장소 합계 · 입력: 선택한 장소';if(tools)tools.hidden=!reconcile;if(button)button.disabled=!!(g.loading||g.saving||g.locked())}
+function auditWorkflowUpdate(a,g){
+ const p=auditFocusChoice(a),step=p.step||'count',main=document.querySelector('#main');if(!main)return;
+ for(const b of main.querySelectorAll('[data-audit-step]')){const active=b.dataset.auditStep===step;b.setAttribute('aria-pressed',String(active));if(active)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current')}
+ for(const node of main.querySelectorAll('[data-audit-count-only]'))node.hidden=step!=='count';
+ for(const node of main.querySelectorAll('[data-audit-input-only],.sheetEditor'))node.hidden=step==='apply';
+ for(const node of main.querySelectorAll('.secondaryAuditApply,.auditReconcileApplied,[data-audit-apply-context]'))node.hidden=step!=='apply'&&!node.querySelector('.diff,[data-secondary-recover]');
+ const context=main.querySelector('[data-audit-count-context]');if(context){context.hidden=step!=='apply';context.textContent=step==='apply'?(g?.dirty?'저장 전 입력이 있습니다. 1·2단계로 돌아가 변경 저장을 마쳐 주세요.':'저장한 실사 수량을 대조한 뒤 재고에 반영합니다.'):step==='review'?'실사 합계에 이미 넣은 당일 생산·교체 수량을 확인하세요.':'센 수량만 입력 · 없으면 0 · 미확인은 빈칸 · 장부는 전체 장소 합계';}
+}
+function auditWorkflowSelect(a,g,step){
+ const p=auditFocusChoice(a);p.step=step;if(step==='count')p.place=p.countPlace||'0';if(step==='review')p.place='reconcile';
+ if(step!=='apply')g.refresh();auditFocusProgress(g,a);if(typeof mobileQueue==='function')mobileQueue();
+}
+
+function auditFocusProgress(g,a){
+ const host=document.querySelector('[data-audit-progress]');if(!host||!g?.draft)return;
+ const p=auditFocusChoice(a),reconcile=p.place==='reconcile',rows=g.draft.rows.filter(r=>r.product),count=rows.filter(r=>reconcile?String(r.includedProduction??'').trim()&&String(r.includedReplacement??'').trim():p.place==='all'?a.locations.every((name,i)=>!name||String(r['location'+i]??'').trim()):String(r['location'+p.place]??'').trim()).length;
+ host.textContent=`${reconcile?'확인':'입력'} ${count} / ${rows.length}품목`;
+ const tools=document.querySelector('[data-audit-reconcile-tools]'),button=document.querySelector('[data-audit-zero-included]');if(tools)tools.hidden=p.step!=='review';if(button)button.disabled=!!(g.loading||g.saving||g.locked());auditWorkflowUpdate(a,g);
+}
 function auditFocusZeroIncluded(g,a){if(!g||g.loading||g.saving||g.locked()||secondaryAuditLocked(a))throw Error('입력 가능한 실사표를 열어 주세요.');const rows=g.draft.rows.filter(r=>r.product&&secondaryAuditTotal(r,a)!=null);let changed=0;for(const row of rows){let edited=false;for(const key of ['includedProduction','includedReplacement'])if(!String(row[key]??'').trim()){row[key]='0';edited=true}if(edited)changed++}if(changed){g.changed();g.refresh();auditFocusProgress(g,a)}return changed}
 document.addEventListener('click',e=>{if(!e.target.closest('[data-audit-zero-included]'))return;try{const a=secondarySelectedAudit(),g=a&&sheetEditor('audit-items:'+a.id),count=a&&auditFocusZeroIncluded(g,a);toast(count?count+'품목의 빈칸을 0으로 표시했습니다. 변경 저장을 눌러 주세요.':'채울 빈칸이 없습니다. 이미 적은 값은 유지했습니다.')}catch(error){toast(error.message)}});
-document.addEventListener('click',e=>{const button=e.target.closest('[data-audit-place]');if(!button)return;const a=secondarySelectedAudit(),g=a&&sheetEditor('audit-items:'+a.id);if(!a||!g)return;auditFocusChoice(a).place=button.dataset.auditPlace;document.querySelectorAll('[data-audit-place]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));g.refresh();auditFocusProgress(g,a);});
-document.addEventListener('change',e=>{if(!e.target.matches('[data-audit-filter]'))return;const a=secondarySelectedAudit(),g=a&&sheetEditor('audit-items:'+a.id);if(!a||!g)return;auditFocusChoice(a).filter=e.target.value;if(e.target.value==='difference'){auditFocusChoice(a).place='all';document.querySelectorAll('[data-audit-place]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.auditPlace==='all')))}g.refresh();auditFocusProgress(g,a);});
+document.addEventListener('click',e=>{const button=e.target.closest('[data-audit-place],[data-audit-step]');if(!button)return;const a=secondarySelectedAudit(),g=a&&sheetEditor('audit-items:'+a.id);if(!a||!g||g.loading||g.saving)return;const p=auditFocusChoice(a);if(button.dataset.auditPlace&&button.dataset.auditPlace!=='reconcile'){p.place=p.countPlace=button.dataset.auditPlace;p.step='count';document.querySelectorAll('[data-audit-place]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));g.refresh();auditFocusProgress(g,a)}else auditWorkflowSelect(a,g,button.dataset.auditStep||'review');});
+document.addEventListener('change',e=>{if(!e.target.matches('[data-audit-filter]'))return;const a=secondarySelectedAudit(),g=a&&sheetEditor('audit-items:'+a.id);if(!a||!g)return;const p=auditFocusChoice(a);p.filter=e.target.value;if(e.target.value==='difference'){p.place=p.countPlace='all';p.step='count';document.querySelectorAll('[data-audit-place]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.auditPlace==='all')))}g.refresh();auditFocusProgress(g,a);});
 
 // Stocktake comparison is a projection. Counts, production dates and closed months stay intact.
 function auditReconcileBasis(a){return{schema:1,dayComplete:true,items:a.items.map(r=>({product:r.product,includedProduction:r.includedProduction??null,includedReplacement:r.includedReplacement??null}))}}
@@ -6811,7 +6911,7 @@ function auditReconcileFlow(a){
 }
 function auditReconcileApplyPanel(a){
  const plan=O.auditSuggestedApplication(a),targets=Object.keys(state.months).filter(k=>!state.months[k].closed).sort(),target=secondaryAuditTarget(a),advancedTarget=targets.includes(target)?target:targets.includes(month)?month:targets[0]||'';
- const advanced='<div class="actions auditOtherControls"><label>재고 반영월<select id="secondaryAuditTarget">'+targets.map(k=>'<option value="'+k+'" '+(k===advancedTarget?'selected':'')+'>'+k+'</option>').join('')+'</select></label><label>반영 방법<select id="secondaryAuditMode"><option value="current" '+(advancedTarget===month?'selected':'')+'>선택월 현재고를 입력 합계에 맞춤</option><option value="opening-counted" '+(advancedTarget!==month?'selected':'')+'>선택월 시작재고에 입력 합계 그대로</option></select></label><button data-secondary-review="advanced" '+(!targets.length?'disabled':'')+'>반영 전 확인</button></div>';
+ const advanced='<div class="actions auditOtherControls"><label>재고 반영월<select id="secondaryAuditTarget">'+targets.map(k=>'<option value="'+k+'" '+(k===advancedTarget?'selected':'')+'>'+k+'</option>').join('')+'</select></label><label>반영 방법<select id="secondaryAuditMode"><option value="current" '+(advancedTarget===month?'selected':'')+'>현재고를 센 수량에 맞추기</option><option value="opening-counted" '+(advancedTarget!==month?'selected':'')+'>시작재고에 센 수량 넣기</option></select></label><button data-secondary-review="advanced" '+(!targets.length?'disabled':'')+'>반영 전 확인</button></div>';
  return '<section class="card secondaryAuditApply auditReconcileApply"><h2>3 · 대조하고 재고 반영</h2>'+(plan?'<p>'+esc(auditReconcileDay(a.countedAt))+' 생산은 '+Number(plan.countedMonth.slice(5))+'월에 그대로 남습니다. 실사에 넣은 예상분을 실제 기록으로 바꿔 '+Number(plan.targetMonth.slice(5))+'월 시작재고를 계산합니다.</p>'+(!state.months[plan.targetMonth]?'<button class="primary" data-audit-prepare-month>'+Number(plan.targetMonth.slice(5))+'월 준비 (재고·미완료 작업)</button>':'<button class="primary" data-secondary-review="month-end" '+(state.months[plan.targetMonth]?.closed?'disabled':'')+'>'+Number(plan.targetMonth.slice(5))+'월 시작재고 대조하기</button>')+(state.months[plan.targetMonth]?.closed?'<p class="diff">반영할 '+esc(plan.targetMonth)+'월이 마감되어 있습니다. 보관한 재고를 변경하지 않습니다.</p>':'')+'<p class="secondaryGridNotice">먼저 수량과 예상분을 변경 저장하세요. 미입력 품목은 기존 재고를 유지하며, 실제 재고가 없으면 0을 입력합니다.'+(!state.months[plan.targetMonth]?' 다음 달 준비에서 미완료 작업과 예약을 먼저 이어온 뒤 재고를 대조합니다.':'')+'</p><details class="auditOtherMethod"><summary>다른 방식으로 반영</summary><p>모든 장소를 세고 실제 생산까지 반영한 합계에만 사용하세요. 예상분이 들어 있다면 반드시 위 대조 기능을 사용하세요.</p>'+advanced+'</details>':advanced+'<p class="secondaryGridNotice">월말 날짜의 실사에서는 예상 생산과 실제 생산을 대조할 수 있습니다. 미입력 품목은 건너뜁니다.</p>')+'</section>';
 }
 function auditReconcileRowsTable(rows,targetMonth){
@@ -7007,7 +7107,7 @@ function workspaceSettings(main){
  if(connection){const details=document.createElement('details');details.className='card workspaceConnection';const summary=document.createElement('summary');summary.textContent=workspace?'저장소 연결 설정':'GitHub 저장소 연결';details.append(summary);connection.before(details);connection.querySelector('h2')?.remove();details.append(...connection.childNodes);connection.remove();details.open=!workspace}
 }
 function workspaceDailyActions(top){
- const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')&&!el.hasAttribute('data-workspace-primary')):[];if(!buttons.length)return;
+ const actions=top.querySelector('.actions'),buttons=actions?[...actions.children].filter(el=>el.matches('button')&&!el.hasAttribute('data-workspace-primary')&&!el.classList.contains('primary')):[];if(!buttons.length||actions.querySelector('.workspaceMore'))return;
  const menu=document.createElement('div'),toggle=document.createElement('button'),items=document.createElement('div');menu.className='workspaceMore';toggle.type='button';toggle.textContent='더 보기';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','workspaceDailyMore');items.id='workspaceDailyMore';items.className='workspaceMoreItems';actions.append(menu);menu.append(toggle,items);items.append(...buttons);
  const close=(restore=false)=>{menu.classList.remove('open');toggle.setAttribute('aria-expanded','false');if(restore)toggle.focus()};
  toggle.onclick=()=>{const open=menu.classList.toggle('open');toggle.setAttribute('aria-expanded',String(open))};items.addEventListener('click',e=>{if(e.target.closest('button'))close()});
@@ -7023,7 +7123,7 @@ function bindWorkspaceUI(){
  const top=main.querySelector('.top');if(!top)return;const tools=document.createElement('div');tools.className='workspaceTools';tools.innerHTML='<div><button type="button" data-workspace-focus aria-pressed="'+(workspaceScreen.focusPage===page)+'">'+(workspaceScreen.focusPage===page?'기본 화면으로':'표 크게 보기')+'</button><button type="button" data-workspace-density aria-pressed="'+workspaceScreen.compact+'">'+(workspaceScreen.compact?'행 높이 늘리기':'행 높이 줄이기')+'</button></div><span class="workspaceScope">'+(page==='master'?'품목 기준정보':esc(month)+' · '+(typeof shareViewSession!=='undefined'&&shareViewSession.active?'공유 · 조회 전용':m().closed?'마감 보관월':'입력 가능'))+'</span>';top.after(tools);
  tools.querySelector('[data-workspace-focus]').onclick=()=>workspaceSetFocus(workspaceScreen.focusPage!==page);
  tools.querySelector('[data-workspace-density]').onclick=e=>{workspaceScreen.compact=!workspaceScreen.compact;document.body.classList.toggle('workspaceCompact',workspaceScreen.compact);e.currentTarget.textContent=workspaceScreen.compact?'행 높이 늘리기':'행 높이 줄이기';e.currentTarget.setAttribute('aria-pressed',String(workspaceScreen.compact))};
- if(page==='daily')workspaceDailyActions(top);
+ workspaceDailyActions(top);
  if(page==='report')workspaceReportPanels(main,tools);
  if(page==='audit'){const apply=main.querySelector('.secondaryAuditApply'),grid=main.querySelector('.sheetEditor');if(apply&&grid){apply.classList.add('workspaceAuditApply');grid.after(apply)}}
  if(page==='master'){const guide=main.querySelector('.managementGuide');if(guide)guide.classList.add('workspaceSecondaryHint')}
@@ -7083,6 +7183,21 @@ const ilboIssueMessages={
 function ilboEnsureScope(){
  const client=workspace||null,key=client?.key||'';if(ilboStatusClient===client&&ilboStatusScope===key)return false;
  ilboStatusClient=client;ilboStatusScope=key;ilboStatus=null;ilboAppliedRevision='';ilboAppliedLedgerRevision='';ilboRefreshRun=null;ilboRefreshPending=false;ilboStatusError='';ilboInitialClient=null;ilboManualChecked=null;return true;
+}
+// Device-only acknowledgement; never change reports, ledgers, queues or errors.
+const ilboQualityAckPrefix='schedule.ilbo.quality-ack.v1:';
+function ilboQualityKey(q){return JSON.stringify([q.code||'',q.date||'',q.worker||'',(Array.isArray(q.products)?q.products:[]).slice().sort(),q.pours??null,q.rows??null,(Array.isArray(q.rowIds)?q.rowIds:[]).slice().sort()])}
+function ilboQualityAcks(){try{const value=JSON.parse(localStorage.getItem(ilboQualityAckPrefix+ilboStatusScope)||'null');return value?.schema===1&&Array.isArray(value.keys)?value.keys.filter(k=>typeof k==='string'):[]}catch{return[]}}
+function ilboQualityVisible(){const acknowledged=new Set(ilboQualityAcks());return(ilboStatus?.qualityWarnings||[]).filter(q=>!acknowledged.has(ilboQualityKey(q)))}
+function ilboQualityPrune(report){
+ if(!report||!ilboStatusScope)return;const old=ilboQualityAcks(),current=new Set((report.qualityWarnings||[]).map(ilboQualityKey)),keys=old.filter(k=>current.has(k));
+ if(keys.length!==old.length)try{localStorage.setItem(ilboQualityAckPrefix+ilboStatusScope,JSON.stringify({schema:1,keys}))}catch{}
+}
+function ilboAcknowledgeQuality(client,scope,keys){
+ if(!ilboAccessReady()||workspace!==client||ilboStatusScope!==scope||!scope)return false;
+ const current=new Set((ilboStatus?.qualityWarnings||[]).map(ilboQualityKey)),saved=[...new Set([...ilboQualityAcks(),...keys])].filter(k=>current.has(k));
+ try{localStorage.setItem(ilboQualityAckPrefix+scope,JSON.stringify({schema:1,keys:saved}))}catch{toast('확인 표시를 기기에 저장하지 못했습니다. 안내와 원본 기록은 그대로입니다.');return false}
+ ilboRenderStatus();$('#ilboRefreshNow')?.focus?.({preventScroll:true});toast('확인한 안내를 숨겼습니다. 생산·휴무 원본은 그대로이며 내용이 바뀌면 다시 알려드립니다.');return true;
 }
 function ilboSourceLookup(){
  const index=new Map();for(const m of Object.values(state?.months||{}))for(const rows of[m.rows||[],m.fieldAttendance||[]])for(const row of rows){const link=row.sourceIntegration;if(link?.id&&link?.path){const key=JSON.stringify([link.path,link.id]);if(!index.has(key))index.set(key,row)}}return index;
@@ -7163,12 +7278,12 @@ function ilboRenderStatus(){
  if(!ilboAccessReady())return;
  ilboEnsureScope();const main=$('#main');if(!main||!['daily','schedule','master','settings'].includes(page)||!workspace&&page!=='settings')return;
  let box=$('#ilboSyncStatus');if(!box){box=document.createElement('section');box.id='ilboSyncStatus';box.className='notice blue ilboSyncCard';const anchor=main.querySelector('.top');if(anchor)anchor.after(box);else main.prepend(box)}
- const report=ilboStatus,issues=report?.issues||[],quality=report?.qualityWarnings||[],stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'',index=issues.length?ilboSourceLookup():null;
+ const report=ilboStatus,issues=report?.issues||[],quality=ilboQualityVisible(),stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'',index=issues.length?ilboSourceLookup():null;
  const queued=workspace?.envelope?.queue?.length||0,dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty),headline=queued?'GitHub 전송 대기 '+queued+'건':dirty?'저장 전 입력이 있습니다':ilboStatusError?'연결 확인 필요':issues.length?'미반영 '+issues.length+'건':ilboRefreshPending?'새 자료 확인 대기':when?'최근 연동 결과 확인':'연동 결과 확인 중';
  const guide='<div class="ilboSyncSteps"><span>① 일보·예약 입력</span><span>② 변경 저장</span><span>③ 두 앱에 자동 반영</span></div><p>생산량·계획·호기별 생산량·근무시간·불량·현장 메모가 서로 반영됩니다. 같은 항목을 다르게 고친 경우만 확인이 필요합니다. 화면을 보는 동안 5초마다 확인하며 작성 중인 입력은 유지합니다.</p>';
  let html='<div class="toolbar"><div class="ilboStatusLead"><b>두 앱 연동</b><span class="ilboStatusHeadline">'+esc(headline)+'</span><small>'+(workspace?(when?'마지막 연동 '+esc(when):'입력을 다시 저장하지 않아도 됩니다.'):'관리 저장소 연결 후 자동 반영됩니다.')+'</small></div>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>'+(ilboRefreshRun?'확인 중…':'최신자료 확인')+'</button>':'')+'</div>'+(ilboStatusError?'<p class="ilboStatusProblem" role="status">'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>입력한 내용은 그대로입니다. 입력창이나 드래그 조작을 마치면 새 자료를 이어서 반영합니다.</p>':'');
  if(issues.length)html+='<details data-ilbo-detail="issues"><summary>미반영 기록 확인 · '+issues.length+'건</summary>'+table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])}))+'</details>';
- if(quality.length)html+='<details data-ilbo-detail="quality"><summary>원자료 확인 '+quality.length+'건 · 휴무와 생산실적 중복</summary><p>현장 휴무와 기존 생산실적이 같은 날짜에 있습니다. 두 원본 기록을 보존했으니 실제 작업 여부를 확인해 주세요.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'</details>';
+ if(quality.length)html+='<div class="ilboQualityNotice"><details data-ilbo-detail="quality"><summary>원자료 확인 '+quality.length+'건 · 생산실적 우선 반영</summary><p>휴무 표시가 있어도 저장한 양수 생산량이 있으면 생산한 날입니다. 두 원본 기록을 보존하고 일정에는 실제 생산을 우선합니다.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'<p>확인하면 이 기기에서 같은 안내만 숨깁니다. 저장 오류나 미반영 기록은 숨기지 않습니다.</p></details><button type="button" id="ilboQualityConfirm" aria-label="원자료 안내 확인하고 숨기기">확인</button></div>';
  html+='<details data-ilbo-detail="guide"><summary>저장·자동 반영 안내</summary>'+guide+'</details>';
  const manualSummary=ilboManualSummary();if(manualSummary)html+='<p data-ilbo-manual-result>'+esc(manualSummary)+'</p>';
  if(workspace&&ilboRefreshPending&&['daily','schedule'].includes(page)&&[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty)){
@@ -7177,6 +7292,7 @@ function ilboRenderStatus(){
  if(ilboRefreshRun?.merge&&!ilboRefreshRun.automatic&&!ilboRefreshRun.adopted)html+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
  if(box._ilboMarkup!==html){const opened=new Set([...(box.querySelectorAll?.('details[data-ilbo-detail][open]')||[])].map(el=>el.dataset.ilboDetail)),focused=document.activeElement,focusId=box.contains?.(focused)?focused?.id:'';box.innerHTML=html;box._ilboMarkup=html;for(const el of box.querySelectorAll?.('details[data-ilbo-detail]')||[])if(opened.has(el.dataset.ilboDetail))el.open=true;if(focusId)document.getElementById?.(focusId)?.focus?.({preventScroll:true})}
  const button=$('#ilboRefreshNow');if(button)button.onclick=()=>['daily','schedule'].includes(page)?ilboReceiveLatest():ilboCheck(true);
+ const confirm=$('#ilboQualityConfirm'),ackClient=workspace,ackScope=ilboStatusScope,ackKeys=quality.map(ilboQualityKey);if(confirm)confirm.onclick=()=>ilboAcknowledgeQuality(ackClient,ackScope,ackKeys);
  const merge=$('#ilboMergeDrafts');if(merge)merge.onclick=()=>ilboMergeDrafts();const cancel=$('#ilboMergeCancel');if(cancel)cancel.onclick=()=>{if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted){ilboRefreshRun.cancelled=true;ilboRenderStatus()}};
 }
 async function ilboCheck(manual=false){
@@ -7192,7 +7308,7 @@ async function ilboCheck(manual=false){
    const report=result.data?.records?result.data.records.length===1?result.data.records[0]:false:result.data;
    if(report&&(report.kind!=='ilbo-sync-report'||report.schema!==1||!Array.isArray(report.issues)||report.issues.some(i=>!i||typeof i!=='object')||report.qualityWarnings!==undefined&&(!Array.isArray(report.qualityWarnings)||report.qualityWarnings.some(i=>!i||typeof i!=='object'))))throw Error('invalid-sync-report');
    if(report===false)throw Error('invalid-sync-report');
-   ilboStatus=report||null;ilboStatusError=report?'':'아직 자동 연동 결과가 없습니다. 첫 연동이 끝난 뒤 다시 확인해 주세요.';revision=result.sha||'';
+   ilboStatus=report||null;ilboQualityPrune(report);ilboStatusError=report?'':'아직 자동 연동 결과가 없습니다. 첫 연동이 끝난 뒤 다시 확인해 주세요.';revision=result.sha||'';
   }
   if(seed){if(revision)ilboAppliedRevision=revision;if(ledgerRevision)ilboAppliedLedgerRevision=ledgerRevision;}
   const changed=manual||!seed&&(ledgerChanged||!canReadLedger&&revision&&revision!==ilboAppliedRevision);
@@ -7218,6 +7334,7 @@ for(const event of ['focusout','pointerup','pointercancel','close'])document.add
 window.addEventListener('focus',()=>ilboCheck());
 window.addEventListener('production:lock',()=>{ilboAccessVersion++});
 window.addEventListener('production:login',()=>ilboCheck());
+window.addEventListener('storage',event=>{if(event.key===ilboQualityAckPrefix+ilboStatusScope&&ilboAccessReady())ilboRenderStatus()});
 
 // Request the fixed integration service only after management changes are saved.
 // All source data and conflict decisions remain in the shared server engine.
@@ -7998,6 +8115,7 @@ function shareViewAllowed(element){
  if(shareViewAccessSurface(element))return true;
  const data=element.dataset||{};
  if(data.page!==undefined)return shareViewPages.has(data.page);
+ if(data.auditStep!==undefined)return ['count','review','apply'].includes(data.auditStep);
  if(data.action!==undefined)return shareViewActions.has(data.action);
  if(data.pgCommand!==undefined)return shareViewPlanCommands.has(data.pgCommand);
  if(data.pgWorkers!==undefined)return ['all','none'].includes(data.pgWorkers);
