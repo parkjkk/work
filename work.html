@@ -1508,6 +1508,7 @@ function ghDriver(cfg){
       let d=''; try{ d=(await r.json()).message||''; }catch(e){}
       throw new Error('GitHub 저장 실패 ('+r.status+') '+d);
     }
+    if(bridge&&typeof fieldSyncSoon==='function')fieldSyncSoon();
     return true;
   }
   async function mutateJson(path, fn, msg){
@@ -1591,6 +1592,7 @@ function ghDriver(cfg){
       if(response.status===409&&value.code==='memo-conflict'&&typeof value.currentMemo==='string'){const error=Error('다른 곳에서 메모가 바뀌었습니다. 최신 내용을 확인해 주세요.');error.code='memo-conflict';error.currentMemo=value.currentMemo;throw error;}
       if(!response.ok)throw Error(value.error||'메모를 저장하지 못했습니다. 작성 내용을 보관했습니다.');
       if(value.productId!==input.productId||typeof value.memo!=='string'||value.memo.length>100000||typeof value.revision!=='string'||!value.revision)throw Error('메모 저장 결과를 확인하지 못했습니다. 작성 내용을 보관했습니다.');
+      if(typeof fieldSyncSoon==='function')fieldSyncSoon();
       return value;
     },
     async loadProductionProgress(){ const {json} = await getFile('meta/production-progress.json'); return json; },
@@ -1653,6 +1655,17 @@ function ghDriver(cfg){
 
 /* 전송 방식만 변경한다. 기기 보관분의 저장소 키와 기존 SHA 재시도 병합은 유지한다. */
 let fieldWrites=0,fieldMigration=null,fieldMigrationAttempt=0,fieldRevision=null,fieldRemotePending=false,fieldPolling=false,fieldSetup=null,fieldManagementSync=null;
+let fieldFastTimer=null,fieldFastUntil=0,fieldFastGeneration=0;
+function fieldQueueFastPoll(delay){
+  if(fieldFastTimer!==null)return;
+  const epoch=storeEpoch,drv=driver;
+  fieldFastTimer=setTimeout(()=>{fieldFastTimer=null;if(epoch===storeEpoch&&drv===driver)void pollFieldRevision();},delay);
+}
+function fieldSyncSoon(){
+  if(fieldOffline||driver.mode!=='gh'||!bridgeConfig(ghCfg()))return;
+  fieldFastGeneration++;fieldFastUntil=Date.now()+60000;
+  clearTimeout(fieldFastTimer);fieldFastTimer=null;fieldQueueFastPoll(200);
+}
 async function migrateFieldBridge(force=false){
   if(globalThis.AppAccess&&!AppAccess.unlocked)return false;
   if(fieldOffline)return false;
@@ -1695,7 +1708,7 @@ async function pollFieldRevision(){
   if(fieldOffline)return;
   if(fieldPolling||document.hidden||!navigator.onLine)return;
   if(!bridgeConfig(ghCfg())){await migrateFieldBridge();return;}
-  const epoch=storeEpoch,drv=driver;
+  const epoch=storeEpoch,drv=driver,fastGeneration=fieldFastGeneration;
   fieldPolling=true;
   try{
     const rev=await drv.revision();
@@ -1712,7 +1725,14 @@ async function pollFieldRevision(){
     renderSyncInfo();
   }catch(e){/* 일시 통신 실패는 다음 확인 때 재시도. 이전 revision을 성공으로 확정하지 않는다. */
     if(epoch===storeEpoch){fieldRemotePending=true;renderSyncInfo();}
-  }finally{fieldPolling=false;}
+  }finally{
+    fieldPolling=false;
+    if(epoch===storeEpoch&&drv===driver&&fieldFastUntil>Date.now()&&!document.hidden&&navigator.onLine){
+      if(fastGeneration!==fieldFastGeneration)fieldQueueFastPoll(200);
+      else if(fieldManagementSync?.epoch===epoch&&['pending','running','conflict','retry'].includes(fieldManagementSync.status))fieldQueueFastPoll(1200);
+      else{fieldFastUntil=0;clearTimeout(fieldFastTimer);fieldFastTimer=null;}
+    }
+  }
 }
 async function setupFieldServerImport(){
   const m=location.hash.match(/[#&]fieldSetup=([A-Za-z0-9_-]+)/);
@@ -1806,6 +1826,7 @@ function initDriver(){
   activeScope = fieldOffline ? 'offline:'+fieldOffline.id : scopeFor(cfg);
   driver = fieldOffline ? offlineWorkspaceDriver(fieldOffline.id) : connectedConfig(cfg) ? ghDriver(cfg) : localDriver;
   fieldRevision=null;fieldRemotePending=false;fieldManagementSync=null;
+  clearTimeout(fieldFastTimer);fieldFastTimer=null;fieldFastUntil=0;fieldFastGeneration++;
   const key = fieldOffline ? 'offline:'+fieldOffline.id : driver.mode === 'gh' ? `gh:${cfg.owner}/${cfg.repo}/${cfg.branch||'main'}` : 'local';
   if(driverKey && driverKey !== key){   /* 저장소·모드가 바뀌면 옛 기물 진행률은 폐기 */
     S.progress = null; S.progressSpan = null;

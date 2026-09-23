@@ -7172,7 +7172,7 @@ setStatus=function(message){twoWayOriginalStatus(message);if(message==='GitHub ì
 const twoWayOriginalRender=ilboRenderStatus;
 ilboRenderStatus=function(){twoWayOriginalRender();twoWayRender();twoWayResume()};
 const twoWayOriginalCheck=ilboCheck;
-ilboCheck=async function(manual=false){if(manual)await twoWayRequest();return twoWayOriginalCheck(manual)};
+ilboCheck=async function(manual=false){if(manual)void twoWayRequest().catch(()=>{});return twoWayOriginalCheck(manual)};
 window.addEventListener('production:lock',()=>{twoWayClear();twoWayRender()});
 for(const event of ['online','focus'])window.addEventListener(event,()=>twoWayResume(true));
 document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)twoWayResume(true)});
