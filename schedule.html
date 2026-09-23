@@ -2113,7 +2113,15 @@ function mergeIssueMonth(base,local,remote){
  const allowedRemote=new Set(['rows','fieldAttendance','jobs','plans','plaster','issues','history','rev']);
  for(const key of ownKeys(base,remote))if(!allowedRemote.has(key)&&!sameField(base,remote,key))return{conflict:true,field:key};
  const baseHistory=base.history||[],localHistory=local.history||[],remoteHistory=remote.history||[];
- if(localHistory.length<=baseHistory.length||remoteHistory.length<baseHistory.length||!baseHistory.every((event,i)=>equal(event,localHistory[i])&&equal(event,remoteHistory[i])))return null;
+ if(localHistory.length<=baseHistory.length||!baseHistory.every((event,i)=>equal(event,localHistory[i])))return null;
+ // An earlier queued save may already have been rebased after new server
+ // history. Its events are still intact, but are no longer a literal prefix.
+ // Match by stable event ID and require the original relative order/content;
+ // never accept removed, rewritten or duplicate history as a harmless insert.
+ const remoteEvents=new Map();
+ for(let i=0;i<remoteHistory.length;i++){const event=remoteHistory[i];if(!event?.id||remoteEvents.has(event.id))return{conflict:true,field:'history'};remoteEvents.set(event.id,{event,index:i})}
+ let previous=-1;const baseIds=new Set();
+ for(const event of baseHistory){const found=remoteEvents.get(event?.id);if(!event?.id||baseIds.has(event.id)||!found||found.index<=previous||!equal(event,found.event))return{conflict:true,field:'history'};baseIds.add(event.id);previous=found.index}
  const events=localHistory.slice(baseHistory.length);
  if(!Number.isSafeInteger(base.rev)||local.rev!==base.rev+events.length)return null;
  const maps=[];
@@ -2129,8 +2137,8 @@ function mergeIssueMonth(base,local,remote){
  const applied=new Set();
  for(const [id,change] of changes){const now=current.get(id);if(equal(now,change.after))continue;if(!equal(now,change.before))return{conflict:true,field:'issues:'+id};applied.add(id)}
  if(!applied.size)return{record:remote};
- const remoteIds=new Set(remoteHistory.map(event=>event?.id));
- if(events.some(event=>applied.has(event.after?.id||event.before?.id)&&(!event.id||remoteIds.has(event.id))))return{conflict:true,field:'history'};
+ const appendedIds=new Set();
+ if(events.some(event=>{if(!event.id||baseIds.has(event.id)||appendedIds.has(event.id))return true;appendedIds.add(event.id);return applied.has(event.after?.id||event.before?.id)&&remoteEvents.has(event.id)}))return{conflict:true,field:'history'};
  const result=clone(remote),byId=new Map(remote.issues.map(row=>[row.id,row]));
  for(const [id,change] of changes)if(applied.has(id)){if(change.after)byId.set(id,clone(change.after));else byId.delete(id)}
  result.issues=remote.issues.filter(row=>byId.has(row.id)).map(row=>byId.get(row.id));
@@ -4214,7 +4222,10 @@ function sheetConflictMessage(conflicts){
  const issue=(conflicts||[]).find(item=>String(item?.field||'').startsWith('issues:'));
  if(issue){const id=issue.field.slice(7),row=[issue.local,issue.remote,issue.base].flatMap(m=>m?.issues||[]).find(r=>r.id===id);return (row?.product||'해당 품명')+'의 교체·불출 기록이 저장 중 다른 곳에서도 변경되었습니다. 입력은 이 기기에 남아 있습니다. 최신 행을 확인한 뒤 다시 저장해 주세요.'}
  const protectedMonth=(conflicts||[]).find(item=>item?.base?.kind==='month'&&item.field&&!String(item.field).startsWith('issues:'));
- if(protectedMonth)return protectedMonth.id+'월의 실사·마감·재고 또는 기준정보가 바뀌어 불출 저장을 잠시 멈췄습니다. 입력은 이 기기에 보관했습니다. 최신 월자료를 확인해 주세요.';
+ const monthLabels={issues:'교체·불출 기록',history:'변경 이력',rows:'생산일보',fieldAttendance:'근무 기록',jobs:'생산일정',jobUndo:'일정 되돌리기 정보',reservationBindings:'예약 연결',plans:'생산계획',plaster:'석고 기록',stocks:'재고 기준',auditSessions:'실사 기록',auditStamp:'실사 기준일',closed:'월마감',closeSnapshot:'마감 자료',operations:'월 처리 기록',openingSource:'이월 기준',acceptedCarryId:'이월 반영',carryOut:'다음 달 이월',carryNeedsReview:'이월 확인',sourceIntegration:'일보 연결 정보',integrationOutbound:'일보 전달 확인'};
+ if(protectedMonth)return protectedMonth.id+'월의 '+(monthLabels[protectedMonth.field]||'월 기준정보')+'를 함께 확인해야 해서 저장을 멈췄습니다. 입력은 이 기기에 보관했습니다.';
+ const monthConflict=(conflicts||[]).find(item=>[item.base,item.local,item.remote].some(r=>r?.kind==='month'));
+ if(monthConflict){const changed=value=>Object.keys({...monthConflict.base,...value}).filter(key=>!['rev','history','kind','policyVersion'].includes(key)&&!sheetEqual(monthConflict.base?.[key],value?.[key])).map(key=>monthLabels[key]||'월 기준정보'),local=[...new Set(changed(monthConflict.local))],remote=[...new Set(changed(monthConflict.remote))];return monthConflict.id+'월의 저장 대기 내용과 최신자료를 자동으로 합치지 못했습니다. 기기 변경: '+(local.join('·')||'변경 이력')+' / 서버 변경: '+(remote.join('·')||'변경 이력')+'. 입력은 이 기기에 보관했습니다.'}
  return'';
 }
 async function sheetAwaitRemoteAck(){
@@ -4222,7 +4233,7 @@ async function sheetAwaitRemoteAck(){
  if(!client||client.pendingMigration||client.closed||typeof client.flush!=='function')return false;
  await client.flush();
  if(client.envelope?.queue?.length){
-  const conflicts=client.lastError?.conflicts||[],conflict=conflicts.length,e=Error(conflict?(sheetConflictMessage(conflicts)||'다른 기기에서도 같은 자료를 바꿨습니다. 삭제·수정 내용은 이 기기에 보관했습니다. 최신자료를 확인한 뒤 다시 저장해 주세요.'):'서버 저장을 완료하지 못했습니다. 변경 내용은 이 기기에 보관했습니다. 연결 상태를 확인하고 다시 전송해 주세요.');
+  const conflicts=client.lastError?.conflicts||[],conflict=conflicts.length,e=Error(conflict?(sheetConflictMessage(conflicts)||'저장 대기 내용과 최신자료를 자동으로 합치지 못했습니다. 입력은 이 기기에 보관했습니다. 충돌 내용을 확인해 주세요.'):'서버 저장을 완료하지 못했습니다. 변경 내용은 이 기기에 보관했습니다. 연결 상태를 확인하고 다시 전송해 주세요.');
   if(conflict)e.conflicts=client.lastError.conflicts;throw e;
  }
  return true;
