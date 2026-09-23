@@ -3330,7 +3330,7 @@ function blockHTML(){
   </details>
   </div>
   <details class="pb-quality" open><summary>검사 상태 · 불량 여부 · 특이사항</summary>
-  <details class="defect pb-defect" open>
+  <details class="defect pb-defect">
     <summary><span class="df-sum">불량 여부 · 수량·부위 입력</span></summary>
     <div class="f-label">불량석고량 (kg)</div>
     <input class="f-input pb-scrap" inputmode="decimal" placeholder="0">
@@ -3535,12 +3535,13 @@ function removePreset(kind, value){
   applyFieldPresetOperation(op).catch(e=>{if(!e.contextChanged)toast('목록 변경을 저장하지 못했습니다 — 기존 목록은 유지됩니다. 다시 시도해 주세요.');});
   return true;
 }
-function updateDefSummary(el){
+function updateDefSummary(el, restoreOpen=false){
   const s = el.querySelector('.pb-scrap').value.trim();
   const q = el.querySelector('.pb-defqty').value.trim();
   const pt = el.querySelector('.pb-defpart').value.trim();
-  const any = s || q || pt;
+  const any = !!(pt || [s,q].some(value => value && Number(value)!==0));
   el.querySelector('.pb-defect').classList.toggle('filled', !!any);
+  if(restoreOpen) el.querySelector('.pb-defect').open = any;
   el.querySelector('.df-sum').textContent = any
     ? `불량 입력됨: ${q||'?'}개${s ? ' · '+s+'kg' : ''}${pt ? ' · '+pt : ''}`
     : '불량 여부 · 수량·부위 입력';
@@ -3868,7 +3869,8 @@ function addBlock(row){
   el.querySelector('.pb-defclear').onclick = () => {
     ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).value = '');
     updateDefSummary(el);
-    el.querySelector('.pb-defect').open = true;
+    el.querySelector('.pb-defect').open = false;
+    el.querySelector('.pb-defect>summary').focus();
   };
   el.querySelector('.pb-del').onclick = () => { el.remove(); renumberBlocks(); };
   if(row){
@@ -3883,7 +3885,6 @@ function addBlock(row){
     el.querySelector('.pb-scrap').value = row.scrapKg ?? '';
     el.querySelector('.pb-defqty').value = row.defQty ?? '';
     el.querySelector('.pb-defpart').value = row.defPart ?? '';
-    el.querySelector('.pb-defect').open = true;
     el.querySelector('.pb-gasa').value = row.gasa ?? '○';
     CHECK_KEYS.forEach(k => segSetB(el, k, row[k]||''));
     el.querySelector('.pb-remark').value = row.remark||'';
@@ -3891,7 +3892,7 @@ function addBlock(row){
     CHECK_KEYS.forEach(k => segSetB(el, k, '○'));
   }
   syncGasaB(el);
-  updateDefSummary(el);
+  updateDefSummary(el,true);
   updateBlockNeed(el);
   updateProdProg(el);
   syncPlanMode(el);
@@ -4276,10 +4277,9 @@ function restoreForm(snap){
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));
     rememberLegacyInspectionDraft(el,b);el.querySelector('.pb-remark').value = b.r || '';syncGasaB(el);
-    el.querySelector('.pb-defect').open = true;
     if(b.target&&typeof b.target==='object'){if(b.target.target)fieldScheduleTarget(b.target.target);scheduleTargetForms.set(el,b.target);}
     if(b.team){const value=b.team.value?{schema:1,members:[{worker:b.team.value,hours:b.team.hours===''?'':Number(b.team.hours)}]}:null;restoreTeamForm(el,{worker:j.w,productionTeam:value},b.team.form);el.querySelector('.pb-team-hours').value=b.team.hours??'';}
-    updateDefSummary(el); updateBlockNeed(el); updateProdProg(el);
+    updateDefSummary(el,true); updateBlockNeed(el); updateProdProg(el);
     syncPlanMode(el);expandProduct(el,false);
   });
   renumberBlocks();
