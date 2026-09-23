@@ -2102,6 +2102,43 @@ function preserveServerIntegration(candidate,remote,rejectUnknown=false){
  }
  return{record:result};
 }
+// An issue-sheet save changes only issues, its appended audit events and the
+// month revision. Rebase that narrow intent onto a newer open month so a daily
+// report or another issue row cannot strand the saved device draft. Never
+// rebase across stocktake, carry, closing or unknown month-level changes.
+function mergeIssueMonth(base,local,remote){
+ if(!base||!local||!remote||[base,local,remote].some(m=>m.kind!=='month'||m.deleted||m.closed||!Array.isArray(m.issues)||!Array.isArray(m.history||[])||!Number.isSafeInteger(m.rev)))return null;
+ const ownKeys=(a,b)=>new Set([...Object.keys(a),...Object.keys(b)]),sameField=(a,b,key)=>equal(recordField(a,key),recordField(b,key));
+ for(const key of ownKeys(base,local))if(!['issues','history','rev'].includes(key)&&!sameField(base,local,key))return null;
+ const allowedRemote=new Set(['rows','fieldAttendance','jobs','plans','plaster','issues','history','rev']);
+ for(const key of ownKeys(base,remote))if(!allowedRemote.has(key)&&!sameField(base,remote,key))return{conflict:true,field:key};
+ const baseHistory=base.history||[],localHistory=local.history||[],remoteHistory=remote.history||[];
+ if(localHistory.length<=baseHistory.length||remoteHistory.length<baseHistory.length||!baseHistory.every((event,i)=>equal(event,localHistory[i])&&equal(event,remoteHistory[i])))return null;
+ const events=localHistory.slice(baseHistory.length);
+ if(!Number.isSafeInteger(base.rev)||local.rev!==base.rev+events.length)return null;
+ const maps=[];
+ for(const month of [base,local,remote]){const map=new Map();for(const row of month.issues){if(!row||typeof row.id!=='string'||!row.id||map.has(row.id))return{conflict:true,field:'issues'};map.set(row.id,row)}maps.push(map)}
+ const [before,desired,current]=maps,changes=new Map();
+ for(const id of new Set([...before.keys(),...desired.keys()]))if(!equal(before.get(id),desired.get(id)))changes.set(id,{before:before.get(id),after:desired.get(id)});
+ if(changes.size!==events.length)return null;
+ const eventById=new Map();
+ for(const event of events){const id=event?.after?.id||event?.before?.id,change=changes.get(id);
+  if(!change||eventById.has(id)||!equal(event.before,change.before)||!equal(event.after,change.after)||event.type!==(change.after?'issues':'삭제:issues'))return null;
+  eventById.set(id,event);
+ }
+ const applied=new Set();
+ for(const [id,change] of changes){const now=current.get(id);if(equal(now,change.after))continue;if(!equal(now,change.before))return{conflict:true,field:'issues:'+id};applied.add(id)}
+ if(!applied.size)return{record:remote};
+ const remoteIds=new Set(remoteHistory.map(event=>event?.id));
+ if(events.some(event=>applied.has(event.after?.id||event.before?.id)&&(!event.id||remoteIds.has(event.id))))return{conflict:true,field:'history'};
+ const result=clone(remote),byId=new Map(remote.issues.map(row=>[row.id,row]));
+ for(const [id,change] of changes)if(applied.has(id)){if(change.after)byId.set(id,clone(change.after));else byId.delete(id)}
+ result.issues=remote.issues.filter(row=>byId.has(row.id)).map(row=>byId.get(row.id));
+ for(const row of local.issues)if(applied.has(row.id)&&!current.has(row.id))result.issues.push(byId.get(row.id));
+ result.history=remoteHistory.concat(events.filter(event=>applied.has(event.after?.id||event.before?.id)).map(clone));
+ result.rev=Math.max(base.rev,Number.isSafeInteger(remote.rev)?remote.rev:0)+applied.size;
+ return{record:result};
+}
 function mergeRecords(base,local,remote){
  for(const xs of[base,local,remote]){if(!Array.isArray(xs))throw Error('저장자료 목록 형식 오류');const seen=new Set();for(const r of xs){if(!r||typeof r.id!=='string'||!r.id||seen.has(r.id))throw Error('중복 또는 누락된 기록 ID가 있어 저장을 보류합니다.');seen.add(r.id)}}
  const maps=[base,local,remote].map(xs=>new Map(xs.map(x=>[x.id,x]))),ids=new Set(maps.flatMap(m=>[...m.keys()])),result=[],conflicts=[];
@@ -2109,9 +2146,10 @@ function mergeRecords(base,local,remote){
   let[b,l,r]=maps.map(m=>m.get(id));if(b&&!l)l={id,deleted:true,rev:(b.rev||0)+1};
   const memo=mergeMemoRecord(b,l,r);if(memo){if(memo.conflict){conflicts.push({id,base:b,local:l,remote:r,field:memo.field});if(r)result.push(r)}else if(memo.record)result.push(memo.record);continue}
   if(equal(l,b)){if(r)result.push(r);continue}
+  const issue=mergeIssueMonth(b,l,r);if(issue){if(issue.conflict){conflicts.push({id,base:b,local:l,remote:r,field:issue.field});if(r)result.push(r)}else if(issue.record)result.push(issue.record);continue}
   // Only the integration service owns link baselines and outgoing receipts.
-  // Preserve the newest server value, including ACK removal, while retaining
-  // the existing whole-month conflict boundary for all business fields.
+  // Preserve the newest server value, including ACK removal. Other business
+  // mutations still use the whole-month conflict boundary.
   const original={id,base:b,local:l,remote:r},guard=preserveServerIntegration(l,r,true);
   b=preserveServerIntegration(b,r).record;l=guard.record;
   if(guard.invalid){conflicts.push({...original,field:'sourceIntegration'});if(r)result.push(r)}
@@ -4171,9 +4209,13 @@ const sheetContext=id=>sheetScope()+':'+month+':'+id;
 const sheetEqual=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
 function sheetEditor(id){return sheetRegistry.get(sheetContext(id))}
 function sheetConflictMessage(conflicts){
- const memo=(conflicts||[]).find(item=>item?.base?.kind==='memos'||item?.local?.kind==='memos'||item?.remote?.kind==='memos');if(!memo)return'';
- const product=memo.remote?.product||memo.local?.product||memo.base?.product||'해당 품명',labels={'values[0]':'공용 메모','values[1]':'호기·조수','values[2]':'보관장소','values[3]':'목표재고',product:'품명 연결'};
- return product+'의 '+(labels[memo.field]||'보관정보')+'가 다른 기기에서도 변경되었습니다. 입력 내용은 이 기기에 남겨 두었습니다. 최신자료를 확인한 뒤 어느 내용을 사용할지 확인해 주세요.';
+ const memo=(conflicts||[]).find(item=>item?.base?.kind==='memos'||item?.local?.kind==='memos'||item?.remote?.kind==='memos');
+ if(memo){const product=memo.remote?.product||memo.local?.product||memo.base?.product||'해당 품명',labels={'values[0]':'공용 메모','values[1]':'호기·조수','values[2]':'보관장소','values[3]':'목표재고',product:'품명 연결'};return product+'의 '+(labels[memo.field]||'보관정보')+'가 다른 기기에서도 변경되었습니다. 입력 내용은 이 기기에 남겨 두었습니다. 최신자료를 확인한 뒤 어느 내용을 사용할지 확인해 주세요.'}
+ const issue=(conflicts||[]).find(item=>String(item?.field||'').startsWith('issues:'));
+ if(issue){const id=issue.field.slice(7),row=[issue.local,issue.remote,issue.base].flatMap(m=>m?.issues||[]).find(r=>r.id===id);return (row?.product||'해당 품명')+'의 교체·불출 기록이 저장 중 다른 곳에서도 변경되었습니다. 입력은 이 기기에 남아 있습니다. 최신 행을 확인한 뒤 다시 저장해 주세요.'}
+ const protectedMonth=(conflicts||[]).find(item=>item?.base?.kind==='month'&&item.field&&!String(item.field).startsWith('issues:'));
+ if(protectedMonth)return protectedMonth.id+'월의 실사·마감·재고 또는 기준정보가 바뀌어 불출 저장을 잠시 멈췄습니다. 입력은 이 기기에 보관했습니다. 최신 월자료를 확인해 주세요.';
+ return'';
 }
 async function sheetAwaitRemoteAck(){
  const client=typeof workspace==='undefined'?null:workspace;
@@ -7098,7 +7140,7 @@ function twoWayClear(){twoWayState.generation++;clearTimeout(twoWayState.timer);
 function twoWayUse(client){if(twoWayState.client!==client){twoWayClear();twoWayState.client=client;twoWayState.intent=twoWayRead(client)}}
 function twoWayMark(client){twoWayUse(client);const item={schema:1,id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2),stage:'request'};twoWayState.intent=item;twoWayStore(client,item);return item}
 function twoWayRender(){const box=document.querySelector('#ilboSyncStatus');if(!box)return;let text=box.querySelector('[data-two-way-state]');if(!twoWayState.message||twoWayState.client!==workspace){text?.remove();return}if(!text){text=document.createElement('p');text.dataset.twoWayState='';text.setAttribute('role','status');box.querySelector('.toolbar')?.after(text)}text.textContent=twoWayState.message+(twoWayState.storageWarning?' '+twoWayState.storageWarning:'');text.dataset.kind=twoWayState.status}
-function twoWayLater(attempt=0,delay){clearTimeout(twoWayState.poll);const client=twoWayState.client,generation=twoWayState.generation;twoWayState.poll=setTimeout(()=>{twoWayState.poll=null;if(workspace===client&&twoWayState.generation===generation)return twoWayRequest('resume',attempt)},delay??(attempt<8?5000:30000))}
+function twoWayLater(attempt=0,delay){clearTimeout(twoWayState.poll);const client=twoWayState.client,generation=twoWayState.generation;twoWayState.poll=setTimeout(()=>{twoWayState.poll=null;if(workspace===client&&twoWayState.generation===generation)return twoWayRequest('resume',attempt)},delay??(attempt<8?2000:15000))}
 async function twoWayRequest(action='request',attempt=0){
  const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked)return;
  twoWayUse(client);if(action==='request')twoWayMark(client);else twoWayState.intent=twoWayRead(client)||twoWayState.intent;
@@ -7117,14 +7159,14 @@ async function twoWayRequest(action='request',attempt=0){
   else{
    const complete=['applied','review'].includes(result.status);twoWayState.status=result.status;twoWayState.message=twoWayMessages[result.status];
    twoWayState.intent=complete?null:{...intent,stage:'status'};twoWayStore(client,twoWayState.intent,intent.id);retry=!complete;
-   if(complete){const remaining=twoWayRead(client);if(remaining){twoWayState.intent=remaining;twoWayState.message=twoWayMessages.pending;retry=true;delay=700}}
+   if(complete){const remaining=twoWayRead(client);if(remaining){twoWayState.intent=remaining;twoWayState.message=twoWayMessages.pending;retry=true;delay=150}else if(!document.hidden)Promise.resolve().then(()=>{if(current())return twoWayOriginalCheck(false)}).catch(()=>{})}
    if(['permission','configuration','source'].includes(result.status))delay=60000;
   }
  }catch{if(current()){twoWayState.status='retry';twoWayState.message=twoWayMessages.retry;delay=30000}}
  finally{if(current()){twoWayState.running=false;if(retry&&twoWayState.intent)twoWayLater(attempt+1,delay);twoWayRender()}}
 }
-function twoWaySchedule(){const client=twoWayClient();if(!client)return;twoWayMark(client);clearTimeout(twoWayState.timer);twoWayState.timer=setTimeout(()=>{twoWayState.timer=null;return twoWayRequest('resume')},700)}
-function twoWayResume(){const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked)return;twoWayUse(client);twoWayState.intent=twoWayRead(client)||twoWayState.intent;if(twoWayState.intent&&!twoWayState.running&&!twoWayState.timer&&!twoWayState.poll)twoWayLater(0,700)}
+function twoWaySchedule(){const client=twoWayClient();if(!client)return;twoWayMark(client);clearTimeout(twoWayState.timer);twoWayState.timer=setTimeout(()=>{twoWayState.timer=null;return twoWayRequest('resume')},150)}
+function twoWayResume(immediate=false){const client=twoWayClient();if(!client||typeof AppAccess!=='undefined'&&!AppAccess.unlocked)return;twoWayUse(client);twoWayState.intent=twoWayRead(client)||twoWayState.intent;if(!twoWayState.intent||twoWayState.running)return;if(immediate&&navigator.onLine!==false&&!document.hidden&&!client.envelope?.queue?.length){clearTimeout(twoWayState.timer);twoWayState.timer=null;twoWayLater(0,150)}else if(!twoWayState.timer&&!twoWayState.poll)twoWayLater(0,150)}
 const twoWayOriginalStatus=setStatus;
 setStatus=function(message){twoWayOriginalStatus(message);if(message==='GitHub 저장 완료')twoWaySchedule()};
 const twoWayOriginalRender=ilboRenderStatus;
@@ -7132,8 +7174,8 @@ ilboRenderStatus=function(){twoWayOriginalRender();twoWayRender();twoWayResume()
 const twoWayOriginalCheck=ilboCheck;
 ilboCheck=async function(manual=false){if(manual)await twoWayRequest();return twoWayOriginalCheck(manual)};
 window.addEventListener('production:lock',()=>{twoWayClear();twoWayRender()});
-for(const event of ['online','focus'])window.addEventListener(event,twoWayResume);
-document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)twoWayResume()});
+for(const event of ['online','focus'])window.addEventListener(event,()=>twoWayResume(true));
+document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)twoWayResume(true)});
 
 // Responsive organization only: move existing controls, never copy input values or ledger rows.
 const mobileScreen={observer:null,observedMain:null,resize:null,resetPosition:false,frame:0,sequence:0,page:null,focus:null,menus:new Map(),dateSorts:new Map(),dockedStatus:null,fits:new WeakMap(),readLabels:new WeakMap(),labelDirty:new WeakSet()};
