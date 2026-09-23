@@ -731,6 +731,30 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   }
 }
 @media print{.print-header,.screen-heading,.section-heading,.view-help,.screen-tools{display:none!important}}
+/* field-entry-open-sections-v1: everyday checks stay visible beside optional settings. */
+@media screen{
+  #entryOv .pb,#entryOv .pb.pb-collapsed{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px;margin:14px 0}
+  #entryOv .pb-head{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:12px}
+  #entryOv .pb-toggle{font-weight:700;min-height:44px}
+  #entryOv .pb-toggle:after{content:'제품·계획·호기 접기 ∧'}
+  #entryOv .pb-collapsed .pb-toggle:after{content:'제품·계획·호기 설정 ∨'}
+  #entryOv .pb-collapsed .pb-del{display:block;visibility:visible}
+  #entryOv .pb-team{margin:10px 0;padding:0 10px}
+  #entryOv .pb-team select,#entryOv .pb-team select option{background:var(--surface);color:var(--ink)}
+  #entryOv .pb-team select{border:1.5px solid var(--line-in);border-radius:10px;padding:8px}
+  #entryOv .pb-quality{margin:12px 0 0;padding:0 10px 12px;border:1px solid var(--line-in);border-radius:10px}
+  #entryOv details>summary{min-height:44px;padding:10px;border-radius:7px;font-weight:700;line-height:1.6;color:var(--ink);background:var(--surface2);cursor:pointer}
+  #entryOv details[open]>summary{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 4px 0 var(--accent);margin-bottom:12px}
+  #entryOv details>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #entryOv .pb-quality>summary,#entryOv .pb-team>summary{margin:0 -10px 10px;padding:12px;font-size:14px}
+  #entryOv .pb-quality:not([open])>summary,#entryOv .pb-team:not([open])>summary{margin-bottom:0}
+  #entryOv .pb-quality:not([open]){padding-bottom:0}
+  #entryOv .pb-team summary{display:list-item;list-style-position:inside}
+  #entryOv .pb-defect[open]{border-color:var(--line-in);background:var(--surface)}
+  #entryOv .pb-defect.filled{border-color:var(--bad)}
+  #entryOv .pb-defect.filled>summary{color:var(--bad);background:var(--bad-soft);box-shadow:inset 4px 0 var(--bad)}
+  #entryOv .pb-quality .f-label{font-weight:700}
+}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -3177,10 +3201,21 @@ function updateTeamForm(el){
 function restoreTeamForm(el,row,form=null){
  let value=null,error='';try{value=productionTeamValue(row?.productionTeam,row?.worker||$('#fWorker').value)}catch(e){error=e.message}
  productionTeamForms.set(el,form||{before:ownFieldState(row,'productionTeam'),initial:progressStable(value),error});
- const select=el.querySelector('.pb-team-worker');updateTeamForm(el);if(value){const m=value.members[0];if(![...select.options].some(o=>o.value===m.worker))select.add(new Option(m.worker,m.worker));select.value=m.worker;el.querySelector('.pb-team-hours').value=m.hours;}
+ const select=el.querySelector('.pb-team-worker');updateTeamForm(el);select.value='';el.querySelector('.pb-team-hours').value='';if(value){const m=value.members[0];if(![...select.options].some(o=>o.value===m.worker))select.add(new Option(m.worker,m.worker));select.value=m.worker;el.querySelector('.pb-team-hours').value=m.hours;}
  updateTeamForm(el);
 }
 function collectTeamFields(el){const form=productionTeamForms.get(el),value=teamFormValue(el);if(form?.error)throw Error(form.error);return form?.reviewed||progressStable(value)!==form?.initial?{productionTeam:value}:{};}
+function continueRecentTeam(el,rows){
+ const owner=$('#fWorker').value,form=productionTeamForms.get(el);
+ if(form?.touched||form?.before?.present||form?.reviewed||el.querySelector('.pb-team-worker').value||el.querySelector('.pb-team-hours').value)return false;
+ const candidates=rows.filter(r=>!r.off&&!r.deleted&&r.worker===owner&&fieldProductIdentity(r)===fieldProductIdentity(el.querySelector('.pb-product').value));
+ if(candidates.length!==1)return false;const row=candidates[0];
+ if(row.plan===0||row.plan==='0'||row.planIntent==='end'||row.productionCompletion)return false;
+ let value;try{value=productionTeamValue(row.productionTeam,owner)}catch{return false}if(!value)return false;
+ // A new day's copied membership is a new field, not the old row's merge baseline.
+ restoreTeamForm(el,{worker:owner,productionTeam:value},{before:{present:false},initial:progressStable(null),error:''});
+ return true;
+}
 function teamEditMeta(el,payload){return Object.hasOwn(payload||{},'productionTeam')?{teamBefore:productionTeamForms.get(el)?.before||{present:false}}:{};}
 function mergeProductionTeams(rows,incoming,edits,strict){return incoming.map(row=>{
  const meta=edits[row.id];if(!Object.hasOwn(row,'productionTeam'))return row;
@@ -3239,10 +3274,10 @@ function printedRemark(row){return row.remark||''}
 
 function blockHTML(){
   return `
-  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>생산 종료 · 호기 · 검사 · 함께 작업한 사람</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품명 · 생산 진행 · 호기 설정</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <details class="pb-team" open><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
   <div class="pb-body">
   <div class="pb-previous" role="status" hidden></div>
-  <details class="pb-team"><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
   <div class="f-label">제품명 <span class="req">*</span></div>
   <input class="f-input pb-product" placeholder="예: CC267B" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
   <div class="pb-product-memo" hidden></div>
@@ -3293,8 +3328,10 @@ function blockHTML(){
     <span class="hint pb-capacity-hint">오늘 만든 수량이 아니라 앞으로의 일정 종료일을 계산할 때 쓰는 값입니다.</span>
     <div class="pb-schedule-note pb-schedule-main-note" role="status"></div>
   </details>
-  <details class="defect pb-defect">
-    <summary><span class="df-sum">불량 있음 (석고량·수량·부위)</span></summary>
+  </div>
+  <details class="pb-quality" open><summary>검사 상태 · 불량 여부 · 특이사항</summary>
+  <details class="defect pb-defect" open>
+    <summary><span class="df-sum">불량 여부 · 수량·부위 입력</span></summary>
     <div class="f-label">불량석고량 (kg)</div>
     <input class="f-input pb-scrap" inputmode="decimal" placeholder="0">
     <div class="f-label">불량수량 (개수)</div>
@@ -3318,7 +3355,7 @@ function blockHTML(){
     <div class="chk"><div class="ck-name">몰드 기포</div><div class="seg" data-k="bubble" role="group" aria-label="몰드 기포 상태">${segBtns()}</div></div>
   </div>
   <div class="f-label">비고 <span class="hint">△·Ⅹ 체크 시 사유를 꼭 적어주세요</span></div>
-  <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea></div>`;
+  <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea></details>`;
 }
 function expandProduct(el, open=true){
   if(!el) return;
@@ -3506,7 +3543,7 @@ function updateDefSummary(el){
   el.querySelector('.pb-defect').classList.toggle('filled', !!any);
   el.querySelector('.df-sum').textContent = any
     ? `불량 입력됨: ${q||'?'}개${s ? ' · '+s+'kg' : ''}${pt ? ' · '+pt : ''}`
-    : '불량 있음 (석고량·수량·부위)';
+    : '불량 여부 · 수량·부위 입력';
 }
 const scheduleFormBaselines=new WeakMap(),scheduleFormOriginals=new WeakMap(),scheduleReviewedForms=new WeakSet(),scheduleReferences=new WeakMap(),scheduleDiscardForms=new WeakSet(),machineActualBaselines=new WeakMap(),machineActualSignatures=new WeakMap(),scheduleManagedForms=new WeakMap(),scheduleEditTokens=new WeakMap(),scheduleTouchedForms=new WeakSet();
 function scheduleFormContext(el){return JSON.stringify([S.date,$('#fWorker').value.trim(),fieldProductIdentity(el.querySelector('.pb-product').value),el.dataset.rid]);}
@@ -3760,8 +3797,8 @@ function addBlock(row){
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
   restoreTeamForm(el,row);
-  el.querySelector('.pb-team-worker').onchange=()=>{if(el.querySelector('.pb-team-worker').value&&!el.querySelector('.pb-team-hours').value)el.querySelector('.pb-team-hours').value=$('#fHours').value;updateTeamForm(el);saveDraft();};
-  el.querySelector('.pb-team-hours').addEventListener('input',saveDraft);
+  el.querySelector('.pb-team-worker').onchange=()=>{productionTeamForms.get(el).touched=true;if(el.querySelector('.pb-team-worker').value&&!el.querySelector('.pb-team-hours').value)el.querySelector('.pb-team-hours').value=$('#fHours').value;updateTeamForm(el);saveDraft();};
+  el.querySelector('.pb-team-hours').addEventListener('input',()=>{productionTeamForms.get(el).touched=true;saveDraft();});
   scheduleTargetForms.set(el,{before:ownFieldState(row,'scheduleTarget'),target:row?.scheduleTarget||null,changed:false,context:null});
   restoreScheduleForm(el,row?.scheduleConditions);
   restoreMachineActualForm(el,row?.machineActuals,{present:Object.prototype.hasOwnProperty.call(row||{},'machineActuals')});scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));
@@ -3831,7 +3868,7 @@ function addBlock(row){
   el.querySelector('.pb-defclear').onclick = () => {
     ['pb-scrap','pb-defqty','pb-defpart'].forEach(c => el.querySelector('.'+c).value = '');
     updateDefSummary(el);
-    el.querySelector('.pb-defect').open = false;
+    el.querySelector('.pb-defect').open = true;
   };
   el.querySelector('.pb-del').onclick = () => { el.remove(); renumberBlocks(); };
   if(row){
@@ -3846,7 +3883,7 @@ function addBlock(row){
     el.querySelector('.pb-scrap').value = row.scrapKg ?? '';
     el.querySelector('.pb-defqty').value = row.defQty ?? '';
     el.querySelector('.pb-defpart').value = row.defPart ?? '';
-    el.querySelector('.pb-defect').open = !!((Number(row.scrapKg)||0)>0 || (Number(row.defQty)||0)>0 || row.defPart);
+    el.querySelector('.pb-defect').open = true;
     el.querySelector('.pb-gasa').value = row.gasa ?? '○';
     CHECK_KEYS.forEach(k => segSetB(el, k, row[k]||''));
     el.querySelector('.pb-remark').value = row.remark||'';
@@ -3867,6 +3904,7 @@ function addBlock(row){
 /* 칸 바로 아래에 빨간 글씨로 이유 표시 — 토스트가 키보드에 가려져도 보이게 */
 function fieldErr(inp, msg){
   expandProduct(inp.closest('.pb'),true);
+  for(let node=inp.parentElement;node;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
   if(inp.closest('.pb-schedule'))inp.closest('.pb-schedule').open=true;
   if(inp.closest('#workerDetails')) $('#workerDetails').open=true;
   inp.classList.add('need');
@@ -4065,6 +4103,7 @@ async function updateRecentBtn(auto){
         const empty = [...$('#prodBlocks').children].find(el => !el.querySelector('.pb-product').value.trim());
         const el = empty || addBlock(null);
         el.querySelector('.pb-product').value = p;
+        continueRecentTeam(el,mine);
         const lq = lastQ[p]; el.querySelector('.pb-prod').placeholder = (lq !== '' && lq != null) ? `지난번 ${lq}` : '0';
       });
       box.hidden = true; box.innerHTML = '';
@@ -4166,7 +4205,7 @@ function entryDirty(){ return formSnapshot() !== entrySnap; }
 /* ── 작성 중 임시저장: 전화·앱 종료로 폼이 닫혀도 다음에 열면 이어서 (새 기록만, 같은 날짜, 12시간 이내) ── */
 let draftTimer = null;
 const draftKeyOf = () => $('#fWorker').value.replace(/\s+/g, '');
-function draftHas(snap){ try{ return JSON.parse(snap).b.some(b => b.p || b.pr || b.pl || b.s || b.dq || b.r || b.b1 || b.b2); }catch(e){ return false; } }
+function draftHas(snap){ try{ return JSON.parse(snap).b.some(b => b.p || b.pr || b.pl || b.s || b.dq || b.r || b.b1 || b.b2 || b.team?.value); }catch(e){ return false; } }
 /* 임시저장은 작업자별로 따로(공용 기기에서 남의 것을 지우지 않게) — 같은 날짜·12시간 이내만 유효 */
 function draftsAll(){
   const all = LS.get('ilbo.drafts', {}) || {}, current=Object.create(null), now=Date.now();
@@ -4237,7 +4276,7 @@ function restoreForm(snap){
     el.querySelector('.pb-gasa').value = b.g || '○';
     const segs = [...(b.segs || '')]; CHECK_KEYS.forEach((k,i) => segSetB(el, k, segs[i] || '○'));
     rememberLegacyInspectionDraft(el,b);el.querySelector('.pb-remark').value = b.r || '';syncGasaB(el);
-    el.querySelector('.pb-defect').open = !!(b.s || b.dq || b.dp);
+    el.querySelector('.pb-defect').open = true;
     if(b.target&&typeof b.target==='object'){if(b.target.target)fieldScheduleTarget(b.target.target);scheduleTargetForms.set(el,b.target);}
     if(b.team){const value=b.team.value?{schema:1,members:[{worker:b.team.value,hours:b.team.hours===''?'':Number(b.team.hours)}]}:null;restoreTeamForm(el,{worker:j.w,productionTeam:value},b.team.form);el.querySelector('.pb-team-hours').value=b.team.hours??'';}
     updateDefSummary(el); updateBlockNeed(el); updateProdProg(el);
