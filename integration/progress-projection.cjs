@@ -22,7 +22,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  const jobChains=new Map(),latestJobs=new Map();
  const participantsFor=job=>[...new Set((jobChains.get(identityFor(job))||[{job}]).flatMap(({job:j})=>[j.worker,...(j.handoffs||[]).flatMap(h=>[h.from,h.to]),...(j.records||[]).map(row=>row.worker)]).filter(value=>typeof value==='string'&&value.trim()))].sort();
  if(typeof planning.targetForJob==='function')for(const month of Object.keys(state.months||{}).sort()){
-  const groups=new Map();for(const job of jobsFor(month)){if(month>asOf.slice(0,7)&&!(job.manual&&typeof job.start==='string'&&job.start<=asOf))continue;const product=ix.byName(job.product),identity=[job.originId||job.id,job.worker,product?.id].join('\0');if(!groups.has(identity))groups.set(identity,[]);groups.get(identity).push(job)}
+  const groups=new Map();for(const job of jobsFor(month)){const actualStart=typeof planning.productionStartDate==='function'?planning.productionStartDate(job):job.previousStart||job.firstActual||job.start;if(month>asOf.slice(0,7)&&!(job.manual&&typeof actualStart==='string'&&actualStart<=asOf))continue;const product=ix.byName(job.product),identity=[job.originId||job.id,job.worker,product?.id].join('\0');if(!groups.has(identity))groups.set(identity,[]);groups.get(identity).push(job)}
   for(const [identity,jobs]of groups){latestJobs.set(identity,{month,job:jobs.length===1?jobs[0]:null});if(jobs.length===1&&!jobs[0].carryBlocked&&!jobs[0].handoffBlocked){if(!jobChains.has(identity))jobChains.set(identity,[]);jobChains.get(identity).push({month,job:jobs[0]})}}
  }
  function holdSourceTarget(source){
@@ -96,12 +96,15 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   const scheduleActive=!!schedule&&schedule.start<=asOf&&(!schedule.end||asOf<=schedule.end),complete=progress?.complete===true||!progress&&job.complete===true;
   targetCandidates.push({month,job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete});
  }
- const activeRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&candidate.scheduleActive&&!candidate.complete).map(candidate=>candidate.routeKey));
+ // Keep a started group's pending successor visible across the completion-day
+ // gap. Its activeFrom still controls automatic entry on the next workday.
+ const startedRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&candidate.hasActual).map(candidate=>candidate.routeKey));
+ const activeRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&!candidate.complete&&(candidate.scheduleActive||startedRouteKeys.has(candidate.routeKey))).map(candidate=>candidate.routeKey));
  for(const candidate of targetCandidates){
-  const {job,target,product,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete}=candidate;
+  const {job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete}=candidate;
   if(!(hasActual&&!complete||job.manual&&(scheduleActive&&!complete||routeKey&&activeRouteKeys.has(routeKey))))continue;
   const activeFrom=schedule?.start||start;if(typeof activeFrom!=='string'||activeFrom>asOf&&!routeKey)continue;
-  const value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom,plan,produced,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
+  const value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom,plan,produced,complete,completedAt:complete?(progress?.completedAt||job.completedAt||null):null,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
  }
  entries.sort((a,b)=>(a.path+'\0'+a.id).localeCompare(b.path+'\0'+b.id));
  targets.sort((a,b)=>[a.target.originId,a.target.month,a.target.jobId].join('\0').localeCompare([b.target.originId,b.target.month,b.target.jobId].join('\0')));

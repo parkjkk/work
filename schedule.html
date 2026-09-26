@@ -2520,8 +2520,10 @@ function targetForJob(s,month,job){return C.scheduleTargetValue({schema:1,jobId:
 function scheduleTargetOf(row){try{return C.scheduleTargetValue(row?.scheduleTarget)}catch{return null}}
 function scheduleTargetMatches(job,row,s=null){
  try{const t=C.scheduleTargetValue(row.scheduleTarget),productId=s?C.catalogLookup(s).product(row.product)?.id:row._scheduleProductId;
- const rowMonth=C.iso(row.date)?row.date.slice(0,7):'',directEarlier=!!rowMonth&&t.month>rowMonth;
- return !!t&&row.fieldPlanIntent!=='start'&&row.planIntent!=='start'&&t.worker===job.worker&&t.originId===(job.originId||job.id)&&(!productId||t.productId===productId)&&(s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&(!row.jobId||row.jobId===job.id)&&C.iso(row.date)&&row.date>=productionStartDate(job)&&(!directEarlier||job.manual&&t.jobId===job.id&&C.iso(job.start)&&job.start<=row.date);
+ // A selected, exact manual reservation may start before its forecast date.
+ // Only a positive actual supplies that evidence; preparation and zero do not.
+ const rowMonth=C.iso(row.date)?row.date.slice(0,7):'',directEarlier=!!rowMonth&&t.month>rowMonth,earlyActual=!!job.manual&&!job.carried&&C.num(row.pours)>0;
+ return !!t&&row.fieldPlanIntent!=='start'&&row.planIntent!=='start'&&t.worker===job.worker&&t.originId===(job.originId||job.id)&&(!productId||t.productId===productId)&&(s?C.catalogName(s,row.product)===C.catalogName(s,job.product):row.product===job.product)&&(!row.jobId||row.jobId===job.id)&&C.iso(row.date)&&(row.date>=productionStartDate(job)||earlyActual)&&(!directEarlier||job.manual&&t.jobId===job.id&&C.iso(job.start));
  }catch{return false}
 }
 function recordMatchesJob(job,row,s=null){
@@ -2539,8 +2541,9 @@ function resolveScheduleTargets(s,k,m,out,context){
  if(!m.rows.some(r=>r.scheduleTarget&&!r.deleted))return;
  const months={};for(const [month,value]of Object.entries(s.months||{})){const rows=(value.rows||[]).filter(row=>month===k?!row.scheduleTarget:!(month<k&&scheduleTargetOf(row)?.month===k));months[month]={...value,rows}}const basis={...s,months},baseline=computeJobs(basis,k,context),accepted=new Map();
  const baselines=new Map();for(const j of baseline){if(!baselines.has(j.id))baselines.set(j.id,[]);baselines.get(j.id).push(j)}
- // Read the start from independently linked actuals, never from the support row
- // being validated. These are transient computed jobs; saved dates stay intact.
+ // Seed the start from independently linked actuals. A positive manual-target
+ // row may establish an earlier start only after the identity and terminal
+ // checks below. These are transient computed jobs; saved dates stay intact.
  for(const job of out){const matches=baselines.get(job.id)||[];if(matches.length===1&&C.iso(matches[0].firstActual))job.firstActual=matches[0].firstActual;}
  for(const row of [...m.rows].sort((a,b)=>(a.date||'').localeCompare(b.date||''))){if(!row.scheduleTarget||row.deleted)continue;
   let t;try{t=C.scheduleTargetValue(row.scheduleTarget)}catch{continue}
@@ -2557,7 +2560,7 @@ function resolveScheduleTargets(s,k,m,out,context){
   // evidence. Requiring an older actual left the reservation orange and drew
   // the same production again as an unlinked blue actual-only bar.
   const began=C.num(row.pours)>0||previous>0||[...prior,...today,...earlier].some(r=>r.pours>0);
-  if(began){resolvedScheduleTargets.set(row,job.id);if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
+  if(began){resolvedScheduleTargets.set(row,job.id);if(C.num(row.pours)>0&&(!job.firstActual||row.date<job.firstActual))job.firstActual=row.date;if(!accepted.has(job.id))accepted.set(job.id,[]);accepted.get(job.id).push(row)}
  }
 }
 
@@ -2913,7 +2916,7 @@ function plannedContinuationRows(s,k,rows,stored,context){
   return named(s,{...row,plan:null,fieldPlanIntent:'continue',jobId});
  });
 }
-function computeJobs(s,k,context){const source=s.months[k],externalRows=Object.entries(s.months||{}).filter(([month,value])=>month<k&&!value.closed&&!value.closeSnapshot).flatMap(([,value])=>(value.rows||[]).filter(row=>!row.deleted&&scheduleTargetOf(row)?.month===k)),m={...source,rows:[...(source.rows||[]),...externalRows].filter(r=>!C.fieldPreparation(r)).map(r=>named(s,r)),plans:(source.plans||[]).map(r=>named(s,r)),jobs:(source.jobs||[]).map(r=>named(s,r))};if(m.closed&&m.plans?.length){return(m.jobs||[]).map(j=>{const p=m.plans.find(p=>p.source===j.source),current=p?.produced??0,previous=j.carried?(p?.previousProduced||0):0,total=(p?.plan||j.plan||0)+previous;return{...j,records:[],currentProduced:current,produced:current+previous,totalPlan:total,remaining:Math.max(0,total-current-previous),complete:current+previous>=total,archived:true}})}if(m.modern===false)return[];
+function computeJobs(s,k,context){const source=s.months[k],externalRows=source.closed||source.closeSnapshot?[]:Object.entries(s.months||{}).filter(([month,value])=>month<k&&!value.closed&&!value.closeSnapshot).flatMap(([,value])=>(value.rows||[]).filter(row=>!row.deleted&&scheduleTargetOf(row)?.month===k)),m={...source,rows:[...(source.rows||[]),...externalRows].filter(r=>!C.fieldPreparation(r)).map(r=>named(s,r)),plans:(source.plans||[]).map(r=>named(s,r)),jobs:(source.jobs||[]).map(r=>named(s,r))};if(m.closed&&m.plans?.length){return(m.jobs||[]).map(j=>{const p=m.plans.find(p=>p.source===j.source),current=p?.produced??0,previous=j.carried?(p?.previousProduced||0):0,total=(p?.plan||j.plan||0)+previous;return{...j,records:[],currentProduced:current,produced:current+previous,totalPlan:total,remaining:Math.max(0,total-current-previous),complete:current+previous>=total,archived:true}})}if(m.modern===false)return[];
  m.rows=plannedContinuationRows(s,k,m.rows,m.jobs||[],context).filter(row=>!row._plannedWaiting);
  const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),reservations=reservationContext(s,k,m,continuations),anchors=new Map([...reservations.links.values()].map(x=>[x.jobId,x.rowId])),anchor=j=>j.sourceRowId||anchors.get(j.id),out=[],starts=m.rows.filter(r=>!r.deleted&&!r.scheduleTarget&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)&&!reservations.links.has(r.id)),occ={};
  for(const r of starts){const index=occ[r.product]||0;occ[r.product]=index+1;const prior=stored.find(j=>j.sourceRowId===r.id),identityChanged=prior&&(prior.worker!==r.worker||prior.product!==r.product),cfg=identityChanged?{}:prior||{},legacy=identityChanged||r.sourceIntegration&&!cfg.sourceRowId?null:m.plans.filter(p=>p.product===r.product)[index],parsed=parseInput(legacy?.input||'',k,s.workers);out.push({id:'job:'+r.id,originId:'job:'+r.id,sourceRowId:r.id,product:r.product,worker:r.worker,start:r.date,previousProduced:legacy?.previousProduced||0,previousPlan:legacy?.previousPlan||0,...parsed,...cfg,plan:startPlan(r),start:cfg.start||parsed.start||r.date,worker:cfg.worker||parsed.worker||r.worker})}
