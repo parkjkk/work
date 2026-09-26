@@ -513,7 +513,10 @@ function actualMachineSpans(s,k,j,alloc,today,independentSingle=false){
  if(!alloc.length||alloc.length===1&&!independentSingle||!(j.produced>0)||j.complete)return null;
  const {initial,events}=ownedMachineEvents(s,k,j);
  const totals=new Map();for(const r of events)totals.set(r.date,(totals.get(r.date)||0)+r.pours);const points=[...totals].sort(([a],[b])=>a.localeCompare(b)).map(([date,pours])=>({date,pours}));let cumulative=initial;for(const p of points){p.before=cumulative;cumulative+=p.pours;p.after=cumulative;p.actual=true}
- if(j.daily>0)for(let d=add([today,points.at(-1)?.date||today].sort().at(-1),1),guard=0;cumulative<j.totalPlan&&guard<740;d=add(d,1),guard++){if(!manualWork(s,workerAt(j,d),d))continue;const rate=dailyAt(j,d);points.push({date:d,before:cumulative,after:cumulative+rate,actual:false});cumulative+=rate}
+ // A carried balance is prior output, not proof that a future reservation has begun.
+ // Verified earlier actuals still take precedence over its reserved start.
+ const forecastStart=add([today,points.at(-1)?.date||today].sort().at(-1),1),jobStart=j.firstActual||j.start,first=C.iso(jobStart)&&jobStart>forecastStart?jobStart:forecastStart;
+ if(j.daily>0)for(let d=first,guard=0;cumulative<j.totalPlan&&guard<740;d=add(d,1),guard++){if(!manualWork(s,workerAt(j,d),d))continue;const rate=dailyAt(j,d);points.push({date:d,before:cumulative,after:cumulative+rate,actual:false});cumulative+=rate}
  let before=0;return alloc.map(a=>{const target=before+a.qty,start=points.find(p=>p.after>before),finish=points.find(p=>p.after>=target),span={start:before<initial?null:start?.date||null,end:target<=initial?null:finish?.date||null,actualEnd:!!finish?.actual};before=target;return span});
 }
 function normalizeRouting(value){

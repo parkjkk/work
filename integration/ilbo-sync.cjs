@@ -321,6 +321,39 @@ function planSync(state,snapshot,options={}){
   if(si.outbound||si.targetEdited||si.targetHash!==hash(rowBody(row))){issue('target-modified-before-source-deletion',c);continue}
   const before=clone(row);m[field].splice(m[field].indexOf(row),1);history(m,'source-delete',before,null,c);report.counts.deleted++;
  }
+ // The first factual production can replace a still-unstarted manual
+ // reservation's product. Keep the old exact target as the identity proof;
+ // never loosen the planning engine's product equality or rewrite history.
+ const core=require('./schedule-core.cjs'),planningForProducts=require('./schedule-planning.cjs'),targetRefs=new Map();
+ const physical=t=>[t.month,t.jobId,t.originId,t.worker].join('\0'),rowKey=r=>[r.date,r.worker,r.id].join('\0');
+ for(const [month,m]of Object.entries(next.months))for(const row of m.rows||[]){
+  if(row.deleted||row.pours==null||core.fieldPreparation(row)||!row.scheduleTarget)continue;
+  let target;try{target=core.scheduleTargetValue(row.scheduleTarget)}catch{continue}
+  if(!targetRefs.has(physical(target)))targetRefs.set(physical(target),[]);targetRefs.get(physical(target)).push({month,m,row,target});
+ }
+ for(const refs of targetRefs.values()){
+  const positives=refs.filter(x=>x.row.pours>0).sort((a,b)=>a.row.date.localeCompare(b.row.date)||a.row.id.localeCompare(b.row.id));if(!positives.length)continue;
+  const first=positives[0],target=first.target,owner=next.months[target.month],originalOwner=state.months[target.month],product=ix.byName(first.row.product);
+  if(!owner||!originalOwner||owner.closed||owner.closeSnapshot||!ix.ids.has(target.productId)||!product||product.active===false||product.disabled||product.inactive)continue;
+  const stored=(owner.jobs||[]).filter(j=>!j.deleted&&j.id===target.jobId&&(j.originId||j.id)===target.originId&&j.worker===target.worker);if(stored.length!==1)continue;
+  const job=stored[0],currentId=ix.byName(job.product)?.id;
+  if(currentId===product.id&&refs.every(x=>x.target.productId===product.id))continue;
+  if(!job.manual||job.sourceRowId||job.carried||job.handoffs?.length||job.stoppedAt||job.archived||![target.productId,product.id].includes(currentId))continue;
+  if(Object.entries(next.months).some(([key,value])=>key!==target.month&&(value.jobs||[]).some(peer=>!peer.deleted&&peer.carried&&(peer.originId||peer.id)===target.originId)))continue;
+  if(refs.some(x=>x.m.closed||x.m.closeSnapshot||x.row.fieldPlanIntent==='start'||ix.byName(x.row.product)?.id!==product.id||![target.productId,product.id].includes(x.target.productId)||x.row.sourceIntegration?.repo!==snapshot.repo||report.issues.some(i=>i.path===x.row.sourceIntegration.path&&i.id===x.row.sourceIntegration.id)))continue;
+  const prior=planningForProducts.jobs(state,target.month).filter(j=>j.id===target.jobId&&(j.originId||j.id)===target.originId&&j.worker===target.worker);
+  if(prior.length!==1||prior[0].firstActual||prior[0].produced>0||prior[0].previousProduced>0||prior[0].records?.length||prior[0].complete||prior[0].stopped||prior[0].carryBlocked||prior[0].handoffBlocked)continue;
+  // Prove that the proposed identity correction owns only these exact records
+  // and cannot collect another same-product job's legacy production.
+  const trial=clone(next),trialJob=trial.months[target.month].jobs.find(j=>j.id===job.id),skip=new Set(refs.map(x=>rowKey(x.row)));trialJob.product=product.name;
+  for(const item of refs)trial.months[item.month].rows.find(r=>r.id===item.row.id).scheduleTarget={...item.target,productId:product.id};
+  const ownership=jobs=>jobs.map(j=>[j.id,(j.records||[]).filter(r=>!skip.has(rowKey(r))).map(rowKey).sort()]).sort((a,b)=>a[0].localeCompare(b[0]));
+  let after;try{const before=planningForProducts.jobs(next,target.month);after=planningForProducts.jobs(trial,target.month);if(!same(ownership(before),ownership(after)))continue}catch{continue}
+  const resulting=after.find(j=>j.id===job.id);if(!resulting||refs.some(x=>!resulting.records?.some(r=>rowKey(r)===rowKey(x.row))))continue;
+  const ctx={path:first.row.sourceIntegration.path,id:first.row.sourceIntegration.id};
+  if(job.product!==product.name){const before=clone(job);job.product=product.name;job.rev=(job.rev||0)+1;history(owner,'reservation-product',before,job,ctx)}
+  for(const item of refs){if(item.row.scheduleTarget.productId===product.id)continue;const before=clone(item.row);item.row.scheduleTarget={...item.target,productId:product.id};item.row.rev=(item.row.rev||0)+1;item.row.sourceIntegration.targetHash=hash(rowBody(item.row));history(item.m,'reservation-product-target',before,item.row,{path:item.row.sourceIntegration.path,id:item.row.sourceIntegration.id});}
+ }
  for(const id of touched)next.months[id].rev=(next.months[id].rev||0)+1;
  // Data-quality discrepancies are informational: preserve both sources, amounts,
  // and manual calendars. They are not failed merges or held imports.
