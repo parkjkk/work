@@ -731,7 +731,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   }
 }
 @media print{.print-header,.screen-heading,.section-heading,.view-help,.screen-tools{display:none!important}}
-/* field-entry-open-sections-v1: everyday checks stay visible beside optional settings. */
+/* field-entry-open-sections-v2: checks stay visible; optional team input starts collapsed. */
 @media screen{
   #entryOv .pb,#entryOv .pb.pb-collapsed{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px;margin:14px 0}
   #entryOv .pb-head{border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:12px}
@@ -813,6 +813,50 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 .bulk-rest-feedback{margin:8px 0;padding:10px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
 .bulk-rest-feedback[data-state="warning"]{background:var(--warn-soft);color:var(--warn)}
 @media print{.bulk-rest-tools,.bulk-rest-option,.bulk-rest-feedback{display:none!important}}
+
+/* field-main-layout-v2: compact identity, shared roster actions and responsive names. */
+@media screen{
+  .day-layout{gap:12px}.day-overview>.card{margin-bottom:10px}
+  #myDayCard{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px 12px;border-top-width:2px}
+  #myDayCard .my-day-copy{min-width:0}
+  #myDayCard .my-person{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-height:44px;max-width:100%;padding:0;border:0;background:none;color:var(--ink);text-align:left}
+  #myDayCard .my-person b{font-size:17px;overflow-wrap:anywhere}#myDayCard .my-person span{font-size:11px;color:var(--ink-dim)}
+  #myDayCard .my-state{margin:0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+  #myDayCard .my-state[data-pending]{color:var(--warn);font-weight:700}
+  #myDayCard .my-actions{display:flex;flex-direction:column;gap:2px;max-width:128px;margin:0}
+  #myDayCard .my-actions .btn.pri{flex:none;min-height:46px;height:auto;padding:10px 14px;font-size:14px;line-height:1.45;white-space:normal}
+  #myDayCard .my-actions .btn.sec{flex:none;min-height:44px;padding:4px 8px;font-size:12px}
+  #myDayCard:has(#myChoose){display:block}#myDayCard #myChoose{min-height:44px;margin-top:8px}
+  #missCard{padding:0 10px}
+  #missCard .roster-details>summary{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-height:46px;padding:8px 0;color:var(--ink);list-style:none}
+  #missCard .roster-details>summary::-webkit-details-marker{display:none}
+  #missCard .roster-details>summary:before{content:'▸';color:var(--ink-dim)}#missCard .roster-details[open]>summary:before{content:'▾'}
+  .roster-summary-count{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-left:auto;font-size:12px}
+  .roster-summary-count em{font-style:normal;color:var(--warn)}
+  .roster-controls{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+  #rosterFilter{flex:1;min-width:0;min-height:44px;width:100%;padding:7px 10px;background:var(--surface2);color:var(--ink);border:1px solid var(--line-in);border-radius:9px;font-size:13px;font-weight:700}
+  #rosterFilter option{background:var(--surface);color:var(--ink)}
+  .roster-controls>.quiet-btn{flex:none;min-height:44px;font-size:12px;padding:8px 12px}
+  .roster-controls>.quiet-btn:disabled{opacity:.5}
+  .roster-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:6px;margin:0}
+  .roster-list[data-mode=prod],.roster-list[data-mode=case],.roster-list[data-mode=pending]{grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+  .roster-list .roster-person{display:block;padding:0;border:0;min-width:0}
+  .roster-list .person-open{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:44px;height:100%;padding:9px 6px;border-radius:9px;white-space:normal;text-align:center;overflow-wrap:anywhere}
+  .roster-list .person-open b{font-size:14px}.roster-list .person-open small{font-size:11px;line-height:1.4}
+  .roster-list .person-planned{color:var(--accent-ink)}.roster-list .person-pending{color:var(--warn)}
+  .roster-list .bulk-rest-option{margin:0;min-width:0;min-height:46px;padding:8px;font-size:14px;gap:6px}
+  .roster-hint{margin:7px 0 10px;color:var(--ink-dim);font-size:11px;line-height:1.5}
+  #plannedWorkPanel{padding:6px 10px}
+  #plannedWorkPanel .planned-work-heading{min-height:44px;gap:6px}
+  #plannedWorkPanel .planned-work-heading h3{font-size:14px;line-height:1.5}
+  #plannedWorkPanel [data-planned-new]{min-height:44px;padding:7px 10px;font-size:12px;background:none;border:0;color:var(--accent-ink)}
+  .planned-work-details>summary{min-height:44px;padding:10px 0;font-size:12px;color:var(--ink-dim);cursor:pointer}
+  #plannedWorkPanel .planned-work-warning{margin:6px 0}
+  #plannedWorkPanel .planned-work-item{gap:6px;padding:9px 0}
+  #plannedWorkPanel .planned-work-item>div:first-child{flex-basis:150px}
+  #plannedWorkPanel .planned-work-item b{font-size:13px}#plannedWorkPanel .planned-work-item small{font-size:11px;margin:3px 0}
+  #plannedWorkPanel .planned-work-actions{gap:4px}#plannedWorkPanel .planned-work-actions button{font-size:12px;min-height:44px;padding:6px 9px}
+}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -2812,9 +2856,9 @@ function renderMyDay(){
   const together=S.rows.filter(r=>!r.off&&r.worker!==name&&productionPeople(r).includes(name));
   const pending=driver.mode==='gh' && pendingWorkerNames(S.date).has(name);
   const draft=draftsAll()[name];
-  const status=pending?'전송 대기 · 기기에 보관됨':!S.dayLoaded?'기록 확인 중':production.length?`${production.length}개 제품 · 생산 ${r2(production.reduce((s,r)=>s+(Number(r.prod)||0),0))}조`:together.length?together.map(r=>r.worker+'와 '+fieldProductName(r)+' 공동작업').join(' · '):mine.length?offLabel(mine[0]):'아직 작성하지 않았습니다';
-  const action=production.length?'내 일보 수정':draft?'이어서 작성':together.length?'공동작업 확인·수정':mine.length?'기록 확인·수정':'내 일보 작성';
-  box.innerHTML=`<div class="my-day-head"><h3>${S.date===todayStr()?'오늘':'선택 날짜'} · ${esc(name)}</h3><button class="quiet-btn" id="myChange">이름 변경</button></div><p class="my-state">${esc(status)}${draft&&production.length?' · 새 기록 임시저장 있음':''}</p><div class="my-actions"><button class="btn pri" id="myWrite">${action}</button>${production.length?'<button class="btn sec" id="myExtra">제품 추가</button>':''}</div>`;
+  const status=pending?'전송 대기 · 기기에 보관됨':!S.dayLoaded?'기록 확인 중':production.length?`${production.length}개 제품 · 생산 ${r2(production.reduce((s,r)=>s+(Number(r.prod)||0),0))}조`:together.length?together.map(r=>r.worker+'와 '+fieldProductName(r)+' 공동작업').join(' · '):mine.length?offLabel(mine[0]):'아직 작성 전입니다';
+  const action=production.length?'일보 수정':draft?'이어서 작성':together.length?'공동작업 확인':mine.length?'기록 수정':'일보 작성';
+  box.innerHTML=`<div class="my-day-copy"><button type="button" class="my-person" id="myChange" aria-label="내 이름 변경 · ${esc(name)}"><b>${esc(name)}</b><span>이름 변경 ▾</span></button><p class="my-state"${pending?' data-pending="true"':''}>${esc(status)}${draft&&production.length?' · 새 기록 임시저장 있음':''}</p></div><div class="my-actions"><button class="btn pri" id="myWrite">${action}</button>${production.length?'<button class="btn sec" id="myExtra">＋ 제품 추가</button>':''}</div>`;
   $('#myChange').onclick=()=>{S.meEdit=true;renderMeChips();$('#meChips').scrollIntoView({block:'center'});};
   $('#myWrite').onclick=()=>{if(production.length) openWorkerEntry(name); else if(together.length)openEntry(together[0]); else if(mine[0] && !isRest(mine[0])) openCaseEntry(name,mine[0]); else openEntryFor(name,{auto:!draft});};
   if($('#myExtra')) $('#myExtra').onclick=()=>openEntryFor(name,{auto:false});
@@ -2978,7 +3022,12 @@ async function verifyPlannedWorkWrites(rows,edits={},drv=driver,epoch=storeEpoch
 }
 function renderPlannedWorks(){
   let host=$('#plannedWorkPanel');if(!host){host=document.createElement('section');host.id='plannedWorkPanel';host.className='card planned-work-panel';$('#missCard').insertAdjacentElement('afterend',host);}
-  const {items,complete}=plannedWorkList();host.innerHTML=`<div class="planned-work-heading"><h3>예정 작업 <span>${items.length}건</span></h3><button type="button" class="quiet-btn" data-planned-new>＋ 예정 등록</button></div><p class="quick-hint">아직 생산하지 않은 작업입니다. 다음 날에도 그대로 이어집니다.</p>${!complete?'<p class="planned-work-warning" role="status">전체 예정 목록 확인 중 · 현재 확인한 기록만 표시합니다. 연결 후 다시 확인해 주세요.</p>':''}${items.map(item=>`<article class="planned-work-item" data-planned-key="${esc(plannedKey(item))}"><div><b>${esc(item.row.worker)} · ${esc(fieldProductName(item.row))}</b><small>계획 ${esc(item.row.plan)}조 · ${fmtMD(item.date)} 등록${outboxAll().some(q=>q.date===item.date&&q.rows?.some(r=>r.id===item.row.id))?' · 전송 대기':''}</small>${productMemoLink(item.row)}</div><div class="planned-work-actions"><button type="button" class="quiet-btn" data-planned-edit>수정</button><button type="button" class="quiet-btn" data-planned-start>생산 입력</button></div></article>`).join('')||'<p class="quick-hint">등록한 예정 작업이 없습니다.</p>'}`;
+  const {items,complete}=plannedWorkList(),pending=outboxAll(),open=LS.get('ilbo.plannedOpen',true);
+  const rows=items.map(item=>`<article class="planned-work-item" data-planned-key="${esc(plannedKey(item))}"><div><b>${esc(item.row.worker)} · ${esc(fieldProductName(item.row))}</b><small>계획 ${esc(item.row.plan)}조 · ${fmtMD(item.date)} 등록${pending.some(q=>q.date===item.date&&q.rows?.some(r=>r.id===item.row.id))?' · 전송 대기':''}</small>${productMemoLink(item.row)}</div><div class="planned-work-actions"><button type="button" class="quiet-btn" data-planned-edit>수정</button><button type="button" class="quiet-btn" data-planned-start>생산 입력</button></div></article>`).join('');
+  const warning=!complete?'<p class="planned-work-warning" role="status">전체 예정 목록 확인 중 · 현재 확인한 기록만 표시합니다.</p>':'';
+  host.classList.toggle('is-empty',!items.length);
+  host.innerHTML=`<div class="planned-work-heading"><h3>예정 작업 <span>${items.length}건</span></h3><button type="button" class="quiet-btn" data-planned-new>＋ 예정 등록</button></div>${warning}${items.length?`<details class="planned-work-details" ${open?'open':''}><summary>미생산 작업 ${items.length}건 · 다음 날에도 이어짐</summary>${rows}</details>`:''}`;
+  const details=host.querySelector('details');if(details)details.ontoggle=()=>LS.set('ilbo.plannedOpen',details.open);
   host.querySelector('[data-planned-new]').onclick=()=>openPlannedWork(S.me.worker||'');
   host.querySelectorAll('[data-planned-key]').forEach(el=>{const item=items.find(item=>plannedKey(item)===el.dataset.plannedKey);el.querySelector('[data-planned-edit]').onclick=()=>openPlannedWork(item.row.worker,item);el.querySelector('[data-planned-start]').onclick=()=>openPlannedStart(item);});bindProductMemoLinks(host);
 }
@@ -3026,7 +3075,7 @@ async function applyPlannedToBlock(item){
   el.querySelector('.pb-product').value=row.product;el.querySelector('.pb-planmode').value=row.scheduleTarget?'continue':'start';el.querySelector('.pb-plan').value=row.scheduleTarget?'':row.plan;el.dataset.planModeChanged='1';
   if(row.scheduleConditions)restoreScheduleForm(el,row.scheduleConditions,{baseline:false});
   if(row.scheduleTarget)scheduleTargetForms.set(el,{before:{present:false},target:row.scheduleTarget,changed:true,context:null});
-  plannedStartForms.set(el,{ref:{date:item.date,id:row.id},before:plannedSource(row)});syncPlanMode(el);updateProdProg(el);expandProduct(el,false);el.querySelector('.pb-quality').open=true;el.querySelector('.pb-team').open=true;renumberBlocks();syncQuickProducts();persistDraft();$('#plannedEntryChoices')?.remove();$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;$('#quickProducts [data-rid="'+el.dataset.rid+'"] .quick-stepper input')?.focus({preventScroll:true});
+  plannedStartForms.set(el,{ref:{date:item.date,id:row.id},before:plannedSource(row)});syncPlanMode(el);updateProdProg(el);expandProduct(el,false);el.querySelector('.pb-quality').open=true;el.querySelector('.pb-team').open=false;renumberBlocks();syncQuickProducts();persistDraft();$('#plannedEntryChoices')?.remove();$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;$('#quickProducts [data-rid="'+el.dataset.rid+'"] .quick-stepper input')?.focus({preventScroll:true});
 }
 function renderPlannedEntryChoices(){
   $('#plannedEntryChoices')?.remove();if(!$('#entryOv').classList.contains('open')||S.editId||S.entryMode==='case')return false;
@@ -3147,8 +3196,6 @@ function openEntryFor(name, opt){
 function renderMissing(){
   const card = $('#missCard');
   if(!S.dayLoaded){ card.hidden = true; const m0=$('#missInfo'); if(m0) m0.hidden = true; return; }  /* 기록 로딩 전 오표시 방지 */
-  const isToday = S.date === todayStr();
-  const dayWord = isToday ? '오늘' : '이 날';
   const miss = missingWorkers();
   if(miss === null){ card.hidden = true; }
   else{
@@ -3167,23 +3214,24 @@ function renderMissing(){
     const open=!!LS.get('ilbo.rosterOpen',false);
     const bulk=currentBulkRest();if(!bulk.busy)for(const name of bulk.selected)if(!miss.includes(name))bulk.selected.delete(name);
     const selecting=filter==='missing'&&bulk.choosing;
-    const tools=filter==='missing'&&miss.length?`<div class="bulk-rest-tools">${selecting?`<p>휴무인 사람을 체크한 뒤 한 번에 처리하세요.</p><button type="button" data-bulk-all ${bulk.busy?'disabled':''}>전체 선택</button><button type="button" data-bulk-cancel ${bulk.busy?'disabled':''}>취소</button><button type="button" class="bulk-rest-save" ${bulk.busy||!bulk.selected.size?'disabled':''}>${bulk.busy?'저장 중…':`선택 ${bulk.selected.size}명 휴무`}</button>`:`<button type="button" data-bulk-start ${bulk.busy?'disabled':''}>여러 명 휴무 처리</button>`}</div>`:'';
-    const personHTML=p=>selecting?`<label class="bulk-rest-option"><input type="checkbox" data-bulk-worker="${esc(p.name)}" aria-label="${esc(p.name)} 휴무 선택" ${bulk.selected.has(p.name)?'checked':''} ${bulk.busy?'disabled':''}><span>${esc(p.name)}</span></label>`:`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn" data-planned-worker="${esc(p.name)}">예정 작업</button>`:`<small>${esc(p.description)}</small>`}</span></div>`;
-    card.innerHTML=`${bulk.notice?`<div class="bulk-rest-feedback" role="status" data-state="${bulk.warning?'warning':'info'}">${esc(bulk.notice)}</div>`:''}<details class="roster-details" ${open?'open':''}><summary>작성 현황 · ${dayWord} ${miss.length?`<b>미작성 ${miss.length}명</b>`:'전원 확인 완료'}</summary><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div>${tools}${chosen.length?chosen.map(personHTML).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}</details>`;
+    const counts=Object.fromEntries(filters.map(([key])=>[key,people.filter(p=>key==='pending'?waiting.has(p.name):p.kind===key).length]));
+    const plannedCounts=new Map();for(const item of plannedWorkList().items)plannedCounts.set(item.row.worker,(plannedCounts.get(item.row.worker)||0)+1);
+    const tools=selecting?`<div class="bulk-rest-tools"><p>휴무인 사람을 선택하세요. 한 명만 선택해도 됩니다.</p><button type="button" data-bulk-all ${bulk.busy?'disabled':''}>전체 선택</button><button type="button" data-bulk-cancel ${bulk.busy?'disabled':''}>취소</button><button type="button" class="bulk-rest-save" ${bulk.busy||!bulk.selected.size?'disabled':''}>${bulk.busy?'저장 중…':`선택 ${bulk.selected.size}명 휴무`}</button></div>`:'';
+    const personHTML=p=>selecting?`<label class="bulk-rest-option"><input type="checkbox" data-bulk-worker="${esc(p.name)}" aria-label="${esc(p.name)} 휴무 선택" ${bulk.selected.has(p.name)?'checked':''} ${bulk.busy?'disabled':''}><span>${esc(p.name)}</span></label>`:`<div class="roster-person"><button type="button" class="quiet-btn person-open" data-n="${esc(p.name)}" aria-label="${esc(p.name)} · ${p.kind==='missing'?'일보 작성':esc(p.description)}"><b>${esc(p.name)}</b>${p.kind==='missing'?(plannedCounts.get(p.name)?'<small class="person-planned">예정 '+plannedCounts.get(p.name)+'건</small>':''):`<small class="person-detail">${esc(p.description)}</small>`}${waiting.has(p.name)?'<small class="person-pending">전송 대기</small>':''}</button></div>`;
+    const hint=selecting?'':filter==='off'?'이름을 누르면 휴무를 해제합니다.':filter==='missing'?'이름을 누르면 바로 작성합니다.':'이름을 누르면 기록을 확인·수정합니다.';
+    card.innerHTML=`${bulk.notice?`<div class="bulk-rest-feedback" role="status" data-state="${bulk.warning?'warning':'info'}">${esc(bulk.notice)}</div>`:''}<details class="roster-details" ${open?'open':''}><summary><span>작성 현황</span><span class="roster-summary-count">${miss.length?`<b>미작성 ${miss.length}명</b>`:'전원 확인 완료'}${counts.pending?`<em>전송 대기 ${counts.pending}명</em>`:''}</span></summary><div class="roster-controls"><select id="rosterFilter" aria-label="작성 현황 표시" ${bulk.busy?'disabled':''}>${filters.map(([key,label])=>`<option value="${key}" data-filter="${key}" ${filter===key?'selected':''}>${label} ${counts[key]}명</option>`).join('')}</select>${!selecting?`<button type="button" class="quiet-btn" data-bulk-start ${!miss.length||bulk.busy?'disabled':''}>휴무 선택</button>`:''}</div>${tools}${chosen.length?`<div class="roster-list" data-mode="${selecting?'selecting':filter}">${chosen.map(personHTML).join('')}</div>`:'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}${hint?`<p class="roster-hint">${hint}</p>`:''}</details>`;
     card.querySelector('details').ontoggle=e=>LS.set('ilbo.rosterOpen',e.target.open);
-    card.querySelector('[data-bulk-start]')?.addEventListener('click',()=>{bulk.choosing=true;bulk.notice='';LS.set('ilbo.rosterOpen',true);renderMissing();});
+    card.querySelector('[data-bulk-start]')?.addEventListener('click',()=>{bulk.choosing=true;bulk.notice='';S.rosterFilter='missing';LS.set('ilbo.rosterOpen',true);renderMissing();});
     card.querySelector('[data-bulk-cancel]')?.addEventListener('click',()=>{bulk.choosing=false;bulk.selected.clear();renderMissing();});
     const syncBulkButton=()=>{const button=card.querySelector('.bulk-rest-save');if(button){button.disabled=bulk.busy||!bulk.selected.size;button.textContent=bulk.busy?'저장 중…':`선택 ${bulk.selected.size}명 휴무`;}};
     card.querySelectorAll('[data-bulk-worker]').forEach(input=>input.onchange=()=>{if(input.checked)bulk.selected.add(input.dataset.bulkWorker);else bulk.selected.delete(input.dataset.bulkWorker);syncBulkButton();});
     card.querySelector('[data-bulk-all]')?.addEventListener('click',()=>{for(const name of miss)bulk.selected.add(name);card.querySelectorAll('[data-bulk-worker]').forEach(input=>input.checked=true);syncBulkButton();});
     card.querySelector('.bulk-rest-save')?.addEventListener('click',()=>void markBulkDayOff());
-    card.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{S.rosterFilter=b.dataset.filter;LS.set('ilbo.rosterOpen',true);renderMissing();});
+    card.querySelector('#rosterFilter').onchange=e=>{S.rosterFilter=e.target.value;LS.set('ilbo.rosterOpen',true);renderMissing();card.querySelector('#rosterFilter')?.focus({preventScroll:true});};
     card.querySelectorAll('.person-open').forEach(b=>b.onclick=()=>{
       const p=people.find(p=>p.name===b.dataset.n);
       if(p.kind==='prod'){if(p.production.some(r=>r.worker===p.name))openWorkerEntry(p.name);else openEntry(p.together[0]);} else if(p.kind==='case') openCaseEntry(p.name,p.rows.find(r=>r.off&&!isRest(r))); else if(p.kind==='off'){if(confirm(`${p.name}님 휴무 표시를 해제할까요?`)) deleteRow(p.rows[0].id).catch(e=>toast(e.message));} else openEntryFor(p.name);
     });
-    card.querySelectorAll('.off-btn').forEach(b=>b.onclick=()=>markDayOff(b.dataset.n,b.dataset.k));
-    card.querySelectorAll('[data-planned-worker]').forEach(b=>b.onclick=()=>openPlannedWork(b.dataset.plannedWorker));
   }
   const mi = $('#missInfo');
   if(mi){
@@ -3591,7 +3639,7 @@ function printedRemark(row){return row.remark||''}
 function blockHTML(){
   return `
   <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
-  <details class="pb-team" open><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
+  <details class="pb-team"><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
   <div class="pb-body">
   <div class="pb-previous" role="status" hidden></div>
   <div class="f-label">제품명 <span class="req">*</span></div>
