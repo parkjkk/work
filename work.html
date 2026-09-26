@@ -755,6 +755,64 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   #entryOv .pb-defect.filled>summary{color:var(--bad);background:var(--bad-soft);box-shadow:inset 4px 0 var(--bad)}
   #entryOv .pb-quality .f-label{font-weight:700}
 }
+/* field-entry-compact-v1: choose the product beside quantity; keep everyday checks open. */
+@media screen{
+  #entryOv #quickProducts{margin:16px 0}
+  #entryOv .quick-row{padding:10px;gap:10px}
+  #entryOv .quick-product-info{min-width:0}
+  #entryOv .quick-product-label{display:block;font-size:12px;color:var(--ink-dim)}
+  #entryOv .quick-product{display:block;width:100%;min-height:44px;margin:4px 0 5px;padding:8px;border:1.5px solid var(--line-in);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:15px;font-weight:700}
+  #entryOv .quick-product option{background:var(--surface);color:var(--ink)}
+  #entryOv .quick-open{width:100%;padding:0;min-height:44px}
+  #entryOv .quick-open>b{display:none}
+  #entryOv .quick-open small{line-height:1.4}
+  #entryOv .quick-machine{font-size:11px}
+  #entryOv .entry-detail-heading{margin:14px 0 4px;min-height:36px;align-items:center}
+  #entryOv .pb,#entryOv .pb.pb-collapsed{padding:10px;margin:10px 0;border-radius:12px}
+  #entryOv .pb-head{padding-bottom:4px;margin-bottom:8px}
+  #entryOv .pb-toggle:after{content:'계획·호기 접기 ∧'}
+  #entryOv .pb-collapsed .pb-toggle:after{content:'계획·호기 설정 ∨'}
+  #entryOv .pb-team{margin:6px 0;padding:0 8px 8px}
+  #entryOv .pb-team-fields{grid-template-columns:minmax(0,1fr) 104px}
+  #entryOv .pb-team-fields:has(.pb-team-time[hidden]){grid-template-columns:minmax(0,1fr)}
+  #entryOv .pb-team-fields .f-input{margin-top:3px}
+  #entryOv .pb-team-note{margin:6px 0 0;font-size:12px;line-height:1.45}
+  #entryOv .pb-quality{margin:8px 0 0;padding:0 8px 8px}
+  #entryOv .pb-quality>summary,#entryOv .pb-team>summary{margin:0 -8px 6px;padding:8px 10px;font-size:13px}
+  #entryOv .pb-quality>.f-label{margin:8px 0 6px!important;font-size:13px}
+  #entryOv .pb-quality>.f-label .hint{font-size:11px;line-height:1.4}
+  #entryOv .pb-defect{padding:6px;margin:6px 0;border-radius:9px}
+  #entryOv .pb-defect>summary{font-size:13px;padding:8px}
+  #entryOv .chk-grid{gap:6px;align-items:start}
+  #entryOv .chk{padding:7px 6px;border-radius:9px}
+  #entryOv .chk .ck-name{font-size:12px;min-height:18px;margin-bottom:5px}
+  #entryOv .seg{gap:3px}
+  #entryOv .seg button{min-height:46px;border-radius:7px;padding:4px 1px;gap:2px;font-size:17px}
+  #entryOv .seg button .status-word{font-size:11px}
+  #entryOv .gasa-custom{margin-top:5px}
+  #entryOv .gasa-custom>summary{padding:8px 6px;font-size:11px}
+  #entryOv .pb-remark{min-height:64px}
+  @media(min-width:900px){#entryOv .ov-body{max-width:880px}#entryOv .ov-head,#entryOv .ov-actions{padding-left:calc(50% - 428px);padding-right:calc(50% - 428px)}#entryOv .quick-row{grid-template-columns:minmax(0,1fr) 210px}#entryOv .pb-team-fields{grid-template-columns:minmax(0,1fr) 130px}#entryOv .pb-team-fields:has(.pb-team-time[hidden]){max-width:360px}}
+}
+/* planned-work-v1: 생산 전 준비와 실제 일보를 구분 */
+.planned-work-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.planned-work-heading h3{margin:0}.planned-work-heading h3 span{color:var(--ink-dim);font-size:13px}
+.planned-work-item{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 0;border-top:1px solid var(--line)}.planned-work-item>div:first-child{min-width:0;flex:1 1 180px}.planned-work-item b{display:block;overflow-wrap:anywhere}.planned-work-item small{display:block;margin:5px 0;color:var(--ink-dim);font-size:12px}.planned-work-actions{display:flex;gap:6px}.planned-work-actions [data-planned-start]{color:var(--accent-ink);border-color:var(--accent);background:var(--accent-soft)}
+.planned-work-warning{font-size:13px;line-height:1.5;color:var(--warn);background:var(--warn-soft);padding:8px;border-radius:8px}
+#plannedWorkDialog{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink)}#plannedWorkDialog::backdrop{background:#0008}#plannedWorkDialog h2{margin:0 0 8px;font-size:20px}#plannedWorkDialog label{display:block;font-size:14px;font-weight:700;margin:14px 0 5px}#plannedWorkDialog label small{color:var(--ink-dim);font-weight:400}#plannedWorkDialog input,#plannedWorkDialog select{display:block;width:100%;margin-top:5px;min-height:44px}#plannedWorkDialog .planned-dialog-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}#plannedWorkDialog button{min-height:44px}#plannedWorkDialog [data-planned-cancel]{margin-right:auto;color:var(--warn)}.planned-dialog-status{font-size:13px;line-height:1.6;min-height:22px;color:var(--accent-ink);overflow-wrap:anywhere}
+.planned-entry-choices{padding:12px;margin:12px 0;border:1px solid var(--accent);border-radius:12px;background:var(--accent-soft);color:var(--accent-ink)}.planned-entry-choices p{font-size:13px;margin:6px 0}.planned-entry-choices button{display:block;width:100%;min-height:44px;text-align:left;margin-top:8px}
+@media print{.planned-work-panel,.planned-entry-choices,#plannedWorkDialog{display:none!important}}
+/* bulk-rest-v1: 미작성자 휴무 일괄 선택 */
+.bulk-rest-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 10px}
+.bulk-rest-tools p{flex-basis:100%;margin:0;color:var(--ink-dim);font-size:13px;line-height:1.5}
+.bulk-rest-tools button{min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);font-size:13px;font-weight:700}
+.bulk-rest-tools .bulk-rest-save{margin-left:auto;background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.bulk-rest-tools button:disabled{opacity:.5;cursor:default}
+.bulk-rest-option{display:flex;align-items:center;gap:10px;min-height:48px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;background:var(--surface);font-size:15px;font-weight:700;cursor:pointer;overflow-wrap:anywhere}
+.bulk-rest-option:has(input:checked){background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+.bulk-rest-option input{flex:0 0 22px;width:22px;height:22px;accent-color:var(--accent);margin:0}
+.bulk-rest-feedback{margin:8px 0;padding:10px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.bulk-rest-feedback[data-state="warning"]{background:var(--warn-soft);color:var(--warn)}
+@media print{.bulk-rest-tools,.bulk-rest-option,.bulk-rest-feedback{display:none!important}}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -940,7 +998,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div id="caseNote" class="warnbar info" style="margin-top:14px" hidden>🔧 <b>케이스 교체</b> — 이 날은 생산 없음. <b>작업시간만</b> 입력하고 저장하세요. 일보에는 제품명 칸에 "케이스 교체"로 인쇄됩니다.</div>
     <div id="entryReservationFlow" hidden></div>
     <div id="quickProducts" hidden></div>
-    <div class="entry-detail-heading"><h3>품목 상세</h3><div id="entryRoutingTools"><button type="button" id="entryRouting">여러 품목 일정 묶기</button><span id="entryRoutingNote" role="status"></span></div></div>
+    <div class="entry-detail-heading"><h3>품목별 검사·공동작업</h3><div id="entryRoutingTools"><button type="button" id="entryRouting">여러 품목 일정 묶기</button><span id="entryRoutingNote" role="status"></span></div></div>
     <div id="productCatalogNote" class="warnbar info" role="status" style="margin-top:12px" hidden></div>
     <div id="prodBlocks"></div>
     <div class="entry-extra-tools">
@@ -1270,7 +1328,7 @@ const fieldTarget = c => !!(c && String(c.owner).toLowerCase()==='parkjkk' && St
 const bridgeConfig = c => !!(fieldTarget(c) && c.transport==='bridge' && typeof c.bridgeKey==='string' && /^[A-Za-z0-9_-]{43}$/.test(c.bridgeKey));
 const connectedConfig = c => !!(c && c.owner && c.repo && (bridgeConfig(c) || (c.transport!=='bridge' && c.token)));
 const scopeFor = c => connectedConfig(c) ? `gh:${c.owner.toLowerCase()}/${c.repo.toLowerCase()}/${c.branch||'main'}` : 'local';
-const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|productMemoDrafts$|progress$|gypsumLots$)/.test(k);
+const scopedItem = k => /^ilbo\.(cache\.|printed\.|outbox$|presetsRetry$|drafts$|plannedDrafts$|productMemoDrafts$|progress$|gypsumLots$)/.test(k);
 let activeScope = 'local', legacyScope = '', storeEpoch = 0;
 const storageKey = (k, scope=activeScope) => scopedItem(k) ? 'ilbo.store.'+encodeURIComponent(scope)+'.'+k : k;
 function contextError(){ const e = new Error('연결된 저장소가 바뀌었습니다. 현재 연결에서 기록을 다시 열어 주세요.'); e.contextChanged = true; return e; }
@@ -1895,6 +1953,8 @@ function updateNetBanner(){
   }
   if(pending && driver.mode === 'gh'){
     show('send');
+    const planned=outboxAll().find(i=>i.plannedConflict);
+    if(planned){b.innerHTML=`예정 작업 저장 확인 필요 · ${esc(planned.plannedConflict.message)} <button id="netReviewPlanned">보관 기록 확인</button> <button id="netLatestPlanned">서버 기록 불러오기</button>`;b.querySelector('#netReviewPlanned').onclick=async()=>{const epoch=storeEpoch;S.date=planned.date;renderDate();await refreshDay(false,true);if(epoch!==storeEpoch||S.date!==planned.date)return;const row=S.rows.find(r=>r.id===planned.plannedConflict.rowId);if(row?.plannedWork)openPlannedWork(row.worker,{date:planned.date,row});else if(row)openEntry(row);};b.querySelector('#netLatestPlanned').onclick=()=>void reopenLatestPlanned(planned.date,planned.plannedConflict.rowId);return;}
     const conflict=outboxAll().find(i=>i.scheduleConflict);
     b.innerHTML = conflict?`일정 조건 변경 확인 필요 · ${esc(conflict.date)} 기록은 기기에 보관 중입니다. <button id="netResolveSchedule">조건 비교하고 저장</button>`:`📤 저장 대기 ${pending}건 — 연결되면 자동 전송됩니다. <button id="netSend">지금 전송</button>`;
     if(conflict)b.querySelector('#netResolveSchedule').onclick=async()=>{const epoch=storeEpoch;S.date=conflict.date;renderDate();await refreshDay(false,true);if(epoch!==storeEpoch||S.date!==conflict.date)return;const row=S.rows.find(r=>r.id===conflict.scheduleConflict.rowId);if(row)openEntry(row);};
@@ -1925,6 +1985,8 @@ function outboxAll(){ return LS.get('ilbo.outbox', []); }
 function schedulePart(value,key){return key==='machines'?value?.machines||[]:value?.[key]??null;}
 function ownFieldState(row,key){return Object.prototype.hasOwnProperty.call(row||{},key)?{present:true,value:row[key]}:{present:false};}
 function mergeScheduleChanges(rows,newRows,edits={},strict=true){
+  newRows=mergePlannedWorkChanges(rows,newRows,edits,strict);
+  newRows=mergePlannedActualChanges(rows,newRows,edits,strict);
   newRows=mergeProductionTeams(rows,newRows,edits,strict);
   return newRows.map(row=>{const edit=edits[row.id];if(!edit)return row;
     const currentRow=rows.find(r=>r.id===row.id),current=currentRow?.scheduleConditions,result={...(current||{}),schema:1,machines:schedulePart(current,'machines'),daily:schedulePart(current,'daily')},next={...row};
@@ -1942,14 +2004,15 @@ function mergeScheduleChanges(rows,newRows,edits={},strict=true){
   });
 }
 function queuedScheduleChanges(date,rows,edits={}){
-  const nextEdits=JSON.parse(JSON.stringify(edits)),nextRows=rows.map(row=>{let pending=null,prior=null;for(const item of outboxAll())if(item.date===date){const p=item.rows?.find(r=>r.id===row.id);if(p&&(p.scheduleConditions||Object.prototype.hasOwnProperty.call(p,'machineActuals')||Object.prototype.hasOwnProperty.call(p,'scheduleTarget')))pending=p;const e=item.scheduleEdits?.[row.id];if(e)prior=e;}
+  const nextEdits=JSON.parse(JSON.stringify(edits)),nextRows=rows.map(row=>{let pending=null,prior=null;for(const item of outboxAll())if(item.date===date){const p=item.rows?.find(r=>r.id===row.id);if(p&&(p.plannedWorkRef||p.plannedWork||p.scheduleConditions||Object.prototype.hasOwnProperty.call(p,'machineActuals')||Object.prototype.hasOwnProperty.call(p,'scheduleTarget')))pending=p;const e=item.scheduleEdits?.[row.id];if(e)prior=e;}
     if(nextEdits[row.id]?.discard){const next={...row},incoming={...nextEdits[row.id]};delete next.scheduleConditions;delete incoming.discard;if(pending&&Object.prototype.hasOwnProperty.call(pending,'scheduleTarget')&&!Object.prototype.hasOwnProperty.call(next,'scheduleTarget'))next.scheduleTarget=pending.scheduleTarget;if(prior?.guardTarget){incoming.guardTarget=true;incoming.targetBefore=prior.targetBefore;}incoming.fields=(incoming.fields||[]).filter(key=>key==='machineActuals');if(pending&&Object.prototype.hasOwnProperty.call(pending,'machineActuals')&&!Object.prototype.hasOwnProperty.call(next,'machineActuals')){next.machineActuals=pending.machineActuals;if(prior?.fields?.includes('machineActuals')){incoming.beforeActuals=prior.beforeActuals;incoming.fields=['machineActuals'];}}if(incoming.fields.length||incoming.guardActuals||incoming.guardTarget)nextEdits[row.id]=incoming;else delete nextEdits[row.id];return next;}
     if(!pending)return row;const next={...row},incoming=nextEdits[row.id];if(!Object.prototype.hasOwnProperty.call(next,'scheduleTarget')&&Object.prototype.hasOwnProperty.call(pending,'scheduleTarget'))next.scheduleTarget=pending.scheduleTarget;if(!next.scheduleConditions&&pending.scheduleConditions)next.scheduleConditions=pending.scheduleConditions;if(!Object.prototype.hasOwnProperty.call(next,'machineActuals')&&Object.prototype.hasOwnProperty.call(pending,'machineActuals'))next.machineActuals=pending.machineActuals;
     if(prior){if(!incoming)nextEdits[row.id]=JSON.parse(JSON.stringify(prior));else if(!incoming.reviewed){const before={...(incoming.before||{})};for(const key of prior.fields||[])if(key!=='machineActuals')before[key]=schedulePart(prior.before,key);nextEdits[row.id]={...prior,...incoming,schema:1,before,...(prior.guardTarget?{guardTarget:true,targetBefore:prior.targetBefore}:{}),fields:[...new Set([...(prior.fields||[]),...(incoming.fields||[])])],...((prior.fields||[]).includes('machineActuals')?{beforeActuals:prior.beforeActuals}:{})};}}
     return next;});return queuedProductionTeams(date,nextRows,nextEdits);
 }
-function pruneScheduleQueueMeta(item){if(!item.scheduleEdits&&!item.scheduleConflict)return item;const ids=new Set((item.rows||[]).map(r=>r.id)),next={...item};if(item.scheduleEdits)next.scheduleEdits=Object.fromEntries(Object.entries(item.scheduleEdits).filter(([id])=>ids.has(id)));if(item.scheduleConflict&&!ids.has(item.scheduleConflict.rowId))delete next.scheduleConflict;return next;}
-async function verifyManagedScheduleChanges(rows,edits,drv=driver,epoch=storeEpoch){
+function pruneScheduleQueueMeta(item){if(!item.scheduleEdits&&!item.scheduleConflict&&!item.plannedConflict)return item;const ids=new Set((item.rows||[]).map(r=>r.id)),next={...item};if(item.scheduleEdits)next.scheduleEdits=Object.fromEntries(Object.entries(item.scheduleEdits).filter(([id])=>ids.has(id)));if(item.scheduleConflict&&!ids.has(item.scheduleConflict.rowId))delete next.scheduleConflict;if(item.plannedConflict&&!ids.has(item.plannedConflict.rowId))delete next.plannedConflict;return next;}
+async function verifyManagedScheduleChanges(rows,edits,drv=driver,epoch=storeEpoch,writeDate=S.date){
+  await verifyPlannedWorkWrites(rows,edits,drv,epoch,writeDate);
   const targetProjection=await verifyScheduleTargets(rows,edits,drv,epoch);
   const guarded=rows.filter(row=>edits?.[row.id]?.managed&&(edits[row.id].managed.target||edits[row.id].managed.handoffLocked||edits[row.id].fields?.some(k=>['machines','daily','routing'].includes(k))));if(!guarded.length||drv.offline||drv.mode!=='gh')return;
   if(typeof drv.loadProductionProgress!=='function')throw Error('관리 일정 조건을 확인하지 못했습니다. 연결 후 다시 저장하세요. 입력은 보관됩니다.');
@@ -1989,7 +2052,7 @@ function outboxPrune(date, ids, align){
   const idSet = new Set(ids);
   const ob = outboxAll().map(i => i.date !== date ? i : {...i,
     rows: (i.rows||[]).filter(r => !idSet.has(r.id)), removeIds:(i.removeIds||[]).filter(id=>!idSet.has(id)),
-    align: align && i.align && i.align.worker===align.worker ? align : i.align})
+    align: align && i.align && i.align.worker===align.worker && !(i.rows||[]).some(row=>row.plannedWork||row.plannedWorkRef) ? align : i.align})
     .filter(i => (i.rows||[]).length || (i.removeIds||[]).length).map(pruneScheduleQueueMeta);
   if(!LS.set('ilbo.outbox', ob)) throw new Error('서버에는 반영했지만 기기 전송대기를 정리하지 못했습니다. 저장공간 확인 후 다시 시도하세요.');
   updateNetBanner();
@@ -2009,32 +2072,34 @@ async function outboxFlush(){
   flushing = true;
   const epoch = storeEpoch, drv = driver;
   const queueKey = i => i.qid || JSON.stringify([i.t,i.date,i.rows,i.removeIds]);
-  let sentAny = false;
+  let sentAny = false,activeItem=null;
   try{
     for(const item of ob){
+      activeItem=item;
       assertContext(epoch);
       const key = queueKey(item);
       if(!outboxAll().some(x => queueKey(x) === key)) continue;
       let sent = [];
-      await verifyManagedScheduleChanges(item.rows||[],item.scheduleEdits,drv,epoch);
-      await drv.mutateDay(item.date, rows => {
+      await verifyManagedScheduleChanges(item.rows||[],item.scheduleEdits,drv,epoch,item.date);
+      const savedRows = await drv.mutateDay(item.date, rows => {
         assertContext(epoch);
         /* 재시도마다 보관분을 다시 읽음 — 전송 중 사용자가 고치거나 지운 내용이 되돌아가지 않게 */
         const cur = outboxAll().find(x => queueKey(x) === key) || {rows:[], removeIds:[]};
         sent = cur.rows || [];
-        let out = mergeRows(rows, mergeScheduleChanges(rows,sent,cur.scheduleEdits), cur.align);
+        const merged=mergeScheduleChanges(rows,sent,cur.scheduleEdits);let out = mergeRows(rows,merged,plannedAlignedHours(cur.align,merged));
         const rm = new Set(cur.removeIds || []);
         if(rm.size) out = out.filter(r => !rm.has(r.id));
         return out;
       });
       assertContext(epoch);
       if(!LS.set('ilbo.outbox', outboxAll().filter(x => queueKey(x) !== key))) throw new Error('전송대기 정리 실패');
+      if(sent.some(isBulkRestRow)) reportBulkRest(item.date,sent.filter(isBulkRestRow),savedRows);
       if(sent.length){ updatePresetsFrom(sent); sentAny = true; }   /* 항목별로 즉시 반영 — 뒤에서 실패해도 유실되지 않게 */
       else sentAny = true;
     }
     if(sentAny) toast(outboxAll().length ? '기록을 전송했습니다 — 남은 기록도 이어서 전송합니다' : '보관해 둔 기록을 모두 전송했습니다');
     refreshDay(true, true);
-  }catch(e){if(epoch===storeEpoch&&e.scheduleConflict){const conflict=e.scheduleConflict;LS.set('ilbo.outbox',outboxAll().map(i=>i.rows?.some(r=>r.id===conflict.rowId)?{...i,scheduleConflict:conflict}:i));toast(e.message);} /* 보관분은 그대로 유지 */ }
+  }catch(e){if(epoch===storeEpoch&&e.scheduleConflict){const conflict=e.scheduleConflict;LS.set('ilbo.outbox',outboxAll().map(i=>i.rows?.some(r=>r.id===conflict.rowId)?{...i,scheduleConflict:conflict}:i));toast(e.message);}else if(epoch===storeEpoch&&!e.isNetwork&&activeItem?.rows?.some(row=>row.plannedWork||row.plannedWorkRef)){const rowId=e.plannedConflict?.rowId||activeItem.rows.find(row=>row.plannedWork||row.plannedWorkRef).id;LS.set('ilbo.outbox',outboxAll().map(i=>i.qid===activeItem.qid?{...i,plannedConflict:{rowId,message:e.message}}:i));toast(e.message);} /* 보관분은 그대로 유지 */ }
   finally{ flushing = false; updateNetBanner(); }
 }
 
@@ -2185,7 +2250,7 @@ async function loadProductCatalog(background=false){
 }
 
 /* PRODUCTION_PROGRESS_PROJECTION_START */
-const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions','machineActuals','scheduleTarget'];
+const PROGRESS_SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions','machineActuals','scheduleTarget','plannedWork','plannedWorkRef'];
 function fieldScheduleTarget(value){
   if(value===null)return null;
   const text=v=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=160&&!/[\u0000-\u001f]/.test(v);
@@ -2231,6 +2296,7 @@ function parseProductionProgress(value){
     return{target,worker:t.worker,product:t.product,start:t.start,end:t.end,...(t.activeFrom?{activeFrom:t.activeFrom}:{}),plan:t.plan,produced:t.produced,schedule:checked.schedule||null,participants:checked.participants||[t.worker],revision:t.revision,...(checked.handoff?{handoff:checked.handoff}:{})};
   });
   const result={schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt,asOf:value.asOf,entries,targets},bySource=new Map(),byIdentity=new Map(),byWorker=new Map();
+  if(value.plannedWorks!==undefined)result.plannedWorks=validatePlannedProjection(value.plannedWorks);
   for(const e of entries){bySource.set(e.path+'#'+e.id,e);const key=progressIdentity(e);if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(e);for(const worker of new Set([e.worker,e.scheduleTarget?.worker,e.scheduleWorker,...(e.participants||[]),...(e.handoff?[e.handoff.originalWorker,...e.handoff.changes.map(h=>h.to)]:[])])){if(!byWorker.has(worker))byWorker.set(worker,[]);byWorker.get(worker).push(e);}}
   if(value.receipts!=null){if(!Array.isArray(value.receipts))throw Error('관리 반영 확인 형식을 확인해 주세요.');const seen=new Set();result.receipts=value.receipts.map(r=>{const key=r?.path+'#'+r?.id;if(typeof r?.path!=='string'||!/^data\/\d{4}-\d{2}-\d{2}\.json$/.test(r.path)||!validDate(r.path.slice(5,15))||typeof r.id!=='string'||!r.id||seen.has(key)||!r.source||r.source.id!==r.id)throw Error('관리 반영 확인 형식을 확인해 주세요.');seen.add(key);return{path:r.path,id:r.id,source:receiptSourceFields(r.source)};});}
   if(value.history!=null){if(!Array.isArray(value.history))throw Error('이전 생산 이력을 확인해 주세요.');result.history=value.history.map(r=>{if(!validDate(r?.date)||typeof r.id!=='string'||typeof r.product!=='string'||typeof r.productId!=='string'||!Number.isFinite(r.qty)||r.qty<=0||!Array.isArray(r.people)||!r.people.length||r.people.some(p=>typeof p.worker!=='string'||!p.worker||p.hours!==null&&(!Number.isFinite(p.hours)||p.hours<0||p.hours>24)))throw Error('이전 생산 이력을 확인해 주세요.');return r;});}
@@ -2347,7 +2413,7 @@ function renderFieldInteractionStatus(){return withProjectedReadScope(renderFiel
 function renderFieldInteractionStatusContents(){
   const entryNote=$('#fieldEntrySyncStatus');if(entryNote){entryNote.hidden=driver.mode!=='gh'||!!driver.offline||!fieldRemotePending;entryNote.textContent=entryNote.hidden?'':'최신 자료 확인을 기다리고 있습니다. 입력한 내용은 그대로 유지됩니다. 작성을 마치면 자동으로 다시 확인합니다.';}
   const host=$('#fieldSyncStatus');if(!host)return;host.hidden=driver.mode!=='gh'||!!driver.offline;if(host.hidden)return;
-  const states=S.rows.filter(r=>!r.off&&r.product).map(r=>fieldRecordSyncState(r)),counts={confirmed:0,pending:0,review:0,waiting:0,cached:0};for(const item of states)counts[item.kind]=(counts[item.kind]||0)+1;
+  const states=S.rows.filter(r=>!r.off&&r.product&&!isPlannedPreparation(r)).map(r=>fieldRecordSyncState(r)),counts={confirmed:0,pending:0,review:0,waiting:0,cached:0};for(const item of states)counts[item.kind]=(counts[item.kind]||0)+1;
   const parts=[counts.confirmed?'관리 반영 '+counts.confirmed+'건':'',counts.prepared?'생산 준비 '+counts.prepared+'건':'',counts.pending?'전송 대기 '+counts.pending+'건':'',counts.review?'연결 확인 '+counts.review+'건':'',counts.waiting?'관리 반영 대기 '+counts.waiting+'건':'',counts.cached?'보관자료 '+counts.cached+'건':''].filter(Boolean);
   const syncNotes={pending:'저장 직후 생산관리에 반영을 요청했습니다.',running:'생산관리에 반영 중입니다. 완료되면 자동으로 확인합니다.',applied:'서버 반영 완료 · 현재 기록의 집계를 확인하고 있습니다.',review:'서버 반영 완료 · 관리 앱의 미반영 기록을 확인해 주세요.',permission:'일보는 저장됐습니다. 관리자에게 서버 연결의 저장 권한 확인을 요청해 주세요.',configuration:'일보는 저장됐습니다. 관리자에게 관리 서버 연결 확인을 요청해 주세요.',source:'일보는 저장됐습니다. 관리 자료 확인 후 다시 반영합니다.',retry:'일보는 저장됐습니다. 관리 반영을 다시 시도하고 있습니다.',conflict:'다른 변경과 합쳐 관리에 다시 반영하고 있습니다.'};
   const syncing=fieldManagementSync?.epoch===storeEpoch?syncNotes[fieldManagementSync.status]:null;
@@ -2571,7 +2637,9 @@ function orderRows(rows){
 function mergeRows(rows, newRows, align){
   let out = [...rows];
   newRows.forEach(nr => {
-    if(isRest(nr) && out.some(r => !r.off && productionPeople(r).includes(nr.worker) && r.id !== nr.id)) return;   /* 이미 생산 기록이 있으면 늦게 온 휴무는 버림 */
+    /* 일괄 휴무는 재전송에서도 최신 생산·공동작업·케이스·기존 휴무를 보존한다. */
+    if(isBulkRestRow(nr) && out.some(r=>productionPeople(r).includes(nr.worker))) return;
+    if(isRest(nr) && out.some(r => !r.off && !isPlannedPreparation(r) && productionPeople(r).includes(nr.worker) && r.id !== nr.id)) return;   /* 예정만 등록한 사람은 휴무 가능 */
     const i = out.findIndex(r => r.id === nr.id);
     if(i >= 0){
       const current=out[i],next={...current,...nr};
@@ -2581,20 +2649,21 @@ function mergeRows(rows, newRows, align){
     }else out.push(nr);
   });
   /* 실제 기록이 들어오면 같은 사람의 '휴무' 표시는 자동 해제 — 오터치 휴무가 남아 이중 집계되지 않게 */
-  const wrote = new Set(newRows.filter(r => !r.off && r.worker).flatMap(productionPeople));
+  const wrote = new Set(newRows.filter(r => !r.off && !isPlannedPreparation(r) && r.worker).flatMap(productionPeople));
   if(wrote.size) out = out.filter(r => !(isRest(r) && wrote.has(r.worker)));   /* 케이스 교체 표시는 생산 기록과 같이 남을 수 있음 */
   /* 같은 작업자의 작업시간을 통일 (2번째 행에서 고쳐도 반영되게) */
-  if(align && align.worker) out = out.map(r => r.worker === align.worker ? {...r, hours: align.hours} : r);
+  if(align && align.worker) out = out.map(r => r.worker === align.worker && !isPlannedPreparation(r) ? {...r, hours: align.hours} : r);
   return out;
 }
 async function upsertRows(newRows, align, label, scheduleEdits={}){
   const epoch = storeEpoch, drv = driver;
   const date = S.date;   /* 저장 중 날짜를 옮겨도 원래 날짜에 기록·반영 */
+  const plannedIds=new Set(newRows.filter(row=>row.plannedWorkRef||row.plannedWork).map(row=>row.id)),plannedQueueBefore=plannedIds.size?outboxAll():[];
   const combined=drv.offline?{rows:newRows,edits:scheduleEdits}:queuedScheduleChanges(date,newRows,scheduleEdits);
-  await verifyManagedScheduleChanges(combined.rows,combined.edits,drv,epoch);
-  const rows = await drv.mutateDay(date, rows => mergeRows(rows, mergeScheduleChanges(rows,combined.rows,combined.edits), align), label);
+  await verifyManagedScheduleChanges(combined.rows,combined.edits,drv,epoch,date);
+  const rows = await drv.mutateDay(date, rows => {const merged=mergeScheduleChanges(rows,combined.rows,combined.edits);return mergeRows(rows,merged,plannedAlignedHours(align,merged));}, label);
   assertContext(epoch);
-  if(drv.mode==='gh'||drv.offline) outboxPrune(date, newRows.map(r => r.id), align);
+  if(drv.mode==='gh'||drv.offline){if(plannedIds.size)acknowledgePlannedRows(plannedQueueBefore,date,plannedIds);const ordinaryIds=newRows.filter(row=>!plannedIds.has(row.id)).map(row=>row.id);if(ordinaryIds.length)outboxPrune(date,ordinaryIds,align);}
   updatePresetsFrom(newRows);
   if(date !== S.date){ ensureProgress({quick:true}); return rows; }   /* 화면은 다른 날짜 → 캐시만 갱신(noteDay), 화면·loadSeq 불변 */
   loadSeq++;   /* 저장 전에 발사된 재조회 응답 무효화 */
@@ -2608,10 +2677,11 @@ async function upsertRows(newRows, align, label, scheduleEdits={}){
 async function deleteRow(id){
   const epoch = storeEpoch, drv = driver;
   const date = S.date;   /* 삭제 중 날짜를 옮겨도 원래 날짜 기준 */
+  const linked=!!S.rows.find(row=>row.id===id)?.plannedWorkRef,plannedQueueBefore=linked?outboxAll():[];
   try{
     const rows = await drv.mutateDay(date, rows => rows.filter(r => r.id !== id), '삭제');
     assertContext(epoch);
-    if(drv.mode==='gh'||drv.offline) outboxPrune(date, [id]);
+    if(drv.mode==='gh'||drv.offline){if(linked)acknowledgePlannedRows(plannedQueueBefore,date,new Set([id]));else outboxPrune(date, [id]);}
     if(date !== S.date) return;
     loadSeq++;
     applyDay(date, rows);
@@ -2738,7 +2808,7 @@ function renderMyDay(){
     box.innerHTML = '<h3>내 일보</h3><p class="my-state">이름을 한 번 선택하면 다음부터 바로 작성할 수 있습니다.</p><button class="btn pri" id="myChoose">내 이름 선택</button>';
     $('#myChoose').onclick=()=>{if(!activeWorkers().length){openEntry();return;}S.meEdit=true;renderMeChips();$('#meChips').scrollIntoView({block:'center'});}; return;
   }
-  const mine=S.rows.filter(r=>r.worker===name), production=mine.filter(r=>!r.off);
+  const mine=S.rows.filter(r=>r.worker===name&&!isPlannedPreparation(r)), production=mine.filter(r=>!r.off);
   const together=S.rows.filter(r=>!r.off&&r.worker!==name&&productionPeople(r).includes(name));
   const pending=driver.mode==='gh' && pendingWorkerNames(S.date).has(name);
   const draft=draftsAll()[name];
@@ -2798,6 +2868,240 @@ const DEFAULT_HOURS = 10;
 const offLabel = r => (r && r.off) ? (r.offKind || '휴무') : '';
 const isRest = r => !!(r && r.off && offLabel(r) === '휴무');
 const offIcon = k => k === '케이스 교체' ? '🔧' : '🏖';
+/* planned-work-v1: 예정 원행을 보존하며 날짜를 넘겨 조회하고 실제 첫 생산에 연결한다. */
+const plannedStartForms=new WeakMap();
+const PLANNED_FIELDS=['id','worker','product','productId','productCatalogRevision','sourceProduct','plan','prod','hours','planIntent','scheduleConditions','scheduleTarget','plannedWork'];
+const PLANNED_ACTUAL_FIELDS=['worker','product','productId','plan','prod','hours','planIntent','productionCompletion','productionPlanQty','scrapKg','defQty','defPart','gasa','cs','gap','inlet','face','bubble','remark','plannedWorkRef'];
+let plannedWorkDialogSession=null;
+function plannedDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;}
+function fieldPlannedRef(value){if(!value||!plannedDate(value.date)||typeof value.id!=='string'||!value.id||value.id.length>160)throw Error('예정 작업의 원본 연결을 확인해 주세요.');return{date:value.date,id:value.id};}
+function isPlannedPreparation(row){const p=row?.plannedWork;return !!(p&&p.schema===1&&p.id===row.id&&plannedDate(p.date)&&['waiting','cancelled'].includes(p.state)&&(row.prod==null||row.prod==='')&&!row.off);}
+function plannedSource(row){return row?Object.fromEntries(PLANNED_FIELDS.filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]])):null;}
+function plannedActualSource(row){return row?Object.fromEntries(PLANNED_ACTUAL_FIELDS.filter(key=>Object.hasOwn(row,key)).map(key=>[key,row[key]])):null;}
+function mergePlannedActualChanges(rows,newRows,edits={},strict=true){
+  return newRows.map(row=>{
+    const guard=edits?.[row.id]?.plannedActualBefore;if(!row.plannedWorkRef||!guard)return row;
+    const current=rows.find(item=>item.id===row.id),before=guard.value,next={...row};
+    const fail=()=>{const e=Error('예정에서 시작한 일보가 다른 기기에서 수정되거나 삭제되었습니다. 입력은 유지했습니다. 최신 일보를 다시 열어 비교해 주세요.');e.plannedConflict={rowId:row.id,message:e.message};throw e;};
+    if(strict&&guard.present&&!current)fail();
+    if(strict&&current&&(current.off||!current.plannedWorkRef||plannedKey(current.plannedWorkRef)!==plannedKey(row.plannedWorkRef)))fail();
+    if(!current)return row;
+    for(const key of PLANNED_ACTUAL_FIELDS){if(!Object.hasOwn(row,key))continue;const b=ownFieldState(before,key),n=ownFieldState(row,key),c=ownFieldState(current,key);
+      if(guard.present&&progressStable(b)===progressStable(n)){if(c.present)next[key]=c.value;else delete next[key];}
+      else if(strict&&progressStable(c)!==progressStable(n)&&(!guard.present||progressStable(c)!==progressStable(b)))fail();
+    }
+    return next;
+  });
+}
+function plannedAlignedHours(align,rows){if(!align?.worker)return align;const linked=rows.filter(row=>row.plannedWorkRef&&row.worker===align.worker),hours=[...new Set(linked.map(row=>row.hours))];if(hours.length>1)throw Error('연결된 일보의 작업시간이 서로 변경되었습니다. 최신 시간을 확인해 주세요.');return hours.length?{...align,hours:hours[0]}:align;}
+function acknowledgePlannedRows(before,date,ids){
+  const snapshots=new Set(before.map(item=>JSON.stringify(item))),all=outboxAll(),next=all.map(item=>item.date===date&&snapshots.has(JSON.stringify(item))?pruneScheduleQueueMeta({...item,rows:(item.rows||[]).filter(row=>!ids.has(row.id)),removeIds:(item.removeIds||[]).filter(id=>!ids.has(id))}):item).filter(item=>item.rows?.length||item.removeIds?.length);
+  if(JSON.stringify(next)!==JSON.stringify(all)&&!LS.set('ilbo.outbox',next))throw Error('일보는 서버에 저장했지만 기기 전송대기를 정리하지 못했습니다. 입력은 유지했습니다.');updateNetBanner();
+}
+async function reopenLatestPlanned(date,id){
+  if(!AppAccess.unlocked||plannedWorkDialogSession?.busy)return;
+  if(!confirm('이 기록의 기기 보관 입력을 서버 기록으로 바꿀까요? 아직 전송하지 못한 수정 내용은 지워지고 서버 원본은 그대로 유지됩니다.'))return;
+  const epoch=storeEpoch,drv=driver,snapshot=JSON.stringify(outboxAll()),scope=activeScope,dialog=plannedWorkDialogSession;
+  try{const rows=await drv.loadDay(date);assertContext(epoch);if(!AppAccess.unlocked||snapshot!==JSON.stringify(outboxAll())||scope!==activeScope)throw Error('불러오는 동안 보관 내용이 바뀌었습니다. 다시 확인해 주세요.');
+    const next=outboxAll().map(item=>item.date===date?pruneScheduleQueueMeta({...item,rows:(item.rows||[]).filter(row=>row.id!==id),removeIds:(item.removeIds||[]).filter(value=>value!==id)}):item).filter(item=>item.rows?.length||item.removeIds?.length);
+    if(!LS.set('ilbo.outbox',next))throw Error('기기 저장공간을 확인해 주세요. 보관 입력은 유지했습니다.');
+    if(dialog&&dialog.date===date&&dialog.id===id){const drafts=LS.get('ilbo.plannedDrafts',{});delete drafts[dialog.key];if(!LS.set('ilbo.plannedDrafts',drafts))throw Error('보관 입력 정리가 실패했습니다. 다시 시도해 주세요.');plannedWorkDialogSession=null;dialog.dialog.close();dialog.dialog.remove();}
+    if($('#entryOv').classList.contains('open')){clearTimeout(draftTimer);closeEntry(true);}
+    S.date=date;renderDate();loadSeq++;applyDay(date,rows);updateNetBanner();const row=rows.find(row=>row.id===id);
+    if(isPlannedPreparation(row)&&row.plannedWork.state==='waiting')openPlannedWork(row.worker,{date,row});else if(row&&!row.plannedWork)openEntry(row);else toast('서버에서 취소되거나 삭제된 기록입니다. 기기의 이전 보관 입력을 정리했습니다.');
+  }catch(e){if(epoch===storeEpoch)toast(e.message);}
+}
+function plannedKey(value){return value.date+'#'+(value.id||value.row?.id);}
+function validatePlannedProjection(value){
+  if(!Array.isArray(value)||value.length>20000)throw Error('예정 작업 목록을 확인하지 못했습니다.');
+  const seen=new Set();return value.map(item=>{
+    const ref=fieldPlannedRef({date:item?.date,id:item?.row?.id}),row=item.row;
+    if(seen.has(plannedKey(ref))||!isPlannedPreparation({...row,prod:null})||row.plannedWork.date!==ref.date||typeof row.worker!=='string'||!row.worker.trim()||typeof row.product!=='string'||!row.product.trim()||!Number.isFinite(row.plan)||row.plan<=0||!Array.isArray(item.starts))throw Error('예정 작업의 품목·작업자·계획 연결을 확인해 주세요.');
+    seen.add(plannedKey(ref));const starts=item.starts.map(start=>{if(!plannedDate(start?.date)||typeof start.id!=='string'||typeof start.worker!=='string'||typeof start.product!=='string'||!Number.isFinite(start.prod)||start.prod<=0||plannedKey(fieldPlannedRef(start.plannedWorkRef))!==plannedKey(ref))throw Error('예정 작업의 생산 시작 기록을 확인해 주세요.');return{...start};});
+    return{date:ref.date,row:{...plannedSource(row),prod:null,hours:''},starts};
+  });
+}
+function plannedKnownDays(){
+  const days={};
+  if(driver.offline){for(const [path,file]of Object.entries(fieldOffline?.packet.files||{}))if(/^data\/\d{4}-\d{2}-\d{2}\.json$/.test(path)&&Array.isArray(file.rows))days[path.slice(5,15)]=file.rows;}
+  else if(driver.mode==='local'){for(const key of LS.keys('ilbo.day.')){const date=key.slice(9),rows=LS.get(key,null)?.rows;if(plannedDate(date)&&Array.isArray(rows))days[date]=rows;}}
+  if(S.rowsDate&&S.dayLoaded&&!S.rowsPartial)days[S.rowsDate]=S.rows;
+  for(const item of outboxAll()){const date=item.date;if(!days[date])days[date]=getCachedDay(date)||[];days[date]=pendingApply(date,days[date]);}
+  return days;
+}
+function plannedWorkList({all=false}={}){
+  const projection=S.productionProgress,complete=driver.mode!=='gh'||driver.offline||S.productionProgressMode==='ready'&&Array.isArray(projection?.plannedWorks),map=new Map((projection?.plannedWorks||[]).map(item=>[plannedKey(item),{...item,row:{...item.row},starts:[...item.starts]}]));
+  const days=plannedKnownDays();
+  for(const [date,rows]of Object.entries(days)){
+    for(const [key,item]of map)if(item.date===date&&!rows.some(row=>row.id===item.row.id))map.delete(key);
+    for(const row of rows)if(isPlannedPreparation(row))map.set(date+'#'+row.id,{date,row,starts:map.get(date+'#'+row.id)?.starts||[]});
+    for(const item of map.values())item.starts=item.starts.filter(start=>start.date!==date);
+  }
+  for(const [date,rows]of Object.entries(days))for(const row of rows)if(row.plannedWorkRef&&Number(row.prod)>0){const item=map.get(plannedKey(row.plannedWorkRef));if(item)item.starts.push({date,...row});}
+  const items=[...map.values()].filter(item=>all||item.date<=S.date&&item.row.plannedWork.state==='waiting'&&!item.starts.some(start=>start.date<=S.date&&Number(start.prod)>0)).sort((a,b)=>a.date.localeCompare(b.date)||a.row.worker.localeCompare(b.row.worker,'ko')||a.row.product.localeCompare(b.row.product,'ko')||a.row.id.localeCompare(b.row.id));
+  return{items,complete};
+}
+function mergePlannedWorkChanges(rows,newRows,edits={},strict=true){
+  return newRows.map(row=>{
+    const guard=edits?.[row.id]?.plannedBefore;if(!guard)return row;
+    const current=rows.find(item=>item.id===row.id),before=guard.value,wanted=plannedSource(row);
+    const fail=()=>{const e=Error('예정 작업이 다른 기기에서 변경·취소되었거나 삭제되었습니다. 입력은 유지했습니다. 최신 내용을 다시 확인해 주세요.');e.plannedConflict=true;throw e;};
+    if(strict&&guard.present&&!current)fail();
+    if(strict&&current&&!isPlannedPreparation(current))fail();
+    if(strict&&!guard.present&&current&&progressStable(plannedSource(current))!==progressStable(wanted))fail();
+    if(!current||!guard.present)return row;
+    const next={...row};
+    for(const key of PLANNED_FIELDS){if(key==='id')continue;const b=ownFieldState(before,key),n=ownFieldState(row,key),c=ownFieldState(current,key);
+      if(progressStable(b)===progressStable(n)){if(c.present)next[key]=c.value;else delete next[key];}
+      else if(strict&&progressStable(c)!==progressStable(b)&&progressStable(c)!==progressStable(n))fail();
+    }
+    return next;
+  });
+}
+async function verifyPlannedWorkWrites(rows,edits={},drv=driver,epoch=storeEpoch,writeDate=S.date){
+  const sources=rows.filter(row=>row.plannedWork),starts=rows.filter(row=>row.plannedWorkRef);
+  if(!sources.length&&!starts.length)return;
+  const actualRows=starts.length?await drv.loadDay(writeDate):[];assertContext(epoch);
+  const newStarts=starts.filter(row=>{const ref=fieldPlannedRef(row.plannedWorkRef),existing=actualRows.find(r=>r.id===row.id);if(existing&&existing.plannedWorkRef&&plannedKey(existing.plannedWorkRef)===plannedKey(ref)&&existing.worker===row.worker&&fieldProductIdentity(existing)===fieldProductIdentity(row))return false;const guard=edits?.[row.id]?.plannedActualBefore;if(guard===true||guard?.present)throw Error('수정하던 생산일보가 변경되었거나 삭제되었습니다. 최신 일보를 다시 열어 주세요.');return true;});
+  if(!sources.length&&!newStarts.length)return;
+  let projection=null;
+  if(drv.mode==='gh'&&!drv.offline){const value=await drv.loadProductionProgress();assertContext(epoch);projection=value&&parseProductionProgress(value);if(!Array.isArray(projection?.plannedWorks))throw Error('예정 작업의 최신 목록을 확인하지 못했습니다. 입력은 그대로 보관됩니다. 연결 후 다시 저장해 주세요.');}
+  const list=projection?.plannedWorks||plannedWorkList({all:true}).items;
+  for(const row of sources){const ref=fieldPlannedRef(row.plannedWork),item=list.find(item=>plannedKey(item)===plannedKey(ref));if(item?.starts.some(start=>Number(start.prod)>0))throw Error('이미 생산을 시작한 예정 작업은 변경하거나 취소할 수 없습니다. 실제 일보 기록에서 확인해 주세요.');}
+  for(const row of newStarts){const ref=fieldPlannedRef(row.plannedWorkRef);
+    const origin=await drv.loadDay(ref.date);assertContext(epoch);const source=pendingApply(ref.date,origin).find(item=>item.id===ref.id);
+    if(!source||!isPlannedPreparation(source)||source.plannedWork.state!=='waiting'||source.worker!==row.worker||fieldProductIdentity(source)!==fieldProductIdentity(row))throw Error('예정 작업의 담당자·품목 또는 취소 상태가 바뀌었습니다. 최신 예정 작업에서 다시 이어 주세요.');
+    const before=edits?.[row.id]?.plannedStartBefore;if(before&&progressStable(plannedSource(source))!==progressStable(before))throw Error('예정 작업의 계획이나 호기 조건이 변경되었습니다. 작성 내용은 유지했습니다. 예정 작업을 다시 확인해 주세요.');
+    const prior=list.find(item=>plannedKey(item)===plannedKey(ref))?.starts||[];
+    if(Number(row.prod)>0&&row.planIntent==='start'&&prior.some(start=>start.id!==row.id&&start.date<=writeDate))throw Error('다른 일보에서 이 예정 작업을 이미 시작했습니다. 기존 일보를 확인한 뒤 이어서 작성해 주세요.');
+  }
+}
+function renderPlannedWorks(){
+  let host=$('#plannedWorkPanel');if(!host){host=document.createElement('section');host.id='plannedWorkPanel';host.className='card planned-work-panel';$('#missCard').insertAdjacentElement('afterend',host);}
+  const {items,complete}=plannedWorkList();host.innerHTML=`<div class="planned-work-heading"><h3>예정 작업 <span>${items.length}건</span></h3><button type="button" class="quiet-btn" data-planned-new>＋ 예정 등록</button></div><p class="quick-hint">아직 생산하지 않은 작업입니다. 다음 날에도 그대로 이어집니다.</p>${!complete?'<p class="planned-work-warning" role="status">전체 예정 목록 확인 중 · 현재 확인한 기록만 표시합니다. 연결 후 다시 확인해 주세요.</p>':''}${items.map(item=>`<article class="planned-work-item" data-planned-key="${esc(plannedKey(item))}"><div><b>${esc(item.row.worker)} · ${esc(fieldProductName(item.row))}</b><small>계획 ${esc(item.row.plan)}조 · ${fmtMD(item.date)} 등록${outboxAll().some(q=>q.date===item.date&&q.rows?.some(r=>r.id===item.row.id))?' · 전송 대기':''}</small>${productMemoLink(item.row)}</div><div class="planned-work-actions"><button type="button" class="quiet-btn" data-planned-edit>수정</button><button type="button" class="quiet-btn" data-planned-start>생산 입력</button></div></article>`).join('')||'<p class="quick-hint">등록한 예정 작업이 없습니다.</p>'}`;
+  host.querySelector('[data-planned-new]').onclick=()=>openPlannedWork(S.me.worker||'');
+  host.querySelectorAll('[data-planned-key]').forEach(el=>{const item=items.find(item=>plannedKey(item)===el.dataset.plannedKey);el.querySelector('[data-planned-edit]').onclick=()=>openPlannedWork(item.row.worker,item);el.querySelector('[data-planned-start]').onclick=()=>openPlannedStart(item);});bindProductMemoLinks(host);
+}
+function closePlannedWork(){const s=plannedWorkDialogSession;if(!s)return;if(s.busy)return;if(!stashPlannedDraft(s))return;plannedWorkDialogSession=null;s.dialog.close();s.dialog.remove();}
+function stashPlannedDraft(s){const all=LS.get('ilbo.plannedDrafts',{},s.scope)||{};all[s.key]={date:s.date,id:s.id,base:s.base,worker:s.worker.value,product:s.product.value,plan:s.plan.value,machine:s.machine.value};const ok=LS.set('ilbo.plannedDrafts',all,s.scope);if(!ok)s.status.textContent='기기에 입력을 보관하지 못했습니다. 창을 닫지 말고 저장공간을 확인해 주세요.';return ok;}
+function openPlannedWork(worker='',item=null){
+  if(!AppAccess.unlocked)return;if(plannedWorkDialogSession){plannedWorkDialogSession.dialog.showModal();return;}
+  const date=item?.date||S.date,key=item?plannedKey(item):date+'#new#'+worker,stored=LS.get('ilbo.plannedDrafts',{})[key],base=item?plannedSource(item.row):null,seed=stored&&stored.date===date?stored:null;
+  const dialog=document.createElement('dialog');dialog.id='plannedWorkDialog';dialog.innerHTML='<h2>예정 작업</h2><p class="quick-hint">품목과 계획만 먼저 정해 두세요. 생산량·작업시간은 실제 생산한 날에 입력합니다.</p><label>작업자<select name="worker" class="f-input" aria-label="예정 작업자 선택"></select></label><label>품명<select name="product" class="f-input" aria-label="예정 품명 선택"></select></label><label>계획 조수<input name="plan" class="f-input" inputmode="decimal" type="number" min="0.01" step="any"></label><label>호기 <small>선택 입력</small><input name="machine" class="f-input" maxlength="80" placeholder="예: 13호"></label><p class="planned-dialog-status" role="status"></p><div class="planned-dialog-actions"><button type="button" class="quiet-btn" data-planned-cancel>예정 취소</button><button type="button" class="quiet-btn" data-planned-reload>서버 기록 불러오기</button><button type="button" class="quiet-btn" data-planned-close>닫기</button><button type="button" class="btn pri" data-planned-save>예정 저장</button></div>';
+  const s={dialog,date,viewDate:S.date,scope:activeScope,epoch:storeEpoch,drv:driver,key,id:seed?.id||item?.row.id||uid(),base:seed?.base??base,busy:false,ready:!item,worker:dialog.querySelector('[name=worker]'),product:dialog.querySelector('[name=product]'),plan:dialog.querySelector('[name=plan]'),machine:dialog.querySelector('[name=machine]'),status:dialog.querySelector('[role=status]')};plannedWorkDialogSession=s;
+  const optionList=(values,label)=>'<option value="">'+label+'</option>'+[...new Set(values.filter(Boolean))].map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  s.worker.innerHTML=optionList([...activeWorkers(),seed?.worker,item?.row.worker,worker],'작업자 선택');s.product.innerHTML=optionList([...prodsListAll(),seed?.product,item?.row.product],'품명 선택');
+  s.worker.value=seed?.worker??item?.row.worker??worker;s.product.value=seed?.product??item?.row.product??'';s.plan.value=seed?.plan??item?.row.plan??'';s.machine.value=seed?.machine??(item?.row.scheduleConditions?.machines||[]).map(m=>m.name).join(', ');
+  if((item?.row.scheduleConditions?.machines||[]).length>1){s.machine.readOnly=true;s.machine.title='여러 호기 조건은 그대로 유지합니다. 생산 입력의 품목 상세에서 조정하세요.';}
+  dialog.querySelector('[data-planned-reload]').hidden=!item;dialog.querySelector('[data-planned-reload]').onclick=()=>void reopenLatestPlanned(s.date,s.id);dialog.querySelector('[data-planned-cancel]').hidden=!item;dialog.querySelector('[data-planned-close]').onclick=closePlannedWork;dialog.oncancel=e=>{e.preventDefault();closePlannedWork();};dialog.addEventListener('input',()=>{stashPlannedDraft(s);s.status.textContent='입력 중 · 예정 저장을 누르면 반영됩니다.';});dialog.addEventListener('keydown',e=>e.stopPropagation());
+  const save=async(cancel=false)=>{
+    if(s.busy||!s.ready||!AppAccess.unlocked||s.epoch!==storeEpoch||s.scope!==activeScope||s.viewDate!==S.date)return;
+    let row;try{const owner=s.worker.value.replace(/\s+/g,''),plan=Number(s.plan.value);if(!owner)throw Error('작업자를 선택해 주세요.');if(!Number.isFinite(plan)||plan<=0)throw Error('계획 조수를 0보다 크게 입력해 주세요.');if(driver.mode==='gh'&&!S.productCatalog&&S.productCatalogMode!=='legacy')throw Error('관리 품목 목록을 확인한 뒤 저장해 주세요.');const product=resolveFieldProduct(S.productCatalog,s.product.value,s.base);let conditions=s.base?.scheduleConditions;
+      if(!s.machine.readOnly&&s.machine.value.trim()){const name=normalizeScheduleMachineName(s.machine.value.trim(),message=>{throw Error(message);},0);conditions={...(conditions||{}),schema:1,machines:[{name,qty:plan}],daily:conditions?.daily??null};}else if(!s.machine.readOnly&&conditions?.machines?.length)conditions={...conditions,machines:[]};
+      row={...(s.base||{}),id:s.id,worker:owner,...product,plan,prod:null,hours:'',planIntent:'start',...(conditions?{scheduleConditions:conditions}:{}),plannedWork:{schema:1,id:s.id,date:s.date,state:cancel?'cancelled':'waiting'}};
+      if(cancel&&!confirm('이 예정 작업을 취소할까요? 이미 작성한 생산일보는 그대로 유지됩니다.'))return;
+      const duplicate=plannedWorkList().items.find(item=>item.row.id!==s.id&&item.row.worker===owner&&fieldProductIdentity(item.row)===fieldProductIdentity(row));if(!cancel&&duplicate)throw Error('같은 작업자·품목의 예정 작업이 있습니다. 해당 예정의 수정 버튼을 눌러 확인해 주세요.');
+      if(!stashPlannedDraft(s))return;
+    }catch(e){s.status.textContent=e.message;return;}
+    s.busy=true;dialog.querySelectorAll('button,input,select').forEach(el=>el.disabled=true);s.status.textContent='예정 작업 저장 중…';let queueItem;
+    try{const prior=outboxAll().filter(q=>q.date===s.date).map(q=>q.scheduleEdits?.[s.id]?.plannedBefore).find(Boolean),guard=prior||{present:!!s.base,value:s.base};const edits={[s.id]:{schema:1,fields:[],before:null,plannedBefore:guard}};
+      try{await verifyPlannedWorkWrites([row],edits,s.drv,s.epoch,s.date);}catch(e){if(e.isNetwork&&s.epoch===storeEpoch&&s.drv.mode==='gh'&&!s.drv.offline){if(!outboxPush(s.date,[row],null,undefined,edits))throw Error('기기 보관에 실패하여 저장하지 않았습니다.');queueItem=outboxAll().find(q=>q.date===s.date&&q.rows?.some(r=>r.id===s.id));}throw e;}assertContext(s.epoch);if(!AppAccess.unlocked)throw Error('다시 로그인한 뒤 예정 저장을 눌러 주세요. 입력은 보관했습니다.');
+      if(s.drv.mode==='gh'&&!s.drv.offline){if(!outboxPush(s.date,[row],null,undefined,edits))throw Error('기기 보관에 실패하여 저장하지 않았습니다.');queueItem=outboxAll().find(q=>q.date===s.date&&q.rows?.some(r=>r.id===s.id));}
+      const rows=await s.drv.mutateDay(s.date,current=>{assertContext(s.epoch);if(queueItem&&!outboxAll().some(item=>JSON.stringify(item)===JSON.stringify(queueItem)))throw Error('기기에 더 최근 입력이 있습니다. 보관한 내용을 다시 확인해 주세요.');return mergeRows(current,mergePlannedWorkChanges(current,[row],edits));},cancel?'예정 취소':'예정 저장');assertContext(s.epoch);acknowledgeBulkRestQueue(queueItem,'예정 작업');
+      if(s.date===S.date){loadSeq++;applyDay(s.date,rows);}else if(driver.mode==='local'||driver.offline)renderPlannedWorks();
+      const drafts=LS.get('ilbo.plannedDrafts',{},s.scope);delete drafts[s.key];if(!LS.set('ilbo.plannedDrafts',drafts,s.scope))throw Error('서버에 저장했지만 기기 입력 정리가 실패했습니다. 입력은 유지했습니다.');
+      s.busy=false;plannedWorkDialogSession=null;dialog.close();dialog.remove();toast(cancel?'예정 작업을 취소했습니다.':'예정 작업을 저장했습니다. 생산하는 날 이름을 눌러 이어서 작성하세요.');void loadProductionProgress();
+    }catch(e){if(s.epoch!==storeEpoch)return;s.status.textContent=queueItem&&e.isNetwork?'기기에 보관했습니다. 연결되면 자동 전송합니다.':e.message;if(queueItem&&e.isNetwork){if(s.date===S.date)showPendingDay(s.date);renderPlannedWorks();}}
+    finally{s.busy=false;if(plannedWorkDialogSession===s)dialog.querySelectorAll('button,input,select').forEach(el=>el.disabled=false);}
+  };
+  dialog.querySelector('[data-planned-save]').onclick=()=>void save();dialog.querySelector('[data-planned-cancel]').onclick=()=>void save(true);document.body.append(dialog);dialog.showModal();(s.worker.value?s.product:s.worker).focus();if(seed)s.status.textContent='이 기기에 보관한 입력을 이어서 표시했습니다.';
+  if(item){s.status.textContent='저장된 예정 작업을 확인하고 있습니다…';dialog.querySelectorAll('input,select,[data-planned-save],[data-planned-cancel]').forEach(el=>el.disabled=true);void(async()=>{try{const rows=await s.drv.loadDay(s.date);assertContext(s.epoch);if(plannedWorkDialogSession!==s||s.viewDate!==S.date||!AppAccess.unlocked)return;const latest=pendingApply(s.date,rows).find(row=>row.id===s.id);if(!latest||!isPlannedPreparation(latest)||latest.plannedWork.state!=='waiting')throw Error('예정 작업이 변경되었거나 취소되었습니다. 목록을 다시 확인해 주세요.');if(!seed){s.base=plannedSource(latest);s.worker.value=latest.worker;s.product.value=latest.product;s.plan.value=latest.plan;s.machine.value=(latest.scheduleConditions?.machines||[]).map(m=>m.name).join(', ');s.machine.readOnly=(latest.scheduleConditions?.machines||[]).length>1;}s.ready=true;dialog.querySelectorAll('input,select,[data-planned-save],[data-planned-cancel]').forEach(el=>el.disabled=false);s.status.textContent=seed?'보관한 입력입니다. 변경된 내용은 저장할 때 비교합니다.':'예정된 품목과 계획을 수정할 수 있습니다.';}catch(e){if(plannedWorkDialogSession===s)s.status.textContent=e.message;}})();}
+}
+async function applyPlannedToBlock(item){
+  if(!$('#entryOv').classList.contains('open')||$('#fWorker').value!==item.row.worker)return;
+  const epoch=storeEpoch,date=S.date,worker=$('#fWorker').value,snapshot=formSnapshot(),drv=driver;
+  try{const rows=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||worker!==$('#fWorker').value||!$('#entryOv').classList.contains('open'))return;if(formSnapshot()!==snapshot){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}const row=pendingApply(item.date,rows).find(row=>row.id===item.row.id);if(!row||!isPlannedPreparation(row)||row.plannedWork.state!=='waiting')throw Error('예정 작업이 변경되었거나 취소되었습니다. 목록을 다시 확인해 주세요.');item={...item,row};}catch(e){if(epoch===storeEpoch)toast(e.message);return;}
+  const same=[...$('#prodBlocks').children].find(el=>plannedKey(plannedStartForms.get(el)?.ref||{})===plannedKey(item));if(same){same.querySelector('.pb-prod').focus();return;}
+  const el=[...$('#prodBlocks').children].find(el=>!el.querySelector('.pb-product').value.trim())||addBlock(null),row=item.row;
+  el.querySelector('.pb-product').value=row.product;el.querySelector('.pb-planmode').value=row.scheduleTarget?'continue':'start';el.querySelector('.pb-plan').value=row.scheduleTarget?'':row.plan;el.dataset.planModeChanged='1';
+  if(row.scheduleConditions)restoreScheduleForm(el,row.scheduleConditions,{baseline:false});
+  if(row.scheduleTarget)scheduleTargetForms.set(el,{before:{present:false},target:row.scheduleTarget,changed:true,context:null});
+  plannedStartForms.set(el,{ref:{date:item.date,id:row.id},before:plannedSource(row)});syncPlanMode(el);updateProdProg(el);expandProduct(el,false);el.querySelector('.pb-quality').open=true;el.querySelector('.pb-team').open=true;renumberBlocks();syncQuickProducts();persistDraft();$('#plannedEntryChoices')?.remove();$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;$('#quickProducts [data-rid="'+el.dataset.rid+'"] .quick-stepper input')?.focus({preventScroll:true});
+}
+function renderPlannedEntryChoices(){
+  $('#plannedEntryChoices')?.remove();if(!$('#entryOv').classList.contains('open')||S.editId||S.entryMode==='case')return false;
+  if([...$('#prodBlocks').children].some(el=>plannedStartForms.has(el))){$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;return true;}
+  const worker=$('#fWorker').value,items=plannedWorkList().items.filter(item=>item.row.worker===worker);if(!items.length)return false;
+  const box=document.createElement('div');box.id='plannedEntryChoices';box.className='planned-entry-choices';box.innerHTML='<b>예정 작업 이어하기</b><p>생산할 품목을 선택하면 계획과 호기를 그대로 불러옵니다.</p>'+items.map((item,i)=>`<button type="button" class="quiet-btn" data-planned-pick="${i}">${esc(fieldProductName(item.row))} · ${esc(item.row.plan)}조 계획 · ${fmtMD(item.date)} 등록</button>`).join('');$('#quickProducts').insertAdjacentElement('beforebegin',box);box.querySelectorAll('[data-planned-pick]').forEach(button=>button.onclick=()=>applyPlannedToBlock(items[Number(button.dataset.plannedPick)]));$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;return true;
+}
+function openPlannedStart(item){const existing=S.rows.find(row=>row.plannedWorkRef&&plannedKey(row.plannedWorkRef)===plannedKey(item));if(existing){openEntry(existing);return;}openEntry(null,item.row.worker);applyPlannedToBlock(item);}
+window.addEventListener('production:lock',()=>{const s=plannedWorkDialogSession;if(s)stashPlannedDraft(s);});
+window.addEventListener('production:login',()=>{const s=plannedWorkDialogSession;if(s&&(s.epoch!==storeEpoch||s.scope!==activeScope||s.viewDate!==S.date)){plannedWorkDialogSession=null;s.dialog.close();s.dialog.remove();}});
+/* bulk-rest-v1: 날짜·이름별 안정 ID와 요청별 ACK로 일괄 휴무만 안전하게 처리한다. */
+let bulkRestState=null;
+function currentBulkRest(){
+  const context=activeScope+'|'+S.date;
+  if(!bulkRestState||bulkRestState.context!==context)bulkRestState={context,selected:new Set(),choosing:false,busy:false,notice:'',warning:false};
+  return bulkRestState;
+}
+function isBulkRestRow(row){return isRest(row)&&/^bulk-rest-\d{4}-\d{2}-\d{2}-[a-f0-9]{64}$/.test(row.id||'');}
+async function makeBulkRestRow(date,worker){
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(worker));
+  const id='bulk-rest-'+date+'-'+[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join('');
+  return{id,worker,off:true,offKind:'휴무',hours:'',product:'',plan:'',prod:'',scrapKg:'',defQty:'',defPart:'',gasa:'',cs:'',gap:'',inlet:'',face:'',bubble:'',remark:'',ts:Date.now()};
+}
+function reportBulkRest(date,requested,rows){
+  if(date!==S.date)return;
+  const state=currentBulkRest(),names=[...new Set(requested.map(r=>r.worker))];
+  const done=names.filter(name=>rows.some(r=>r.worker===name&&isRest(r)));
+  const skipped=names.filter(name=>!done.includes(name));
+  state.notice=(done.length?`${done.length}명 휴무 처리 완료`:'휴무로 변경한 사람이 없습니다.')+(skipped.length?` · ${skipped.join(', ')}: 작업 기록이 있어 제외했습니다.`:'');
+  state.warning=!!skipped.length;
+  if(AppAccess.unlocked)renderMissing();
+}
+function acknowledgeBulkRestQueue(item,label='휴무'){
+  if(!item)return;
+  const signature=JSON.stringify(item),all=outboxAll(),remaining=all.filter(entry=>JSON.stringify(entry)!==signature);
+  if(remaining.length!==all.length&&!LS.set('ilbo.outbox',remaining))throw Error(label+'은 서버에 저장됐지만 기기 전송대기를 정리하지 못했습니다. 저장공간을 확인해 주세요.');
+  updateNetBanner();
+}
+async function markBulkDayOff(){
+  if(!AppAccess.unlocked)return;
+  const state=currentBulkRest();if(state.busy)return;
+  const available=new Set(missingWorkers()||[]),names=[...state.selected].filter(name=>available.has(name));
+  if(!names.length){state.notice='휴무로 처리할 미작성자를 선택해 주세요.';state.warning=true;renderMissing();return;}
+  const date=S.date,epoch=storeEpoch,drv=driver;
+  if(!confirm(`${fmtMD(date)} · ${names.length}명을 휴무로 표시할까요?\n\n${names.join(', ')}\n\n미작성 목록에서 빠지며 일보에는 인쇄되지 않습니다. 이미 작업 기록이 있는 사람은 제외합니다.`))return;
+  state.busy=true;state.notice='선택한 사람의 최신 기록을 확인하고 있습니다…';state.warning=false;renderMissing();
+  let queueItem=null,requested=[];
+  try{
+    requested=await Promise.all(names.map(name=>makeBulkRestRow(date,name)));assertContext(epoch);
+    if(!AppAccess.unlocked)throw Error('다시 로그인한 뒤 휴무 처리를 이어서 해 주세요.');
+    if(drv.mode==='gh'&&!drv.offline){
+      /* 서버 요청 전에 보관하여 응답 유실·재개방에도 같은 휴무 ID로 재시도한다. */
+      if(!outboxPush(date,requested))throw Error('기기에 보관하지 못해 휴무 처리를 시작하지 않았습니다. 저장공간을 확인해 주세요.');
+      queueItem=outboxAll().find(item=>item.date===date&&JSON.stringify(item.rows)===JSON.stringify(requested));
+      if(!queueItem)throw Error('휴무 전송대기를 확인하지 못했습니다. 다시 시도해 주세요.');
+    }
+    const signature=queueItem&&JSON.stringify(queueItem);
+    const rows=await drv.mutateDay(date,current=>{
+      assertContext(epoch);
+      /* 다른 탭에서 이 요청을 취소·수정했다면 과거 요청을 다시 적용하지 않는다. */
+      const stillOwned=!signature||outboxAll().some(item=>JSON.stringify(item)===signature);
+      return mergeRows(current,stillOwned?requested:[]);
+    },`휴무 ${names.length}명`);
+    assertContext(epoch);acknowledgeBulkRestQueue(queueItem);
+    state.selected.clear();state.choosing=false;
+    if(date===S.date){loadSeq++;applyDay(date,rows);reportBulkRest(date,requested,rows);toast(state.notice);}
+  }catch(e){
+    if(epoch!==storeEpoch)return;
+    if(queueItem&&e.isNetwork){
+      state.selected.clear();state.choosing=false;state.notice=`${names.length}명 휴무 표시를 기기에 보관했습니다. 연결되면 최신 작업 기록을 확인한 뒤 자동 전송합니다.`;state.warning=true;
+      if(date===S.date)showPendingDay(date);
+    }else{state.notice=e.message;state.warning=true;}
+    if(date===S.date&&AppAccess.unlocked)toast(state.notice);
+  }finally{state.busy=false;if(bulkRestState===state&&date===S.date&&epoch===storeEpoch&&AppAccess.unlocked)renderMissing();}
+}
 async function markDayOff(name, kind){
   kind = OFF_KINDS.includes(kind) ? kind : '휴무';
   if(kind === '케이스 교체'){ openCaseEntry(name, null); return; }   /* 작업시간을 직접 입력받음 (10시간 고정 아님) */
@@ -2861,14 +3165,25 @@ function renderMissing(){
     const filter=S.rosterFilter||'missing';
     const chosen=people.filter(p=>filter==='pending'?waiting.has(p.name):p.kind===filter);
     const open=!!LS.get('ilbo.rosterOpen',false);
-    card.innerHTML=`<details class="roster-details" ${open?'open':''}><summary>작성 현황 · ${dayWord} ${miss.length?`<b>미작성 ${miss.length}명</b>`:'전원 확인 완료'}</summary><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div>${chosen.length?chosen.map(p=>`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="케이스 교체">케이스 교체</button>`:`<small>${esc(p.description)}</small>`}</span></div>`).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}</details>`;
+    const bulk=currentBulkRest();if(!bulk.busy)for(const name of bulk.selected)if(!miss.includes(name))bulk.selected.delete(name);
+    const selecting=filter==='missing'&&bulk.choosing;
+    const tools=filter==='missing'&&miss.length?`<div class="bulk-rest-tools">${selecting?`<p>휴무인 사람을 체크한 뒤 한 번에 처리하세요.</p><button type="button" data-bulk-all ${bulk.busy?'disabled':''}>전체 선택</button><button type="button" data-bulk-cancel ${bulk.busy?'disabled':''}>취소</button><button type="button" class="bulk-rest-save" ${bulk.busy||!bulk.selected.size?'disabled':''}>${bulk.busy?'저장 중…':`선택 ${bulk.selected.size}명 휴무`}</button>`:`<button type="button" data-bulk-start ${bulk.busy?'disabled':''}>여러 명 휴무 처리</button>`}</div>`:'';
+    const personHTML=p=>selecting?`<label class="bulk-rest-option"><input type="checkbox" data-bulk-worker="${esc(p.name)}" aria-label="${esc(p.name)} 휴무 선택" ${bulk.selected.has(p.name)?'checked':''} ${bulk.busy?'disabled':''}><span>${esc(p.name)}</span></label>`:`<div class="roster-person"><button class="quiet-btn person-open" data-n="${esc(p.name)}">${esc(p.name)}</button><span>${p.kind==='missing'?`<button class="quiet-btn off-btn" data-n="${esc(p.name)}" data-k="휴무">휴무</button> <button class="quiet-btn" data-planned-worker="${esc(p.name)}">예정 작업</button>`:`<small>${esc(p.description)}</small>`}</span></div>`;
+    card.innerHTML=`${bulk.notice?`<div class="bulk-rest-feedback" role="status" data-state="${bulk.warning?'warning':'info'}">${esc(bulk.notice)}</div>`:''}<details class="roster-details" ${open?'open':''}><summary>작성 현황 · ${dayWord} ${miss.length?`<b>미작성 ${miss.length}명</b>`:'전원 확인 완료'}</summary><div class="status-filters">${filters.map(([k,label])=>`<button data-filter="${k}" class="${filter===k?'sel':''}" aria-pressed="${filter===k}">${label} <b>${k==='pending'?people.filter(p=>waiting.has(p.name)).length:people.filter(p=>p.kind===k).length}</b></button>`).join('')}</div>${tools}${chosen.length?chosen.map(personHTML).join(''):'<p class="quick-hint">해당하는 사람이 없습니다.</p>'}</details>`;
     card.querySelector('details').ontoggle=e=>LS.set('ilbo.rosterOpen',e.target.open);
+    card.querySelector('[data-bulk-start]')?.addEventListener('click',()=>{bulk.choosing=true;bulk.notice='';LS.set('ilbo.rosterOpen',true);renderMissing();});
+    card.querySelector('[data-bulk-cancel]')?.addEventListener('click',()=>{bulk.choosing=false;bulk.selected.clear();renderMissing();});
+    const syncBulkButton=()=>{const button=card.querySelector('.bulk-rest-save');if(button){button.disabled=bulk.busy||!bulk.selected.size;button.textContent=bulk.busy?'저장 중…':`선택 ${bulk.selected.size}명 휴무`;}};
+    card.querySelectorAll('[data-bulk-worker]').forEach(input=>input.onchange=()=>{if(input.checked)bulk.selected.add(input.dataset.bulkWorker);else bulk.selected.delete(input.dataset.bulkWorker);syncBulkButton();});
+    card.querySelector('[data-bulk-all]')?.addEventListener('click',()=>{for(const name of miss)bulk.selected.add(name);card.querySelectorAll('[data-bulk-worker]').forEach(input=>input.checked=true);syncBulkButton();});
+    card.querySelector('.bulk-rest-save')?.addEventListener('click',()=>void markBulkDayOff());
     card.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{S.rosterFilter=b.dataset.filter;LS.set('ilbo.rosterOpen',true);renderMissing();});
     card.querySelectorAll('.person-open').forEach(b=>b.onclick=()=>{
       const p=people.find(p=>p.name===b.dataset.n);
       if(p.kind==='prod'){if(p.production.some(r=>r.worker===p.name))openWorkerEntry(p.name);else openEntry(p.together[0]);} else if(p.kind==='case') openCaseEntry(p.name,p.rows.find(r=>r.off&&!isRest(r))); else if(p.kind==='off'){if(confirm(`${p.name}님 휴무 표시를 해제할까요?`)) deleteRow(p.rows[0].id).catch(e=>toast(e.message));} else openEntryFor(p.name);
     });
     card.querySelectorAll('.off-btn').forEach(b=>b.onclick=()=>markDayOff(b.dataset.n,b.dataset.k));
+    card.querySelectorAll('[data-planned-worker]').forEach(b=>b.onclick=()=>openPlannedWork(b.dataset.plannedWorker));
   }
   const mi = $('#missInfo');
   if(mi){
@@ -3039,13 +3354,14 @@ function renderNotice(){
 }
 function renderInput(){return withProjectedReadScope(renderInputContents);}
 function renderInputContents(){
+  renderPlannedWorks();
   if(S.rows.some(r=>!r.off))void ensureProductHistory();
   renderGypsumLots();
   renderMissing();
   renderGuide();
   renderNotice();
   renderFieldInteractionStatus();
-  const rows = orderRows(S.rows);
+  const rows = orderRows(S.rows.filter(r=>!isPlannedPreparation(r)));
   const prodSum = rows.reduce((a,r)=>a+(Number(r.prod)||0),0);
   const defSum  = rows.reduce((a,r)=>a+(Number(r.defQty)||0),0);
   const scrapSum= rows.reduce((a,r)=>a+(Number(r.scrapKg)||0),0);
@@ -3188,15 +3504,15 @@ function productionTeamValue(value,owner=''){
  return members.length?{schema:1,members}:null;
 }
 function productionTeamMembers(row){try{return row.off?[]:productionTeamValue(row.productionTeam,row.worker||'')?.members||[]}catch{return[]}}
-function productionPeople(row){return [row.worker,...productionTeamMembers(row).map(m=>m.worker)].filter(Boolean)}
+function productionPeople(row){return isPlannedPreparation(row)?[]:[row.worker,...productionTeamMembers(row).map(m=>m.worker)].filter(Boolean)}
 function productionTeamText(row){const members=productionTeamMembers(row);return members.length?'2인 1조 · '+productionPeople(row).join(' + '):''}
 const productionTeamForms=new WeakMap();
 function teamFormValue(el){const worker=el.querySelector('.pb-team-worker').value,raw=el.querySelector('.pb-team-hours').value.trim();return worker?productionTeamValue({schema:1,members:[{worker,hours:raw===''?'':/^\d+(\.\d+)?$/.test(raw)?Number(raw):NaN}]},$('#fWorker').value):null;}
 function updateTeamForm(el){
  const select=el.querySelector('.pb-team-worker');if(!select)return;const selected=select.value,owner=$('#fWorker').value.replace(/\s+/g,''),names=[...new Set([...activeWorkers(),...S.rows.flatMap(productionPeople),selected].filter(n=>n&&(n!==owner||n===selected)))];
  const options='<option value="">혼자 작업</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');if(select._choices!==options){select.innerHTML=options;select._choices=options;select.value=names.includes(selected)?selected:'';}
- el.querySelector('.pb-team-time').hidden=!select.value;el.querySelector('.pb-team summary').textContent=select.value?'2인 1조 · '+owner+' + '+select.value:'＋ 함께 작업한 사람 추가';
- el.querySelector('.pb-team-note').textContent=select.value?'함께 만든 생산량을 한 번만 입력하세요. 이 날짜·이 품목에 적용됩니다.':'기존 담당자는 그대로 두고 함께 일한 사람만 선택하세요.';
+ el.querySelector('.pb-team-time').hidden=!select.value;el.querySelector('.pb-team summary').textContent=select.value?'함께 작업 · '+owner+' + '+select.value:'함께 작업한 사람';
+ const note=el.querySelector('.pb-team-note');note.textContent='함께 만든 수량은 한 번만 입력합니다. 담당자는 그대로 유지됩니다.';note.hidden=!select.value;
 }
 function restoreTeamForm(el,row,form=null){
  let value=null,error='';try{value=productionTeamValue(row?.productionTeam,row?.worker||$('#fWorker').value)}catch(e){error=e.message}
@@ -3274,7 +3590,7 @@ function printedRemark(row){return row.remark||''}
 
 function blockHTML(){
   return `
-  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b><small>제품명 · 생산 진행 · 호기 설정</small></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
+  <div class="pb-head"><button type="button" class="pb-toggle" aria-expanded="true"><b class="pb-title">제품 1</b></button><button type="button" class="pb-del" title="이번에 추가한 제품 입력만 뺍니다">품목 빼기</button></div>
   <details class="pb-team" open><summary>＋ 함께 작업한 사람 추가</summary><div class="pb-team-fields"><label>함께 작업한 사람<select class="f-input pb-team-worker" aria-label="함께 작업한 사람"><option value="">혼자 작업</option></select></label><label class="pb-team-time" hidden>함께 작업한 시간<input class="f-input pb-team-hours" inputmode="decimal" aria-label="함께 작업한 시간" placeholder="시간"></label></div><p class="hint pb-team-note"></p></details>
   <div class="pb-body">
   <div class="pb-previous" role="status" hidden></div>
@@ -3341,7 +3657,7 @@ function blockHTML(){
     <div class="chips pb-partchips" style="margin-top:7px"></div>
     <button type="button" class="pb-defclear">불량 없음으로 지우기</button>
   </details>
-  <div class="f-label" style="margin-top:16px">검사 상태 <span class="hint">기본은 양호입니다. 보통·불량을 선택하면 아래 비고에 사유를 적어주세요.</span></div>
+  <div class="f-label" style="margin-top:16px">검사 상태 <span class="hint">기본 ○ 양호 · △·Ⅹ는 비고에 사유 입력</span></div>
   <div class="chk-grid">
     <div class="chk gasa"><div class="ck-name">석고 가사시간</div>
       <input class="pb-gasa" type="hidden" value="○">
@@ -3460,10 +3776,11 @@ function syncQuickProductsContents(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<div class="quick-head"><h3>오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small></small></button><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>품명·오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><div class="quick-product-info"><label class="quick-product-label">품명<select class="quick-product" aria-label="제품 ${i+1} 품명 선택"></select></label><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small></small></button></div><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
+      row.querySelector('.quick-product').onchange=e=>{const original=el.querySelector('.pb-product');original.value=e.target.value;original.dispatchEvent(new Event('input',{bubbles:true}));syncQuickProducts();saveDraft();};
       row.querySelector('.quick-minus').onclick=()=>stepProductQuantity(el,-1);
       row.querySelector('.quick-plus').onclick=()=>stepProductQuantity(el,1);
       row.querySelector('input').oninput=e=>setProductQuantity(el,e.target.value);
@@ -3476,6 +3793,7 @@ function syncQuickProductsContents(){
   els.forEach((el,i)=>{
     const row=rows[i], p=el.querySelector('.pb-product').value.trim(), qty=el.querySelector('.pb-prod'), input=row.querySelector('input'),text=qty.value.trim().replace(/,/g,'');
     row.querySelector('b').textContent=p||`제품 ${i+1} 선택`;
+    const picker=row.querySelector('.quick-product'),choices=[...new Set([...prodsListAll(),...(p?[p]:[])])],options='<option value="">품명 선택</option>'+choices.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');if(picker._options!==options){picker.innerHTML=options;picker._options=options;}picker.value=p;
     const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
     const view=productProgressView(el),remaining=row.querySelector('.quick-remaining');remaining.textContent=view.label;remaining.dataset.pending=String(view.remaining===null);remaining.hidden=!p;row.querySelector('.quick-progress-note').textContent=p?view.note:'';
@@ -3484,7 +3802,9 @@ function syncQuickProductsContents(){
     const locked=qty.readOnly||qty.disabled;input.placeholder=qty.placeholder;input.readOnly=locked;input.title=locked?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
     row.querySelector('.quick-qty-label').textContent=locked?'호기별 수량 합계':'오늘 만든 조수';row.querySelector('.quick-machine').textContent=locked?'호기별 수량 수정':'여러 호기에 나눠 입력';row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
     if(text){const value=Number(text);if(/^\d+(?:\.\d+)?$/.test(text)&&Number.isFinite(value))total+=value;else invalid=true;}else missing++;
-    el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+' · 상세';
+    const planned=plannedStartForms.get(el)?.before,machines=planned?.scheduleConditions?.machines?.map(m=>m.name).join('·');
+    el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+(planned?` · 계획 ${planned.plan}조${machines?' · '+machines:''}`:'');
+    if(planned){const matching=planned.worker===$('#fWorker').value.trim()&&fieldProductIdentity(planned)===fieldProductIdentity(p);row.querySelector('.quick-progress-note').textContent=matching?`예정 작업 이어하기 · ${planned.worker} · ${planned.plan}조 계획${machines?' · '+machines:''}`:`연결된 예정: ${planned.worker} · ${planned.product} · ${planned.plan}조 — 담당자·품목 확인`;}
   });
   const summary=box.querySelector('.quick-total');summary.textContent=`${els.length}개 품목 · 오늘 총 ${r2(total)}조${missing?' · '+missing+'개 미입력':''}${invalid?' · 수량 확인':''}`;summary.classList.toggle('warn',invalid||missing>0);
 }
@@ -3582,6 +3902,7 @@ function renderEntryReservationFlow(els){
  if(box._flow!==html){box.innerHTML=html;box._flow=html;}
 }
 function renderReservationLoad(auto=false){
+  if(renderPlannedEntryChoices())return true;
   const box=$('#reservationLoad');if(!box)return false;const worker=$('#fWorker').value.trim();
   if(S.entryMode==='case'||S.editId||!$('#entryOv').classList.contains('open')||!worker){box.hidden=true;box.innerHTML='';return false;}
   const active=activeReservationTargets(worker),existing=new Set([...$('#prodBlocks').children].map(el=>scheduleTargetForms.get(el)?.target).filter(Boolean).map(scheduleTargetKey)),missing=active.filter(target=>!existing.has(scheduleTargetKey(target.target)));
@@ -3786,17 +4107,20 @@ function collectScheduleFields(el){
   return{scheduleConditions:{...result,...(Object.keys(edits).length?{edits}:{})}};
 }
 function collectScheduleEdit(el,payload){
+  const planned=plannedStartForms.get(el)?.before;
+  const plannedActual=plannedStartForms.get(el)?.actualBefore||(plannedStartForms.has(el)?{present:false}:null);
   const discard=scheduleDiscardForms.has(el)&&!payload?.scheduleConditions;
   const fields=payload?.scheduleConditions?changedScheduleFields(el,payload.scheduleConditions):[];
   const beforeActuals=machineActualBaselines.get(el)||{present:false},guardActuals=Array.isArray(beforeActuals.value);if(Object.prototype.hasOwnProperty.call(payload||{},'machineActuals'))fields.push('machineActuals');
   const targetState=scheduleTargetForms.get(el),guardTarget=!!targetState?.before?.present||Object.prototype.hasOwnProperty.call(payload||{},'scheduleTarget');
-  const team=teamEditMeta(el,payload);const managed=scheduleManagedForms.get(el);return team.teamBefore||fields.length||guardActuals||guardTarget||managed?.handoffLocked||discard?{schema:1,...team,...(productionTeamForms.get(el)?.reviewed?{teamReviewed:true}:{}),...(guardTarget?{guardTarget:true,targetBefore:targetState?.before||{present:false}}:{}),before:scheduleFormOriginals.get(el)||null,fields,...((fields.some(k=>k!=='machineActuals')||guardTarget||managed?.handoffLocked)&&managed?{managed}:{}),...(discard?{discard:true}:{}),...(guardActuals||fields.includes('machineActuals')?{beforeActuals,guardActuals}:{}),...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
+  const team=teamEditMeta(el,payload);const managed=scheduleManagedForms.get(el);return plannedActual||planned||team.teamBefore||fields.length||guardActuals||guardTarget||managed?.handoffLocked||discard?{schema:1,...team,...(plannedActual?{plannedActualBefore:plannedActual}:{}),...(planned?{plannedStartBefore:planned}:{}),...(productionTeamForms.get(el)?.reviewed?{teamReviewed:true}:{}),...(guardTarget?{guardTarget:true,targetBefore:targetState?.before||{present:false}}:{}),before:scheduleFormOriginals.get(el)||null,fields,...((fields.some(k=>k!=='machineActuals')||guardTarget||managed?.handoffLocked)&&managed?{managed}:{}),...(discard?{discard:true}:{}),...(guardActuals||fields.includes('machineActuals')?{beforeActuals,guardActuals}:{}),...(scheduleReviewedForms.has(el)?{reviewed:true}:{})}:null;
 }
 function addBlock(row){
   const el = document.createElement('div'); el.className = 'pb';
   el.dataset.rid = row ? row.id : uid();   /* 재전송 시 중복 등록 방지용 고정 id */
   el.innerHTML = blockHTML();
   $('#prodBlocks').appendChild(el);
+  if(row?.plannedWorkRef){const pending=outboxAll().find(item=>item.date===S.date&&item.rows?.some(r=>r.id===row.id)),prior=pending?.scheduleEdits?.[row.id];plannedStartForms.set(el,{ref:fieldPlannedRef(row.plannedWorkRef),...(prior?.plannedStartBefore?{before:prior.plannedStartBefore}:{}),actualBefore:pending?prior?.plannedActualBefore||{present:false}:{present:true,value:plannedActualSource(row)}});}
   restoreTeamForm(el,row);
   el.querySelector('.pb-team-worker').onchange=()=>{productionTeamForms.get(el).touched=true;if(el.querySelector('.pb-team-worker').value&&!el.querySelector('.pb-team-hours').value)el.querySelector('.pb-team-hours').value=$('#fHours').value;updateTeamForm(el);saveDraft();};
   el.querySelector('.pb-team-hours').addEventListener('input',()=>{productionTeamForms.get(el).touched=true;saveDraft();});
@@ -3980,6 +4304,8 @@ function collectBlock(el, i){
     if(driver.mode==='gh'&&!S.productCatalog&&S.productCatalogMode!=='legacy')throw Error('관리 품목 목록을 확인한 뒤 저장해 주세요. 연결을 확인하고 기록을 다시 열어 주세요.');
     productFields=resolveFieldProduct(S.productCatalog,product,previous);product=productFields.product;
   }catch(e){fieldErr(el.querySelector('.pb-product'),`제품 ${i+1}: ${e.message}`);return null;}
+  const planned=plannedStartForms.get(el)?.before;
+  if(planned&&(planned.worker!==$('#fWorker').value.replace(/\s+/g,'')||fieldProductIdentity(planned)!==fieldProductIdentity(productFields))){fieldErr(el.querySelector('.pb-product'),`이 입력은 ${planned.worker} · ${planned.product} 예정 작업에 연결되어 있습니다. 담당자·품목을 바꾸려면 예정 작업을 수정하거나 새 일보로 작성해 주세요.`);return null;}
   if(blockBadMark(el) && !el.querySelector('.pb-remark').value.trim()){
     fieldErr(el.querySelector('.pb-remark'), `제품 ${i+1}: △·Ⅹ 체크 시 비고(사유)를 적어주세요`);
     return null;
@@ -4023,6 +4349,7 @@ function collectBlock(el, i){
     ...targetFields,
     ...machineFields,
     ...teamFields,
+    ...(plannedStartForms.get(el)?.ref?{plannedWorkRef:fieldPlannedRef(plannedStartForms.get(el).ref)}:{}),
     plan: pzSel ? 0 : plan.val,
     prod: prod.val,
     scrapKg: scrap.val,
@@ -4072,6 +4399,7 @@ async function suggestWorkerHours(){
 }
 
 async function updateRecentBtn(auto){
+  if(renderPlannedEntryChoices()){recentSeq++;return;}
   $$('#prodBlocks .pb').forEach(updateProdProg);
   suggestWorkerHours();
   auto = auto === true;   /* change 이벤트 객체가 넘어오는 경우 방지 */
@@ -4088,8 +4416,9 @@ async function updateRecentBtn(auto){
     const ds = fmtDate(d);
     const rows = await loadDayCached(ds);
     if(seq !== recentSeq || S.entryMode === 'case' || !$('#entryOv').classList.contains('open')) return;
+    if(renderPlannedEntryChoices())return;
     if(rows === null) continue;
-    const mine = orderRows(rows).filter(r => r.worker === worker && !r.off);
+    const mine = orderRows(rows).filter(r => r.worker === worker && !r.off&&!isPlannedPreparation(r));
     if(!mine.length) continue;
     const recentName=r=>S.productCatalog?(fieldProduct(S.productCatalog,r)?.active?fieldProductName(r):''):fieldProductName(r);
     const prods = [...new Set(mine.map(recentName).filter(Boolean))];
@@ -4129,6 +4458,7 @@ function formSnapshot(){
     w: $('#fWorker').value, h: $('#fHours').value,
     b: els.map(el => ({
       id:el.dataset.rid,
+      pw:plannedStartForms.get(el),
       p: el.querySelector('.pb-product').value, pl: el.querySelector('.pb-plan').value,
       pz: el.querySelector('.pb-planzero').classList.contains('sel'),
       pm: el.querySelector('.pb-planmode').value, pc: el.dataset.planModeChanged==='1',
@@ -4183,6 +4513,7 @@ function openEntry(row, presetName, mode){
   if(row && !isCase) expandProduct($('#prodBlocks .pb'),false);
   $('#fWorker').classList.remove('need');
   $('#entryOv').classList.add('open');
+  renderPlannedEntryChoices();
   $('#entryOv').scrollTop = 0;
   document.body.style.overflow = 'hidden'; syncInert();
   entrySnap = formSnapshot();
@@ -4192,7 +4523,7 @@ function openEntry(row, presetName, mode){
   else $('#entryTitle').focus({preventScroll:true});   /* 포커스를 대화상자 안으로 (키보드는 띄우지 않음) */
 }
 function openWorkerEntry(name){
-  const rows=orderRows(S.rows.filter(r=>r.worker===name && !r.off));
+  const rows=orderRows(S.rows.filter(r=>r.worker===name && !r.off&&!isPlannedPreparation(r)));
   if(!rows.length){openEntryFor(name);return;}
   openEntry(rows[0],name);
   S.editIds=rows.map(r=>r.id);
@@ -4260,6 +4591,7 @@ function restoreForm(snap){
   const restoredIds=new Set();
   (j.b && j.b.length ? j.b : [null]).forEach(b => {
     const el = addBlock(null); if(!b) return;
+    if(b.pw?.ref)plannedStartForms.set(el,{...b.pw,ref:fieldPlannedRef(b.pw.ref)});
     if(typeof b.id==='string'&&b.id.trim()&&!restoredIds.has(b.id))el.dataset.rid=b.id;
     restoredIds.add(el.dataset.rid);
     el.querySelector('.pb-product').value = b.p || '';
@@ -4511,7 +4843,7 @@ function sheetPage(dateStr, rows, showWorkerFirst){
   </div>`;
 }
 function rowsHash(){
-  const s = JSON.stringify([PRINT_LAYOUT_VERSION,orderRows(S.rows.filter(r => !isRest(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.remark,r.productionTeam,printedLotText(S.date)])]);
+  const s = JSON.stringify([PRINT_LAYOUT_VERSION,orderRows(S.rows.filter(r => !isRest(r)&&!isPlannedPreparation(r))).map(r => [r.id,r.worker,r.hours,r.off?r.product:fieldProductName(r),r.offKind,r.plan,r.prod,r.scrapKg,r.defQty,r.defPart,r.gasa,r.cs,r.gap,r.inlet,r.face,r.bubble,r.remark,r.productionTeam,printedLotText(S.date)])]);
   let h = 0; for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h;
 }
 function renderSheet(){
@@ -4522,7 +4854,7 @@ function renderSheet(){
   const wrap = $('#sheetwrap');
   wrap.classList.toggle('stale', stale);
   wrap.dataset.msg = S.loading ? '최신 내용 불러오는 중…' : '이 날짜 기록을 불러오지 못했습니다 — ↻ 다시 시도';
-  const rows = stale ? [] : orderRows(S.rows.filter(r => !isRest(r))).map(r => ({...r, product: r.off ? offLabel(r) : fieldProductName(r)}));   /* 인쇄 표시명·_showW는 복사본에만 적용 · 원장/연동 서명 유지 · 케이스 교체 사유 보존 */
+  const rows = stale ? [] : orderRows(S.rows.filter(r => !isRest(r)&&!isPlannedPreparation(r))).map(r => ({...r, product: r.off ? offLabel(r) : fieldProductName(r)}));   /* 예정은 인쇄 제외, 과거 케이스 교체 유지 */
   rows.forEach((r,i) => { r._showW = i===0 || printedTeamKey(rows[i-1])!==printedTeamKey(r); });
   const pi = $('#pageInfo');
   if(pi){ const pg = Math.max(1, Math.ceil(rows.length/SHEET_ROWS)); pi.innerHTML = stale ? '' : ` · 기록 ${rows.length}건 → ${pg>1 ? `<b style="color:var(--warn)">${pg}장</b>` : '1장'}`; }
@@ -4645,7 +4977,7 @@ function drawMonth(rawDays, y, m){
     const raw = days[ds];
     const st = {ds, day: parseDate(ds).getDay(), fail:false, none:false, p:0, q:0, s:0, n:0, workers:0, offN:0, caseN:0, miss:[]};
     if(raw !== undefined && !Array.isArray(raw)){ st.fail = true; anyFail = true; dayStat.push(st); return; }
-    const all = raw || [];
+    const all = (raw || []).filter(r=>!isPlannedPreparation(r));
     const rows = all.filter(r => !r.off);
     if(!all.length){ st.none = true; dayStat.push(st); return; }
     st.p = rows.reduce((a,r)=>a+(Number(r.prod)||0),0);
@@ -4793,7 +5125,7 @@ let monthData = null, monthDataYm = null;
 function showMonthDetail(kind,name){
   if(monthDataYm!==S.month || !monthData) return;
   const box=$('#monthDetail'), entries=[],sortKey='detail-'+kind;
-  Object.keys(monthData).sort().forEach(d=>{if(Array.isArray(monthData[d]))monthData[d].filter(r=>kind==='product'?!r.off&&fieldProductIdentity(r)===fieldProductIdentity(name):productionPeople(r).includes(name)).forEach(r=>entries.push({d,r}));});
+  Object.keys(monthData).sort().forEach(d=>{if(Array.isArray(monthData[d]))monthData[d].filter(r=>!isPlannedPreparation(r)).filter(r=>kind==='product'?!r.off&&fieldProductIdentity(r)===fieldProductIdentity(name):productionPeople(r).includes(name)).forEach(r=>entries.push({d,r}));});
   box.innerHTML=`<header><h3>${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p>${monthSortTools(sortKey,'상세 기록 정렬')}<div class="mon-scroll" role="region" tabindex="0" aria-label="일자별 상세 기록"><table class="mon" data-month-table="${sortKey}"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr data-sort-date="${esc(d)}" data-sort-name="${esc(kind==='product'?r.worker:r.off?offLabel(r):fieldProductName(r))}" data-sort-qty="${esc(r.prod??'')}" data-detail-id="${esc(r.id)}"><td class="d"><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?productionPeople(r).join(' + '):r.off?offLabel(r):fieldProductName(r))}${kind==='worker'&&r.worker!==name?'<small class="worker-team-qty">함께 참여 · 원래 담당자 합계에 포함</small>':''}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
   box.hidden=false;$('#closeMonthDetail').onclick=()=>{box.hidden=true;};
   box.querySelectorAll('[data-detail-date]').forEach(b=>b.onclick=()=>{setDate(b.dataset.detailDate);setTab('input');});
@@ -4808,7 +5140,7 @@ function renderPrintChecks(){
     const miss=missingWorkers() || [];
     if(miss.length)checks.push({text:`미작성 ${miss.length}명: ${miss.join(', ')} — 부서 현황에서 확인`,action:()=>{S.rosterFilter='missing';LS.set('ilbo.rosterOpen',true);setTab('input');renderMissing();}});
     if(driver.mode==='gh' && outboxAll().some(i=>i.date===S.date))checks.push({text:'이 날짜에 전송 대기 기록이 있습니다. 서버 반영 후 인쇄를 권장합니다.',action:()=>outboxFlush()});
-    S.rows.filter(r=>!r.off).forEach(r=>{
+    S.rows.filter(r=>!r.off&&!isPlannedPreparation(r)).forEach(r=>{
       const reasons=[];
       if(r.prod===''||r.prod==null)reasons.push('생산량 미입력');
       if([...CHECK_KEYS.map(k=>r[k]),r.gasa].some(v=>v==='△'||v==='Ⅹ') && !String(r.remark||'').trim()) reasons.push('△·Ⅹ 사유 없음');
@@ -4827,7 +5159,7 @@ function copyMonthTSV(){
   const clean = v => String(v ?? '').replace(/[\t\n\r]/g, ' ');
   Object.keys(monthData).sort().forEach(ds => {
     const rows = monthData[ds]; if(!Array.isArray(rows)) return;
-    orderRows(rows).forEach(r => lines.push([ds, r.worker, r.hours, r.off?r.product:fieldProductName(r), r.plan, r.prod, r.scrapKg, r.defQty, r.defPart,
+    orderRows(rows.filter(r=>!isPlannedPreparation(r))).forEach(r => lines.push([ds, r.worker, r.hours, r.off?r.product:fieldProductName(r), r.plan, r.prod, r.scrapKg, r.defQty, r.defPart,
       r.gasa, r.cs, r.gap, r.inlet, r.face, r.bubble, r.b1, r.b2, r.remark, offLabel(r),productionTeamMembers(r).map(m=>m.worker).join(' / '),productionTeamMembers(r).map(m=>m.hours).join(' / '),previousProductionText(r,ds)].map(clean).join('\t')));
   });
   const text = lines.join('\n');
@@ -5127,8 +5459,8 @@ function validateFieldBackup(input){
   if(packet.local.gypsumLots!==undefined){if(!Array.isArray(packet.local.gypsumLots))throw new Error('석고 로트 백업의 목록 형식이 올바르지 않습니다.');GypsumLots.events(packet.local.gypsumLots);}
   if(packet.local.outbox!==undefined&&!Array.isArray(packet.local.outbox))throw new Error('전송 대기 목록이 올바르지 않습니다.');
   for(const item of packet.local.outbox||[]){if(!fieldDate(item.date))throw new Error('전송 대기 날짜가 올바르지 않습니다.');fieldBackupRows(item.rows||[]);if(item.removeIds!==undefined&&(!Array.isArray(item.removeIds)||item.removeIds.some(x=>typeof x!=='string')))throw new Error('삭제 예약 목록이 올바르지 않습니다.');}
-  for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length&&!edit.guardActuals&&!edit.guardTarget&&!edit.teamBefore||edit.fields.length>4||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily','routing','machineActuals'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');if(edit.teamBefore&&(typeof edit.teamBefore.present!=='boolean'||edit.teamBefore.present&&edit.teamBefore.value!==null&&!productionTeamValue(edit.teamBefore.value)))throw new Error('공동작업 변경 기준이 손상되었습니다.');if(edit.guardTarget&&(!edit.targetBefore||typeof edit.targetBefore.present!=='boolean'||edit.targetBefore.present&&edit.targetBefore.value!==null&&!fieldScheduleTarget(edit.targetBefore.value)))throw new Error('반영할 작업의 변경 기준이 손상되었습니다.');if((edit.guardActuals||edit.fields?.includes('machineActuals'))&&(!edit.beforeActuals||typeof edit.beforeActuals.present!=='boolean'))throw new Error('호기별 실적의 변경 기준이 손상되었습니다.');}}
-  for(const key of ['drafts','printed','presetsRetry'])if(packet.local[key]!==undefined&&(!packet.local[key]||typeof packet.local[key]!=='object'||Array.isArray(packet.local[key])))throw new Error('초안·인쇄·명단 보관분 형식이 올바르지 않습니다.');
+  for(const item of packet.local.outbox||[])if(item.scheduleEdits!==undefined){const edits=item.scheduleEdits;if(!edits||typeof edits!=='object'||Array.isArray(edits))throw new Error('일정 조건의 변경 기준이 올바르지 않습니다.');for(const [id,edit]of Object.entries(edits)){if(!item.rows.some(r=>r.id===id)||!edit||edit.schema!==1||(!edit.discard&&(!Array.isArray(edit.fields)||!edit.fields.length&&!edit.guardActuals&&!edit.guardTarget&&!edit.teamBefore&&!edit.plannedBefore&&!edit.plannedStartBefore&&!edit.plannedActualBefore||edit.fields.length>4||new Set(edit.fields).size!==edit.fields.length||edit.fields.some(k=>!['machines','daily','routing','machineActuals'].includes(k))||edit.before!==null&&(!edit.before||typeof edit.before!=='object'||Array.isArray(edit.before)))))throw new Error('일정 조건의 변경 기준이 누락되거나 손상되었습니다.');if(edit.plannedActualBefore&&(typeof edit.plannedActualBefore.present!=='boolean'||edit.plannedActualBefore.present&&(!edit.plannedActualBefore.value||typeof edit.plannedActualBefore.value!=='object'||Array.isArray(edit.plannedActualBefore.value))))throw new Error('예정 생산일보의 변경 기준이 손상되었습니다.');if(edit.plannedBefore&&(typeof edit.plannedBefore.present!=='boolean'||edit.plannedBefore.present&&!isPlannedPreparation(edit.plannedBefore.value)))throw new Error('예정 작업의 변경 기준이 손상되었습니다.');if(edit.plannedStartBefore&&!isPlannedPreparation(edit.plannedStartBefore))throw new Error('예정 작업 이어하기의 기준이 손상되었습니다.');if(edit.teamBefore&&(typeof edit.teamBefore.present!=='boolean'||edit.teamBefore.present&&edit.teamBefore.value!==null&&!productionTeamValue(edit.teamBefore.value)))throw new Error('공동작업 변경 기준이 손상되었습니다.');if(edit.guardTarget&&(!edit.targetBefore||typeof edit.targetBefore.present!=='boolean'||edit.targetBefore.present&&edit.targetBefore.value!==null&&!fieldScheduleTarget(edit.targetBefore.value)))throw new Error('반영할 작업의 변경 기준이 손상되었습니다.');if((edit.guardActuals||edit.fields?.includes('machineActuals'))&&(!edit.beforeActuals||typeof edit.beforeActuals.present!=='boolean'))throw new Error('호기별 실적의 변경 기준이 손상되었습니다.');}}
+  for(const key of ['drafts','plannedDrafts','printed','presetsRetry'])if(packet.local[key]!==undefined&&(!packet.local[key]||typeof packet.local[key]!=='object'||Array.isArray(packet.local[key])))throw new Error('초안·인쇄·명단 보관분 형식이 올바르지 않습니다.');
   for(const date of Object.keys(packet.local.printed||{}))if(!fieldDate(date))throw new Error('인쇄 보관분 날짜가 올바르지 않습니다.');
   return packet;
 }
@@ -5181,7 +5513,7 @@ function offlineWorkspaceDriver(id){
 }
 function fieldLocalSnapshot(){
   const printed={};for(const key of LS.keys('ilbo.printed.')){const date=key.slice(13);if(fieldDate(date))printed[date]=LS.get(key,null);}
-  return{...(fieldOffline?.packet.local||{}),outbox:fieldCopy(outboxAll()),drafts:LS.get('ilbo.drafts',{}),presetsRetry:LS.get('ilbo.presetsRetry',{}),gypsumLots:fieldCopy(driver.mode==='local'||driver.offline?fieldLocalLotEvents():fieldLots.epoch===storeEpoch?fieldLots.events:LS.get('ilbo.gypsumLots',[])),printed};
+  return{...(fieldOffline?.packet.local||{}),outbox:fieldCopy(outboxAll()),drafts:LS.get('ilbo.drafts',{}),plannedDrafts:LS.get('ilbo.plannedDrafts',{}),presetsRetry:LS.get('ilbo.presetsRetry',{}),gypsumLots:fieldCopy(driver.mode==='local'||driver.offline?fieldLocalLotEvents():fieldLots.epoch===storeEpoch?fieldLots.events:LS.get('ilbo.gypsumLots',[])),printed};
 }
 async function buildFieldBackup(partial=false){
   const epoch=storeEpoch,drv=driver,cfg=ghCfg(),local=fieldLocalSnapshot();let files={},coverage;
@@ -5211,7 +5543,7 @@ async function readBackupFile(input){
 async function activateFieldOffline(space,isNew=false,session=fieldConnectionSession){
   if(!fieldSettingsCurrent(session))throw contextError();
   const epoch=storeEpoch,scope='offline:'+space.id,created=[];
-  if(isNew){try{const local=space.packet.local||{},items={'ilbo.outbox':local.outbox||[],'ilbo.drafts':local.drafts||{},'ilbo.presetsRetry':local.presetsRetry||{},'ilbo.gypsumLots':local.gypsumLots||[]};for(const [date,value]of Object.entries(local.printed||{}))items['ilbo.printed.'+date]=value;for(const [name,value]of Object.entries(items)){const key=storageKey(name,scope);localStorage.setItem(key,JSON.stringify(value));created.push(key);}}catch(e){created.forEach(key=>localStorage.removeItem(key));throw new Error('기기 보관분을 저장할 공간이 부족합니다. 기존 작업공간은 그대로입니다.');}}
+  if(isNew){try{const local=space.packet.local||{},items={'ilbo.outbox':local.outbox||[],'ilbo.drafts':local.drafts||{},'ilbo.plannedDrafts':local.plannedDrafts||{},'ilbo.presetsRetry':local.presetsRetry||{},'ilbo.gypsumLots':local.gypsumLots||[]};for(const [date,value]of Object.entries(local.printed||{}))items['ilbo.printed.'+date]=value;for(const [name,value]of Object.entries(items)){const key=storageKey(name,scope);localStorage.setItem(key,JSON.stringify(value));created.push(key);}}catch(e){created.forEach(key=>localStorage.removeItem(key));throw new Error('기기 보관분을 저장할 공간이 부족합니다. 기존 작업공간은 그대로입니다.');}}
   let activation;
   try{await fieldOfflineTx('readwrite',(tx,set,fail)=>{try{assertContext(epoch);if(!fieldSettingsCurrent(session))throw contextError();activation=tx;fieldOfflineActivation=tx;if(isNew)tx.objectStore('workspaces').put(space);tx.objectStore('meta').put(space.id,'active');set(true);}catch(e){fail(e);}});}catch(e){created.forEach(key=>localStorage.removeItem(key));throw e;}finally{if(fieldOfflineActivation===activation)fieldOfflineActivation=null;}
   assertContext(epoch);fieldOffline=space;S.authError=false;initDriver();
