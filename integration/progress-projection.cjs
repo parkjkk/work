@@ -1,7 +1,7 @@
 'use strict';
 const {hash,sourceFiles,productIndex}=require('./ilbo-sync.cjs');
 const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k),copy=x=>JSON.parse(JSON.stringify(x));
-const SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions','machineActuals','scheduleTarget'];
+const SOURCE_FIELDS=['id','worker','product','productId','plan','prod','planIntent','productionCompletion','productionPlanQty','scheduleConditions','machineActuals','scheduleTarget','plannedWork','plannedWorkRef'];
 function projectProgress(state,snapshot,previous,now=new Date().toISOString(),planning){
  if(!planning){require('./schedule-core.cjs');planning=require('./schedule-planning.cjs');}
  if(typeof planning.dailyProgress!=='function')throw Error('Matching planning runtime is required');
@@ -129,7 +129,26 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  history.sort((a,b)=>(a.date+'#'+a.id).localeCompare(b.date+'#'+b.id));
  const hourGroups=new Map();for(const {file,row}of raw.values()){if(file.date>asOf||!row.worker||row.off&&row.offKind!=='케이스 교체')continue;let team;try{team=require('./schedule-core.cjs').productionTeamValue(row.productionTeam,row.worker)}catch{team=null}for(const person of [{worker:row.worker,hours:row.hours},...(team?.members||[])]){if(person.hours==null||person.hours===''||!Number.isFinite(Number(person.hours))||Number(person.hours)<0||Number(person.hours)>24)continue;const key=file.date+'#'+person.worker;if(!hourGroups.has(key))hourGroups.set(key,{date:file.date,worker:person.worker,values:new Set()});hourGroups.get(key).values.add(Number(person.hours))}}
  const hoursHistory=[...hourGroups.values()].filter(r=>r.values.size===1).map(r=>({date:r.date,worker:r.worker,hours:[...r.values][0]})).sort((a,b)=>(a.date+'#'+a.worker).localeCompare(b.date+'#'+b.worker));
- const revision=hash({asOf,entries,targets,receipts,history,hoursHistory});if(previous?.schema===1&&previous.kind==='schedule-production-progress'&&previous.revision===revision&&hash({asOf:previous.asOf,entries:previous.entries,targets:previous.targets,receipts:previous.receipts,history:previous.history,hoursHistory:previous.hoursHistory})===revision)return copy(previous);
- return{schema:1,kind:'schedule-production-progress',revision,updatedAt:date.toISOString(),asOf,entries,targets,receipts,history,hoursHistory};
+ const plannedWorks=[],plannedActuals=new Map();
+ const planFields=['id','worker','product','productId','plan','planIntent','scheduleConditions','scheduleTarget','plannedWork'];
+ // One source scan builds the consumption index; more pending plans do not
+ // multiply full-history scans. Deleted/off/blank/zero rows never consume a plan.
+ for(const {file,row}of raw.values()){
+  if(row.deleted||row.off||row.prod==null||row.prod===''||!Number.isFinite(Number(row.prod))||!(Number(row.prod)>0))continue;
+  let ref,product;try{ref=require('./schedule-core.cjs').plannedWorkRefValue(row.plannedWorkRef);product=ix.resolve(row)}catch{continue}
+  if(!ref||!product||file.date<ref.date)continue;
+  const key=JSON.stringify([ref.date,ref.id,String(row.worker||'').trim(),product.id]);if(!plannedActuals.has(key))plannedActuals.set(key,[]);
+  plannedActuals.get(key).push({date:file.date,id:row.id,worker:row.worker,product:product.name,productId:product.id,prod:Number(row.prod),plannedWorkRef:ref});
+ }
+ for(const starts of plannedActuals.values())starts.sort((a,b)=>(a.date+'#'+a.id).localeCompare(b.date+'#'+b.id));
+ for(const {file,row}of raw.values()){
+  let plan,product;try{plan=require('./schedule-core.cjs').plannedWorkValue(row.plannedWork);product=ix.resolve(row)}catch{continue}
+  if(!plan||plan.id!==row.id||plan.date!==file.date||row.deleted||row.off||!product||!(row.prod==null||row.prod==='')||!(row.hours==null||row.hours===''))continue;
+  const starts=plannedActuals.get(JSON.stringify([plan.date,plan.id,String(row.worker||'').trim(),product.id]))||[];
+  plannedWorks.push({date:file.date,row:{...Object.fromEntries(planFields.filter(k=>own(row,k)).map(k=>[k,copy(row[k])])),product:product.name,productId:product.id,plannedWork:plan},starts});
+ }
+ plannedWorks.sort((a,b)=>(a.date+'#'+a.row.id).localeCompare(b.date+'#'+b.row.id));
+ const revision=hash({asOf,entries,targets,receipts,history,hoursHistory,plannedWorks});if(previous?.schema===1&&previous.kind==='schedule-production-progress'&&previous.revision===revision&&hash({asOf:previous.asOf,entries:previous.entries,targets:previous.targets,receipts:previous.receipts,history:previous.history,hoursHistory:previous.hoursHistory,plannedWorks:previous.plannedWorks})===revision)return copy(previous);
+ return{schema:1,kind:'schedule-production-progress',revision,updatedAt:date.toISOString(),asOf,entries,targets,receipts,history,hoursHistory,plannedWorks};
 }
 module.exports={projectProgress,SOURCE_FIELDS};

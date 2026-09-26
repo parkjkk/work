@@ -1824,6 +1824,17 @@ const val=(s,a)=>s?.cells?.[a]?.v??null;
 const date=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
 const serial=n=>Number.isFinite(n)?new Date(Date.UTC(1899,11,30)+n*86400000).toISOString().slice(0,10):null;
 const iso=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+// Explicit field plans remain pending until a positive actual references their original row.
+function plannedWorkRefValue(value){
+ if(value==null)return null;
+ if(!value||typeof value!=='object'||Array.isArray(value)||!iso(value.date)||typeof value.id!=='string'||!value.id.trim()||value.id!==value.id.trim()||value.id.length>200||/[\x00-\x1f\x7f]/.test(value.id))throw Error('예정작업의 원래 날짜와 기록을 확인해 주세요.');
+ return{date:value.date,id:value.id};
+}
+function plannedWorkValue(value){
+ if(value==null)return null;
+ const ref=plannedWorkRefValue(value);if(value.schema!==1||!['waiting','cancelled'].includes(value.state))throw Error('예정작업 상태를 확인해 주세요.');
+ return{schema:1,id:ref.id,date:ref.date,state:value.state};
+}
 // A daily producer and the schedule job receiving that production are distinct.
 function scheduleTargetValue(value){
  if(value==null)return null;
@@ -2053,7 +2064,7 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
 
@@ -2859,7 +2870,12 @@ function reconcileCarry(s,k,j,context){
  for(const key of keys){const month=s.months[key],values=month.closed&&month.closeSnapshot?.schedule?.jobs?month.closeSnapshot.schedule.jobs:jobs(s,key,context),matches=values.filter(p=>(p.originId||p.id)===j.originId&&p.worker===j.worker&&C.catalogName(s,p.product)===j.product);if(matches.length>1){j.carryReview='같은 이월 작업의 이전 원장이 중복되어 누적을 확인할 수 없습니다. 원월의 작업 연결을 확인해 주세요.';j.carryBlocked=true;break}if(matches.length===1){previous=matches[0];sourceMonth=key;break}if(j.carryFrom===key&&month.jobs?.some(p=>(p.originId||p.id)===j.originId)){j.carryReview='이월 원장의 작업자·품명이 달라졌습니다. 원월과 현재 월의 작업 연결을 확인해 주세요.';j.carryBlocked=true;break}}
  if(previous?.carryBlocked){j.carryReview=previous.carryReview;j.carryBlocked=true}
  if(j.carryBlocked){j.produced=null;j.remaining=null;j.unproduced=null;j.complete=false;return}
- if(!previous||!Number.isFinite(previous.produced))return;
+ if(!previous){
+  const revokedStart=keys.some(key=>{const month=s.months[key],matches=[...(month.rows||[]),...(month.history||[]).map(event=>event.before).filter(Boolean)];return matches.some(row=>'job:'+row.id===j.originId&&row.fieldPlannedWorkRef&&row.worker===j.worker&&C.catalogName(s,row.product)===j.product)});
+  if(revokedStart){j.carryReview='예정작업의 최초 생산이 취소되거나 삭제되어 이월 연결을 다시 확인해야 합니다. 이후 실제 생산은 보존했습니다.';j.carryBlocked=true;j.produced=null;j.remaining=null;j.unproduced=null;j.complete=false;}
+  return;
+ }
+ if(!Number.isFinite(previous.produced))return;
  if(previous.handoffBlocked){j.handoffBlocked=true;j.handoffReview=previous.handoffReview}if(safeHandoffs(previous).length){try{const current=normalizedHandoffs(j),events=new Map(previous.handoffs.map(h=>[h.id,clone(h)]));for(const h of current)events.set(h.id,h);j.handoffs=[...events.values()].sort((a,b)=>a.date.localeCompare(b.date))}catch(error){j.handoffBlocked=true;j.handoffReview=error.message}}
  const originalPlan=j.totalPlan;
  j.effectivePreviousProduced=previous.produced;
@@ -2875,7 +2891,30 @@ function reconcileCarry(s,k,j,context){
  else if(!j.stopped&&!j.ended){j.completedAt=null;j.completionReason=null}
  if(previous.produced!==j.previousProduced)j.carryReconciliation={sourceMonth,storedPreviousProduced:j.previousProduced,actualPreviousProduced:previous.produced};
 }
+// Several stale clients can submit a first actual on different dates. The explicit
+// preparation reference identifies one physical job; normalized display rows keep
+// every source plan/intent untouched while later starts join its first actual.
+function plannedContinuationRows(s,k,rows,stored,context){
+ if(!rows.some(row=>row.fieldPlannedWorkRef))return rows;
+ const key=row=>{try{const ref=C.plannedWorkRefValue(row.fieldPlannedWorkRef);return ref?JSON.stringify([ref.date,ref.id,row.worker,C.catalogIdentity(s,row.product)]):null}catch{return null}};
+ const cache=context&&(context.plannedSources||(context.plannedSources=new WeakMap()));let groups=cache?.get(s);
+ if(!groups){groups=new Map();for(const [month,value]of Object.entries(s.months||{}))for(const row of value.rows||[]){if(row.deleted||C.fieldPreparation(row)||!(C.num(row.pours)>0))continue;const id=key(row);if(id){if(!groups.has(id))groups.set(id,[]);groups.get(id).push({month,row})}}for(const values of groups.values())values.sort((a,b)=>(a.row.date+'\0'+a.row.id).localeCompare(b.row.date+'\0'+b.row.id));cache?.set(s,groups);}
+
+ return rows.map(row=>{
+  const reference=key(row);if(!reference)return row;const first=groups.get(reference)?.[0];
+  if(!first||row.date<first.row.date)return{...row,_plannedWaiting:true};
+  if(first.row.id===row.id){if(!row.scheduleTarget&&!(startPlan(row)>0)&&row.fieldPlannedWorkPlan>0)return named(s,{...row,plan:row.fieldPlannedWorkPlan,fieldPlanIntent:'start'});return row;}
+  if(!(C.num(row.pours)>=0)||row.productionCompletion||row.plan===0)return row;
+  // An explicit different target remains protected by the normal target validator.
+  if(first.row.scheduleTarget){if(row.scheduleTarget&&JSON.stringify(row.scheduleTarget)!==JSON.stringify(first.row.scheduleTarget))return row;return named(s,{...row,plan:null,fieldPlanIntent:'continue',scheduleTarget:clone(first.row.scheduleTarget)})}
+  if(!(startPlan(first.row)>0||first.row.fieldPlannedWorkPlan>0)||row.scheduleTarget)return row;
+  const origin='job:'+first.row.id,carried=stored.filter(j=>j.carried&&(j.originId||j.id)===origin&&j.worker===first.row.worker&&C.catalogIdentity(s,j.product)===C.catalogIdentity(s,row.product));
+  const jobId=first.month===k?origin:carried.length===1?carried[0].id:origin;
+  return named(s,{...row,plan:null,fieldPlanIntent:'continue',jobId});
+ });
+}
 function computeJobs(s,k,context){const source=s.months[k],externalRows=Object.entries(s.months||{}).filter(([month,value])=>month<k&&!value.closed&&!value.closeSnapshot).flatMap(([,value])=>(value.rows||[]).filter(row=>!row.deleted&&scheduleTargetOf(row)?.month===k)),m={...source,rows:[...(source.rows||[]),...externalRows].filter(r=>!C.fieldPreparation(r)).map(r=>named(s,r)),plans:(source.plans||[]).map(r=>named(s,r)),jobs:(source.jobs||[]).map(r=>named(s,r))};if(m.closed&&m.plans?.length){return(m.jobs||[]).map(j=>{const p=m.plans.find(p=>p.source===j.source),current=p?.produced??0,previous=j.carried?(p?.previousProduced||0):0,total=(p?.plan||j.plan||0)+previous;return{...j,records:[],currentProduced:current,produced:current+previous,totalPlan:total,remaining:Math.max(0,total-current-previous),complete:current+previous>=total,archived:true}})}if(m.modern===false)return[];
+ m.rows=plannedContinuationRows(s,k,m.rows,m.jobs||[],context).filter(row=>!row._plannedWaiting);
  const stored=m.jobs||[],continuations=sourceContinuationLinks(s,m,stored),reservations=reservationContext(s,k,m,continuations),anchors=new Map([...reservations.links.values()].map(x=>[x.jobId,x.rowId])),anchor=j=>j.sourceRowId||anchors.get(j.id),out=[],starts=m.rows.filter(r=>!r.deleted&&!r.scheduleTarget&&startPlan(r)>0&&!r.jobId&&!C.catalogIdentity(s,r.product).includes('부속')&&!continuations.has(r.id)&&!reservations.links.has(r.id)),occ={};
  for(const r of starts){const index=occ[r.product]||0;occ[r.product]=index+1;const prior=stored.find(j=>j.sourceRowId===r.id),identityChanged=prior&&(prior.worker!==r.worker||prior.product!==r.product),cfg=identityChanged?{}:prior||{},legacy=identityChanged||r.sourceIntegration&&!cfg.sourceRowId?null:m.plans.filter(p=>p.product===r.product)[index],parsed=parseInput(legacy?.input||'',k,s.workers);out.push({id:'job:'+r.id,originId:'job:'+r.id,sourceRowId:r.id,product:r.product,worker:r.worker,start:r.date,previousProduced:legacy?.previousProduced||0,previousPlan:legacy?.previousPlan||0,...parsed,...cfg,plan:startPlan(r),start:cfg.start||parsed.start||r.date,worker:cfg.worker||parsed.worker||r.worker})}
  for(const j of stored){if(!j.sourceRowId)out.push({...j,originId:j.originId||j.id});else if(!out.some(x=>x.sourceRowId===j.sourceRowId)&&m.rows.some(r=>r.id===j.sourceRowId&&!r.deleted))out.push({...j,originId:j.originId||j.id})}
@@ -7157,6 +7196,8 @@ const ilboIssueMessages={
  'product-unit-review':'품목이 바뀌어 석고량·케이스 기준 확인이 필요합니다. 관리에서 품목과 기준값을 함께 확인해 주세요.',
  'invalid-source-number':'생산량·계획·근무시간·불량에 잘못된 숫자가 있습니다. 현장일보의 입력값을 확인해 주세요.',
  'invalid-plan-intent':'계획 수량과 작업 상태가 맞지 않습니다. 현장일보에서 계속·새 작업·종료 상태를 확인해 주세요.',
+ 'invalid-planned-work':'예정 작업의 작성일과 기록을 확인해 주세요. 생산량과 기존 일정은 보존했습니다.',
+ 'invalid-planned-work-reference':'생산을 시작할 예정 작업이 변경되었거나 취소되었습니다. 현장일보에서 최신 예정 작업을 다시 선택해 주세요. 입력한 실적은 보존했습니다.',
  'invalid-production-completion':'생산완료 사유나 활용 재고 수량이 올바르지 않습니다. 현장일보에서 완료 내용을 확인해 주세요.',
  'invalid-production-plan-quantity':'완료 전 원계획 수량이 올바르지 않습니다. 현장일보의 원계획을 확인해 주세요.',
  'invalid-schedule-routing':'현장일보에서 품목이 같이 시작하는지, 앞 품목 뒤에 시작하는지 확인해 주세요. 기존 일정은 유지됩니다.',

@@ -9,6 +9,17 @@ const val=(s,a)=>s?.cells?.[a]?.v??null;
 const date=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
 const serial=n=>Number.isFinite(n)?new Date(Date.UTC(1899,11,30)+n*86400000).toISOString().slice(0,10):null;
 const iso=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+// Explicit field plans remain pending until a positive actual references their original row.
+function plannedWorkRefValue(value){
+ if(value==null)return null;
+ if(!value||typeof value!=='object'||Array.isArray(value)||!iso(value.date)||typeof value.id!=='string'||!value.id.trim()||value.id!==value.id.trim()||value.id.length>200||/[\x00-\x1f\x7f]/.test(value.id))throw Error('예정작업의 원래 날짜와 기록을 확인해 주세요.');
+ return{date:value.date,id:value.id};
+}
+function plannedWorkValue(value){
+ if(value==null)return null;
+ const ref=plannedWorkRefValue(value);if(value.schema!==1||!['waiting','cancelled'].includes(value.state))throw Error('예정작업 상태를 확인해 주세요.');
+ return{schema:1,id:ref.id,date:ref.date,state:value.state};
+}
 // A daily producer and the schedule job receiving that production are distinct.
 function scheduleTargetValue(value){
  if(value==null)return null;
@@ -238,6 +249,6 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);

@@ -91,6 +91,8 @@ function planSync(state,snapshot,options={}){
   for(const row of m.fieldAttendance||[])if(row.sourceIntegration?.key)attendanceLinks.add(row.sourceIntegration.key);
  }
  const locate=key=>links.get(key)||[];
+ const plannedSources=new Map();for(const file of files)for(const row of file.rows){try{const value=require('./schedule-core.cjs').plannedWorkValue(row.plannedWork);if(value&&value.date===file.date&&value.id===row.id&&!row.deleted&&!row.off&&(row.prod==null||row.prod==='')&&(row.hours==null||row.hours===''))plannedSources.set(file.date+'\0'+row.id,{row,value});}catch{}}
+
  // Validate the full source before returning any changes.
  for(const f of files)for(const raw of f.rows){
   const ctx={...f,raw,id:raw.id,key:integrationKey(f.path,raw.id)},month=f.date.slice(0,7);seenKeys.add(ctx.key);
@@ -122,6 +124,22 @@ function planSync(state,snapshot,options={}){
    }
    if(own(raw,'machineActuals')){
     try{values.machineActuals=machineActuals(raw.machineActuals,raw.prod)}catch{issue('invalid-machine-actuals',ctx);continue}
+   }
+   if(own(raw,'plannedWork')){
+    try{const value=require('./schedule-core.cjs').plannedWorkValue(raw.plannedWork);if(value&&(value.id!==raw.id||value.date!==f.date))throw Error();values.fieldPlannedWork=value;}catch{issue('invalid-planned-work',ctx);continue}
+   }
+   if(own(raw,'plannedWorkRef')){
+    try{
+     const value=require('./schedule-core.cjs').plannedWorkRefValue(raw.plannedWorkRef);
+     if(value){
+      if(value.date>f.date)throw Error();
+      const origin=plannedSources.get(value.date+'\0'+value.id),prior=locate(ctx.key).find(x=>same(x.row.sourceIntegration?.baseline?.fieldPlannedWorkRef,value)),known=!!prior;
+      // A deleted preparation must not invalidate already accepted production.
+      if(!known&&(!origin||origin.value.state!=='waiting'||clean(origin.row.worker)!==values.worker||ix.resolve(origin.row)?.id!==p.id))throw Error();
+      const originalPlan=prior?.row.sourceIntegration?.baseline?.fieldPlannedWorkPlan??number(origin?.row.plan,'planned work plan');if(originalPlan>0)values.fieldPlannedWorkPlan=originalPlan;
+     }
+     values.fieldPlannedWorkRef=value;
+    }catch{issue('invalid-planned-work-reference',ctx);continue}
    }
    if(own(raw,'scheduleTarget')){
     try{values.scheduleTarget=require('./schedule-core.cjs').scheduleTargetValue(raw.scheduleTarget)}catch{issue('invalid-schedule-target',ctx);continue}
