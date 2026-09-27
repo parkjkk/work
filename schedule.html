@@ -554,6 +554,7 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 @media(max-width:700px){.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"]){display:block!important;grid-column:1/-1}.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"])::before{display:block;padding:4px 8px}.stockMemoEditor textarea[data-cell="memo"]{min-height:68px;font-size:16px!important}.stockMemoEditor .sheetToolbar>.actions{width:100%}.stockMemoEditor [data-sheet-command="save"]{flex:1;min-height:40px}}
 
 .stockMemoHelp{margin-top:12px;color:#60788d;font-size:.78rem;line-height:1.6}.stockMemoHelp>summary{cursor:pointer;font-weight:600}.stockMemoHelp p{margin:7px 0}.stockMemoHelp>summary:focus-visible{outline:3px solid #77adcc;outline-offset:2px}
+@media(max-width:700px){body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked>tbody>tr.stockProducing>td[data-result="planStock"]{grid-column:1/-1}}
 .stockPlanHint{margin:8px 0 12px;color:#466173;font-size:12px;line-height:1.6}.stockMemoEditor .stockActiveGroup>th{background:#dcefe7!important;color:#185c48;border-top-color:#9ec5b6}.stockMemoEditor td[data-result="planStock"]{text-align:left;white-space:normal}.stockPlanCompare{display:flex;flex-direction:column;gap:4px;line-height:1.5;padding:3px 0;overflow-wrap:anywhere}.stockPlanCompare strong{font-size:12px;color:#476176}.stockPlanCompare small{display:block;font-size:11px;color:#4b6476}.stockPlanCompare.good strong{color:#146450}.stockPlanCompare.short strong{color:#aa382c}.stockPlanCompare.notice strong{color:#84561d}.stockPlanEmpty{color:#718392}.stockMemoEditor .stockProductionBadge{max-width:100%}
 .stockMemoEditor .stockCategoryRow>th{position:static!important;text-align:left!important;background:#e8edf6!important;color:#30456b;padding:8px 10px;border-top:1px solid #c5d2e6;font-size:12px;white-space:normal}.stockCategoryRow span{margin-left:10px;color:#617594;font-weight:400}.stockMemoEditor .stockProductName{display:block}.stockMemoEditor .stockProductionBadge{display:inline-block;margin-top:4px;padding:2px 6px;border:1px solid #79bbac;border-radius:5px;background:#e4f5ef;color:#126551;font-size:11px;font-weight:700;line-height:1.4;white-space:nowrap}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>td,.stockMemoEditor .inputSheet>tbody>tr.stockProducing>th{background:#f0f9f5}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>[data-result="product"]{box-shadow:inset 3px 0 #209576}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){min-height:48px;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;vertical-align:top}.stockMemoEditor td:has(textarea){vertical-align:top}
 @media(max-width:700px){body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockCategoryRow>th{display:block;width:100%;min-width:0;padding:9px 12px}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){font-size:16px!important;min-height:48px}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked>tbody>tr.stockProducing{border-color:#7bb6a6;background:#f0f9f5}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockProductionBadge{margin-left:6px;margin-top:0}}
@@ -3455,12 +3456,25 @@ function current(state,options={}){
   const stopped=progress?progress.reason==='stopped':!!job.stopped||!!job.stoppedAt;
   const complete=progress?progress.complete===true:job.complete===true||job.ended===true;
   if(!(produced>0&&plan>produced)||complete||stopped)continue;
-  const entry={id:job.id,originId:latest.origin,worker:latest.worker,...latest.identity,month:latest.month,asOf,produced,plan,remaining:plan-produced,carried:!!job.carried,manual:!!job.manual,lastRecordAt:progress?.lastRecordAt||job.lastActual||null};
+  const starts=chain.flatMap(({job:j})=>[j.firstActual,...(j.records||[]).filter(r=>!r.deleted&&C.num(r.pours)>0).map(r=>r.date)]).filter(d=>C.iso(d)&&d<=asOf);
+  const first=chain[0].job;if(first.carried&&C.num(first.previousProduced)>0&&C.iso(first.previousStart)&&first.previousStart<=asOf)starts.push(first.previousStart);
+  const productionStart=starts.sort()[0]||null;
+  const entry={id:job.id,originId:latest.origin,worker:latest.worker,currentWorker:P.workerAt(job,asOf),...latest.identity,month:latest.month,asOf,produced,plan,remaining:plan-produced,productionStart,carried:!!job.carried,manual:!!job.manual,lastRecordAt:progress?.lastRecordAt||job.lastActual||null};
   activeJobs.push(entry);
   if(!byProduct.has(entry.key))byProduct.set(entry.key,{key:entry.key,productId:entry.productId,product:entry.product,workers:[],jobs:[],count:0,produced:0,plan:0,remaining:0});
-  const group=byProduct.get(entry.key);group.jobs.push(entry);if(!group.workers.includes(entry.worker))group.workers.push(entry.worker);group.count++;group.produced+=produced;group.plan+=plan;group.remaining+=plan-produced;
+  const group=byProduct.get(entry.key);group.jobs.push(entry);if(!group.workers.includes(entry.currentWorker))group.workers.push(entry.currentWorker);
+  const actuals=(job.records||[]).filter(r=>!r.deleted&&C.iso(r.date)&&r.date<=asOf&&C.num(r.pours)>0),lastDate=actuals.map(r=>r.date).sort().at(-1);
+  for(const r of actuals.filter(r=>r.date===lastDate&&r.worker===entry.currentWorker))try{for(const member of C.productionTeamValue(r.productionTeam,r.worker)?.members||[])if(!group.workers.includes(member.worker))group.workers.push(member.worker)}catch{}
+  group.count++;group.produced+=produced;group.plan+=plan;group.remaining+=plan-produced;
  }
- return{asOf,activeJobs,byProduct,warnings,forProduct(name){const product=identity(name);return product?byProduct.get(product.key)||null:null}};
+ const recent=new Map();
+ for(const mm of Object.values(months))for(const row of mm.rows){
+  if(!(C.num(row.pours)>0))continue;const product=identity(row.product),worker=text(row.worker);if(!product||!worker)continue;
+  const old=recent.get(product.key);if(old&&old.date>row.date)continue;
+  const workers=[worker];try{workers.push(...(C.productionTeamValue(row.productionTeam,worker)?.members||[]).map(m=>m.worker))}catch{}
+  recent.set(product.key,{date:row.date,workers:[...new Set([...(old?.date===row.date?old.workers:[]),...workers])]});
+ }
+ return{asOf,activeJobs,byProduct,warnings,forProduct(name){const product=identity(name);return product?byProduct.get(product.key)||null:null},workersForProduct(name){const product=identity(name),active=product&&byProduct.get(product.key),last=product&&recent.get(product.key);return active?{status:'active',workers:[...active.workers],date:last?.date||null}:last?{status:'recent',workers:[...last.workers],date:last.date}:{status:'none',workers:[],date:null}}};
 }
 function compareInventory(state,inventoryRow,activity,options={}){
  const C=root.ScheduleCore,asOf=options.asOf;
@@ -3468,7 +3482,7 @@ function compareInventory(state,inventoryRow,activity,options={}){
  if(!C.iso(asOf))throw Error('재고 비교 기준일을 YYYY-MM-DD로 지정해 주세요.');
  const group=activity?.forProduct(inventoryRow?.product);if(!group)return null;
  const numeric=value=>typeof value==='number'||typeof value==='string'?C.num(value):null;
- const result={status:'plan-invalid',current:numeric(inventoryRow?.current),plan:numeric(group.plan),produced:numeric(group.produced),remaining:numeric(group.remaining),target:null,projected:null,balance:null,currentBalance:null};
+ const result={status:'plan-invalid',current:numeric(inventoryRow?.current),plan:numeric(group.plan),produced:numeric(group.produced),remaining:numeric(group.remaining),target:null,projected:null,balance:null,currentBalance:null,issuedDuring:null,productionStart:null};
  // Today's active jobs cannot be compared against a different stock month or
  // a stale activity snapshot. The activity badge itself remains independent.
  if(options.stockMonth!==asOf.slice(0,7)||activity.asOf!==asOf)return{...result,status:'historical'};
@@ -3477,10 +3491,29 @@ function compareInventory(state,inventoryRow,activity,options={}){
  // independent legacy catalog target is preserved but never read or changed.
  const {plan,produced,remaining}=result;
  if(!(plan>0)||produced==null||produced<0||remaining==null||remaining<=0||plan<=produced||Math.abs(plan-produced-remaining)>Math.max(1,plan,produced,remaining)*1e-9)return result;
- const target=plan;
+ // The active product's outgoing stock has already reduced inventory. Reduce
+ // its stock target by the same dated replacement quantity, never by issued
+ // again. Product-level ledger entries are counted once across active jobs.
+ if(!group.jobs?.length||group.jobs.some(j=>!C.iso(j.productionStart)||j.productionStart>asOf))return{...result,status:'period-invalid'};
+ const productionStart=group.jobs.map(j=>j.productionStart).sort()[0];
+ let issuedDuring=0;const seen=new Set();
+ for(let key=productionStart.slice(0,7);key<=asOf.slice(0,7);){
+  const mm=state.months?.[key];if(!mm||!Array.isArray(mm.issues))return{...result,productionStart,status:'period-invalid'};
+  for(const row of mm.issues){
+   if(row.deleted||activity.forProduct(row.product)?.key!==group.key)continue;
+   if(!C.iso(row.date)||row.date.slice(0,7)!==key)return{...result,productionStart,status:'issue-invalid'};
+   if(row.date<productionStart||row.date>asOf)continue;
+   if(!text(row.id)||seen.has(row.id))return{...result,productionStart,status:'issue-invalid'};seen.add(row.id);
+   const raw=row.replacement,qty=numeric(raw);if(qty==null&&raw!=null&&text(raw)!==''||qty!=null&&qty<0)return{...result,productionStart,status:'issue-invalid'};
+   issuedDuring+=qty??0;
+  }
+  const year=Number(key.slice(0,4)),month=Number(key.slice(5));key=month===12?(year+1)+'-01':year+'-'+String(month+1).padStart(2,'0');
+ }
+ if(!Number.isFinite(issuedDuring))return{...result,productionStart,status:'issue-invalid'};
+ const target=Math.max(0,plan-issuedDuring);
  const projected=result.current+result.remaining,balance=projected-target,currentBalance=result.current-target;
  if(![projected,balance,currentBalance].every(Number.isFinite))return result;
- return{...result,target,projected,balance,currentBalance,status:currentBalance>=0?'covered':balance>0?'surplus':balance<0?'shortfall':'matched'};
+ return{...result,target,projected,balance,currentBalance,issuedDuring,productionStart,status:currentBalance>=0?'covered':balance>0?'surplus':balance<0?'shortfall':'matched'};
 }
 root.ScheduleStockStatus={current,compareInventory};if(typeof module!=='undefined')module.exports=root.ScheduleStockStatus;
 })(typeof globalThis!=='undefined'?globalThis:this);
@@ -6727,6 +6760,8 @@ function secondaryStockPlanText(info){
  if(!info)return'—';
  if(info.status==='historical')return'현재 월에서 비교';
  if(info.status==='plan-invalid')return'생산계획 확인 필요';
+ if(info.status==='period-invalid')return'생산 시작일·월자료 확인 필요';
+ if(info.status==='issue-invalid')return'교체·불출 기록 확인 필요';
  if(info.status==='stock-invalid')return'현재고 확인 필요';
  if(info.status==='covered')return info.currentBalance>0?'현재 목표보다 '+fmt(info.currentBalance)+'조 여유':'현재 목표 달성';
  if(info.status==='shortfall')return'계획에 '+fmt(Math.abs(info.balance))+'조 추가 필요';
@@ -6738,9 +6773,12 @@ function secondaryStockPlanHTML(info){
  if(!info)return'<span class="stockPlanEmpty">—</span>';
  const valid=n=>typeof n==='number'&&Number.isFinite(n),tone=['covered','surplus','matched'].includes(info.status)?'good':info.status==='shortfall'?'short':'notice';
  const math=info.status==='historical'?'과거·미래 재고와 오늘 생산은 합산하지 않습니다.':valid(info.projected)?'현재고 '+fmt(info.current)+' + 남은 '+fmt(info.remaining)+' = 예상 '+fmt(info.projected)+'조':'';
- const basis=info.status==='historical'?'':valid(info.target)?'생산계획 '+fmt(info.target)+'조 = 목표재고':'생산계획 확인 필요';
- return'<div class="stockPlanCompare '+tone+'"><strong>'+esc(secondaryStockPlanText(info))+'</strong>'+(math?'<small>'+esc(math)+'</small>':'')+(basis?'<small>'+esc(basis)+'</small>':'')+'</div>';
+ const basis=info.status==='historical'?'':valid(info.target)?'계획 '+fmt(info.plan)+' − 기간 중 출고 '+fmt(info.issuedDuring)+' = 목표 '+fmt(info.target)+'조':'';
+ const period=valid(info.issuedDuring)&&info.productionStart?'출고 기준 '+info.productionStart+'부터 · 교체 조수':'';
+ return'<div class="stockPlanCompare '+tone+'"><strong>'+esc(secondaryStockPlanText(info))+'</strong>'+(math?'<small>'+esc(math)+'</small>':'')+(basis?'<small>'+esc(basis)+'</small>':'')+(period?'<small>'+esc(period)+'</small>':'')+'</div>';
 }
+function secondaryStockWorkerText(info){return info?.workers?.length?(info.status==='active'?'생산 중 · ':'최근 생산 · ')+info.workers.join(' · '):'생산 이력 없음'}
+function secondaryStockWorkerHTML(info){return'<div class="stockPlanCompare"><strong>'+esc(secondaryStockWorkerText(info))+'</strong>'+(info?.date?'<small>최근 실적 '+esc(info.date)+'</small>':'')+'</div>'}
 // Catalog memo drafts have one storage key per connection, independent of inventory month.
 const secondaryStockMemoId='stock-memos';
 const secondaryStockMemoKey=()=>sheetScope()+':catalog:'+secondaryStockMemoId;
@@ -6793,6 +6831,7 @@ function secondaryStockMemoGrid(key,rows,activity=globalThis.ScheduleStockStatus
   createDraft:()=>{const rows=secondaryStockMemoNames(state);return{baseRows:C.clone(rows),rows,deleted:[],revision:0}},
   stockActivity:active,rowClass:r=>active(r)?'stockProducing':'',rowTitle:r=>active(r)?'오늘 기준 생산 중 · '+active(r).workers.join(' · '):'',
   columns:[{key:'product',label:'품명',width:128,hideCalcLabel:true,calc:r=>r.product,html:r=>'<span class="stockProductName">'+esc(r.product)+'</span>'+(active(r)?'<span class="stockProductionBadge" title="'+esc(active(r).workers.join(' · '))+'">생산 중</span>':'')},...['opening','production','deduction','current','kg'].map((field,i)=>({key:field,label:['이월','생산','교체 차감','현재고','kg'][i],width:62,hideCalcLabel:true,calc:r=>quantity(r,field),...(field==='current'?{html:r=>'<span'+(current.get(r.product)?.current<0?' class="diff"':'')+'>'+esc(quantity(r,field))+'</span>'}:{})})),
+   {key:'recentWorker',label:'최근 생산 작업자',width:150,hideCalcLabel:true,calc:r=>secondaryStockWorkerText(activity?.workersForProduct?.(r.product)),html:r=>secondaryStockWorkerHTML(activity?.workersForProduct?.(r.product))},
    {key:'planStock',label:'목표재고 대비 계획',width:224,hideCalcLabel:true,calc:r=>secondaryStockPlanText(comparison(r)),html:r=>secondaryStockPlanHTML(comparison(r))},
    ...[{key:'machineQty',label:'호기·조수',width:124},{key:'location',label:'보관장소',width:110}].map(c=>({...c,type:'textarea',value:(r,d)=>secondaryStockMetadataValue(r.product,d,c.key),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||c.label+' 직접 수정 · 월과 관계없이 품명별로 보관'})),
    {key:'memo',label:'메모 · 품명 공통',type:'textarea',width:290,value:(r,d)=>secondaryStockMemoValue(r.product,d),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||'월이 바뀌어도 같은 품명에 계속 보관 · 모바일 Enter / PC Shift+Enter 줄바꿈'}],
@@ -6810,7 +6849,7 @@ function secondaryStockMemoGrid(key,rows,activity=globalThis.ScheduleStockStatus
 }
 function secondaryStockTable(key){
  const view=secondaryLedgerPrefs(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()}),rows=secondaryStockRows(state,key,filter,view.hideZeroStock,activity);
- return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+'<p class="stockPlanHint">목표재고 = 생산계획 조수입니다. 생산 중인 품목을 먼저 표시하고, 완료되면 품명 순서로 돌아갑니다.</p>'+secondaryStockMemoGrid(key,rows,activity)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p><p>계획 여유 = 현재고 + 남은 생산량 − 목표재고. 남은 생산량은 진행 중 작업의 생산계획에서 누적 실적을 뺀 수량이며, 같은 품목의 여러 작업은 합산합니다. 목표재고는 진행 중 생산계획 조수와 같은 값으로 자동 계산하며 별도로 입력하지 않습니다. 품목·작업자에 보관된 별도 목표값은 이 비교에 사용하지 않습니다. 오늘 생산과 비교하므로 현재 월에서만 계산하고, 미래 교체·불출은 예상하지 않습니다.</p></details></section>';
+ return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+'<p class="stockPlanHint">목표재고 = 생산계획 − 생산 중 출고입니다. 생산 중인 품목을 먼저 표시하고, 완료되면 품명 순서로 돌아갑니다.</p>'+secondaryStockMemoGrid(key,rows,activity)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p><p>계획 여유 = 현재고 + 남은 생산량 − 목표재고. 남은 생산량은 진행 중 작업의 생산계획에서 누적 실적을 뺀 수량이며, 같은 품목의 여러 작업은 합산합니다. 목표재고는 생산계획에서 생산 시작일~오늘의 재고 차감 출고(교체 조수)를 뺀 수량이며 0 미만으로 내리지 않습니다. 같은 품목의 여러 진행 작업은 가장 이른 시작일부터 출고를 한 번만 셉니다. 생산 시작 전·미래 기록과 별도 불출 조수는 더하지 않습니다. 같은 날짜는 하루 단위로 포함합니다. 품목·작업자에 보관된 별도 목표값은 이 비교에 사용하지 않습니다. 오늘 생산과 비교하므로 현재 월에서만 계산하고, 미래 교체·불출은 예상하지 않습니다. 최근 생산 작업자는 진행 중이면 현재 담당자, 그 외에는 해당 모델의 가장 최근 양수 생산실적에 적힌 작업자입니다. 같은 마지막 생산일의 여러 작업자와 함께 작업한 사람은 같이 표시합니다.</p></details></section>';
 }
 stockView=function(){
  const key=month,view=secondaryLedgerPrefs();
@@ -7004,9 +7043,9 @@ function secondaryBindLedger(){
  const hideZero=document.querySelector('#secondaryStockHideZero');if(hideZero){hideZero.disabled=!!busy;hideZero.onchange=execute(()=>secondaryLedgerChange({hideZeroStock:hideZero.checked}))}
   const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{
    const asOf=today(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf}),rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock,activity);
-   csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+asOf+')','계획 비교 (현재 월 기준)','생산계획 (조)','남은 생산 (조)','목표재고 (=생산계획, 조)','완료 예상 재고 (조)','계획 여유·부족 (예상재고−목표, 조)','메모 · 품명 공통 (저장값)'],rows.map(r=>{
+   csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+asOf+')','계획 비교 (현재 월 기준)','생산계획 (조)','남은 생산 (조)','목표재고 (생산계획−기간 중 출고, 조)','완료 예상 재고 (조)','계획 여유·부족 (예상재고−목표, 조)','기간 중 출고 (교체 조수)','출고 계산 시작일','최근 생산 작업자','최근 생산일','메모 · 품명 공통 (저장값)'],rows.map(r=>{
     const info=globalThis.ScheduleStockStatus?.compareInventory?.(state,r,activity,{stockMonth:month,asOf});
-    return[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',info?secondaryStockPlanText(info):'',info?.plan??null,info?.remaining??null,info?.target??null,info?.projected??null,info?.balance??null,secondaryStockMemoValue(r.product,{},true)];
+    return[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',info?secondaryStockPlanText(info):'',info?.plan??null,info?.remaining??null,info?.target??null,info?.projected??null,info?.balance??null,info?.issuedDuring??null,info?.productionStart??'',secondaryStockWorkerText(activity?.workersForProduct?.(r.product)),activity?.workersForProduct?.(r.product)?.date||'',secondaryStockMemoValue(r.product,{},true)];
    }),'재고표');
   });
 }
