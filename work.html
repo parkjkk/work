@@ -900,6 +900,153 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   #plannedWorkPanel .planned-work-item b{font-size:13px}#plannedWorkPanel .planned-work-item small{font-size:11px;margin:3px 0}
   #plannedWorkPanel .planned-work-actions{gap:4px}#plannedWorkPanel .planned-work-actions button{font-size:12px;min-height:44px;padding:6px 9px}
 }
+
+/* field-layout-design-v1: reduce visual layers; prioritize quantities and everyday checks. */
+@media screen{
+  .card,.rowcard,.settings-group{box-shadow:none}
+  .day-layout{gap:10px}
+  .day-records>.section-heading{margin-bottom:6px}
+  .daysum,#daysum{padding:8px 0;border-radius:10px;margin-bottom:6px}
+  .daysum .ds b,#daysum .ds b{font-size:20px;margin-bottom:2px}
+  .daysum .ds span,#daysum .ds span{font-size:11px;line-height:1.4}
+  #fieldLots{padding:0 2px 4px;margin-bottom:6px}
+  .wgroup{margin-bottom:14px}
+  .wgroup .whead{padding:0 2px 4px;align-items:center}
+  .rowcard{border-radius:11px;padding:10px 12px;margin-bottom:7px}
+  .rowcard .rc-title{gap:5px 8px}
+  .rowcard .rc-prod{font-size:16px;line-height:1.5}
+  .rowcard .rc-previous{background:none;border:0;padding:1px 0;font-size:11px}
+  .rowcard .rc-sub{gap:5px 10px;align-items:center;font-size:12px}
+  .rowcard .rc-sub .rc-quantity{color:var(--ink);font-size:13px}
+  .rowcard .rc-quantity b{font-size:17px;margin-left:2px;font-variant-numeric:tabular-nums}
+  .rowcard .row-sync.confirmed,.rowcard .row-sync.local{border:0;background:none;padding:1px 0}
+  .rowcard .badge.on{border-radius:4px;padding:2px 5px}
+  .rowcard .team-badge{background:none;border:0;border-left:2px solid var(--line-in);border-radius:0;padding:2px 7px;color:var(--ink-dim)}
+  .rowcard .product-memo-link{margin:0;min-height:30px;font-size:12px}
+  .rowcard .rc-marks{font-size:12px}
+  .rowcard.has-bad{border-left-width:3px}
+  .month-header{display:flex;align-items:center;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;margin-bottom:10px}
+  .month-header>.section-heading{flex:1 1 220px;margin:0}
+  .month-header>.mon-nav{flex:1 1 300px;margin:0;justify-content:flex-end}
+  .month-header .mon-nav #thisMon{margin-left:8px!important}
+  .mon-note{margin:4px 0 8px;text-align:left;font-size:12px;line-height:1.5}
+  .mon-pills{margin:8px 0 6px;padding:3px;gap:3px;border-radius:10px;background:var(--surface2)}
+  .mon-pills button{font-size:13px;border-radius:7px}
+  .mon-pills button.sel{box-shadow:inset 0 -2px var(--accent)}
+  .month-help{margin:0 0 4px}
+  .mon-sec h3{margin:10px 0 4px;color:var(--ink);font-size:14px}
+  .month-sort{margin:4px 0 7px;gap:4px 10px;font-size:12px}
+  .month-sort label{gap:6px}.month-sort select{font-size:13px}
+  .month-sort small{font-size:11px}
+  .month-scroll-hint{display:none}
+  @media(max-width:599px){
+    .month-scroll-hint{display:block;font-size:11px;color:var(--ink-dim);margin:4px 0 6px;line-height:1.5}
+    table.mon[data-month-table="worker"]{min-width:620px;table-layout:fixed}
+    table.mon[data-month-table="worker"] th:first-child,table.mon[data-month-table="worker"] td.d{width:116px;max-width:116px;white-space:normal;overflow-wrap:anywhere;overflow:visible}
+    table.mon[data-month-table="worker"] td.d .product-link{display:block;width:100%;white-space:normal;line-height:1.5;padding:4px 0}
+    table.mon[data-month-table="worker"] th:last-child{width:114px}
+  }
+  table.mon th{font-weight:700;font-size:12px;padding:8px 8px}
+  table.mon td{padding:7px 8px;font-size:13px}
+  table.mon td.d{text-align:left}
+  table.mon td.d button{min-height:44px;text-align:left}
+  .mon-scroll{border-radius:10px;border:1px solid var(--line);scrollbar-gutter:auto}
+  .mon-scroll table.mon{border:0;border-radius:0}
+  .mon-scroll table.mon tbody tr:nth-child(even):not(.wk) td{background:color-mix(in srgb,var(--surface2) 24%,var(--surface))}
+  #entryOv .entry-basics{padding:8px 10px;gap:10px;align-items:center}
+  #entryOv #workerDetails>summary{min-height:52px;padding:5px 8px;background:transparent}
+  #entryOv .entry-hours .f-label{margin-bottom:3px}
+  #entryOv #quickProducts{margin:12px 0;gap:8px}
+  #entryOv .quick-head{align-items:baseline;gap:4px 8px;margin-bottom:5px}
+  #entryOv .quick-head h3{font-size:16px}
+  #entryOv .quick-total{font-size:11px;line-height:1.5;min-height:0;border-radius:4px;padding:2px 5px}
+  #entryOv .quick-row{border-radius:10px;padding:8px 10px;gap:7px 9px}
+  #entryOv .quick-product{margin-bottom:0;border-width:1px}
+  #entryOv .quick-stepper{gap:3px}
+  #entryOv .quick-stepper input{font-size:21px;font-weight:700;background:var(--accent-soft);border-color:var(--line-in)}
+  #entryOv .quick-stepper button{background:var(--surface2);border-color:var(--line);font-size:22px}
+  #entryOv .quick-footer{padding-top:4px;gap:0 6px;border-top-color:var(--line);align-items:center}
+  #entryOv .quick-state-line{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:2px 7px;align-items:baseline;line-height:1.45;font-size:11px;color:var(--ink-dim)}
+  #entryOv .quick-state-line .quick-remaining{font-size:12px;font-weight:700}
+  #entryOv .quick-state-line .quick-progress-note{margin:0;font-size:11px}
+  #entryOv .quick-phase[hidden]{display:none}
+  #entryOv .quick-open small{gap:3px 7px;margin-top:3px}
+  #entryOv .quick-detail-link{font-size:11px}
+  #entryOv .quick-machine{border-color:transparent;color:var(--ink-dim);font-size:11px;padding:4px}
+  #entryOv .entry-detail-heading{margin:10px 0 0}
+  #productCatalogNote{background:none;border:0;border-left:2px solid var(--line);border-radius:0;padding:5px 9px;font-size:12px;margin-top:6px!important}
+  #entryOv .pb,#entryOv .pb.pb-collapsed{padding:10px;margin:8px 0;border-radius:11px;box-shadow:none}
+  #entryOv .pb-team{border:0;background:transparent;padding:0}
+  #entryOv .pb-team>summary{margin:0;padding:6px 3px;background:transparent;color:var(--ink-dim)}
+  #entryOv .pb-team-fields,#entryOv .pb-team-note{padding:0 3px}
+  #entryOv .pb-quality{border:0;border-top:1px solid var(--line);border-radius:0;padding:0;margin-top:5px}
+  #entryOv .pb-quality>summary,#entryOv .pb-quality[open]>summary{background:transparent;box-shadow:none;color:var(--ink);padding:8px 1px;margin:0 0 4px}
+  #entryOv .chk{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:7px 0;background:transparent}
+  #entryOv .chk-grid{column-gap:12px;row-gap:6px}
+  #entryOv .seg button{border-width:1px}
+  #entryOv .pb-remark{background:var(--surface);border-width:1px}
+  #setOv .ov-body{padding-top:12px}
+  #setStatus{margin-bottom:10px;line-height:1.6}
+  .settings-group{margin:8px 0;border-radius:10px}
+  .settings-group>summary{min-height:60px;padding:11px 14px;font-size:14px}
+  .settings-group>summary small{margin-top:3px;font-size:12px}
+  .settings-group[open]>summary{border-bottom:1px solid var(--line);background:var(--surface2);margin-bottom:10px}
+  #plannedWorkDialog{padding:16px}
+  #plannedWorkDialog h2,#productMemoDialog h2,.field-lot-dialog h2{font-size:19px;line-height:1.5;margin:0 0 8px}
+  #plannedWorkDialog>.quick-hint{margin:0 0 10px;line-height:1.6;font-size:12px}
+  #plannedWorkDialog .planned-flow-preview{border:0;border-left:3px solid var(--accent);border-radius:0;background:var(--surface2);padding:10px;margin:8px 0}
+  #plannedWorkDialog .pb-route-flow-line{gap:5px;margin-top:5px}
+  #plannedWorkDialog .pb-route-flow-tag{padding:2px 0;background:none;font-size:11px}
+  #plannedWorkDialog .pb-route-flow-node{background:var(--surface);border-color:var(--line);font-size:12px}
+  #plannedWorkDialog .pb-route-flow-node[aria-pressed=true]{background:var(--accent-soft);outline-offset:0}
+  #plannedWorkDialog>label{margin:9px 0 2px;font-size:13px}
+  #plannedWorkDialog [data-planned-add]{padding:6px 10px;font-size:12px;margin-bottom:2px}
+  #plannedWorkDialog .planned-dialog-actions{bottom:-16px;padding-top:8px;border-top:1px solid var(--line)}
+  #productMemoDialog .memo-status:empty,.field-lot-dialog .field-lot-error:empty{min-height:0;margin:4px 0}
+  .field-lot-dialog{border-color:var(--line-in);padding:18px}
+  .field-lot-dialog>p:not([data-status]):not(.field-lot-error){color:var(--ink-dim);font-size:12px;margin:10px 0}
+  .field-lot-dialog .actions [data-close]{min-width:64px;border:1px solid var(--line);border-radius:8px}
+  .print-header{margin-bottom:2px}.print-help{margin-bottom:2px}.print-help>summary{padding-block:9px}
+  #view-sheet .preflight{margin-bottom:8px}
+  @media(min-width:360px) and (max-width:899px){
+    .day-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .day-overview>*{grid-column:1/-1;margin-bottom:0!important}
+    .day-overview:has(#plannedWorkPanel.is-empty):not(:has(.planned-work-warning))>#missCard:not(:has(.roster-details[open])){grid-column:auto}
+    .day-overview:has(#missCard:not([hidden])):not(:has(#missCard .roster-details[open]))>#plannedWorkPanel.is-empty:not(:has(.planned-work-warning)){grid-column:auto}
+    .day-overview #plannedWorkPanel.is-empty .planned-work-heading{flex-wrap:wrap;gap:0;align-items:center}
+    .day-overview #plannedWorkPanel.is-empty .planned-work-heading h3{font-size:12px}
+    .day-overview #plannedWorkPanel.is-empty [data-planned-new]{padding:3px 0;font-size:12px}
+  }
+  @media(min-width:600px){
+    #plannedWorkDialog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:14px}
+    #plannedWorkDialog:not([open]){display:none}
+    #plannedWorkDialog>h2,#plannedWorkDialog>.quick-hint,#plannedWorkDialog>.planned-flow-preview,#plannedWorkDialog>.planned-dialog-status,#plannedWorkDialog>.planned-dialog-actions,#plannedWorkDialog>label:has([name=plannedAfter]){grid-column:1/-1}
+    #plannedWorkDialog>[data-planned-add]{justify-self:start}
+    #plannedWorkDialog>label:has([name=worker]){grid-column:1}
+    #plannedWorkDialog .planned-extra{margin-top:6px}
+  }
+  @media(min-width:900px){
+    main{padding-top:16px}
+    .day-layout{grid-template-columns:272px minmax(0,1fr);gap:20px}
+    #entryOv .ov-body{max-width:980px}
+    #entryOv .ov-head,#entryOv .ov-actions{padding-left:max(16px,calc(50% - 478px));padding-right:max(16px,calc(50% - 478px))}
+    #entryOv .entry-basics{grid-template-columns:minmax(0,1fr) 260px}
+    #entryOv #quickProducts{grid-template-columns:repeat(2,minmax(0,1fr))}
+    #entryOv .quick-row{grid-template-columns:minmax(0,1fr) 154px}
+    #entryOv .quick-footer{min-height:46px}
+  }
+  @media(max-width:599px){
+    .month-header{gap:2px;margin-bottom:8px}
+    .month-header>.section-heading,.month-header>.mon-nav{flex-basis:100%}
+    .month-header>.mon-nav{justify-content:flex-start}
+    .month-header .mon-nav #thisMon{margin-left:auto!important}
+    #plannedWorkDialog .pb-route-flow-tag{flex-basis:auto;min-width:48px}
+    #plannedWorkDialog .planned-dialog-actions{bottom:-16px;grid-template-columns:1fr 1.5fr}
+    #plannedWorkDialog .planned-dialog-actions [data-planned-save]{grid-column:2;grid-row:auto;min-width:0}
+    #plannedWorkDialog .planned-dialog-actions [data-planned-close]{grid-column:1;grid-row:1}
+    #plannedWorkDialog .planned-dialog-actions [data-planned-reload],#plannedWorkDialog .planned-dialog-actions [data-planned-cancel]{grid-column:1/-1}
+  }
+}
 </style>
 <!-- APP_ACCESS_BEGIN --><script>
 (function(root){'use strict';
@@ -1045,10 +1192,12 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
 
   <!-- 현황 -->
   <section id="view-month" style="display:none">
+    <div class="month-header">
     <div class="section-heading"><h2>월별 현황</h2><details class="screen-tools"><summary>더보기</summary><div><button id="monCopy" class="quiet-btn" title="이 달 기록 전체를 엑셀에 붙여넣을 수 있게 복사">월 기록 복사</button><p class="quick-hint">복사한 내용을 엑셀에 붙여넣으세요.</p></div></details></div>
     <div class="mon-nav">
       <button id="prevMon" title="지난달" aria-label="지난달">◀</button><b id="monLabel"></b><button id="nextMon" title="다음달" aria-label="다음달">▶</button>
       <button id="thisMon" class="tool" style="height:44px; padding:0 12px; margin-left:6px; font-size:13px" title="이번 달로">이번 달</button>
+    </div>
     </div>
     <div id="monBody"></div>
   </section>
@@ -3180,7 +3329,7 @@ function plannedFlowSelect(s,id,capture=true){
 function plannedFlowDraw(s){
  const host=s.dialog.querySelector('.planned-flow-preview'),select=s.dialog.querySelector('[name=plannedAfter]'),node=s.nodes.find(n=>n.id===s.id),live=s.nodes.filter(n=>!n.cancelled);
  select.innerHTML='<option value="">다른 품목과 동시에 시작</option>'+live.filter(n=>n.id!==s.id).map(n=>`<option value="${esc(n.id)}">${esc(n.product||'미선택 품목')} ${esc(n.plan||'')}조 끝나면 시작</option>`).join('');select.value=node?.after||'';
- try{const lines=plannedFlowLayout(s.nodes);host.innerHTML='<div class="pb-route-flow-title">예정 작업 흐름 · 품목 상자를 눌러 수정</div>'+lines.map(line=>`<div class="pb-route-flow-line"><span class="pb-route-flow-tag">${lines.length>1?'함께 시작':'생산 순서'}</span>${line.map((n,i)=>`${i?'<span class="pb-route-flow-arrow" aria-hidden="true">→</span>':''}<button type="button" class="pb-route-flow-node" data-planned-node="${esc(n.id)}" aria-pressed="${n.id===s.id}">${esc(n.product||'품목 선택')} ${esc(n.plan||'')}조 <small>· ${n.started?'생산 이력 있음':i?'다음':'시작'}</small></button>`).join('')}</div>`).join('');}
+ try{const lines=plannedFlowLayout(s.nodes);host.innerHTML='<div class="pb-route-flow-title">예정 작업 흐름 · 품목 상자를 눌러 수정</div>'+lines.map(line=>`<div class="pb-route-flow-line"><span class="pb-route-flow-tag">${lines.length>1?'함께 시작':'생산 순서'}</span>${line.map((n,i)=>`${i?'<span class="pb-route-flow-arrow" aria-hidden="true">→</span>':''}<button type="button" class="pb-route-flow-node" data-planned-node="${esc(n.id)}" aria-pressed="${n.id===s.id}">${esc(n.product||'품목 선택')} ${n.plan?esc(n.plan)+'조':'· 계획 입력'} <small>· ${n.started?'생산 이력 있음':i?'다음':'시작'}</small></button>`).join('')}</div>`).join('');}
  catch(e){host.innerHTML='<div class="pb-route-flow-error">'+esc(e.message)+'</div>';}
  host.querySelectorAll('[data-planned-node]').forEach(button=>button.onclick=()=>plannedFlowSelect(s,button.dataset.plannedNode));
  s.dialog.querySelector('[data-planned-add]').disabled=s.busy||live.length>=20;s.worker.disabled=s.nodes.some(n=>n.started);
@@ -3668,7 +3817,7 @@ function renderInputContents(){
             <div class="rc-sub">
               ${planBadge(r)}
               ${(()=>{const sync=fieldRecordSyncState(r);return `<span class="row-sync ${sync.kind}" title="${esc(sync.note||sync.text)}">${esc(sync.text)}</span>`;})()}
-              <span>생산 <b>${(r.prod===''||r.prod==null) ? '<span style="color:var(--warn)">미입력</span>' : esc(r.prod)}</b>${(r.prod===''||r.prod==null) ? '' : '조'}</span>
+              <span class="rc-quantity">생산 <b>${(r.prod===''||r.prod==null) ? '<span style="color:var(--warn)">미입력</span>' : esc(r.prod)}</b>${(r.prod===''||r.prod==null) ? '' : '조'}</span>
               ${bad ? `<span class="badge bad">불량 ${esc(r.defQty||0)}개${r.scrapKg?' · '+esc(r.scrapKg)+'kg':''}${r.defPart?' · '+esc(r.defPart):''}</span>` : ''}
               ${r.b1 ? `<span>분동1호 ${esc(r.b1)}</span>` : ''}
               ${r.b2 ? `<span>분동2호 ${esc(r.b2)}</span>` : ''}
@@ -4049,7 +4198,7 @@ function syncQuickProductsContents(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<div class="quick-head"><h3>품명·오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><div class="quick-product-info"><label class="quick-product-label">품명<select class="quick-product" aria-label="제품 ${i+1} 품명 선택"></select></label></div><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div></div><div class="quick-footer"><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small><span class="quick-phase"></span><span class="quick-check"></span><span class="quick-detail-link">검사·특이사항 보기 ›</span></small></button><button type="button" class="quick-machine">호기별 입력</button></div></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>품명·오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><div class="quick-product-info"><label class="quick-product-label">품명<select class="quick-product" aria-label="제품 ${i+1} 품명 선택"></select></label></div><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div></div><div class="quick-footer"><div class="quick-state-line"><span class="quick-remaining"></span><span class="quick-progress-note"></span></div><button type="button" class="quick-open"><b></b><small><span class="quick-phase"></span><span class="quick-check"></span><span class="quick-detail-link">검사·특이사항 보기 ›</span></small></button><button type="button" class="quick-machine">호기별 입력</button></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
       row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);const quality=el.querySelector('.pb-quality');quality.open=true;quality.scrollIntoView({block:'start',behavior:'smooth'});quality.querySelector('summary').focus({preventScroll:true});};
@@ -4070,7 +4219,7 @@ function syncQuickProductsContents(){
     const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
     const view=productProgressView(el),remaining=row.querySelector('.quick-remaining');remaining.textContent=view.label;remaining.dataset.pending=String(view.remaining===null);remaining.hidden=!p;row.querySelector('.quick-progress-note').textContent=p?view.note:'';
-    row.querySelector('.quick-phase').textContent=quickScheduleStatus(el,view);
+    const phaseLabel=quickScheduleStatus(el,view),phaseNote=row.querySelector('.quick-phase');phaseNote.textContent=phaseLabel;phaseNote.hidden=phaseLabel==='오늘 조수만 입력';
     const incomplete=!gasa||CHECK_KEYS.some(k=>!segGetB(el,k)),check=row.querySelector('.quick-check');
     check.textContent=manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':incomplete?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'');
     check.dataset.state=bad||Number(defect)>0?'attention':incomplete?'incomplete':'good';
@@ -5468,7 +5617,7 @@ function drawMonth(rawDays, y, m){
 
   /* ── 작업자별 ── */
   const wNames = Object.keys(workerStat).sort((a,b) => workerStat[b].miss - workerStat[a].miss || a.localeCompare(b, 'ko'));
-  const wTable = wNames.length ? `<table class="mon" data-month-table="worker">
+  const wTable = wNames.length ? `<p class="month-scroll-hint">← 좌우로 밀면 작업시간·생산량까지 볼 수 있습니다 →</p><table class="mon" data-month-table="worker">
       <thead><tr><th>작업자</th><th>작업일</th><th>휴무</th><th>교체</th><th>미작성</th><th>시간(hr)</th><th>생산량(조)</th></tr></thead>
       <tbody>${wNames.map(n => { const w = workerStat[n]; return `<tr>
         <td class="d"><button class="product-link" data-worker-detail="${esc(n)}">${esc(n)} ›</button></td><td>${w.days.size}일</td><td>${w.off || ''}</td><td>${w.kase || ''}</td><td>${w.miss ? `<b style="color:var(--warn)">${w.miss}일</b>` : ''}</td><td>${r2(w.hours) || ''}</td>

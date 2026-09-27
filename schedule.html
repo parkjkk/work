@@ -467,6 +467,27 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
  body.sheetWorkspace #planGridSurface:not(.pgFocused) .pgDisplayTools>[data-pg-command="focus-mode"]{display:none}
 }
 
+/* The timeline owns the strongest frame; supporting tools stay visually quiet. */
+@media screen{
+ body.sheetWorkspace #planGridSurface .pgTopActions{box-shadow:none;border-radius:8px;margin-bottom:7px}
+ body.sheetWorkspace #planGridSurface .pgCalendarPanel{padding:12px;border-radius:8px}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar{margin-bottom:7px;gap:8px}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar h2{font-size:14px;color:#304e63}
+ body.sheetWorkspace #planGridSurface .pgDisplayTools{margin-bottom:5px;gap:5px}
+ body.sheetWorkspace #planGridSurface .pgLegend{margin:4px 0 6px;gap:5px 12px;color:#4e6476;line-height:1.5}
+ body.sheetWorkspace #planGridSurface .pgDrySearch{border:0;border-top:1px solid #e0e7ef;border-bottom:1px solid #e0e7ef;border-radius:0;background:#fafbfd;padding:5px 2px;margin:5px 0}
+ body.sheetWorkspace #planGridSurface .pgDrySearch label{font-size:12px;color:#355369}
+ body.sheetWorkspace #planGridSurface .pgDrySearch #pgDrySearchStatus{color:#50677a}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo{border-radius:5px;border-color:#c4d5e5;background:#f0f6fb}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo.pgSelectionEmpty{border-color:#e0e7ef;background:#f8fafc}
+ body.sheetWorkspace #planGridSurface .pgTimeline{border-radius:5px}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace #planGridSurface .pgCalendarPanel{padding:8px}
+ body.sheetWorkspace #planGridSurface .pgMobileViewControls{gap:6px;margin-bottom:6px}
+ body.sheetWorkspace #planGridSurface .pgLegend{font-size:11px;gap:5px 10px}
+}
+
 /* Date selection is view state; keep holiday fills and period controls intact. */
 .pgDateHead .pgDateSelect{width:100%;min-width:0;border:0;border-right:1px solid #dce6ed;border-radius:0;font-family:inherit;cursor:pointer;color:inherit;box-shadow:none;line-height:1.2}
 .pgDateHead .pgDateSelect.pgMonthStart{border-left:2px solid #839eaf}
@@ -544,6 +565,52 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 
 /* Existing group members stay visible and selectable above their condition fields. */
 .pgFlowLine .pgFlowNode,.pgRoutingPreview .pgFlowNode{display:inline-flex;align-items:baseline;gap:5px;max-width:100%;min-height:36px;padding:6px 9px;border:1px solid #56849b;border-radius:7px;background:#fff;color:#184f6a;white-space:normal;text-align:left;line-height:1.45}.pgFlowLine .pgFlowNode{flex-wrap:wrap}.pgFlowNode.isCurrent,.pgFlowNode[aria-pressed=true]{background:#dff0f7;border:2px solid #17637f;color:#124961}.pgFlowNode:not(:disabled):hover{background:#e9f5fa;border-color:#17637f}.pgFlowNode:focus-visible{outline:3px solid #338bc1;outline-offset:2px}.pgFlowNode:disabled{background:#edf1f3;color:#5b6c76;opacity:1;cursor:default}.pgDirectForm>.pgDirectFlow{margin:8px 0 12px}.pgRoutingPreview>div>span{display:flex;flex-wrap:wrap;align-items:center;gap:5px}@media(max-width:720px){.pgFlowLine .pgFlowNode,.pgRoutingPreview .pgFlowNode{min-height:44px;padding:8px}.pgFlowLine .pgFlowNode small{white-space:normal}}
+
+/* A lighter section hierarchy keeps the inputs in view without folding their meaning. */
+@media screen{
+ body.sheetWorkspace .pgDirectForm{color:#29475b}
+ body.sheetWorkspace .pgDirectForm label{font-size:12px;line-height:1.4;color:#365266}
+ body.sheetWorkspace .pgDirectDailyHint{display:block;font-size:11px;line-height:1.45;font-weight:400;color:#536b7c;margin-top:3px;overflow-wrap:anywhere}
+ body.sheetWorkspace .pgDirectHeadingText>strong{font-size:14px}
+ body.sheetWorkspace .pgDirectHeadingText>span{color:#536b7c;font-size:12px;line-height:1.5}
+ body.sheetWorkspace .pgDirectStep{border:0;border-top:1px solid #cbd9e4;border-radius:0;background:transparent;padding:10px 0;margin-top:10px}
+ body.sheetWorkspace .pgDirectStepHeading{gap:8px;margin-bottom:8px}
+ body.sheetWorkspace .pgDirectStepHeading>span{background:#e5eff5;color:#1a5673;border:1px solid #aec7d5;width:24px;height:24px}
+ body.sheetWorkspace .pgDirectStepHeading b{font-size:14px}
+ body.sheetWorkspace .pgDirectStepHeading small{font-size:12px;color:#526b7d;line-height:1.45}
+ body.sheetWorkspace .pgDirectFlow{border-width:1px;border-left:3px solid #548aa3;background:#f6fafc;padding:9px 10px}
+ body.sheetWorkspace .pgDirectSequence{border-color:#cfdee7;background:#f4f8fb}
+ body.sheetWorkspace .pgCompanions{background:#f7f9fc;border-color:#cddbe7;padding:10px}
+ body.sheetWorkspace .pgCompanion{border-color:#d7e0e9;box-shadow:none}
+ body.sheetWorkspace .pgCompanionStart{background:#f5f8fb;border-color:#d7e0e9}
+ body.sheetWorkspace .pgDirectFooter{border-top:1px solid #d4dfe8;padding-top:9px}
+}
+@media screen and (min-width:721px){
+ body.sheetWorkspace .pgDirectEditor{scroll-margin-top:76px;scroll-margin-bottom:40px}
+ body.sheetWorkspace .pgDirectForm{width:min(1100px,calc(100vw - var(--pg-label) - 85px))}
+ body.sheetWorkspace .pgFocused .pgDirectForm{width:min(1100px,calc(100vw - var(--pg-label) - 43px))}
+ body.sheetWorkspace .pgDirectFields:not(.pgDirectBasicFields):not(.pgDirectProductFields){grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 10px}
+ body.sheetWorkspace .pgDirectFields:not(.pgDirectBasicFields):not(.pgDirectProductFields)>label:nth-child(-n+2){grid-column:span 2}
+ body.sheetWorkspace .pgDirectFields input,body.sheetWorkspace .pgDirectFields select,body.sheetWorkspace .pgDirectMachines input{min-height:36px;font-size:13px;border-radius:5px;padding:6px 8px}
+ body.sheetWorkspace .pgMachineOrderPreview{font-size:12px}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace .pgDirectForm{padding:12px 12px 0}
+ body.sheetWorkspace .pgDirectHeadingText>strong{font-size:16px}
+ body.sheetWorkspace .pgDirectStep{padding:10px 0;margin-top:10px}
+ body.sheetWorkspace .pgDirectBasicFields,body.sheetWorkspace .pgDirectProductFields,body.sheetWorkspace .pgCompanionFields{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 10px}
+ body.sheetWorkspace .pgDirectBasicFields>label:first-child,body.sheetWorkspace .pgDirectProductFields>label:first-child,body.sheetWorkspace .pgCompanionFields>label:first-child{grid-column:1/-1}
+ body.sheetWorkspace .pgDirectFields input,body.sheetWorkspace .pgDirectFields select,body.sheetWorkspace .pgDirectMachines input{font-size:16px;min-height:44px}
+ body.sheetWorkspace .pgDirectForm input::placeholder{font-size:12px;color:#64758a}
+ body.sheetWorkspace .pgDirectPrimary>.pgDirectMachines{margin-top:8px}
+ body.sheetWorkspace .pgDirectMachines>div{padding:6px;gap:5px}
+ body.sheetWorkspace .pgCompanions{margin-top:8px;padding:9px}
+ body.sheetWorkspace .pgCompanion{padding:9px}
+ body.sheetWorkspace .pgCompanionHeader{margin-bottom:7px}
+ body.sheetWorkspace .pgDirectFlow{margin-top:9px;padding:9px}
+ body.sheetWorkspace .pgDirectFooter{padding:9px 0 9px;margin-top:9px;gap:7px}
+}
+@media screen and (max-width:359px){body.sheetWorkspace .pgDirectBasicFields>label{grid-column:1/-1}}
 
 .secondarySection{margin:0 0 20px;min-width:0}.secondarySection>summary{font-weight:700;cursor:pointer;padding:10px 2px}.secondarySection>.sheetEditor{margin-top:8px}.secondaryAuditHeader{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px}.secondaryAuditHeader label{min-width:230px}.secondaryScope{font-size:.82rem;color:#60788d;margin:0 0 12px}.secondaryGridNotice{margin:10px 0;font-size:.83rem;color:#62758a}.secondarySection td:last-child{white-space:normal}.secondaryHistory{margin-top:18px}.secondaryHistory>summary{cursor:pointer;font-weight:600;padding:10px 0}@media(max-width:640px){.secondaryAuditHeader{align-items:stretch}.secondaryAuditHeader label{width:100%}}
 /* Management mirrors the workbook's main registration and mixing inputs. */
@@ -1707,6 +1774,44 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
 }
 @media print{.summaryViewChoice,.summaryCards{display:none!important}}
 
+/* Keep lookup controls together and let the work, dates and LOT lead the page. */
+@media screen{
+ body.sheetWorkspace .summaryFilters{display:grid;grid-template-columns:minmax(220px,1.65fr) minmax(130px,1fr) minmax(150px,1fr) minmax(205px,1.4fr);gap:10px;padding:12px 14px 8px}
+ body.sheetWorkspace .summaryFilters label{gap:4px;color:#455b70;font-size:12px}
+ body.sheetWorkspace .summaryMeta{padding:0 14px 8px;align-items:center;gap:8px;color:#4d6176}
+ body.sheetWorkspace #summaryCount{white-space:normal;line-height:1.5}
+ body.sheetWorkspace #summaryGuide>summary{min-height:36px;display:flex;align-items:center;justify-content:flex-end;gap:4px;white-space:nowrap}
+ body.sheetWorkspace #scheduleSummaryTable th{font-size:12px;color:#354f67}
+ body.sheetWorkspace #scheduleSummaryTable td{padding:8px 10px;line-height:1.45;font-size:13px}
+ body.sheetWorkspace #scheduleSummaryTable td:nth-child(1),body.sheetWorkspace #scheduleSummaryTable td:nth-child(2){white-space:normal;overflow-wrap:anywhere}
+ body.sheetWorkspace #scheduleSummaryTable td:nth-child(3)>strong{font-size:14px;color:#243e56}
+}
+@media screen and (min-width:721px) and (max-width:1099px){
+ body.sheetWorkspace .summaryFilters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace .summaryFilters{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;padding:10px 10px 6px}
+ body.sheetWorkspace .summaryFilters .summarySearch,body.sheetWorkspace .summaryFilters label:last-child{grid-column:1/-1}
+ body.sheetWorkspace .summaryFilters label:last-child{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:center;gap:8px}
+ body.sheetWorkspace .summaryFilters input,body.sheetWorkspace .summaryFilters select{min-height:44px}
+ body.sheetWorkspace .summaryMeta{padding:0 10px 6px;align-items:flex-start}
+ body.sheetWorkspace .summaryResultState{padding-top:5px;gap:5px}
+ body.sheetWorkspace #summaryGuide>summary{font-size:11px;min-height:44px;white-space:normal;max-width:100px;line-height:1.45}
+ body.sheetWorkspace .summaryViewChoice{padding:0 10px 8px;gap:5px}
+ body.sheetWorkspace .summaryPanel[data-summary-layout=cards] .summaryCards{gap:8px;padding:0 8px 10px}
+ body.sheetWorkspace .summaryJobCard{padding:10px 11px;border-color:#d2dce7;border-radius:9px;box-shadow:0 1px 2px #263d5110}
+ body.sheetWorkspace .summaryCardOwner{margin:4px 0 7px;color:#465e75}
+ body.sheetWorkspace .summaryCardFacts{padding:7px 0;gap:6px 10px;border-bottom:0}
+ body.sheetWorkspace .summaryCardFacts dt,body.sheetWorkspace .summaryCardLots>b{color:#4e6378}
+ body.sheetWorkspace .summaryCardFacts dd{margin-top:2px;font-size:15px}
+ body.sheetWorkspace .summaryCardPeriod dd{font-size:12px;line-height:1.45}
+ body.sheetWorkspace .summaryCardPeriod small{margin-top:1px;color:#5b6c7e}
+ body.sheetWorkspace .summaryCardLots{padding-top:6px;border-top:1px solid #e1e7ef}
+ body.sheetWorkspace .summaryCardLots>b{margin-bottom:4px}
+ body.sheetWorkspace .summaryCardDetail{margin-top:4px}
+ body.sheetWorkspace .summaryCardLots .summaryLotDetails summary,body.sheetWorkspace .summaryCardDetail>summary{min-height:44px}
+}
+
 /* Stocktake controls stay close to the quantity grid; no ledger changes. */
 body.sheetWorkspace[data-workspace-page="audit"] .top{margin-bottom:5px}
 body.sheetWorkspace[data-workspace-page="audit"] .workspaceTools{margin:4px 0 8px;padding:0;min-height:32px}
@@ -1857,6 +1962,57 @@ dialog.auditReviewDialog{max-width:1120px;width:calc(100% - 24px);max-height:92d
  body.sheetWorkspace[data-workspace-page=audit] .sheetEditor{margin-top:12px}
  body.sheetWorkspace .moGroup>h3{font-size:.85rem}
  body.sheetWorkspace .moMetric small{line-height:1.6}
+}
+/* Layout and reading hierarchy. Screen-only, including table widths. */
+@media screen{
+ body.sheetWorkspace .inputSheet thead th{font-size:13px;font-weight:650;color:#34465d}
+ body.sheetWorkspace .inputSheet td.calculated{color:#34465d}
+ body.sheetWorkspace .stockProductName{font-size:14px;font-weight:700;color:#263c53}
+ body.sheetWorkspace .stockPlanCompare strong,body.sheetWorkspace .stockWorkerInfo strong{font-size:13px}
+ body.sheetWorkspace .stockPlanCompare small,body.sheetWorkspace .stockWorkerInfo small{font-size:12px;color:#556779}
+ body.sheetWorkspace .stockMemoEditor td[data-result=current]{font-size:15px;font-weight:750}
+ body.sheetWorkspace .stockMemoEditor td[data-result=current] .diff{color:#ad352a;font-weight:750}
+ body.sheetWorkspace .stockMemoEditor button.primary:disabled{background:#e4e8f0;border-color:#dce2ec;color:#59677a;opacity:1}
+ body.sheetWorkspace .workspaceMoreItems .workspaceDisplayActions{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin:3px 0 0;padding-top:7px;border-top:1px solid #dbe2e9}
+ body.sheetWorkspace .workspaceDisplayActions>div{display:flex;flex-direction:column;align-items:stretch}
+ body.sheetWorkspace .workspaceDisplayActions button{font-size:13px;text-align:left;min-height:40px;padding:8px 12px}
+ body.sheetWorkspace .workspaceDisplayActions .workspaceScope{padding:2px 12px;color:#59677b}
+ body.sheetWorkspace .monthlyOverview{padding:16px}
+ body.sheetWorkspace .monthlyOverview .moHeading p{font-size:13px}
+ body.sheetWorkspace .monthlyOverview .moGroups{gap:10px;align-items:start}
+ body.sheetWorkspace .monthlyOverview .moGroup{border-radius:7px}
+ body.sheetWorkspace .monthlyOverview .moGroup h3{padding:10px 12px;font-size:14px}
+ body.sheetWorkspace .monthlyOverview dt{font-size:13px;color:#4c6076}
+ body.sheetWorkspace .monthlyOverview dd{margin:5px 0}
+ body.sheetWorkspace .monthlyOverview dd strong{font-size:24px}
+ body.sheetWorkspace .monthlyOverview dd span{font-size:12px;color:#596b7e}
+ body.sheetWorkspace .monthlyOverview dd em{font-size:11px}
+ body.sheetWorkspace .monthlyOverview .moMetric p,body.sheetWorkspace .monthlyOverview .moWarnings p{font-size:12px;color:#52687e}
+ body.sheetWorkspace .monthlyOverview .moDefinitions{font-size:13px;margin-top:12px}
+ body.sheetWorkspace .monthlyOverview .moFormulaList :is(dt,dd,small){font-size:12px}
+}
+@media screen and (min-width:721px){
+ body.sheetWorkspace .managementPage .sheetViewport>.inputSheet.sheetFitted{width:100%;margin:0}
+ body.sheetWorkspace .managementPage .inputSheet.sheetFitted col[data-sheet-col=name]{width:26%!important}
+ body.sheetWorkspace[data-workspace-page=audit] .sheetViewport>table:has(>colgroup>col:nth-child(4):last-child){width:100%!important;margin:0!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col=__rowNumber]{width:42px!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col=product]{width:auto!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col=book]{width:22%!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col^=location]{width:28%!important}
+ body.sheetWorkspace .managementPage .inputSheet td input{padding:8px 10px}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace .productionViewControls{grid-template-columns:minmax(72px,1fr) auto auto auto;gap:5px}
+ body.sheetWorkspace .productionViewControls select{min-height:44px;padding:6px 3px}
+ body.sheetWorkspace .productionViewControls label{font-size:12px}
+ body.sheetWorkspace .productionViewControls button{font-size:12px;min-height:44px;padding:6px 7px}
+ body.sheetWorkspace .workspaceDisplayActions button{min-height:44px;font-size:13px}
+ body.sheetWorkspace .monthlyOverview{padding:12px}
+ body.sheetWorkspace .monthlyOverview .moGroups{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ body.sheetWorkspace .monthlyOverview .moGroup h3{font-size:14px;padding:9px}
+ body.sheetWorkspace .monthlyOverview .moMetric{padding:9px}
+ body.sheetWorkspace .monthlyOverview dd strong{font-size:23px}
+ body.sheetWorkspace .monthlyOverview .moHeading{align-items:flex-start;gap:8px}
 }
 @media screen and (max-width:720px){
  body.sheetWorkspace #nav button{font-size:.76rem;white-space:nowrap}
@@ -5126,7 +5282,7 @@ function productionUpdateDateRail(g){
 }
 function productionViewHTML(g){
  const totals=productionTotals(g),last=Number(g.spec.grouping.max.slice(8)),workers=[...new Set([...state.workers,...g.draft.rows.map(r=>r.worker).filter(Boolean)])];
- return '<div class="productionProgressBasis"><strong>'+esc(productionProgressBasis(g))+'</strong> · 같은 작업의 날짜별 행은 같은 현재 진행률을 표시합니다.</div><div class="productionOverview"><div class="productionOverviewLine"><strong>'+Number(g.month.slice(5))+'월 전체</strong><span data-production-month-total>생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력</span><div class="productionViewControls"><label>작업자<select data-sheet-view="worker" aria-label="일보 작업자 보기"><option value="">전체</option>'+workers.map(worker=>'<option value="'+esc(worker)+'" '+(g.productionWorker===worker?'selected':'')+'>'+esc(worker)+'</option>').join('')+'<option value="__unassigned" '+(g.productionWorker==='__unassigned'?'selected':'')+'>미지정</option></select></label><label><input type="checkbox" data-sheet-view="focus" '+(g.productionFocus?'checked':'')+'><span data-production-focus-label>'+esc(g.productionFocus?Number(g.groupDate.slice(5,7))+'/'+Number(g.groupDate.slice(8))+'만':'선택일만')+'</span></label><button data-sheet-view-command="productionReset">월 전체 보기</button>'+(g.month===today().slice(0,7)?'<button data-sheet-view-command="productionToday">오늘 내역</button>':'')+'</div></div><div class="productionDateRail" aria-label="생산일보 날짜 선택">'+Array.from({length:last},(_,i)=>{const date=g.month+'-'+String(i+1).padStart(2,'0'),day=totals.day(date),dow=new Date(date+'T00:00:00Z').getUTCDay();return '<button data-sheet-view-command="productionDay" data-date="'+date+'" class="'+(dow===0||dow===6?'weekend ':'')+(day.count?'hasInput':'')+'" aria-pressed="'+String(!!g.productionFocus&&g.groupDate===date)+'"'+(date===today()?' aria-current="date"':'')+' aria-label="'+esc(productionDateLabel(g,date,day))+'"><b>'+(i+1)+'<span class="productionTodayTag" '+(date===today()?'':'hidden')+'>오늘</span></b><small data-production-day-total="'+date+'">'+(day.count?fmt(day.pours):'·')+'</small></button>'}).join('')+'</div><div class="productionViewCaption"><span>날짜를 누르면 해당일만 표시 · 숫자는 일 전체 생산 조</span><span data-production-visible-count>표시 '+g.visibleRows().length+'행 / 월 전체 '+g.draft.rows.length+'행 · 저장은 월 전체 변경</span></div><div class="productionViewCaption" data-production-view-status role="status" style="display:block;overflow-wrap:anywhere">'+esc(productionViewStatus(g).text)+'</div></div>';
+ return '<div class="productionProgressBasis"><strong>'+esc(productionProgressBasis(g))+'</strong> · 같은 작업의 날짜별 행은 같은 현재 진행률을 표시합니다.</div><div class="productionOverview"><div class="productionOverviewLine"><strong>'+Number(g.month.slice(5))+'월 전체</strong><span data-production-month-total>생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력</span><div class="productionViewControls"><label>작업자<select data-sheet-view="worker" aria-label="일보 작업자 보기"><option value="">전체</option>'+workers.map(worker=>'<option value="'+esc(worker)+'" '+(g.productionWorker===worker?'selected':'')+'>'+esc(worker)+'</option>').join('')+'<option value="__unassigned" '+(g.productionWorker==='__unassigned'?'selected':'')+'>미지정</option></select></label><label><input type="checkbox" data-sheet-view="focus" '+(g.productionFocus?'checked':'')+'><span data-production-focus-label>'+esc(g.productionFocus?Number(g.groupDate.slice(5,7))+'/'+Number(g.groupDate.slice(8))+'만':'선택일만')+'</span></label><button data-sheet-view-command="productionReset" aria-label="월 전체 보기">월 전체</button>'+(g.month===today().slice(0,7)?'<button data-sheet-view-command="productionToday" aria-label="오늘 내역 보기">오늘</button>':'')+'</div></div><div class="productionDateRail" aria-label="생산일보 날짜 선택">'+Array.from({length:last},(_,i)=>{const date=g.month+'-'+String(i+1).padStart(2,'0'),day=totals.day(date),dow=new Date(date+'T00:00:00Z').getUTCDay();return '<button data-sheet-view-command="productionDay" data-date="'+date+'" class="'+(dow===0||dow===6?'weekend ':'')+(day.count?'hasInput':'')+'" aria-pressed="'+String(!!g.productionFocus&&g.groupDate===date)+'"'+(date===today()?' aria-current="date"':'')+' aria-label="'+esc(productionDateLabel(g,date,day))+'"><b>'+(i+1)+'<span class="productionTodayTag" '+(date===today()?'':'hidden')+'>오늘</span></b><small data-production-day-total="'+date+'">'+(day.count?fmt(day.pours):'·')+'</small></button>'}).join('')+'</div><div class="productionViewCaption"><span>날짜를 누르면 해당일만 표시 · 숫자는 일 전체 생산 조</span><span data-production-visible-count>표시 '+g.visibleRows().length+'행 / 월 전체 '+g.draft.rows.length+'행 · 저장은 월 전체 변경</span></div><div class="productionViewCaption" data-production-view-status role="status" style="display:block;overflow-wrap:anywhere">'+esc(productionViewStatus(g).text)+'</div></div>';
 }
 function productionUpdateView(g){
  const host=g.host();if(!host)return;const totals=productionTotals(g),summary=host.querySelector('[data-production-month-total]');if(summary)summary.textContent='생산 '+fmt(totals.pours)+'조 · 석고 '+fmt(totals.kg)+'kg · '+totals.days.size+'일 입력';
@@ -6521,7 +6677,7 @@ function pgDirectRenderForm(g){
  const session=pgDirectState.session,root=pgDirectState.root;if(!session||!session.form||!root)return;const previous=root.querySelector('.pgDirectEditor'),reopening=!!previous,viewport={x:window.scrollX||0,y:window.scrollY||0},editorScroll=previous?.scrollTop||0,active=previous?.contains(document.activeElement)?document.activeElement:null,focusKeys=['pdMember','pdField','pdAction','pdCompanion','pdExtra','pdCompanionMachine','pdKey','pdMachine','index','extra'],focusState=active?{keys:Object.fromEntries(focusKeys.filter(key=>active.dataset[key]!=null).map(key=>[key,active.dataset[key]])),start:active.selectionStart,end:active.selectionEnd}:null;root.querySelectorAll('.pgDirectEditor').forEach(el=>el.remove());
  const value=session.form,creating=session.command.type==='create',row=pgDirectRow(value.worker||session.worker),rateWorker=value.handoffs?.length?pgDirectRateWorker(g,session):'',autoSave=typeof workspace!=='undefined'&&workspace&&!workspace.offline&&!workspace.pendingMigration;
  const form=document.createElement('div');form.className='pgGridRow pgDirectEditor';const linked=!!value.sourceRowId,manual=creating||!!value.manual,scope=session.members.length?((session.members.length>1?'생산 묶음 '+session.members.length+'품목 · ':'')+session.members.reduce((n,r)=>n+r.machines.length,0)+'호기'+(session.history?' · 선택 품목의 조건 수정':' 함께 기간 변경')):'새 수기 계획',deletable=!creating&&manual&&!session.history&&session.members.every(r=>r.manual&&!r.sourceRowId),deleteLabel=session.members.length>1?session.members.length+'개 수기 예약 삭제':'수기 예약 삭제';
- const productField=`<label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label>`,workerField=`<label>${value.handoffs?.length?'담당자 배정':'작업자'}${value.handoffs?.length?`<button type="button" data-pd-action="handoff" data-pd-assignment class="pgDirectHandoffButton">${esc(rateWorker)} · 배정 수정</button>`:`<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select>`}</label>`,startField=`<label>${pgRoutingFollower(value,pgKeep(g.draft))?'앞 품목이 끝난 뒤 시작':'시작일'}<input type="date" data-pd-field="start" value="${esc(session.previewPeriod?.start??value.start??'')}" ${pgRoutingFollower(value,pgKeep(g.draft))?'disabled title="앞 품목이 끝난 다음 생산일에 자동 시작"':''}></label>`,endField=`<label>${pgRouting(value)?'예상 종료':manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(session.previewPeriod?.end??value.end??'')}" ${manual&&!pgRouting(value)?'':'disabled'}></label>`,planField=`<label>만들 전체 조수<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label>`,dailyField=`<label ${pgRouting(value)?.mode==='parallel'?'hidden':''}>${value.handoffs?.length?esc(rateWorker)+' 하루에 만들 조수':'하루에 만들 조수'}<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" ${manual?'placeholder="기간 직접 지정 시 생략"':''}></label>`;
+ const productField=`<label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label>`,workerField=`<label>${value.handoffs?.length?'담당자 배정':'작업자'}${value.handoffs?.length?`<button type="button" data-pd-action="handoff" data-pd-assignment class="pgDirectHandoffButton">${esc(rateWorker)} · 배정 수정</button>`:`<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select>`}</label>`,startField=`<label>${pgRoutingFollower(value,pgKeep(g.draft))?'앞 품목이 끝난 뒤 시작':'시작일'}<input type="date" data-pd-field="start" value="${esc(session.previewPeriod?.start??value.start??'')}" ${pgRoutingFollower(value,pgKeep(g.draft))?'disabled title="앞 품목이 끝난 다음 생산일에 자동 시작"':''}></label>`,endField=`<label>${pgRouting(value)?'예상 종료':manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(session.previewPeriod?.end??value.end??'')}" ${manual&&!pgRouting(value)?'':'disabled'}></label>`,planField=`<label>만들 전체 조수<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label>`,dailyField=`<label ${pgRouting(value)?.mode==='parallel'?'hidden':''}>${value.handoffs?.length?esc(rateWorker)+' 하루에 만들 조수':'하루에 만들 조수'}<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" placeholder="예: 5">${manual&&!pgRouting(value)&&!session.history?'<small class="pgDirectDailyHint">종료일 지정 시 생략 가능</small>':''}</label>`;
  const fields=`<div class="pgDirectFields">${productField}${workerField}${startField}${endField}${planField}${dailyField}</div>`,basicFields=`<div class="pgDirectFields pgDirectBasicFields">${workerField}${startField}${endField}</div>`,firstProduct=`${creating?'<section class="pgDirectStep pgDirectPrimary"><div class="pgDirectStepHeading"><span>2</span><div><b>첫 품목과 호기</b><small>만들 전체 조수, 하루에 만들 조수, 사용할 호기를 입력합니다.</small></div></div><div class="pgDirectFields pgDirectProductFields">'+productField+planField+dailyField+'</div>':''}${pgDirectSequenceHTML(session,g)}${pgDirectMachinesHTML(value)}${creating?'</section>':''}`;
  const displayOptions=creating?`<details class="pgProductionOptions"><summary>일정 막대 모양</summary>${pgDirectDisplayHTML(session)}</details>`:`${pgDirectDisplayHTML(session)}<details class="pgProductionOptions"><summary>직접 순서를 바꿀 때만</summary><section class="pgRoutingPanel">${pgRoutingFieldsHTML(value,pgKeep(g.draft),'data-pd-routing',g.locked(),false,false)}</section></details>`;
  form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'생산 예약':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading${!creating?' pgDirectHeadingWithHandoff':''}"><div class="pgDirectHeadingText"><strong>${esc(scope)}</strong><span>${creating?'작업자와 시작일을 정한 뒤 품목이 같이 시작하는지, 뒤이어 시작하는지 고르세요.':'하루에 만들 조수를 바꾸면 예상 종료일이 다시 계산됩니다. · Esc로 취소'}</span></div>${!creating?'<div class="pgDirectHandoffAction"><button type="button" data-pd-action="handoff" class="pgDirectHandoffButton">작업 넘기기</button><small data-pd-handoff-hint hidden></small></div>':''}</div>${!creating?pgDirectFlowHTML(session,g):''}${creating?'<section class="pgDirectStep pgDirectBasics"><div class="pgDirectStepHeading"><span>1</span><div><b>기본 정보</b><small>작업자와 생산을 시작할 날짜를 정합니다.</small></div></div>'+basicFields+'</section>':fields}${firstProduct}${pgDirectCompanionsHTML(session,g)}${displayOptions}<div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 정하는 예약으로 바꾸기</label>`:''}<span class="pgDirectError" role="status">${esc(session.previewError||'')}</span><div>${deletable?`<button type="button" data-pd-action="delete-manual" class="pgDirectDelete${session.deleteArmed?' isArmed':''}" title="${session.deleteArmed?'삭제와 현재 일정표의 미저장 변경을 함께 서버에 저장합니다.':'한 번 더 확인한 뒤 삭제와 저장을 함께 실행합니다.'}">${session.deleteArmed?(session.members.length>1?session.members.length+'개 삭제하고 저장':'삭제하고 저장'):deleteLabel}</button>`:''}<button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary" title="${autoSave?'입력한 일정과 현재 일정표의 변경사항을 함께 서버에 저장합니다.':'일정표에 반영한 뒤 상단 저장 버튼으로 보관합니다.'}">${autoSave?(session.conversion?'예약 방식 바꾸고 저장':creating?'예약 저장':'수정하고 저장'):(session.conversion?'예약 방식 바꾸기':'일정표에 적용')}</button></div></div></div>`;
@@ -7501,6 +7657,8 @@ function bindWorkspaceUI(){
  tools.querySelector('[data-workspace-focus]').onclick=()=>workspaceSetFocus(workspaceScreen.focusPage!==page);
  tools.querySelector('[data-workspace-density]').onclick=e=>{workspaceScreen.compact=!workspaceScreen.compact;document.body.classList.toggle('workspaceCompact',workspaceScreen.compact);e.currentTarget.textContent=workspaceScreen.compact?'행 높이 늘리기':'행 높이 줄이기';e.currentTarget.setAttribute('aria-pressed',String(workspaceScreen.compact))};
  workspaceDailyActions(top);
+ // The original controls keep their handlers; daily entry gets the screen space.
+ if(page==='daily'){const menu=top.querySelector('.workspaceMoreItems');if(menu){tools.classList.add('workspaceDisplayActions');menu.append(tools)}}
  if(page==='report')workspaceReportPanels(main,top);
  if(page==='audit'){const apply=main.querySelector('.secondaryAuditApply'),grid=main.querySelector('.sheetEditor');if(apply&&grid){apply.classList.add('workspaceAuditApply');grid.after(apply)}}
  if(page==='master'){const guide=main.querySelector('.managementGuide');if(guide)guide.classList.add('workspaceSecondaryHint')}
