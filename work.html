@@ -654,6 +654,8 @@ table.sh td.num{font-variant-numeric:tabular-nums}
   .day-overview>:last-child{margin-bottom:0}
   .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px}
   .section-heading h2,.screen-heading h2{font-size:18px;margin:0;letter-spacing:-.03em}
+  .day-heading-actions{display:flex;align-items:center;gap:6px;flex:none}.day-heading-actions .quiet-btn{min-height:44px;padding:8px;color:var(--ink-dim);background:none;border:0;font-size:13px}
+  #daySearchTools{margin:0 0 12px}#daySearchTools[hidden],#rowList [hidden]{display:none!important}.day-search-input{display:flex;gap:6px;align-items:center}.day-search-input input{flex:1;min-width:0;min-height:44px;padding:8px 12px;background:var(--surface);color:var(--ink);border:1px solid var(--line-in);border-radius:9px;font:inherit;font-size:15px}.day-search-input button{min-height:44px;white-space:nowrap;font-size:12px}#daySearchStatus{font-size:12px;color:var(--ink-dim);line-height:1.5;margin:6px 0 0}#daySearchStatus:empty{display:none}.day-search-input input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .screen-heading{max-width:900px;margin:0 auto 14px}
   .screen-meta{font-size:12px;line-height:1.7;color:var(--ink-dim);margin-top:5px}
   .my-day{border:1px solid var(--line);border-top:3px solid var(--accent)}
@@ -765,14 +767,19 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 @media screen{
   #entryOv #quickProducts{margin:16px 0}
   #entryOv .quick-row{padding:10px;gap:10px}
-  #entryOv .quick-product-info{min-width:0}
-  #entryOv .quick-product-label{display:block;font-size:12px;color:var(--ink-dim)}
+  #entryOv .quick-product-info{display:contents}
+  #entryOv .quick-product-label{display:block;grid-column:1;grid-row:1;min-width:0;font-size:12px;color:var(--ink-dim)}
+  #entryOv .quick-control{grid-column:2;grid-row:1}
   #entryOv .quick-product{display:block;width:100%;min-height:44px;margin:4px 0 5px;padding:8px;border:1.5px solid var(--line-in);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:15px;font-weight:700}
   #entryOv .quick-product option{background:var(--surface);color:var(--ink)}
-  #entryOv .quick-open{width:100%;padding:0;min-height:44px}
+  #entryOv .quick-footer{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;border-top:1px solid var(--line);padding-top:6px}#entryOv .quick-open{width:100%;padding:0;min-height:44px;text-align:left}
   #entryOv .quick-open>b{display:none}
-  #entryOv .quick-open small{line-height:1.4}
-  #entryOv .quick-machine{font-size:11px}
+  #entryOv .quick-open .quick-remaining{display:inline;margin:0}#entryOv .quick-open .quick-progress-note{display:inline;margin:0 0 0 8px}
+  #entryOv .quick-open small{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px;line-height:1.45;margin-top:5px}
+  #entryOv .quick-open small>span{display:block}
+  #entryOv .quick-check{font-weight:700;color:var(--ink-dim)}#entryOv .quick-check[data-state="attention"]{color:var(--bad)}#entryOv .quick-check[data-state="incomplete"]{color:var(--warn)}#entryOv .quick-check[data-state="good"]{color:var(--good)}
+  #entryOv .quick-detail-link{color:var(--accent-ink);font-size:11px;text-decoration:underline;text-underline-offset:3px}
+  #entryOv .quick-machine{font-size:11px;width:auto;min-width:70px;min-height:44px;padding:5px;margin:0;border:1px solid var(--line);border-radius:8px}
   #entryOv .entry-detail-heading{margin:14px 0 4px;min-height:36px;align-items:center}
   #entryOv .pb,#entryOv .pb.pb-collapsed{padding:10px;margin:10px 0;border-radius:12px}
   #entryOv .pb-head{padding-bottom:4px;margin-bottom:8px}
@@ -994,8 +1001,9 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
     <div class="field-sync-strip" id="fieldSyncStatus" role="status" hidden></div>
     </aside>
     <div class="day-records">
-    <div class="section-heading"><h2>부서 일보</h2><button id="addBtn">＋ 일보 작성</button></div>
+    <div class="section-heading"><h2>부서 일보</h2><div class="day-heading-actions"><button type="button" class="quiet-btn" id="daySearchToggle" aria-expanded="false" aria-controls="daySearchTools">찾기</button><button id="addBtn">＋ 일보 작성</button></div></div>
     <div class="daysum" id="daysum"></div>
+    <div id="daySearchTools" hidden><div class="day-search-input"><input type="search" id="daySearch" placeholder="작업자·품명 찾기" aria-label="부서 일보 작업자 또는 품명 찾기" autocomplete="off"><button type="button" class="quiet-btn" id="daySearchClear">전체 보기</button></div><p id="daySearchStatus" role="status" aria-live="polite"></p></div>
     <div id="rowList"></div>
     </div>
     </div>
@@ -3576,6 +3584,25 @@ function renderNotice(){
   const n = String((S.presets && S.presets.notice) || '').trim();
   el.hidden = !n; el.textContent = n ? '📢 ' + n : '';
 }
+let daySearchOwner='',daySearchRows=new Map();
+function applyDaySearch(){
+  const compact=value=>String(value||'').normalize('NFKC').toLocaleUpperCase().replace(/[^\p{L}\p{N}]/gu,''),query=compact($('#daySearch').value),cards=$$('#rowList .rowcard');
+  let shown=0;
+  cards.forEach(card=>{const row=daySearchRows.get(card.dataset.id),terms=row?[...productionPeople(row),fieldProductName(row),row.product,row.sourceProduct]:[];card.hidden=!!query&&!terms.some(term=>compact(term).includes(query));if(!card.hidden)shown++;});
+  $$('#rowList .wgroup').forEach(group=>group.hidden=![...group.querySelectorAll('.rowcard')].some(card=>!card.hidden));
+  $('#daySearchStatus').textContent=query?`${cards.length}건 중 ${shown}건 표시 · 위 합계는 전체 일보 기준${!shown?' · 다른 이름이나 품명으로 찾아보세요.':''}`:'';
+  $('#daySearchClear').hidden=!query;
+  $('#daySearchToggle').textContent=query?'찾는 중':'찾기';
+}
+function prepareDaySearch(rows){
+  const owner=storeEpoch+'|'+S.date;
+  if(daySearchOwner!==owner){daySearchOwner=owner;$('#daySearch').value='';$('#daySearchTools').hidden=true;$('#daySearchToggle').setAttribute('aria-expanded','false');}
+  daySearchRows=new Map(rows.map(row=>[String(row.id),row]));
+  $('#daySearchToggle').onclick=()=>{const box=$('#daySearchTools'),open=box.hidden;box.hidden=!open;$('#daySearchToggle').setAttribute('aria-expanded',String(open));if(open)$('#daySearch').focus();else{$('#daySearch').value='';applyDaySearch();}};
+  $('#daySearch').oninput=applyDaySearch;
+  $('#daySearch').onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();$('#daySearch').value='';applyDaySearch();$('#daySearchTools').hidden=true;$('#daySearchToggle').setAttribute('aria-expanded','false');$('#daySearchToggle').focus();}};
+  $('#daySearchClear').onclick=()=>{$('#daySearch').value='';applyDaySearch();$('#daySearch').focus();};
+}
 function renderInput(){return withProjectedReadScope(renderInputContents);}
 function renderInputContents(){
   renderPlannedWorks();
@@ -3586,6 +3613,7 @@ function renderInputContents(){
   renderNotice();
   renderFieldInteractionStatus();
   const rows = orderRows(S.rows.filter(r=>!isPlannedPreparation(r)));
+  prepareDaySearch(rows);
   const prodSum = rows.reduce((a,r)=>a+(Number(r.prod)||0),0);
   const defSum  = rows.reduce((a,r)=>a+(Number(r.defQty)||0),0);
   const scrapSum= rows.reduce((a,r)=>a+(Number(r.scrapKg)||0),0);
@@ -3598,6 +3626,7 @@ function renderInputContents(){
     $('#rowList').innerHTML = (S.loading && !S.dayLoaded)
       ? `<div class="empty-note">불러오는 중…</div>`
       : `<div class="empty-note">아직 기록이 없습니다.<br><b>내 일보 작성</b> 또는 <b>＋ 일보 작성</b>으로 시작하세요.</div>`;
+    applyDaySearch();
     return;
   }
   const groups = [];
@@ -3650,6 +3679,7 @@ function renderInputContents(){
     };
     el.onkeydown = e => { if(e.target.closest('[data-product-memo]'))return;if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); } };
   });
+  applyDaySearch();
 }
 
 /* ================= 기록 폼 (작업자 1명 + 제품 블록 여러 개) ================= */
@@ -4000,10 +4030,10 @@ function syncQuickProductsContents(){
   const signature=els.map(el=>el.dataset.rid).join('|');
   if(box.dataset.ids!==signature){
     box.dataset.ids=signature;
-    box.innerHTML='<div class="quick-head"><h3>품명·오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><div class="quick-product-info"><label class="quick-product-label">품명<select class="quick-product" aria-label="제품 ${i+1} 품명 선택"></select></label><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small></small></button></div><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div><button type="button" class="quick-machine">여러 호기에 나눠 입력</button></div></div>`).join('');
+    box.innerHTML='<div class="quick-head"><h3>품명·오늘 만든 조수</h3><output class="quick-total" aria-live="polite"></output></div>'+els.map((el,i)=>`<div class="quick-row" data-rid="${esc(el.dataset.rid)}"><div class="quick-product-info"><label class="quick-product-label">품명<select class="quick-product" aria-label="제품 ${i+1} 품명 선택"></select></label></div><div class="quick-control"><span class="quick-qty-label">오늘 만든 조수</span><div class="quick-stepper" role="group" aria-label="제품 ${i+1} 오늘 만든 조수 조절"><button type="button" class="quick-minus" aria-label="제품 ${i+1} 오늘 만든 조수 1 줄이기">−</button><input inputmode="numeric" aria-label="제품 ${i+1} 오늘 만든 조수"><button type="button" class="quick-plus" aria-label="제품 ${i+1} 오늘 만든 조수 1 늘리기">＋</button></div></div><div class="quick-footer"><button type="button" class="quick-open"><b></b><span class="quick-remaining"></span><span class="quick-progress-note"></span><small><span class="quick-phase"></span><span class="quick-check"></span><span class="quick-detail-link">검사·특이사항 보기 ›</span></small></button><button type="button" class="quick-machine">호기별 입력</button></div></div>`).join('');
     box.querySelectorAll('.quick-row').forEach(row=>{
       const el=els.find(el=>el.dataset.rid===row.dataset.rid);
-      row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);el.scrollIntoView({block:'start',behavior:'smooth'});el.querySelector('.pb-toggle').focus({preventScroll:true});};
+      row.querySelector('.quick-open').onclick=()=>{expandProduct(el,true);const quality=el.querySelector('.pb-quality');quality.open=true;quality.scrollIntoView({block:'start',behavior:'smooth'});quality.querySelector('summary').focus({preventScroll:true});};
       row.querySelector('.quick-product').onchange=e=>{const original=el.querySelector('.pb-product');original.value=e.target.value;original.dispatchEvent(new Event('input',{bubbles:true}));syncQuickProducts();saveDraft();};
       row.querySelector('.quick-minus').onclick=()=>stepProductQuantity(el,-1);
       row.querySelector('.quick-plus').onclick=()=>stepProductQuantity(el,1);
@@ -4021,10 +4051,13 @@ function syncQuickProductsContents(){
     const bad=blockBadMark(el), defect=el.querySelector('.pb-defqty').value,gasa=el.querySelector('.pb-gasa').value.trim();
     const manualTime=gasa&&!['○','△','Ⅹ'].includes(gasa)?`가사시간 ${gasa} · `:'';
     const view=productProgressView(el),remaining=row.querySelector('.quick-remaining');remaining.textContent=view.label;remaining.dataset.pending=String(view.remaining===null);remaining.hidden=!p;row.querySelector('.quick-progress-note').textContent=p?view.note:'';
-    row.querySelector('small').textContent=quickScheduleStatus(el,view)+' · '+manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':!gasa||CHECK_KEYS.some(k=>!segGetB(el,k))?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'')+' · 상세 ›';
+    row.querySelector('.quick-phase').textContent=quickScheduleStatus(el,view);
+    const incomplete=!gasa||CHECK_KEYS.some(k=>!segGetB(el,k)),check=row.querySelector('.quick-check');
+    check.textContent=manualTime+(bad?'△·Ⅹ 있음 · 사유 확인':incomplete?'검사 빈칸 있음':manualTime?'나머지 검사 양호':'검사 양호')+(defect?` · 불량 ${defect}개`:'');
+    check.dataset.state=bad||Number(defect)>0?'attention':incomplete?'incomplete':'good';
     if(document.activeElement!==input) input.value=qty.value;
     const locked=qty.readOnly||qty.disabled;input.placeholder=qty.placeholder;input.readOnly=locked;input.title=locked?'호기별 오늘 실적을 합산한 수량입니다. 상세에서 수정하세요.':'';input.setAttribute('aria-label',(p||`제품 ${i+1}`)+' 생산량');
-    row.querySelector('.quick-qty-label').textContent=locked?'호기별 수량 합계':'오늘 만든 조수';row.querySelector('.quick-machine').textContent=locked?'호기별 수량 수정':'여러 호기에 나눠 입력';row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
+    row.querySelector('.quick-qty-label').textContent=locked?'호기별 수량 합계':'오늘 만든 조수';row.querySelector('.quick-machine').textContent=locked?'호기별 수정':'호기별 입력';row.querySelector('.quick-machine').setAttribute('aria-label',locked?'호기별 오늘 수량 수정':'여러 호기에 오늘 수량 나눠 입력');row.classList.toggle('quick-locked',locked);row.querySelectorAll('.quick-minus,.quick-plus').forEach(button=>button.disabled=locked);
     if(text){const value=Number(text);if(/^\d+(?:\.\d+)?$/.test(text)&&Number.isFinite(value))total+=value;else invalid=true;}else missing++;
     const planned=plannedStartForms.get(el)?.before,machines=planned?.scheduleConditions?.machines?.map(m=>m.name).join('·');
     el.querySelector('.pb-title').textContent=(p||`제품 ${i+1}`)+(planned?` · 계획 ${planned.plan}조${machines?' · '+machines:''}`:'');
@@ -5415,8 +5448,8 @@ function drawMonth(rawDays, y, m){
     `<div class="mon-sec" data-sec="day">${wrapT(dayTable)}</div>` +
     `<div class="mon-sec" data-sec="prod"><details class="view-help month-help"><summary>집계 · 정렬 기준</summary><p>기본순: 생산중은 진행률 높은 순 · 종료는 최근 종료일순 · 대기·확인은 뒤에 표시${!showManaged&&!showProg?' · 선택월 마지막 기록 기준':''}<br>같은 제품의 생산중 작업이 여러 개면 가장 높은 진행률 기준 · 진행률 미상은 생산중 목록 끝에 표시</p><p>${pNote}</p></details>${showManaged?'<h3>생산관리와 연결된 작업</h3>'+wrapT(renderManagedProgressTable(days,managedMonth)):''}<h3>이달 제품별 생산</h3>${wrapT(pTable)}</div>` +
     `<div class="mon-sec" data-sec="worker"><details class="view-help month-help"><summary>작업일 · 생산량 집계 기준</summary><p>미작성 확인이 필요한 순서입니다. 작업일·시간에는 케이스 교체일이 포함됩니다. 이름을 누르면 일자별 생산·불량 기록을 볼 수 있습니다.</p><p>본인 기록은 해당 작업자 이름으로 저장한 생산량입니다.${wNames.some(n=>workerStat[n].team)?' 함께 참여한 수량은 원래 담당자의 생산량에 포함되어 전체 합계에 다시 더하지 않습니다.':''}</p></details>${wrapT(wTable)}</div><section class="product-detail" id="monthDetail" hidden></section>`;
-  body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product));
-  body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail));
+  body.querySelectorAll('[data-product]').forEach(b=>b.onclick=()=>showMonthDetail('product',b.dataset.product,b));
+  body.querySelectorAll('[data-worker-detail]').forEach(b=>b.onclick=()=>showMonthDetail('worker',b.dataset.workerDetail,b));
   bindMonthTableSorts(body);
   body.dataset.view = S.monView;
   $$('#monBody .mon-pills button').forEach(b => b.onclick = () => {
@@ -5432,14 +5465,15 @@ function drawMonth(rawDays, y, m){
   });
 }
 let monthData = null, monthDataYm = null;
-function showMonthDetail(kind,name){
+function showMonthDetail(kind,name,opener=document.activeElement){
   if(monthDataYm!==S.month || !monthData) return;
   const box=$('#monthDetail'), entries=[],sortKey='detail-'+kind;
   Object.keys(monthData).sort().forEach(d=>{if(Array.isArray(monthData[d]))monthData[d].filter(r=>!isPlannedPreparation(r)).filter(r=>kind==='product'?!r.off&&fieldProductIdentity(r)===fieldProductIdentity(name):productionPeople(r).includes(name)).forEach(r=>entries.push({d,r}));});
-  box.innerHTML=`<header><h3>${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p>${monthSortTools(sortKey,'상세 기록 정렬')}<div class="mon-scroll" role="region" tabindex="0" aria-label="일자별 상세 기록"><table class="mon" data-month-table="${sortKey}"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr data-sort-date="${esc(d)}" data-sort-name="${esc(kind==='product'?r.worker:r.off?offLabel(r):fieldProductName(r))}" data-sort-qty="${esc(r.prod??'')}" data-detail-id="${esc(r.id)}"><td class="d"><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?productionPeople(r).join(' + '):r.off?offLabel(r):fieldProductName(r))}${kind==='worker'&&r.worker!==name?'<small class="worker-team-qty">함께 참여 · 원래 담당자 합계에 포함</small>':''}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
-  box.hidden=false;$('#closeMonthDetail').onclick=()=>{box.hidden=true;};
+  box.innerHTML=`<header><h3 tabindex="-1">${esc(name)} · ${esc(S.month)} 기록</h3><button class="quiet-btn" id="closeMonthDetail">닫기</button></header><p class="quick-hint">날짜를 누르면 해당 일보로 이동합니다. 수량은 조, 불량수는 개 단위입니다.</p>${monthSortTools(sortKey,'상세 기록 정렬')}<div class="mon-scroll" role="region" tabindex="0" aria-label="일자별 상세 기록"><table class="mon" data-month-table="${sortKey}"><thead><tr><th>날짜</th><th>${kind==='product'?'작업자':'제품 / 사유'}</th><th>생산(조)</th><th>불량(개)</th><th>불량석고(kg)</th></tr></thead><tbody>${entries.map(({d,r})=>`<tr data-sort-date="${esc(d)}" data-sort-name="${esc(kind==='product'?r.worker:r.off?offLabel(r):fieldProductName(r))}" data-sort-qty="${esc(r.prod??'')}" data-detail-id="${esc(r.id)}"><td class="d"><button class="product-link" data-detail-date="${esc(d)}">${fmtMD(d)} ›</button></td><td>${esc(kind==='product'?productionPeople(r).join(' + '):r.off?offLabel(r):fieldProductName(r))}${kind==='worker'&&r.worker!==name?'<small class="worker-team-qty">함께 참여 · 원래 담당자 합계에 포함</small>':''}</td><td>${r.prod===''||r.prod==null?'—':esc(r.prod)}</td><td>${esc(r.defQty??'')}</td><td>${esc(r.scrapKg??'')}</td></tr>`).join('')||'<tr><td colspan="5">선택한 달에는 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
+  box.hidden=false;$('#closeMonthDetail').onclick=()=>{box.hidden=true;if(opener?.isConnected&&opener.getClientRects().length){opener.focus({preventScroll:true});opener.scrollIntoView({block:'nearest',inline:'nearest'});}};
   box.querySelectorAll('[data-detail-date]').forEach(b=>b.onclick=()=>{setDate(b.dataset.detailDate);setTab('input');});
   bindMonthTableSorts(box);
+  box.querySelector('h3').focus({preventScroll:true});
   box.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function renderPrintChecks(){
