@@ -1853,7 +1853,12 @@ body.sheetWorkspace[data-workspace-page="audit"] .secondaryAuditApply .secondary
  .auditFilterLabel{display:none}
  body.sheetWorkspace[data-workspace-page="audit"] .auditFocusCompact .auditFilters select{min-height:44px;width:137px;font-size:13px}
  .auditQuickHelp{margin-left:auto;flex-basis:auto}.auditQuickHelp>summary{padding:5px 0;font-size:11px}
- .auditAddProduct button,.auditRefreshBook button{min-height:44px!important}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditAddProduct{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditAddProduct label{display:block;min-width:0!important;width:auto!important;white-space:normal}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditAddProduct input{display:block;width:100%;min-height:44px;margin-top:5px}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditAddProduct button,body.sheetWorkspace[data-workspace-page="audit"] .auditRefreshBook button{width:auto!important;min-width:0;min-height:44px!important;white-space:normal}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditRefreshBook{flex-wrap:wrap;gap:6px 10px}
+ body.sheetWorkspace[data-workspace-page="audit"] .auditRefreshBook span{flex:1 1 120px;min-width:0}
  body.sheetWorkspace[data-workspace-page="audit"] .secondaryAuditApply{padding:10px}
 }
 
@@ -2612,16 +2617,25 @@ function unitSyncError(state,allowId){
 }
 function changedCatalogUnits(before,next,keys){const renamed=next.products.some(p=>{const old=before?.products?.find(x=>x.id===p.id);return old&&old.name!==p.name});return keys.filter(key=>renamed||(next.months[key]?.rows||[]).some(row=>{const old=before?.months[key]?.rows?.find(r=>r.id===row.id);return row.unitCatalogBasis&&JSON.stringify(old?.unitCatalogBasis)!==JSON.stringify(row.unitCatalogBasis)}))}
 function auditTransferIssues(state){const issues=[];for(const [sourceMonth,month]of Object.entries(state?.months||{}))for(const transfer of month.auditTransfers||[]){const target=state.months[transfer.targetMonth];if(!target?.auditSessions?.some(a=>a.operationId===transfer.operationId&&a.id===transfer.auditId&&a.status==='applied')||!target?.operations?.some(o=>o.id===transfer.operationId))issues.push({sourceMonth,targetMonth:transfer.targetMonth,auditId:transfer.auditId,operationId:transfer.operationId})}return issues}
-function auditSensitive(base,local){return !!base?.closed!==!!local?.closed||['auditSessions','operations','auditTransfers'].some(key=>JSON.stringify(base?.[key]||[])!==JSON.stringify(local?.[key]||[]))}
+function auditSensitive(base,local){return !!base?.closed!==!!local?.closed||['auditSessions','operations','auditTransfers'].some(key=>JSON.stringify(base?.[key]||[])!==JSON.stringify(local?.[key]||[]))||!auditSame((base?.history||[]).filter(h=>h.type==='실사 반영'),(local?.history||[]).filter(h=>h.type==='실사 반영'))}
 function auditError(issues){const e=Error('실사 전달이 아직 끝나지 않았습니다. 원래 저장한 기기에서 재전송하거나 실사 전달을 다시 반영한 뒤 실사·마감을 저장해 주세요.');e.code='AUDIT_TRANSFER_SYNC';e.transfers=issues;return e}
+function guardAppliedAuditHistory(q){
+ const before=q.base[0],local=q.local[0];if(!before||!local)return;
+ for(const [key,rows]of [['auditSessions',(before.auditSessions||[]).filter(a=>a.status==='applied')],['operations',(before.operations||[]).filter(o=>o.type==='audit')],['history',(before.history||[]).filter(h=>h.type==='실사 반영')],['auditTransfers',before.auditTransfers||[]]])for(const record of rows){
+  const matches=(local[key]||[]).filter(row=>row.id===record.id);if(matches.length!==1||!auditSame(record,matches[0])){const error=Error('이미 반영한 실사와 전달 근거는 직접 변경할 수 없습니다. 재대조 실사를 새로 만들어 주세요.');error.code='AUDIT_TRANSFER_SYNC';error.auditId=record.auditId||record.id;throw error}
+ }
+}
 // Revalidate a queued month-end result against the latest source before its target PUT.
 // The reservation identifies the intended operation, but does not freeze later production corrections.
 function guardMonthEndAuditWrite(state,key,q){
- const before=q.base[0]?.auditSessions||[],local=q.local[0],candidates=(local?.auditSessions||[]).filter(a=>a.status==='applied'&&a.mode==='opening-counted'&&[1,2].includes(a.monthEndBasis?.schema)&&a.targetMonth===key&&!before.some(old=>old.id===a.id&&old.operationId===a.operationId&&old.status==='applied'));
+ const before=q.base[0]?.auditSessions||[],local=q.local[0],candidates=(local?.auditSessions||[]).filter(a=>a.status==='applied'&&a.targetMonth===key&&!before.some(old=>old.id===a.id&&old.operationId===a.operationId&&old.status==='applied'));
  if(!candidates.length)return;const O=root.ScheduleOperations;
  if(!O?.acceptAuditTransfer||!O?.monthEndAuditIssues)throw Error('월말 실사 확인 기능을 불러온 뒤 다시 전송해 주세요.');
  for(const candidate of candidates){try{
+  if(Object.hasOwn(candidate,'monthEndBasis')&&(!candidate.monthEndBasis||typeof candidate.monthEndBasis!=='object'||![1,2].includes(candidate.monthEndBasis.schema)||candidate.mode!=='opening-counted'))throw Error('저장된 실사 대조 근거 형식을 확인해 주세요. 지원하지 않는 형식은 전송하지 않습니다.');
   if(!local.operations?.some(o=>o.id===candidate.operationId&&o.auditId===candidate.id))throw Error('실사 반영 확인정보가 없어 전송을 보류합니다.');
+  const committed=state.months[key]?.auditSessions?.find(a=>a.id===candidate.id&&a.operationId===candidate.operationId&&a.status==='applied');
+  if(candidate.monthEndBasis&&!(auditSame(committed,candidate)&&state.months[key]?.operations?.some(o=>o.id===candidate.operationId&&o.auditId===candidate.id)))guardAuditCalculatedResult(state,key,q,candidate,candidates);
   if(candidate.sourceMonth!==key){
    const transfer=state.months[candidate.sourceMonth]?.auditTransfers?.find(t=>t.operationId===candidate.operationId&&t.auditId===candidate.id);
    if(!transfer||transfer.targetMonth!==key||JSON.stringify(transfer.audit)!==JSON.stringify(candidate))throw Error('원월의 실사 전달자료가 변경되었습니다. 최신 실사 기록을 확인해 주세요.');
@@ -2631,8 +2645,62 @@ function guardMonthEndAuditWrite(state,key,q){
    // Already committed work may be acknowledged; later actual corrections remain a separate recheck.
    if(done&&state.months[key].operations?.some(o=>o.id===candidate.operationId))continue;
    const issues=O.monthEndAuditIssues(state,candidate,{allowProvisional:true});if(issues.length)throw Error(issues[0].message);
+   if(!O.closedDependentAuditIssues)throw Error('후속월 실사 확인 기능을 불러온 뒤 다시 전송해 주세요.');
+   const dependent=O.closedDependentAuditIssues(state,key,candidate.preview,candidate.monthEndBasis?.provisional===true);if(dependent.length)throw Error(dependent[0].message);
   }
  }catch(error){error.code='AUDIT_TRANSFER_SYNC';error.auditId=candidate.id;throw error}}
+}
+function guardAuditCalculatedResult(state,key,q,candidate,candidates){
+ const O=root.ScheduleOperations;if(!O?.previewMonthEndAudit)throw Error('실사 결과 확인 기능을 불러온 뒤 다시 전송해 주세요.');
+ const staged=clone(state),local=q.local[0],target=staged.months[key]=unpackMonth(key,q.base),own=new Set(candidates.map(a=>a.operationId));
+ // Remove only this request's reservations in the validation copy; all actual
+ // source rows remain the fresh server snapshot, and unrelated holds remain.
+ for(const m of Object.values(staged.months))m.auditTransfers=(m.auditTransfers||[]).filter(t=>!own.has(t.operationId));
+ for(const prior of candidates){if(prior===candidate)break;const event=(local.history||[]).find(h=>h.id==='audit-history:'+prior.operationId);if(!event)throw Error('실사 결과 이력을 확인해 주세요.');target.stocks=clone(event.after);target.auditSessions=(target.auditSessions||[]).filter(a=>a.id!==prior.id).concat(clone(prior));target.operations=(target.operations||[]).concat(clone(local.operations.find(o=>o.id===prior.operationId)))}
+ const draft={...clone(candidate),status:'draft'};for(const field of ['monthEndBasis','operationId','appliedAt','preview','sourceMonth','targetMonth','mode'])delete draft[field];
+ const origin=staged.months[candidate.sourceMonth];if(!origin)throw Error('실사 원본 월을 확인해 주세요.');origin.auditSessions=(origin.auditSessions||[]).filter(a=>a.id!==draft.id).concat(draft);
+ const calculated=O.previewMonthEndAudit(staged,draft,candidate.monthEndBasis);if(!calculated.canApply)throw Error(calculated.issues[0]?.message||'실사 계산 근거를 확인해 주세요.');
+ const basisKeys=['schema','countedAt','countedMonth','periodStart','periodEnd','dayComplete','actualSignature'],rowKeys=['product','total','after','skip','dayProduction','dayReplacement','productionRecords','replacementRecords','includedProduction','includedReplacement','adjustment'],sameRows=(a,b,fields)=>Array.isArray(a)&&a.length===b.length&&b.every((row,index)=>fields.every(field=>auditSame(row[field],a[index]?.[field])));
+ const basis=candidate.monthEndBasis,expected=calculated.monthEndBasis;
+ if(basisKeys.some(field=>!auditSame(basis[field],expected[field]))||(basis.provisional===true)!==(expected.provisional===true)||!sameRows(basis.items,expected.items,['product','includedProduction','includedReplacement'])||!sameRows(basis.actuals,expected.actuals,['product','production','replacement','productionRecords','replacementRecords'])||!sameRows(candidate.preview,calculated.rows,rowKeys))throw Error('실사 계산 결과와 저장할 근거가 다릅니다. 대조표를 다시 확인해 주세요.');
+ const event=(local.history||[]).find(h=>h.id==='audit-history:'+candidate.operationId);if(!event||!auditSame(event.before,target.stocks))throw Error('실사 반영 전 재고 이력이 다릅니다. 대조표를 다시 확인해 주세요.');
+ for(const row of calculated.rows.filter(r=>!r.skip)){
+  const matches=stocks=>(stocks||[]).filter(stock=>C.catalogName(state,stock.product)===C.catalogName(state,row.product)),valid=stock=>stock?.opening===row.after&&stock.auditId===candidate.id&&stock.operationId===candidate.operationId&&stock.sourceType==='audit';
+  const recorded=matches(event.after);if(recorded.length!==1||!valid(recorded[0]))throw Error('실사 반영 이력의 재고가 계산 결과와 다릅니다.');
+  const later=candidates.slice(candidates.indexOf(candidate)+1).some(a=>(a.preview||[]).some(r=>!r.skip&&C.catalogName(state,r.product)===C.catalogName(state,row.product)));if(!later){const stored=matches(local.stocks);if(stored.length!==1||!valid(stored[0]))throw Error('저장할 시작재고가 실사 계산 결과와 다릅니다.')}
+ }
+}
+function guardAuditCloseWrite(state,key,q){
+ if(q.base[0]?.closed||!q.local[0]?.closed)return;
+ const O=root.ScheduleOperations;if(!O?.monthEndCloseIssues)throw Error('실사 마감 확인 기능을 불러온 뒤 다시 전송해 주세요.');
+ // The queued target may contain a just-reviewed audit. Keep that intent, but
+ // use the fresh, single-revision source ledgers for every inherited dependency.
+ const candidate=clone(state);candidate.months[key]=unpackMonth(key,q.local);
+ const issues=O.monthEndCloseIssues(candidate,key);if(issues.length){const error=Error('마감 전 실사 재확인이 필요합니다. '+issues[0].message);error.code='AUDIT_TRANSFER_SYNC';error.auditIssues=issues;throw error}
+}
+function auditSame(a,b){if(a===b)return true;if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(key=>Object.hasOwn(b,key)&&auditSame(a[key],b[key]))}
+// A receipt alone is not proof that an entire queued month was saved. Rebuild
+// only the audit effects from exact immutable receipts/history, then require
+// equality with the entire local intent. Mixed edits remain ordinary conflicts.
+function acknowledgedAuditOnly(q,records){
+ if(!/^months\//.test(q.path)||q.base?.length!==1||q.local?.length!==1||records?.length!==1)return false;
+ const base=q.base[0],local=q.local[0],remote=records[0];if(base.id!==local.id||local.id!==remote.id||base.closed||local.closed)return false;
+ const expected=clone(base),one=(rows,id)=>{const matches=(rows||[]).filter(r=>r.id===id);return matches.length===1?matches[0]:null};let changes=0;
+ for(const transfer of local.auditTransfers||[]){
+  if((base.auditTransfers||[]).some(t=>t.id===transfer.id))continue;
+  if(!auditSame(one(remote.auditTransfers,transfer.id),transfer)||!transfer.operationId)return false;
+  expected.auditTransfers??=[];expected.auditTransfers.push(clone(transfer));changes++;
+ }
+ for(const operation of local.operations||[]){
+  if((base.operations||[]).some(o=>o.id===operation.id))continue;
+  const audit=one(local.auditSessions,operation.auditId),event=one(local.history,'audit-history:'+operation.id);
+  if(operation.type!=='audit'||!audit||audit.status!=='applied'||audit.operationId!==operation.id||audit.targetMonth!==local.id||audit.mode!=='opening-counted'||![1,2].includes(audit.monthEndBasis?.schema)||!event)return false;
+  if(!auditSame(one(remote.operations,operation.id),operation)||!auditSame(one(remote.auditSessions,audit.id),audit)||!auditSame(one(remote.history,event.id),event))return false;
+  if(event.type!=='실사 반영'||event.reason!==audit.mode||event.at!==audit.appliedAt||!auditSame(event.before,expected.stocks)||!Array.isArray(event.after))return false;
+  expected.stocks=clone(event.after);expected.auditSessions??=[];const index=expected.auditSessions.findIndex(a=>a.id===audit.id);if(index<0)expected.auditSessions.push(clone(audit));else expected.auditSessions[index]=clone(audit);
+  expected.operations??=[];expected.operations.push(clone(operation));expected.auditStamp='AUDIT:'+audit.id;expected.history??=[];expected.history.push(clone(event));expected.rev++;changes++;
+ }
+ return changes>0&&auditSame(expected,local);
 }
 function acceptedAuditOperations(state,keys){const done=new Set();for(const [source,m]of Object.entries(state.months||{}))for(const t of m.auditTransfers||[])if((keys.includes(source)||keys.includes(t.targetMonth))&&state.months[t.targetMonth]?.auditSessions?.some(a=>a.id===t.auditId&&a.operationId===t.operationId&&a.status==='applied')&&state.months[t.targetMonth]?.operations?.some(o=>o.id===t.operationId))done.add(t.operationId);return [...done]}
 // Read every listed month before publishing any state; cap active requests and preserve catalog order.
@@ -2697,10 +2765,12 @@ class Workspace{
   const loaded=unpackCatalog(remote.data.records),pending=loaded.state.catalogUnitSync;
   if(pending&&!(pending.id===q.groupId&&this.ownsUnitSync(pending.id)))throw unitSyncError(loaded.state);
   if(/^months\//.test(q.path)&&auditSensitive(q.base[0],q.local[0])){
+   guardAppliedAuditHistory(q);
    for(const result of await readMonths(this.client,loaded.months,false,remote.revision))loaded.state.months[result.key]=result.month;
    const key=q.path.slice(7,-5),allowed=this.envelope.groups?.find(g=>g.id===q.groupId)?.auditOperations||[];
    const issues=auditTransferIssues(loaded.state).filter(t=>(t.sourceMonth===key||t.targetMonth===key)&&!allowed.includes(t.operationId));if(issues.length)throw auditError(issues);
    guardMonthEndAuditWrite(loaded.state,key,q);
+   guardAuditCloseWrite(loaded.state,key,q);
   }
   if(q.path==='meta/catalog.json'){
    const merged=S.mergeRecords(q.base,q.local,remote.data.records);if(merged.conflicts.length){const e=Error('같은 기록이 다른 기기에서도 수정되었습니다.');e.conflicts=merged.conflicts;throw e}
@@ -2803,7 +2873,11 @@ class Workspace{
  async flush(){
   if(this.closed||this.resolving)return;if(this.flushing)return this.flushing;
   const run=async()=>{while(this.envelope.queue.length&&!this.closed&&!this.resolving){const q=clone(this.envelope.queue[0]);try{
-   await this.guardWrite(q);const result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local);if(this.closed)return;await this.guardWrite(q);
+   await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local)}catch(error){
+    if(!error.conflicts?.length||!/^months\//.test(q.path)||!auditSensitive(q.base[0],q.local[0]))throw error;
+    const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!acknowledgedAuditOnly(q,remote.data.records))throw error;
+    result=remote;
+   }if(this.closed)return;await this.guardWrite(q);
    const extra={};if(q.path==='meta/catalog.json')for(const key of unpackCatalog(result.data.records).months)if(!this.envelope.state.months[key]){const path='months/'+key+'.json';extra[path]=(await this.client.get(path,false,{ref:result.revision})).data.records}
    const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current);if(rebased.conflicts.length){const err=Error('후속 입력과 원격 변경을 함께 검토해 주세요.');err.conflicts=rebased.conflicts;throw err}later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat((e.groups||[]).filter(g=>g.status==='complete').slice(-30))});
    this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':'GitHub 저장 완료');
@@ -4245,14 +4319,14 @@ function auditMeasureLookup(s,k,inventory,catalog){
 function auditMeasure(s,k,product){const catalog=C.catalogLookup(s);return auditMeasureLookup(s,k,C.inventory(s,k),catalog)(product)}
 function carryFields(j){const fields=Object.fromEntries(['id','originId','product','worker','plan','daily','start','end','duration','group','machines','manual','note','stoppedAt','previousProduced','previousPlan','previousStart'].map(k=>[k,j[k]??null]));if(j.manualEndMode)fields.manualEndMode=j.manualEndMode;if(j.manualStartMode)fields.manualStartMode=j.manualStartMode;if(j.manualSource)fields.manualSource=j.manualSource;if(j.routing)fields.routing=clone(j.routing);if(j.handoffs)fields.handoffs=clone(j.handoffs);return fields}
 function report(s,k){
- const m=s.months[k];if(m.closed&&m.closeSnapshot?.report){const saved=clone(m.closeSnapshot.report),catalog=C.catalogLookup(s);saved.rows=saved.rows.map(r=>({...r,category:reportCategory(catalog.name(r.product),r.category,catalog.identity(r.product))}));return saved;}
+ const m=s.months[k];if(m.closed&&m.closeSnapshot?.report){const saved=clone(m.closeSnapshot.report),catalog=C.catalogLookup(s);saved.rows=saved.rows.map(r=>({...r,category:reportCategory(catalog.name(r.product),r.category,catalog.identity(r.product))}));saved.auditIssues=monthEndCloseIssues(s,k);return saved;}
  const catalog=C.catalogLookup(s),inv=C.inventory(s,k),n=s.months[nextMonth(k)],invNames=new Set(inv.map(r=>catalog.name(r.product))),nextStocks=firstProductRows(n?.stocks,catalog),measure=auditMeasureLookup(s,k,inv,catalog),kgByProduct=new Map(),kgByDate=new Map(),actualByDate=new Map();let production=0,kg=0,defectKg=0;
  for(const r of m.rows){const name=catalog.name(r.product),value=C.daily(r),plaster=C.num(value.plaster)??0;kgByProduct.set(name,(kgByProduct.get(name)??0)+plaster);kgByDate.set(r.date,(kgByDate.get(r.date)??0)+plaster);kg+=plaster;defectKg+=C.num(value.defect)??0;if(!catalog.identity(r.product).includes('부속'))production+=C.num(r.pours)??0}
  for(const r of m.plaster)if(!actualByDate.has(r.date))actualByDate.set(r.date,r.actual);
  const additional=(n?.stocks||[]).filter(r=>!invNames.has(catalog.name(r.product))).map(r=>({product:catalog.name(r.product),opening:0,production:0,deduction:0,current:0,kg:null}));
  const rows=[...inv,...additional].map(r=>{const name=catalog.name(r.product),p=catalog.current(name),unitKg=p?.kg??null,st=nextStocks.get(name),actual=st?.sourceType==='audit'?st.opening:measure(r.product);return{...r,category:reportCategory(name,p?.category,catalog.identity(r.product)),unitKg,productionKg:kgByProduct.get(name)??0,replacementKg:unitKg==null?null:r.deduction*unitKg,physical:actual,physicalKg:actual==null||unitKg==null?null:actual*unitKg}});
  const dateCount=new Date(+k.slice(0,4),+k.slice(5),0).getDate(),dates=Array.from({length:dateCount},(_,i)=>k+'-'+String(i+1).padStart(2,'0')),days=dates.map(date=>{const used=kgByDate.get(date)??0,actual=actualByDate.get(date)??null;return{date,used,actual,difference:actual==null?null:actual-used}});
- const actualDays=days.filter(r=>r.actual!=null&&r.actual!==0),usedDays=days.filter(r=>r.used!==0);return{month:k,rows,days,totals:{production,kg,defectKg,replacement:C.sum(m.issues,r=>r.replacement),actual:days.some(d=>d.actual!=null)?C.sum(days,r=>r.actual):null,actualAverage:actualDays.length?C.sum(actualDays,r=>r.actual)/actualDays.length:null,usedAverage:usedDays.length?C.sum(usedDays,r=>r.used)/usedDays.length:null}};
+ const actualDays=days.filter(r=>r.actual!=null&&r.actual!==0),usedDays=days.filter(r=>r.used!==0);return{month:k,rows,days,auditIssues:monthEndCloseIssues(s,k),totals:{production,kg,defectKg,replacement:C.sum(m.issues,r=>r.replacement),actual:days.some(d=>d.actual!=null)?C.sum(days,r=>r.actual):null,actualAverage:actualDays.length?C.sum(actualDays,r=>r.actual)/actualDays.length:null,usedAverage:usedDays.length?C.sum(usedDays,r=>r.used)/usedDays.length:null}};
 }
 function newAudit(s,k,date){auditWritable(s,k);if(!C.iso(date))throw Error('실사 날짜를 확인해 주세요.');const inventory=C.inventory(s,k),names=new Set(inventory.map(r=>r.product));return{id:C.id(),rev:1,baseMonth:k,countedAt:date,status:'draft',locations:clone(s.locations),items:[...inventory,...s.products.filter(p=>!p.inactive&&!names.has(p.name)).map(p=>({product:p.name,current:0}))].map(r=>({id:r.product,product:r.product,book:r.current,counts:s.locations.map(()=>null),raw:s.locations.map(()=>''),note:''}))}}
 function auditWritable(s,k){const m=open(s,k);for(const [sourceMonth,mm]of Object.entries(s.months||{}))for(const t of mm.auditTransfers||[]){if(sourceMonth!==k&&t.targetMonth!==k)continue;const target=s.months[t.targetMonth],complete=target?.operations?.some(o=>o.id===t.operationId)&&target?.auditSessions?.some(a=>a.id===t.auditId&&a.operationId===t.operationId&&a.status==='applied');if(!complete)throw Error('실사 전달 확인이 끝나지 않았습니다. 실사 화면에서 전달을 다시 반영한 뒤 처리해 주세요.')}return m}
@@ -4341,6 +4415,7 @@ function previewMonthEndAudit(s,a,basis){
   if(after!=null&&(!Number.isFinite(after)||after<0))issues.push({code:'opening-quantity',product:row.product,message:row.product+'의 보정 후 시작재고가 음수이거나 계산 범위를 넘었습니다. 포함 수량을 다시 확인해 주세요.'});
   return{...row,book:item?.book??null,countTotal:row.total,sourceOpening:source?.opening??0,sourceProduction:source?.production??0,sourceDeduction:source?.deduction??0,sourceCurrent:source?.current??0,dayProduction,dayReplacement,productionRecords:actual?.productionRecords??0,replacementRecords:actual?.replacementRecords??0,includedProduction:included?.includedProduction??null,includedReplacement:included?.includedReplacement??null,adjustment,after,negative:after!=null&&after<0,currentAfter:row.skip?row.current:after==null?null:after+row.production-row.deduction};
  });
+ issues.push(...closedDependentAuditIssues(s,suggestion.targetMonth,rows,inputBasis.provisional));
  const snapshot={schema:inputBasis.schema,...(period?{...period,provisional:inputBasis.provisional}:{}),countedAt:a.countedAt,countedMonth:suggestion.countedMonth,dayComplete:inputBasis.dayComplete,items:clone(inputBasis.items),actualSignature:day.signature,actuals:measured.map(row=>({...day.values.get(row.product)}))};
  const monthEndSignature=JSON.stringify({signature:base.signature,countedMonth:suggestion.countedMonth,actualSignature:day.signature,basis:inputBasis,targetMissing,rows});
  return{...base,flow:'month-end-counted-v1',countedMonth:suggestion.countedMonth,periodStart:suggestion.periodStart,periodEnd:suggestion.periodEnd,provisional:inputBasis.provisional===true,createTarget:false,targetMissing,rows,inputBasis,monthEndBasis:snapshot,monthEndSignature,dayComplete:inputBasis.dayComplete,canApply:(inputBasis.provisional||inputBasis.dayComplete)&&!issues.length,issues,warnings};
@@ -4354,7 +4429,7 @@ function monthEndAuditIssues(s,a,options={}){
  let period;try{period=auditBasisPeriod(basis.countedAt,basis);if(basis.schema===2&&(saved.countedAt!==basis.countedAt||basis.countedMonth!==basis.countedAt.slice(0,7)||saved.targetMonth!==nextMonth(basis.countedMonth)))return invalid()}catch(e){return invalid()}
  const target=s.months[saved.targetMonth],applied=target?.operations?.some(r=>r.id===saved.operationId)&&target.auditSessions?.some(r=>r.id===saved.id&&r.operationId===saved.operationId&&r.status==='applied');
  // A later reviewed stocktake replaces only the products it actually counted.
- const active=applied?basis.actuals.filter(r=>target.stocks.some(stock=>stock.auditId===saved.id&&sameProduct(s,stock.product,r.product))):basis.actuals;
+ const scope=options.products&&new Set(options.products.map(product=>C.catalogName(s,product))),active=basis.actuals.filter(r=>(!applied||target.stocks.some(stock=>stock.auditId===saved.id&&sameProduct(s,stock.product,r.product)))&&(!scope||scope.has(C.catalogName(s,r.product))));
  if(!active.length)return[];
  // A reviewed forecast may be written, but cannot silently become a final audit.
  // Write guards omit only this notice; range/signature/quantity failures still block.
@@ -4365,10 +4440,29 @@ function monthEndAuditIssues(s,a,options={}){
  const changed=active.flatMap(old=>{const product=C.catalogName(s,old.product),now=current.values.get(product);if(now&&now.production===old.production&&now.replacement===old.replacement)return[];const included=basis.items.find(r=>sameProduct(s,r.product,product)),row=saved.preview.find(r=>sameProduct(s,r.product,product));return[{code:'actual-changed',product,savedOpening:row?.after??null,expectedOpening:row&&now&&included?row.total+(now.production-included.includedProduction)-(now.replacement-included.includedReplacement):null,message:product+'의 실사 '+(basis.schema===2?'대조기간':'당일')+' 생산·교체가 반영 당시와 다릅니다. 시작재고를 자동으로 바꾸지 않았으니 실사 기준을 다시 확인해 주세요.'}]});
  return[...(changed.length?changed:[{code:'actual-records-changed',message:'실사 대조기간 생산·교체 기록이 반영 당시와 달라졌습니다. 실사 기준을 다시 확인해 주세요.'}]),...pending];
 }
+// Follow the same openingSource / sourceType decision used by C.inventory.
+// A manual opening or independent stocktake cuts this dependency per product.
+// Closed snapshots still retain lineage, so they cannot hide an unsafe correction.
+function inheritedAuditProducts(s,source,key,products){
+ const catalog=C.catalogLookup(s);let active=[...new Set(products.map(product=>catalog.name(product)))],current=key;const seen=new Set();
+ while(current!==source){
+  if(current<source||!active.length||seen.has(current))return[];seen.add(current);const m=s.months[current],previous=m?.openingSource;
+  if(!m||!previous||previous>=current||!s.months[previous])return[];
+  const stocked=new Set(),inherited=new Set();for(const r of m.stocks||[]){const product=catalog.name(r.product);stocked.add(product);if(r.sourceType==='previous')inherited.add(product)}
+  active=active.filter(product=>!stocked.has(product)||inherited.has(product));current=previous;
+ }return active;
+}
+function closedDependentAuditIssues(s,key,rows,provisional=false){
+ const changed=rows.filter(r=>!r.skip&&r.after!=null&&(provisional||r.after!==r.opening)).map(r=>r.product),issues=[];if(!changed.length)return issues;
+ for(const [month,m]of Object.entries(s.months||{})){if(month===key||!m.closed)continue;const products=inheritedAuditProducts(s,key,month,changed);if(products.length)issues.push({code:'closed-dependent-month',month,products,message:month+'월은 이 시작재고를 이어받아 이미 마감했습니다. '+products.join(' · ')+' 재고 변경은 보류하고 마감 내역을 먼저 확인해 주세요.'})}
+ return issues;
+}
 function monthEndCloseIssues(s,k){
  const seen=new Set(),issues=[];for(const [storedMonth,m]of Object.entries(s.months||{}))for(const a of m.auditSessions||[]){
-  if(a.status!=='applied'||!a.monthEndBasis||seen.has(a.id)||![a.sourceMonth||a.baseMonth,a.targetMonth||storedMonth,a.monthEndBasis.countedMonth].includes(k))continue;
-  seen.add(a.id);issues.push(...monthEndAuditIssues(s,a).map(issue=>({...issue,auditId:a.id,targetMonth:a.targetMonth||storedMonth})));
+  if(a.status!=='applied'||!a.monthEndBasis||seen.has(a.id))continue;
+  const target=a.targetMonth||storedMonth,direct=[a.sourceMonth||a.baseMonth,target,a.monthEndBasis.countedMonth].includes(k),names=Array.isArray(a.monthEndBasis.actuals)?a.monthEndBasis.actuals.map(r=>r.product):(s.months[target]?.stocks||[]).filter(r=>r.auditId===a.id).map(r=>r.product),products=direct?null:inheritedAuditProducts(s,target,k,names);
+  if(!direct&&!products.length)continue;
+  seen.add(a.id);issues.push(...monthEndAuditIssues(s,a,products?{products}:{}).map(issue=>({...issue,auditId:a.id,targetMonth:target,...(!direct?{dependentMonth:k,message:target+' 시작재고를 이어받은 '+k+'월: '+issue.message}:{})})));
  }return issues;
 }
 function acceptAuditTransfer(s,sourceMonth,operationId){
@@ -4381,6 +4475,7 @@ function acceptAuditTransfer(s,sourceMonth,operationId){
  let scope=null;if(transfer.targetSignatureMode!=null){if(transfer.targetSignatureMode!=='month-end-products-v1'||transfer.audit.mode!=='opening-counted'||![1,2].includes(transfer.audit.monthEndBasis?.schema)||!Array.isArray(transfer.audit.preview))throw Error('실사 전달자료의 재고 비교 기준을 확인해 주세요.');scope=transfer.audit.preview.filter(row=>!row.skip).map(row=>row.product);if(!scope.length)throw Error('실사 전달자료의 반영 품목을 확인해 주세요.')}
  if(transfer.targetSignature!==auditTargetSignature(s,key,scope))throw Error('실사 전달 이후 대상월 장부가 변경되었습니다. 기존 입력을 보존하고 전달자료를 확인해 주세요.');
   const actualChanges=monthEndAuditIssues(s,transfer.audit,{allowProvisional:true});if(actualChanges.length)throw Error(actualChanges[0].message);
+ const dependent=closedDependentAuditIssues(s,key,transfer.audit.preview||[],transfer.audit.monthEndBasis?.provisional===true);if(dependent.length)throw Error(dependent[0].message);
  writeAuditResult(s,key,transfer.audit);return key;
 }
 function previewAudit(s,k,a,mode){auditWritable(s,k);if(a.status==='applied'||auditApplication(s,a.id))throw Error('이미 반영한 실사입니다. 재실사는 새로 시작해 주세요.');if(!['opening','opening-counted','current'].includes(mode))throw Error('실사 반영방식을 선택해 주세요.');const seen=new Set(),inv=C.inventory(s,k);const rows=a.items.map(r=>{const product=C.catalogName(s,r.product);if(!product)throw Error('실사 품명을 확인해 주세요.');if(seen.has(product))throw Error('실사 품명이 중복되었습니다: '+product);seen.add(product);const b=inv.find(i=>sameProduct(s,i.product,r.product))||{opening:0,production:0,deduction:0,current:0};const total=r.counts.some(v=>v!=null)?C.sum(r.counts,v=>v):null;if(r.counts.some(v=>v!=null&&(!Number.isFinite(v)||v<0))||total!=null&&!Number.isFinite(total))throw Error('실사 수량을 확인해 주세요.');const after=mode==='opening'?(total??0):mode==='opening-counted'?total:total==null?null:total-b.production+b.deduction;if(after!=null&&!Number.isFinite(after))throw Error('실사 반영 수량의 계산 범위를 확인해 주세요.');return{...b,product,total,after,skip:after==null,negative:after!=null&&after<0,unregistered:!s.products.some(p=>p.name===C.catalogName(s,r.product))}});return{id:C.id(),sourceMonth:auditOrigin(s,a)?.month||a.baseMonth,targetMonth:k,mode,auditId:a.id,signature:auditSignature(s,k,a,mode),rows}}
@@ -4398,6 +4493,7 @@ function applyAudit(s,k,a,preview){
  const checked=previewAudit(s,k,a,preview.mode);if(JSON.stringify(checked.rows)!==JSON.stringify(preview.rows))throw Error('실사 미리보기 값이 변경되어 다시 검토해야 합니다.');
  const unregistered=checked.rows.filter(r=>r.unregistered&&!r.skip);if(unregistered.length)throw Error('관리 목록에 품명을 먼저 등록한 뒤 다시 검토해 주세요: '+unregistered.map(r=>r.product).join(', '));
  const edits=checked.rows.filter(r=>!r.skip);for(const p of edits)if(m.stocks.filter(r=>sameProduct(s,r.product,p.product)).length>1)throw Error('이월재고에 중복 품목이 있습니다: '+p.product);
+ const dependent=closedDependentAuditIssues(s,k,checked.rows);if(dependent.length)throw Error(dependent[0].message);
  return commitAuditRows(s,k,a,preview,checked.rows);
 }
 function applyMonthEndAudit(s,a,preview){
@@ -4419,7 +4515,7 @@ function acceptCarry(s,packet){packet={...packet,openings:packet.openings.map(r=
 function closePreview(s,k){const m=auditWritable(s,k),packet=carry(s,k),next=carryPreview(s,k,packet),reportValue=report(s,k),warnings=[],auditIssues=monthEndCloseIssues(s,k);for(const r of reportValue.rows){if(r.current<0)warnings.push(r.product+' 음수 재고 '+r.current);if(r.unitKg==null&&(r.production||r.current))warnings.push(r.product+' 기준 kg 없음')}return{signature:JSON.stringify(s),schedule:root.SchedulePlanning?root.SchedulePlanning.schedule(s,k,new Date(Date.now()+9*3600000).toISOString().slice(0,10)):null,packet,report:reportValue,inventory:C.inventory(s,k),warnings,auditIssues,conflicts:[...next.conflicts,...auditIssues.map(issue=>'실사 재확인: '+issue.message)],preserved:next.preserved}}
 function closeMonthMutable(s,k,p){const m=open(s,k);if(p.signature!==JSON.stringify(s))throw Error('미리보기 후 자료가 달라졌습니다. 다시 확인해 주세요.');if(p.auditIssues?.length)throw Error('예측 반영 또는 변경된 생산·교체를 다시 대조한 뒤 마감해 주세요.');if(p.conflicts.length)throw Error('다음달 이월 작업의 수정 충돌을 먼저 확인해 주세요.');m.closed=true;m.closedAt=stamp();m.closeSnapshot={schedule:clone(p.schedule),inventory:clone(p.inventory),report:clone(p.report),closedAt:m.closedAt,policyVersion:'web-ledger-2',unitKgByProduct:Object.fromEntries(s.products.map(p=>[p.name,p.kg]))};m.carryOut=clone(p.packet);m.operations??=[];m.operations.push({id:p.packet.id,type:'close',at:m.closedAt});history(m,'월마감',null,{closedAt:m.closedAt,carryId:p.packet.id});acceptCarry(s,p.packet);return p.packet.targetMonth}
 function closeMonth(s,k,p){const staged=clone(s),target=closeMonthMutable(staged,k,p);Object.assign(s,staged);return target}
-root.ScheduleOperations={nextMonth,open,history,upsert,remove,countValue,group,reportCategory,report,newAudit,auditApplication,auditEditable,auditBookSignature,auditBookRows,auditNewItem,auditSuggestedApplication,previewAudit,applyAudit,previewMonthEndAudit,applyMonthEndAudit,monthEndAuditIssues,monthEndCloseIssues,acceptAuditTransfer,carry,carryPreview,acceptCarry,closePreview,closeMonth};if(typeof module!=='undefined')module.exports=root.ScheduleOperations;
+root.ScheduleOperations={nextMonth,open,history,upsert,remove,countValue,group,reportCategory,report,newAudit,auditApplication,auditEditable,auditBookSignature,auditBookRows,auditNewItem,auditSuggestedApplication,previewAudit,applyAudit,previewMonthEndAudit,applyMonthEndAudit,monthEndAuditIssues,monthEndCloseIssues,closedDependentAuditIssues,acceptAuditTransfer,carry,carryPreview,acceptCarry,closePreview,closeMonth};if(typeof module!=='undefined')module.exports=root.ScheduleOperations;
 })(globalThis);
 </script><script>(function(root){'use strict';const C=ScheduleCore,P=SchedulePlanning,original=C.normalize;
 function enrich(s,book){s.calendar={factory:[],workers:[]};s.migrationWarnings=[];for(const[k,m]of Object.entries(s.months)){const sheet=book.sheets.find(x=>x.name===m.name);m.jobs=[];m.history=[];m.operations=[];m.auditSessions=[];if(!m.modern)continue;for(const p of m.plans.filter(r=>r.input)){const parsed=P.parseInput(p.input,k,s.workers),r=m.rows.find(r=>r.sourceRow===p.sourceStart),job={...parsed,id:'job:'+p.id,originId:'job:'+p.id,source:p.source,sourceRowId:r?.plan>0?r.id:null,sourceStart:p.sourceStart,sourceEnd:p.sourceEnd,product:p.product,worker:parsed.worker||r?.worker||'',plan:p.plan,previousPlan:p.previousPlan||0,previousProduced:p.previousProduced||0,carried:!!parsed.start&&parsed.start.slice(0,7)<k,previousStart:parsed.start};m.jobs.push(job);if(!parsed.machines.length)s.migrationWarnings.push({source:p.source,product:p.product,message:'호기 누락으로 일정 배치 보류'})}
@@ -4554,14 +4650,16 @@ const reportNumericFields=['production','productionKg','deduction','replacementK
 function reportColumnTotal(rows,key){const values=rows.map(r=>r[key]).filter(v=>typeof v==='number'&&Number.isFinite(v));return values.length?values.reduce((a,b)=>a+b,0):null}
 function reportDisplayRows(r){
  const order=['바디','림','세면기','쌍뚜껑','탱크','스톨','부속·보형물·토수구'],groups=new Map();
- for(const row of r.rows.filter(x=>x.production||x.deduction||x.physical)){const category=row.category||'미분류';if(!groups.has(category))groups.set(category,[]);groups.get(category).push(row)}
+ for(const row of r.rows.filter(x=>x.production||x.deduction||x.physical!=null)){const category=row.category||'미분류';if(!groups.has(category))groups.set(category,[]);groups.get(category).push(row)}
  const result=[],all=[];
  for(const category of [...groups.keys()].sort((a,b)=>(order.indexOf(a)<0?99:order.indexOf(a))-(order.indexOf(b)<0?99:order.indexOf(b)))){const rows=groups.get(category);result.push(...rows);all.push(...rows);result.push({category,product:category+' 소계',subtotal:true,...Object.fromEntries(reportNumericFields.map(key=>[key,reportColumnTotal(rows,key)]))})}
  if(all.length)result.push({category:'전체',product:'전체 합계',total:true,...Object.fromEntries(reportNumericFields.map(key=>[key,reportColumnTotal(all,key)]))});return result;
 }
 function reportTable(r){return table(['구분','품명','생산 조','생산 kg','교체 조','교체 kg','실사 조','실사 kg'],reportDisplayRows(r).map(x=>`<tr${x.total?' class="reportTotal"':x.subtotal?' class="reportSubtotal"':''}>`+[td(esc(x.category)),td(esc(x.product),'product'),...reportNumericFields.map(key=>td(fmt(x[key]),'num'))].join('')+'</tr>'))+`<p class="footerNote">합계는 기록된 숫자만 더합니다. —는 미입력 또는 계산 근거 없음이며 0이 아닙니다.</p>`}
 function reportDayTotals(r){return{date:'합계',used:reportColumnTotal(r.days,'used'),actual:reportColumnTotal(r.days,'actual'),difference:reportColumnTotal(r.days,'difference')}}
-function reportPrintBody(r){return `<h1>${esc(r.month||month)} 월마감 보고서</h1>${reportTable(r)}<h2>일자별 석고 사용량</h2>${table(['날짜','일보 kg','실사용 kg','차이 kg'],[...r.days,reportDayTotals(r)].map(x=>`<tr${x.date==='합계'?' class="reportTotal"':''}>`+[td(esc(x.date)),td(fmt(x.used),'num'),td(fmt(x.actual),'num'),td(fmt(x.difference),'num')].join('')+'</tr>'))}<p>차이 합계는 실사용량을 입력한 날짜만 계산합니다.</p>`}
+function reportAuditReview(r){const issues=r.auditIssues||[];return{label:issues.length?(issues.some(x=>x.code==='provisional-pending')?'예상분 포함 · 월말 대조 필요':'실사 재대조 필요'):'',messages:[...new Set(issues.map(x=>x.message).filter(Boolean))]}}
+function reportCsvExport(r){const status=reportAuditReview(r).label;return{head:['구분','품명','생산조','생산kg','교체조','교체kg','실사조','실사kg','보고서 확인 상태'],rows:reportDisplayRows(r).map(x=>[x.category,x.product,x.production,x.productionKg,x.deduction,x.replacementKg,x.physical,x.physicalKg,status])}}
+function reportPrintBody(r){const review=reportAuditReview(r),notice=review.label?'<aside class="reportAuditReview" style="border:1px solid;padding:8px 10px;margin:8px 0;break-inside:avoid"><b>'+esc(review.label)+'</b><p style="margin:4px 0">'+review.messages.map(esc).join('<br>')+'</p></aside>':'';return `<h1>${esc(r.month||month)} 월마감 보고서</h1>${notice}${reportTable(r)}<h2>일자별 석고 사용량</h2>${table(['날짜','일보 kg','실사용 kg','차이 kg'],[...r.days,reportDayTotals(r)].map(x=>`<tr${x.date==='합계'?' class="reportTotal"':''}>`+[td(esc(x.date)),td(fmt(x.used),'num'),td(fmt(x.actual),'num'),td(fmt(x.difference),'num')].join('')+'</tr>'))}<p>차이 합계는 실사용량을 입력한 날짜만 계산합니다.</p>`}
 
 function masterView(){const rows=state.products.filter(r=>!filter||r.name.includes(filter));return head('관리 · 품명·석고량','품목의 기준값·보관장소·호기 수량·목표재고를 함께 관리합니다.',btn('newWorker','작업자 추가')+btn('newProduct','품목 추가'))+`<div class="toolbar"><input id="search" class="search" value="${esc(filter)}" placeholder="품명 찾기" aria-label="기준정보 검색"><span class="badge blue">${rows.length}품목</span></div><section class="card">${table(['품명','보고서 구분','케이스','혼수율 %','석고 kg/조','보관장소','목표재고','메모',''],rows.map(r=>{const memo=state.memos.find(x=>x.product===r.name);return tr([td(esc(r.name)+(r.inactive?' (사용중지)':''),'product'),td(esc(O.reportCategory(r.name,r.category,C.catalogIdentity(state,r.name)))),td(fmt(r.cases),'num'),td(fmt(r.waterRatio),'num'),td(fmt(r.kg),'num'),td(esc(memo?.values[2])),td(fmt(C.num(memo?.values[3])),'num'),td(esc(memo?.values[0]||r.note)),td(btn('editProduct','수정',r.id))])}))}<p class="footerNote">품명은 기록의 연결 기준이므로 등록 후 유지합니다. 미마감 월의 관리 연결값은 기준 변경을 반영하며 직접 수정값과 마감 기록은 보존합니다.</p></section><section class="card"><h2>작업자</h2><div class="actions">${state.workers.map(esc).join(' · ')}</div></section>`}
 function jobDialog(existing,manual=false){if(existing?.routing&&typeof pgOpenJobConditions==='function'){pgOpenJobConditions({jobId:existing.id,ownerMonth:month}).catch(e=>toast(e.message));return}$('#dialog').oninput=null;if(m().closed)throw Error('마감월은 수정할 수 없습니다.');const j=existing||{start:today().startsWith(month)?today():month+'-01',machines:[],manual},d=$('#dialog');d.innerHTML=`<h2>${existing?'작업 설정':'작업 등록'}</h2><form id="jobForm"><div class="formGrid"><label class="wide">품명<select name="product" required>${productOptions().map(p=>`<option ${p===j.product?'selected':''}>${esc(p)}</option>`).join('')}</select></label><label class="wide">작업자<select name="worker" required>${state.workers.map(w=>`<option ${w===j.worker?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>시작일<input name="start" type="date" required value="${esc(j.start)}"></label><label>계획 조수<input name="plan" type="number" min="0.5" step="any" required value="${j.plan??''}" ${j.sourceRowId?'readonly':''}></label><label>하루 조수<input name="daily" type="number" min="0.1" step="any" required value="${j.daily??''}"></label><label>동시그룹<input name="group" type="number" min="1" step="1" value="${esc(j.group)}" placeholder="개별이면 공란"></label><label class="full">호기와 배정 조수 · 위에서 아래로 순차 생산<textarea name="machines" required placeholder="24호:44&#10;26호:44">${esc(j.machines.map(r=>r.name+':'+(r.qty??'')).join('\n'))}</textarea></label>${j.manual?`<label class="wide">수기 종료일<input name="end" type="date" value="${esc(j.end||'')}"></label><label class="wide">배치 시작<select name="afterPrevious"><option value="no">선택한 시작일</option><option value="yes" ${j.afterPrevious?'selected':''}>앞 작업 뒤 2근무일 비움</option></select></label><label class="wide">또는 작업일수<input name="duration" type="number" min="1" step="1" value="${j.duration||''}"></label>`:''}<label class="full">비고<input name="note" value="${esc(j.note||'')}"></label></div><p class="footerNote">같은 작업자·같은 동시그룹은 함께 배치합니다. 실제 생산은 생산 입력 화면에 기록하세요. 작업 종료는 생산기록의 ‘종료·중단’과 연결됩니다.</p><div class="actions">${existing?'<button type="button" id="stopJob">작업 중단</button>':''}<button type="button" id="cancelJob">취소</button><button type="submit" class="primary">작업 저장</button></div></form>`;$('#cancelJob').onclick=()=>d.close();$('#stopJob')?.addEventListener('click',()=>{d.close();nativeForm('작업 중단',[{key:'date',label:'중단일',type:'date',value:today(),required:true},{key:'reason',label:'중단 사유',required:true}],async v=>{if(!v.date.startsWith(month))throw Error('선택월의 중단일을 입력해 주세요.');const n=C.clone(state),value={...j,stoppedAt:v.date,note:v.reason};cleanJob(value);O.upsert(n,month,'jobs',value,v.reason);await persist(n,[month])})});$('#jobForm').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;let finish=()=>{};try{const f=new FormData(e.target);finish=dialogPending(d);const machines=f.get('machines').split(/[\n,]+/).filter(v=>v.trim()).map(v=>{const x=/^\s*([^:\[\]]+?)(?:\s*[:\[]\s*(\d+(?:\.\d+)?)?\]?)?\s*$/.exec(v);if(!x)throw Error('호기는 24호:44처럼 적어 주세요.');return{name:x[1].trim(),qty:C.num(x[2])}});if(new Set(machines.map(x=>x.name)).size!==machines.length)throw Error('같은 작업에 중복된 호기가 있습니다.');const value={...j,id:j.id||C.id(),product:f.get('product'),worker:f.get('worker'),start:f.get('start'),plan:C.num(f.get('plan')),daily:C.num(f.get('daily')),group:f.get('group'),machines,note:f.get('note'),manual:!!j.manual,afterPrevious:f.get('afterPrevious')==='yes',end:f.get('end')||null,duration:C.num(f.get('duration'))};if(value.manual){if(value.afterPrevious)delete value.manualStartMode;else if(!existing||value.start!==j.start)value.manualStartMode='date';}if(!C.iso(value.start)||value.start.slice(0,7)!==month&&!j.carried)throw Error('선택월의 시작일을 입력해 주세요.');if(value.end&&value.end<value.start)throw Error('종료일을 확인해 주세요.');if(j.manual&&!value.end&&!value.duration)throw Error('수기 종료일 또는 작업일수를 입력해 주세요.');cleanJob(value);const n=C.clone(state);n.months[month].jobUndo={year:month.slice(0,4),jobs:C.clone(n.months[month].jobs||[])};O.upsert(n,month,'jobs',value);await persist(n,[month]);d.close();busy=false;render();toast('작업과 연결 일정을 갱신했습니다.')}catch(err){dialogFeedback(d,err.message,true)}finally{busy=false;finish()}};protectNativeForm(d,$('#jobForm'));d.showModal()}
@@ -4585,7 +4683,7 @@ async function enhancedAction(a,b){const id=b.dataset.id;if(a==='gypsumLots'){gy
  if(a==='newMonth'||a==='closeMonth'){const close=a==='closeMonth',preview=close?O.closePreview(state,month):O.carryPreview(state,month,m().carryOut||O.carry(state,month)),packet=preview.packet,signature=JSON.stringify(state);reviewDialog(close?'월마감 검토':'다음달 준비',`<p><b>${month} → ${packet.targetMonth}</b></p><p>재고 ${packet.openings.length}품목 · 미완료 작업 ${packet.jobs.length}건을 이월합니다. 중단 작업은 제외합니다.</p>${table(['미완료 품명','작업자','잔여 조'],packet.jobs.map(j=>tr([td(esc(j.product)),td(esc(j.worker)),td(fmt(j.plan),'num')])))}${preview.preserved.length?`<p>다음달에서 직접 입력·실사한 ${preview.preserved.length}품목의 기초재고는 유지합니다.</p>`:''}${(preview.warnings||[]).map(w=>`<p class="diff">${esc(w)}</p>`).join('')}${preview.conflicts.map(w=>`<p class="diff">${esc(w)}</p>`).join('')}<p class="footerNote">${close?'마감 후 이달 입력과 보고서를 잠급니다. ':''}연말에는 다음해 1월로 이어지며 이전 연도 자료는 보관합니다. GitHub 전송이 끝날 때까지는 기기에 대기자료가 보존됩니다.</p>`,close?'마감·이월 저장':'다음달 준비 저장',async()=>{if(JSON.stringify(state)!==signature)throw Error('자료가 변경되어 다시 검토해야 합니다.');const n=C.clone(state);if(close)O.closeMonth(n,month,preview);else O.acceptCarry(n,packet);await persist(n,close?[month,packet.targetMonth]:[packet.targetMonth],true);toast(close?'마감·이월 자료를 기기에 저장했습니다. 전송 상태를 확인해 주세요.':'다음달 자료를 준비했습니다.')});if(preview.conflicts.length)document.querySelector('#confirmReview').disabled=true;return true}
  if(a==='calendar'){calendarDialog();return true}
  if(a==='history'){reviewDialog('월별 변경 이력',sheetReadonlyDateTable('report-history-all',['시각','처리','사유','변경 대상'],(m().history||[]).slice().reverse(),h=>h.at,h=>tr([td(new Date(h.at).toLocaleString('ko-KR')),td(esc(h.type)),td(esc(h.reason)),td(esc(h.after?.product||h.before?.product||h.after?.id||''))])),'이력 내려받기',async()=>download(JSON.stringify(m().history||[],null,2),'변경이력_'+month+'.json','application/json'));return true}
- if(a==='csvReport'){const r=O.report(state,month);csv(['구분','품명','생산조','생산kg','교체조','교체kg','실사조','실사kg'],reportDisplayRows(r).map(x=>[x.category,x.product,x.production,x.productionKg,x.deduction,x.replacementKg,x.physical,x.physicalKg]),'월마감');return true}
+ if(a==='csvReport'){const data=reportCsvExport(O.report(state,month));csv(data.head,data.rows,'월마감');return true}
  if(a==='reportPrint'){const r=O.report(state,month);printDoc('월마감 보고서',reportPrintBody(r),'portrait');return true}
  if(a==='auditFieldPrint'){const audit=activeAudit();nativeForm('현장 실사표',[{key:'location',label:'인쇄할 장소',options:audit.locations.filter(Boolean),required:true}],async v=>{setTimeout(()=>printDoc('몰드 현장 실사표',`<h1>몰드 현장 실사표</h1><p>${esc(v.location)} · ${audit.countedAt} · 담당자 __________</p>${table(['품명','찾은 수량 · 나누어 기록','합계','메모'],audit.items.map(r=>tr([td(esc(r.product)),td('&nbsp;'.repeat(10),'countPrint'),td(''),td('')])))}<p>장부 수량은 표시하지 않습니다. 실제로 센 수량을 적어 주세요.</p>`,'portrait'),0)},{message:'인쇄 미리보기를 열었습니다.',protectInput:false});return true}
  if(a==='dailyPrint'){nativeForm('수기 생산일보 인쇄',[{key:'date',label:'날짜',type:'date',value:today().startsWith(month)?today():month+'-01',required:true},{key:'worker',label:'작업자',options:state.workers,required:true}],async v=>setTimeout(()=>dailyPrint(v),0),{message:'인쇄 미리보기를 열었습니다.',protectInput:false});return true}
@@ -7378,12 +7476,19 @@ masterView=function(){return'<section class="managementPage"><div class="top"><d
 function secondaryAuditReview(kind='advanced'){return auditReconcileOpen(kind)}
 
 function secondaryAuditFieldHtml(a,locations,counter=''){
- return locations.map((location,index)=>'<section class="auditFieldPrint"'+(index?' style="break-before:page;page-break-before:always"':'')+'><h1>몰드 현장 실사표</h1><p>'+esc(location)+' · '+esc(a.countedAt)+' · 담당자 '+esc(counter||'__________')+'</p><p>찾을 때마다 나누어 적고 합계를 내세요. 없으면 0, 목록에 없는 품목은 아래 빈줄에 적으세요.</p>'+table(['번호','품명','발견 수량 · 나누어 기록','합계','비고'],[...a.items.map((r,i)=>tr([td(i+1),td(esc(r.product)),td('&nbsp;'.repeat(10),'countPrint'),td(''),td('')])),...Array.from({length:3},(_,i)=>tr([td(a.items.length+i+1),td(''),td('&nbsp;'.repeat(10),'countPrint'),td(''),td('')]))])+'</section>').join('');
+ return locations.map((location,index)=>{const heading='<tr><th colspan="5" class="auditFieldContext" style="background:white;text-align:left;padding:0 0 8px;border:0"><h1 style="margin:0 0 6px">몰드 현장 실사표</h1><div>'+esc(location)+' · '+esc(a.countedAt)+' · 담당자 '+esc(counter||'__________')+'</div><div style="font-weight:normal;margin-top:6px">찾을 때마다 나누어 적고 합계를 내세요. 없으면 0, 목록에 없는 품목은 아래 빈줄에 적으세요.</div></th></tr>';return'<section class="auditFieldPrint"'+(index?' style="break-before:page;page-break-before:always"':'')+'>'+table(['번호','품명','발견 수량 · 나누어 기록','합계','비고'],[...a.items.map((r,i)=>tr([td(i+1),td(esc(r.product)),td('&nbsp;'.repeat(10),'countPrint'),td(''),td('')])),...Array.from({length:3},(_,i)=>tr([td(a.items.length+i+1),td(''),td('&nbsp;'.repeat(10),'countPrint'),td(''),td('')]))]).replace('<table>','<table style="table-layout:fixed;overflow-wrap:anywhere"><colgroup><col style="width:6%"><col style="width:27%"><col style="width:43%"><col style="width:9%"><col style="width:15%"></colgroup>').replace('<thead>','<thead>'+heading)+'</section>'}).join('');
+}
+function secondaryAuditPrintSignature(a){return JSON.stringify([a.id,a.countedAt,a.locations,a.items.map(r=>[r.id,r.product])])}
+function secondaryAuditPrintCheck(a){
+ const g=sheetEditor('audit-items:'+a.id);if(g?.loading||g?.saving||busy)throw Error('실사표를 확인하거나 저장 중입니다. 잠시 뒤 다시 인쇄해 주세요.');
+ if(!g?.draft)return;
+ const deleted=new Set((g.draft.deleted||[]).map(r=>r.id)),rows=g.draft.rows.filter(r=>!deleted.has(r.id)&&!secondaryAuditBlank(r,a));
+ if(!secondarySame(rows.map(r=>[r.id,secondaryText(r.product)]),a.items.map(r=>[r.id,r.product])))throw Error('인쇄할 품목 목록에 저장하지 않은 변경이 있습니다. 변경 저장 후 현장표를 인쇄해 주세요.');
 }
 function secondaryAuditPrintDialog(){
- const source=secondarySelectedAudit();if(!source)return;const a=C.clone(source),locations=a.locations.filter(Boolean),choices=locations.length?locations:['전체'],selected=typeof auditFocusChoice==='function'?Number(auditFocusChoice(a).place):NaN,initial=Number.isInteger(selected)?a.locations[selected]:choices[0],d=$('#dialog');
- d.innerHTML='<h2>현장표 인쇄</h2><form id="auditPrintForm"><div class="formGrid"><label>인쇄할 장소<select name="location">'+(choices.length>1?'<option value="__all">전체 장소 · 장소별로 인쇄</option>':'')+choices.map(p=>'<option value="'+esc(p)+'" '+(p===initial?'selected':'')+'>'+esc(p)+'</option>').join('')+'</select></label><label>담당자 <input name="counter" placeholder="비워 두면 종이에 적을 수 있습니다"></label></div><p class="secondaryGridNotice">장부 수량은 인쇄하지 않습니다. 입력 중인 품목이 있으면 변경 저장 후 인쇄하세요.</p><div class="actions" style="justify-content:flex-end"><button type="button" id="auditPrintCancel">취소</button><button class="primary" type="submit">인쇄 미리보기</button></div></form>';
- $('#auditPrintCancel').onclick=()=>d.close();$('#auditPrintForm').onsubmit=e=>{e.preventDefault();const form=e.target,location=form.elements.location.value,counter=form.elements.counter.value.trim(),chosen=location==='__all'?choices:[location];d.close();printDoc('몰드 현장 실사표',secondaryAuditFieldHtml(a,chosen,counter),'portrait')};d.showModal();
+ const source=secondarySelectedAudit();if(!source)return;try{secondaryAuditPrintCheck(source)}catch(e){const g=sheetEditor('audit-items:'+source.id);if(g){g.error=e.message;g.update()}toast(e.message);return}const a=C.clone(source),signature=secondaryAuditPrintSignature(a),locations=a.locations.filter(Boolean),choices=locations.length?locations:['전체'],selected=typeof auditFocusChoice==='function'?Number(auditFocusChoice(a).place):NaN,initial=Number.isInteger(selected)?a.locations[selected]:choices[0],d=$('#dialog');
+ d.innerHTML='<h2>현장표 인쇄</h2><form id="auditPrintForm"><div class="formGrid"><label>인쇄할 장소<select name="location">'+(choices.length>1?'<option value="__all">전체 장소 · 장소별로 인쇄</option>':'')+choices.map(p=>'<option value="'+esc(p)+'" '+(p===initial?'selected':'')+'>'+esc(p)+'</option>').join('')+'</select></label><label>담당자 <input name="counter" placeholder="비워 두면 종이에 적을 수 있습니다"></label></div><p class="secondaryGridNotice">저장된 '+a.items.length+'품목 전체를 인쇄합니다. 검색·미입력 필터는 적용하지 않으며 수량 칸은 비워 둡니다.</p><div class="actions" style="justify-content:flex-end"><p class="dialogFeedback" data-dialog-feedback role="status" tabindex="-1"></p><button type="button" id="auditPrintCancel">취소</button><button class="primary" type="submit">인쇄 미리보기</button></div></form>';
+ $('#auditPrintCancel').onclick=()=>d.close();$('#auditPrintForm').onsubmit=e=>{e.preventDefault();try{const latest=secondarySelectedAudit();if(!latest||secondaryAuditPrintSignature(latest)!==signature)throw Error('인쇄할 실사일·장소·품목 목록이 바뀌었습니다. 취소 후 현장표 인쇄를 다시 열어 주세요.');secondaryAuditPrintCheck(latest);const form=e.target,location=form.elements.location.value,counter=form.elements.counter.value.trim(),chosen=location==='__all'?choices:[location];d.close();printDoc('몰드 현장 실사표',secondaryAuditFieldHtml(a,chosen,counter),'portrait')}catch(error){dialogFeedback(d,error.message,true)}};d.showModal();
 }
 function bindSecondaryGrids(){
  secondaryBindManagement();
@@ -8362,7 +8467,7 @@ mobileRefresh=function(...args){const result=viewPreferenceMobileBefore.apply(th
 function viewPreferenceEvent(event){
  if(viewPreferenceState.applying||viewPreferenceState.rendering||typeof busy!=='undefined'&&busy||event.target?.closest?.('dialog')||event.target?.disabled)return;
  const node=event.target,click=event.type==='click',change=event.type==='change',input=event.type==='input',key=event.type==='keydown';let allowed=false;
- if(click)allowed=!!node.closest?.('[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers]')||['productionDay','productionReset','productionToday'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
+ if(click)allowed=!!node.closest?.('[data-sheet-search-clear],[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers]')||['productionDay','productionReset','productionToday'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
  if(change)allowed=!!node.matches?.('#monthSel,[data-sheet-sort],#secondaryLedgerSort,[data-sheet-advanced],[data-sheet-view],[data-sheet-new-date],#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgPairsAll,#pgCalTarget,#pgCalStart,#pgCalEnd,#pgCalMode,#pgWeeks,#secondaryAuditSelect,[data-ledger-month],#secondaryStockHideZero,.workspaceFocusTableSelect');
  if(input)allowed=!!node.matches?.('#pgDryQuery,[data-sheet-search],#search,#secondaryLedgerSearch');
  const summary=node.closest?.('summary');if((click||key&&['Enter',' '].includes(event.key))&&summary&&viewPreferenceDetails.some(selector=>summary.parentNode?.matches?.(selector)))allowed=true;
