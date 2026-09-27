@@ -554,6 +554,7 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 @media(max-width:700px){.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"]){display:block!important;grid-column:1/-1}.stockMemoEditor .inputSheet.sheetStacked td:has([data-cell="memo"])::before{display:block;padding:4px 8px}.stockMemoEditor textarea[data-cell="memo"]{min-height:68px;font-size:16px!important}.stockMemoEditor .sheetToolbar>.actions{width:100%}.stockMemoEditor [data-sheet-command="save"]{flex:1;min-height:40px}}
 
 .stockMemoHelp{margin-top:12px;color:#60788d;font-size:.78rem;line-height:1.6}.stockMemoHelp>summary{cursor:pointer;font-weight:600}.stockMemoHelp p{margin:7px 0}.stockMemoHelp>summary:focus-visible{outline:3px solid #77adcc;outline-offset:2px}
+.stockPlanHint{margin:8px 0 12px;color:#466173;font-size:12px;line-height:1.6}.stockMemoEditor .stockActiveGroup>th{background:#dcefe7!important;color:#185c48;border-top-color:#9ec5b6}.stockMemoEditor td[data-result="planStock"]{text-align:left;white-space:normal}.stockPlanCompare{display:flex;flex-direction:column;gap:4px;line-height:1.5;padding:3px 0;overflow-wrap:anywhere}.stockPlanCompare strong{font-size:12px;color:#476176}.stockPlanCompare small{display:block;font-size:11px;color:#4b6476}.stockPlanCompare.good strong{color:#146450}.stockPlanCompare.short strong{color:#aa382c}.stockPlanCompare.notice strong{color:#84561d}.stockPlanEmpty{color:#718392}.stockMemoEditor .stockProductionBadge{max-width:100%}
 .stockMemoEditor .stockCategoryRow>th{position:static!important;text-align:left!important;background:#e8edf6!important;color:#30456b;padding:8px 10px;border-top:1px solid #c5d2e6;font-size:12px;white-space:normal}.stockCategoryRow span{margin-left:10px;color:#617594;font-weight:400}.stockMemoEditor .stockProductName{display:block}.stockMemoEditor .stockProductionBadge{display:inline-block;margin-top:4px;padding:2px 6px;border:1px solid #79bbac;border-radius:5px;background:#e4f5ef;color:#126551;font-size:11px;font-weight:700;line-height:1.4;white-space:nowrap}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>td,.stockMemoEditor .inputSheet>tbody>tr.stockProducing>th{background:#f0f9f5}.stockMemoEditor .inputSheet>tbody>tr.stockProducing>[data-result="product"]{box-shadow:inset 3px 0 #209576}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){min-height:48px;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;vertical-align:top}.stockMemoEditor td:has(textarea){vertical-align:top}
 @media(max-width:700px){body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockCategoryRow>th{display:block;width:100%;min-width:0;padding:9px 12px}.stockMemoEditor textarea:is([data-cell="machineQty"],[data-cell="location"]){font-size:16px!important;min-height:48px}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked>tbody>tr.stockProducing{border-color:#7bb6a6;background:#f0f9f5}body.sheetWorkspace .stockMemoEditor .inputSheet.sheetStacked .stockProductionBadge{margin-left:6px;margin-top:0}}
 
@@ -3461,7 +3462,33 @@ function current(state,options={}){
  }
  return{asOf,activeJobs,byProduct,warnings,forProduct(name){const product=identity(name);return product?byProduct.get(product.key)||null:null}};
 }
-root.ScheduleStockStatus={current};if(typeof module!=='undefined')module.exports=root.ScheduleStockStatus;
+function compareInventory(state,inventoryRow,activity,options={}){
+ const C=root.ScheduleCore,asOf=options.asOf;
+ if(!C)throw Error('재고 비교 계산을 불러오지 못했습니다.');
+ if(!C.iso(asOf))throw Error('재고 비교 기준일을 YYYY-MM-DD로 지정해 주세요.');
+ const group=activity?.forProduct(inventoryRow?.product);if(!group)return null;
+ const numeric=value=>typeof value==='number'||typeof value==='string'?C.num(value):null;
+ const result={status:'target-missing',current:numeric(inventoryRow?.current),plan:group.plan,produced:group.produced,remaining:group.remaining,target:null,projected:null,balance:null,currentBalance:null};
+ // Today's active jobs cannot be compared against a different stock month or
+ // a stale activity snapshot. The activity badge itself remains independent.
+ if(options.stockMonth!==asOf.slice(0,7)||activity.asOf!==asOf)return{...result,status:'historical'};
+ if(result.current==null)return{...result,status:'stock-invalid'};
+ let memos;
+ try{
+  const lookup=C.catalogLookup(state),idCounts=new Map();
+  for(const product of state.products||[])if(text(product.id))idCounts.set(text(product.id),(idCounts.get(text(product.id))||0)+1);
+  const identity=name=>{const product=lookup.product(name),id=text(product?.id),label=text(product?.name)||text(name);if(!label||id&&idCounts.get(id)!==1)return null;return id?'id:'+id:'name:'+label};
+  memos=(state.memos||[]).filter(memo=>identity(memo.product)===group.key);
+ }catch{return{...result,status:'target-invalid'}}
+ // Even equal duplicate values are ambiguous source rows. Never select one
+ // by array order or replace a missing target with the production plan.
+ if(memos.length>1)return{...result,status:'target-invalid'};
+ const raw=memos[0]?.values?.[3];if(raw==null||typeof raw==='string'&&!raw.trim())return result;
+ const target=numeric(raw);if(target==null||target<0)return{...result,status:'target-invalid'};
+ const projected=result.current+result.remaining,balance=projected-target,currentBalance=result.current-target;
+ return{...result,target,projected,balance,currentBalance,status:currentBalance>=0?'covered':balance>0?'surplus':balance<0?'shortfall':'matched'};
+}
+root.ScheduleStockStatus={current,compareInventory};if(typeof module!=='undefined')module.exports=root.ScheduleStockStatus;
 })(typeof globalThis!=='undefined'?globalThis:this);
 </script><script>(function(root){
 'use strict';
@@ -6701,7 +6728,26 @@ function secondaryIssueGrid(key){
   }
  });
 }
-function secondaryStockRows(s,key,query='',hideZero=false){return C.inventory(s,key).filter(r=>(!query||r.product.toLocaleLowerCase().includes(query.toLocaleLowerCase()))&&(!hideZero||r.current!==0)).sort((a,b)=>globalThis.ProductOrder?.compareProducts(a.product,b.product)||0)}
+function secondaryStockRows(s,key,query='',hideZero=false,activity=globalThis.ScheduleStockStatus?.current(s,{asOf:today()})){return C.inventory(s,key).filter(r=>(!query||r.product.toLocaleLowerCase().includes(query.toLocaleLowerCase()))&&(!hideZero||r.current!==0)).sort((a,b)=>Number(!!activity?.forProduct(b.product))-Number(!!activity?.forProduct(a.product))||(globalThis.ProductOrder?.compareProducts(a.product,b.product)||0))}
+function secondaryStockPlanText(info){
+ if(!info)return'—';
+ if(info.status==='historical')return'현재 월에서 비교';
+ if(info.status==='target-missing')return'목표재고 입력 필요';
+ if(info.status==='target-invalid')return'목표재고 확인 필요';
+ if(info.status==='stock-invalid')return'현재고 확인 필요';
+ if(info.status==='covered')return info.currentBalance>0?'현재 목표보다 '+fmt(info.currentBalance)+'조 여유':'현재 목표 달성';
+ if(info.status==='shortfall')return'계획에 '+fmt(Math.abs(info.balance))+'조 추가 필요';
+ if(info.status==='surplus')return'계획 '+fmt(info.balance)+'조 여유';
+ if(info.status==='matched')return'계획대로면 목표 충족';
+ return'생산계획 확인 필요';
+}
+function secondaryStockPlanHTML(info){
+ if(!info)return'<span class="stockPlanEmpty">—</span>';
+ const valid=n=>typeof n==='number'&&Number.isFinite(n),tone=['covered','surplus','matched'].includes(info.status)?'good':info.status==='shortfall'?'short':'notice';
+ const math=info.status==='historical'?'과거·미래 재고와 오늘 생산은 합산하지 않습니다.':valid(info.projected)?'현재고 '+fmt(info.current)+' + 남은 '+fmt(info.remaining)+' = 예상 '+fmt(info.projected)+'조':'';
+ const basis=info.status==='historical'?'':(valid(info.target)?'목표 '+fmt(info.target)+'조':'목표재고는 품목·작업자에서 설정')+(valid(info.plan)?' · 생산계획 '+fmt(info.plan)+'조':'');
+ return'<div class="stockPlanCompare '+tone+'"><strong>'+esc(secondaryStockPlanText(info))+'</strong>'+(math?'<small>'+esc(math)+'</small>':'')+(basis?'<small>'+esc(basis)+'</small>':'')+'</div>';
+}
 // Catalog memo drafts have one storage key per connection, independent of inventory month.
 const secondaryStockMemoId='stock-memos';
 const secondaryStockMemoKey=()=>sheetScope()+':catalog:'+secondaryStockMemoId;
@@ -6727,22 +6773,20 @@ function secondaryStockMemoInspect(draft){
  return result;
 }
 class SecondaryStockMemoEditor extends SheetEditor{
+ validStoredDraft(saved){return saved&&saved.schema===1&&saved.scope===this.scope&&/^\d{4}-(?:0[1-9]|1[0-2])$/.test(saved.month)&&Array.isArray(saved.draft?.rows)&&Array.isArray(saved.draft?.baseRows)&&Array.isArray(saved.draft?.deleted)&&saved.draft.rows.every(r=>typeof r.product==='string'&&r.id==='stock-memo:'+r.product)}
  async load(){
   if(this.loaded)return;
-  // Shared view must not read any manager draft namespace.
+  // Sharing never reads manager drafts. Editable catalog drafts use the common
+  // tab pointer and expected-version baseline, independent of inventory month.
   if(this.spec.readonly){this.loaded=true;this.loading=false;this.update();return}
-  this.loaded=true;
-  try{const saved=await S.localGet('sheet.v1:'+this.key);if(saved){
-   if(saved.schema!==1||saved.scope!==this.scope||!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(saved.month)||!Array.isArray(saved.draft?.rows)||!Array.isArray(saved.draft?.baseRows)||!Array.isArray(saved.draft?.deleted)||saved.draft.rows.some(r=>typeof r.product!=='string'||r.id!=='stock-memo:'+r.product))throw Error('품명 메모 초안의 저장 형식을 확인해 주세요.');
-   this.draft=saved.draft;this.dirty=true;this.error='저장 전 품명 메모를 복원했습니다. 월과 검색에 관계없이 함께 저장됩니다.';
-  }}catch(e){this.storageError='메모 초안을 읽지 못했습니다: '+e.message}
-  finally{this.loading=false;secondaryStockMemoSync(this);this.refresh();this.spec.onChange?.(this)}
+  await super.load();secondaryStockMemoSync(this);this.refresh();
  }
  rowNumber(id){return this.visibleRows().findIndex(r=>r.id===id)+1}
  rowsHTML(rows){
   if(!globalThis.ProductOrder)return rows.map((r,i)=>this.rowHTML(r,i)).join('');
-  let group='';const counts=new Map();for(const row of rows){const code=ProductOrder.groupProduct(row.product).code;counts.set(code,(counts.get(code)||0)+1)}
-  return rows.map((row,i)=>{const info=ProductOrder.groupProduct(row.product),heading=info.code===group?'':'<tr class="stockCategoryRow"><th scope="rowgroup" colspan="'+(this.columns().length+1)+'"><b>'+esc((info.code==='OTHER'?'':info.code+' · ')+info.label)+'</b><span>'+counts.get(info.code)+'품목</span></th></tr>';group=info.code;return heading+this.rowHTML(row,i)}).join('');
+  const groupOf=row=>this.spec.stockActivity?.(row)?{code:'ACTIVE',label:'생산 중'}:ProductOrder.groupProduct(row.product);
+  let group='';const counts=new Map();for(const row of rows){const code=groupOf(row).code;counts.set(code,(counts.get(code)||0)+1)}
+  return rows.map((row,i)=>{const info=groupOf(row),heading=info.code===group?'':'<tr class="stockCategoryRow'+(info.code==='ACTIVE'?' stockActiveGroup':'')+'"><th scope="rowgroup" colspan="'+(this.columns().length+1)+'"><b>'+esc((['OTHER','ACTIVE'].includes(info.code)?'':info.code+' · ')+info.label)+'</b><span>'+counts.get(info.code)+'품목</span></th></tr>';group=info.code;return heading+this.rowHTML(row,i)}).join('');
  }
 }
 function secondaryStockMemoSync(g){
@@ -6750,12 +6794,13 @@ function secondaryStockMemoSync(g){
  if(g.scope!==sheetScope())return;
  for(const row of secondaryStockMemoNames(state))if(!g.draft.rows.some(r=>r.id===row.id)){g.draft.rows.push(C.clone(row));g.draft.baseRows.push(C.clone(row))}
 }
-function secondaryStockMemoGrid(key,rows){
- const current=new Map(rows.map(r=>[r.product,r])),shared=typeof shareViewSession!=='undefined'&&shareViewSession.active,quantity=(r,field)=>fmt(current.get(r.product)?.[field]),activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()}),active=r=>activity?.forProduct(r.product);
+function secondaryStockMemoGrid(key,rows,activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()})){
+ const current=new Map(rows.map(r=>[r.product,r])),shared=typeof shareViewSession!=='undefined'&&shareViewSession.active,quantity=(r,field)=>fmt(current.get(r.product)?.[field]),active=r=>activity?.forProduct(r.product),comparisons=new Map(rows.map(r=>[r.product,globalThis.ScheduleStockStatus?.compareInventory?.(state,r,activity,{stockMonth:key,asOf:today()})])),comparison=r=>comparisons.get(r.product);
  const spec={title:'보관정보 · 품명 공용 메모',rows:secondaryStockMemoNames(state),readonly:!!shared,readonlyLabel:'공유 · 조회 전용',allowDelete:false,syncInputs:true,
   createDraft:()=>{const rows=secondaryStockMemoNames(state);return{baseRows:C.clone(rows),rows,deleted:[],revision:0}},
-  rowClass:r=>active(r)?'stockProducing':'',rowTitle:r=>active(r)?'오늘 기준 생산 중 · '+active(r).workers.join(' · '):'',
+  stockActivity:active,rowClass:r=>active(r)?'stockProducing':'',rowTitle:r=>active(r)?'오늘 기준 생산 중 · '+active(r).workers.join(' · '):'',
   columns:[{key:'product',label:'품명',width:128,hideCalcLabel:true,calc:r=>r.product,html:r=>'<span class="stockProductName">'+esc(r.product)+'</span>'+(active(r)?'<span class="stockProductionBadge" title="'+esc(active(r).workers.join(' · '))+'">생산 중</span>':'')},...['opening','production','deduction','current','kg'].map((field,i)=>({key:field,label:['이월','생산','교체 차감','현재고','kg'][i],width:62,hideCalcLabel:true,calc:r=>quantity(r,field),...(field==='current'?{html:r=>'<span'+(current.get(r.product)?.current<0?' class="diff"':'')+'>'+esc(quantity(r,field))+'</span>'}:{})})),
+   {key:'planStock',label:'목표재고 대비 계획',width:224,hideCalcLabel:true,calc:r=>secondaryStockPlanText(comparison(r)),html:r=>secondaryStockPlanHTML(comparison(r))},
    ...[{key:'machineQty',label:'호기·조수',width:124},{key:'location',label:'보관장소',width:110}].map(c=>({...c,type:'textarea',value:(r,d)=>secondaryStockMetadataValue(r.product,d,c.key),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||c.label+' 직접 수정 · 월과 관계없이 품명별로 보관'})),
    {key:'memo',label:'메모 · 품명 공통',type:'textarea',width:290,value:(r,d)=>secondaryStockMemoValue(r.product,d),disabled:r=>!!secondaryStockMemoProblem(r.product),title:r=>secondaryStockMemoProblem(r.product)||'월이 바뀌어도 같은 품명에 계속 보관 · 모바일 Enter / PC Shift+Enter 줄바꿈'}],
   view:{filter:rows=>rows.filter(r=>current.has(r.product)),pasteTargets:(rows,start,options,g)=>g.visibleRows()},
@@ -6771,8 +6816,8 @@ function secondaryStockMemoGrid(key,rows){
  return'<section class="sheetEditor stockMemoEditor" data-sheet-id="'+secondaryStockMemoId+'" data-sheet-key="'+esc(storageKey)+'">'+g.html()+'</section>';
 }
 function secondaryStockTable(key){
- const view=secondaryLedgerPrefs(),rows=secondaryStockRows(state,key,filter,view.hideZeroStock);
- return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+secondaryStockMemoGrid(key,rows)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p></details></section>';
+ const view=secondaryLedgerPrefs(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()}),rows=secondaryStockRows(state,key,filter,view.hideZeroStock,activity);
+ return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+'<p class="stockPlanHint">생산 중인 품목을 먼저 표시합니다. 목표재고와 비교해 여유·추가 필요를 확인하고, 완료되면 품명 순서로 돌아갑니다.</p>'+secondaryStockMemoGrid(key,rows,activity)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p><p>계획 여유 = 현재고 + 남은 생산량 − 목표재고. 남은 생산량은 진행 중 작업의 생산계획에서 누적 실적을 뺀 수량이며, 같은 품목의 여러 작업은 합산합니다. 목표재고는 품목·작업자 탭에서 입력합니다. 오늘 생산과 비교하므로 현재 월에서만 계산하고, 미래 교체·불출은 예상하지 않습니다.</p></details></section>';
 }
 stockView=function(){
  const key=month,view=secondaryLedgerPrefs();
@@ -6964,7 +7009,13 @@ function secondaryBindLedger(){
  const sort=document.querySelector('#secondaryLedgerSort');if(sort)sort.onchange=()=>{if(busy)return;secondaryLedgerPrefs().sortOrder=sheetDateSortMode(sort.value);render();document.querySelector('#secondaryLedgerSort')?.focus()};
  const exportButton=document.querySelector('[data-ledger-csv]');if(exportButton){const view=secondaryLedgerPrefs(),g=view.mode==='current'?sheetEditor('issue-ledger'):null;exportButton.disabled=!!(busy||g?.loading||g?.saving);exportButton.onclick=execute(()=>{const view=secondaryLedgerPrefs(),g=sheetEditor('issue-ledger');if(busy||view.mode==='current'&&(g?.loading||g?.saving))throw Error('표 준비나 저장이 끝난 뒤 내려받아 주세요.');const data=view.mode==='current'?secondaryLedgerCurrentData(month):secondaryLedgerData(state,month,view),out=secondaryLedgerCsv(data);csv(out.headers,out.rows,out.name)})}
  const hideZero=document.querySelector('#secondaryStockHideZero');if(hideZero){hideZero.disabled=!!busy;hideZero.onchange=execute(()=>secondaryLedgerChange({hideZeroStock:hideZero.checked}))}
-  const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{const rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock);const activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()});csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+today()+')','메모 · 품명 공통 (저장값)'],rows.map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',secondaryStockMemoValue(r.product,{},true)]),'재고표')});
+  const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{
+   const asOf=today(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf}),rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock,activity);
+   csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+asOf+')','계획 비교 (현재 월 기준)','생산계획 (조)','남은 생산 (조)','목표재고 (조)','완료 예상 재고 (조)','계획 여유·부족 (예상재고−목표, 조)','메모 · 품명 공통 (저장값)'],rows.map(r=>{
+    const info=globalThis.ScheduleStockStatus?.compareInventory?.(state,r,activity,{stockMonth:month,asOf});
+    return[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',info?secondaryStockPlanText(info):'',info?.plan??null,info?.remaining??null,info?.target??null,info?.projected??null,info?.balance??null,secondaryStockMemoValue(r.product,{},true)];
+   }),'재고표');
+  });
 }
 
 const auditFocusChoices=new Map();
