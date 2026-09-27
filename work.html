@@ -526,6 +526,25 @@ table.mon tfoot td.d{background:var(--surface2)}
 .btn{height:46px; padding:0 16px; border-radius:11px; font-size:15px; font-weight:700}
 .btn.pri{background:var(--accent); color:var(--on-accent); flex:1}
 .btn.sec{background:var(--surface2); color:var(--ink-dim); border:1px solid var(--line)}
+/* Dialog tools keep readable labels at narrow widths; native controls share the app theme. */
+@media screen{
+  #setOv .btnrow{flex-wrap:wrap;align-items:stretch}
+  #setOv .btnrow>.btn{flex:1 1 100px;height:auto;min-height:46px;padding:10px 12px;line-height:1.4;white-space:normal}
+  #setOv .f-row{min-width:0}#setOv .f-row>.f-input{min-width:0}
+  #setOv .offline-workspace-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+  #setOv .offline-workspace-row>.btn{height:auto;min-height:46px;white-space:nowrap;padding:8px 12px}
+  #entryOv select,#setOv select,#plannedWorkDialog select,#scheduleFlowDialog select{min-height:44px;max-width:100%;border:1px solid var(--line-in);border-radius:8px;background:var(--surface);color:var(--ink);padding:8px;box-sizing:border-box}
+  #entryOv select option,#setOv select option,#plannedWorkDialog select option,#scheduleFlowDialog select option{background:var(--surface);color:var(--ink)}
+  #entryOv .pb-machine-add,#entryOv .pb-route-button,#entryOv .pb-defclear,#plannedWorkDialog summary{min-height:44px}
+  #plannedWorkDialog summary{padding:10px 2px;cursor:pointer}
+  #plannedWorkDialog .planned-dialog-status[data-state="error"]{padding:10px;border:1px solid var(--bad);border-radius:8px;background:var(--bad-soft);color:var(--bad);font-weight:700}
+  #setOv .accessSettings,body dialog.accessChange,body dialog.connectionGateDialog{background:var(--surface);color:var(--ink);border-color:var(--line-in)}
+  #setOv .accessSettings p,body dialog.accessChange p,body dialog.connectionGateDialog p{color:var(--ink-dim)}
+  #setOv .accessSettings button,body dialog.accessChange button,body dialog.connectionGateDialog button{min-height:44px;background:var(--surface2);color:var(--ink);border-color:var(--line-in)}
+  body dialog.accessChange input,body dialog.connectionGateDialog input{background:var(--surface);color:var(--ink);border-color:var(--line-in)}
+  body dialog.connectionGateDialog button[type="submit"]{background:var(--accent);color:var(--on-accent)}
+  @media(max-width:480px){#setOv .offline-workspace-row{grid-template-columns:minmax(0,1fr)}#setOv .offline-workspace-row>.btn{width:100%}}
+}
 #ghTestOut{font-size:13px; margin-top:8px; white-space:pre-wrap}
 #ghTestOut.ok{color:var(--good)} #ghTestOut.err{color:var(--bad)}
 
@@ -1152,7 +1171,7 @@ root.AppAccess={ready,get unlocked(){return unlocked},lock,change,mount,fieldSet
       <div class="btnrow"><button class="btn pri" id="impBtn">백업을 오프라인으로 열기</button><button class="btn sec" id="offlineReturnBtn" onclick="leaveOfflineWorkspace()" hidden>연결된 자료로 돌아가기</button></div>
       <details><summary>이전 백업 내용 붙여넣기</summary><textarea class="f-input" id="ioArea" placeholder="이전 JSON 백업을 붙여넣은 뒤 ‘백업을 오프라인으로 열기’를 누르세요." style="margin-top:8px; min-height:90px"></textarea></details>
       <h5 class="set-step-title">3. 이전에 열었던 사본 이어서 작업하기</h5>
-      <div class="f-row" style="margin-top:12px"><select class="f-input" id="offlineWorkspaceSelect" aria-label="보관한 오프라인 작업공간"></select><button class="btn sec" onclick="openSavedOfflineWorkspace()">보관 사본 열기</button></div>
+      <div class="f-row offline-workspace-row" style="margin-top:12px"><select class="f-input" id="offlineWorkspaceSelect" aria-label="보관한 오프라인 작업공간"></select><button class="btn sec" id="openOfflineWorkspace" disabled onclick="openSavedOfflineWorkspace()">보관 사본 열기</button></div>
       <div class="set-note" id="backupStatus" role="status" aria-live="polite"></div>
     </div></details>
     <details class="settings-group" id="loginSettings"><summary>로그인 · 화면 잠금<small>비밀번호 변경 · 앱 파일 보관</small></summary><div class="settings-content"><div id="data-access-settings" data-access-settings class="set-sec"></div></div></details>
@@ -3189,7 +3208,7 @@ function stashPlannedDraft(s){plannedFlowCapture(s);const all=LS.get('ilbo.plann
 function openPlannedWork(worker='',item=null){
   if(!AppAccess.unlocked)return;if(plannedWorkDialogSession){plannedWorkDialogSession.dialog.showModal();return;}
   const date=item?.date||S.date,key=item?plannedKey(item):date+'#new#'+worker,stored=LS.get('ilbo.plannedDrafts',{})[key],base=item?plannedSource(item.row):null,seed=stored&&stored.date===date?stored:null;
-  const dialog=document.createElement('dialog');dialog.id='plannedWorkDialog';dialog.innerHTML='<h2>예정 작업</h2><p class="quick-hint">품목과 계획만 먼저 정해 두세요. 생산량·작업시간은 실제 생산한 날에 입력합니다.</p><label>작업자<select name="worker" class="f-input" aria-label="예정 작업자 선택"></select></label><label>품명<select name="product" class="f-input" aria-label="예정 품명 선택"></select></label><label>계획 조수<input name="plan" class="f-input" inputmode="decimal" type="number" min="0.01" step="any"></label><label>호기 <small>선택 입력</small><input name="machine" class="f-input" maxlength="80" placeholder="예: 13호"></label><p class="planned-dialog-status" role="status"></p><div class="planned-dialog-actions"><button type="button" class="quiet-btn" data-planned-cancel>예정 취소</button><button type="button" class="quiet-btn" data-planned-reload>서버 기록 불러오기</button><button type="button" class="quiet-btn" data-planned-close>닫기</button><button type="button" class="btn pri" data-planned-save>예정 저장</button></div>';
+  const dialog=document.createElement('dialog');dialog.id='plannedWorkDialog';dialog.setAttribute('aria-labelledby','plannedWorkTitle');dialog.innerHTML='<h2 id="plannedWorkTitle">예정 작업</h2><p class="quick-hint">품목과 계획만 먼저 정해 두세요. 생산량·작업시간은 실제 생산한 날에 입력합니다.</p><label>작업자<select name="worker" class="f-input" aria-label="예정 작업자 선택"></select></label><label>품명<select name="product" class="f-input" aria-label="예정 품명 선택"></select></label><label>계획 조수<input name="plan" class="f-input" inputmode="decimal" type="number" min="0.01" step="any"></label><label>호기 <small>선택 입력</small><input name="machine" class="f-input" maxlength="80" placeholder="예: 13호"></label><p class="planned-dialog-status" role="status" tabindex="-1"></p><div class="planned-dialog-actions"><button type="button" class="quiet-btn" data-planned-cancel>예정 취소</button><button type="button" class="quiet-btn" data-planned-reload>서버 기록 불러오기</button><button type="button" class="quiet-btn" data-planned-close>닫기</button><button type="button" class="btn pri" data-planned-save>예정 저장</button></div>';
   dialog.querySelector('label').insertAdjacentHTML('beforebegin','<div class="planned-flow-preview pb-route-flow"></div><button type="button" class="quiet-btn" data-planned-add>＋ 품목 추가</button>');dialog.querySelector('.planned-dialog-status').insertAdjacentHTML('beforebegin','<label>이 품목은 언제 시작할까요?<select name="plannedAfter" class="f-input"></select></label><details class="planned-extra"><summary>예상 기간 설정 · 선택 입력</summary><label>하루에 만들 조수<input name="plannedDaily" class="f-input" type="number" min="0.01" step="any" placeholder="예: 5"></label></details><button type="button" class="quiet-btn" data-planned-remove hidden>이 품목 빼기</button>');
   const s={dialog,date,viewDate:S.date,scope:activeScope,epoch:storeEpoch,drv:driver,key,id:seed?.id||item?.row.id||uid(),base:seed?.base??base,busy:false,ready:!item,worker:dialog.querySelector('[name=worker]'),product:dialog.querySelector('[name=product]'),plan:dialog.querySelector('[name=plan]'),machine:dialog.querySelector('[name=machine]'),status:dialog.querySelector('[role=status]')};plannedWorkDialogSession=s;
   const optionList=(values,label)=>'<option value="">'+label+'</option>'+[...new Set(values.filter(Boolean))].map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
@@ -3203,11 +3222,11 @@ function openPlannedWork(worker='',item=null){
   dialog.querySelector('[name=plannedAfter]').onchange=()=>{plannedFlowCapture(s);plannedFlowDraw(s);stashPlannedDraft(s);};
   dialog.querySelector('[name=plannedDaily]').value=s.nodes.find(n=>n.id===s.id)?.daily||'';plannedFlowDraw(s);
   if((item?.row.scheduleConditions?.machines||[]).length>1){s.machine.readOnly=true;s.machine.title='여러 호기 조건은 그대로 유지합니다. 생산 입력의 품목 상세에서 조정하세요.';}
-  dialog.querySelector('[data-planned-reload]').hidden=!item;dialog.querySelector('[data-planned-reload]').onclick=()=>void reopenLatestPlanned(s.date,s.id);dialog.querySelector('[data-planned-cancel]').hidden=!item;dialog.querySelector('[data-planned-close]').onclick=closePlannedWork;dialog.oncancel=e=>{e.preventDefault();closePlannedWork();};dialog.addEventListener('input',()=>{const saved=stashPlannedDraft(s);plannedFlowDraw(s);if(saved)s.status.textContent='입력 중 · 예정 저장을 누르면 반영됩니다.';});dialog.addEventListener('keydown',e=>e.stopPropagation());
+  dialog.querySelector('[data-planned-reload]').hidden=!item;dialog.querySelector('[data-planned-reload]').onclick=()=>void reopenLatestPlanned(s.date,s.id);dialog.querySelector('[data-planned-cancel]').hidden=!item;dialog.querySelector('[data-planned-close]').onclick=closePlannedWork;dialog.oncancel=e=>{e.preventDefault();closePlannedWork();};dialog.addEventListener('input',()=>{const saved=stashPlannedDraft(s);plannedFlowDraw(s);if(saved){delete s.status.dataset.state;s.status.textContent='입력 중 · 예정 저장을 누르면 반영됩니다.';}});dialog.addEventListener('keydown',e=>e.stopPropagation());
   const save=async(cancel=false)=>{
     if(s.busy||!s.ready||!AppAccess.unlocked||s.epoch!==storeEpoch||s.scope!==activeScope||s.viewDate!==S.date)return;
     const nodesBefore=JSON.parse(JSON.stringify(s.nodes));let updates;try{if(driver.mode==='gh'&&!S.productCatalog&&S.productCatalogMode!=='legacy')throw Error('관리 품목 목록을 확인한 뒤 저장해 주세요.');if(cancel&&!confirm('선택한 예정 품목을 취소할까요? 이미 작성한 생산일보는 유지됩니다.'))return;updates=plannedFlowRows(s,cancel);if(!updates.length){s.status.textContent='변경한 내용이 없습니다.';return;}if(!stashPlannedDraft(s)){s.nodes=nodesBefore;plannedFlowDraw(s);return;}
-    }catch(e){s.nodes=nodesBefore;plannedFlowDraw(s);s.status.textContent=e.message;return;}
+    }catch(e){s.nodes=nodesBefore;plannedFlowDraw(s);s.status.dataset.state='error';s.status.textContent=e.message;s.status.focus({preventScroll:true});s.status.scrollIntoView({block:'center'});return;}
     s.busy=true;dialog.querySelectorAll('button,input,select').forEach(el=>el.disabled=true);s.status.textContent='예정 작업 저장 중…';let queueItem;
     try{const groupBefore=s.nodes.length>1?{schema:1,worker:s.worker.value,groups:[...new Set(s.nodes.map(n=>n.base?.scheduleConditions?.routing?.group).filter(Boolean))],members:s.nodes.filter(n=>n.base).map(n=>n.base)}:null;const edits=Object.fromEntries(updates.map(row=>{const n=s.nodes.find(n=>n.id===row.id),prior=outboxAll().filter(q=>q.date===s.date).map(q=>q.scheduleEdits?.[row.id]).find(e=>e?.plannedBefore);return[row.id,{schema:1,fields:[],before:null,plannedBefore:prior?.plannedBefore||{present:!!n.base,value:n.base},...(groupBefore?{plannedGroupBefore:prior?.plannedGroupBefore||groupBefore}:{})}]}));
       try{await verifyPlannedWorkWrites(updates,edits,s.drv,s.epoch,s.date);}catch(e){if(e.isNetwork&&s.epoch===storeEpoch&&s.drv.mode==='gh'&&!s.drv.offline){if(!outboxPush(s.date,updates,null,undefined,edits))throw Error('기기 보관에 실패하여 저장하지 않았습니다.');queueItem=outboxAll().find(q=>q.date===s.date&&q.rows?.some(r=>r.id===updates[0].id));}throw e;}assertContext(s.epoch);if(!AppAccess.unlocked)throw Error('다시 로그인한 뒤 예정 저장을 눌러 주세요. 입력은 보관했습니다.');
@@ -3733,7 +3752,7 @@ function openFieldLots(){
  const buttons=()=>{input.disabled=overlap.disabled=!s.ready||s.busy;save.disabled=!s.ready||s.busy||!s.dirty;save.textContent=s.busy?'저장 중…':'로트 저장';close.disabled=s.busy;retry.disabled=s.busy;dialog.setAttribute('aria-busy',String(s.busy||!s.ready&&retry.hidden))};
  const edited=()=>{if(!fieldLotCurrent(s)||!s.ready||s.busy)return;s.dirty=true;status.className='field-lot-feedback';status.textContent='변경한 내용을 저장해 주세요.';error.textContent='';buttons()};input.oninput=edited;overlap.onchange=edited;
  s.refresh=async()=>{if(!fieldLotCurrent(s)||s.busy)return;const read=++s.read;s.ready=false;retry.hidden=true;error.textContent='';status.className='field-lot-feedback';status.textContent='최신 로트를 확인하고 있습니다…';buttons();const ok=await loadFieldLots(true);if(!fieldLotCurrent(s)||read!==s.read)return;if(!ok){status.textContent='로트를 불러오지 못했습니다.';error.textContent=fieldLots.error||'연결을 확인하고 다시 불러와 주세요.';retry.hidden=false;buttons();return;}s.events=fieldLots.events.map(e=>({...e}));const base=s.events.find(e=>e.date===s.date)||null;if(!s.dirty){s.base=base;input.value=base?.lot||'';overlap.checked=base?.overlap||false;}s.ready=true;const current=GypsumLots.at(s.events,s.date);status.textContent=(s.drv.mode==='local'||s.drv.offline?'이 기기 기록':'현재 적용')+': '+(current.lots.join(' + ')||'미기록')+(s.dirty?' · 입력 내용은 유지했습니다.':'');buttons();};
- retry.onclick=()=>void s.refresh();close.onclick=()=>{if(!s.busy)closeFieldLotDialog()};dialog.oncancel=e=>{e.preventDefault();if(!s.busy)closeFieldLotDialog()};dialog.addEventListener('close',()=>{if(fieldLotSession===s&&AppAccess.unlocked&&!s.parked)closeFieldLotDialog()});dialog.addEventListener('keydown',e=>e.stopPropagation());
+ const requestClose=()=>{if(s.busy)return;if(s.dirty&&!confirm('저장하지 않은 로트 변경이 있습니다. 변경 내용을 버리고 닫을까요?'))return;closeFieldLotDialog()};retry.onclick=()=>void s.refresh();close.onclick=requestClose;dialog.oncancel=e=>{e.preventDefault();requestClose()};dialog.addEventListener('close',()=>{if(fieldLotSession===s&&AppAccess.unlocked&&!s.parked)closeFieldLotDialog()});dialog.addEventListener('keydown',e=>e.stopPropagation());
  save.onclick=async()=>{
   if(!fieldLotCurrent(s)||s.busy||!s.ready||!s.dirty)return;const auth=s.auth;let value;
   try{value=GypsumLots.event({date:s.date,lot:input.value,overlap:overlap.checked});GypsumLots.edit(s.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'})),{date:s.date,base:s.base,value});}catch(e){error.textContent=e.message;return;}
@@ -4906,6 +4925,21 @@ function persistDraft(){
   return has;
 }
 function saveDraft(){ clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); }
+function flushFieldDraftBeforeLeave(){
+  if(!$('#entryOv').classList.contains('open')||S.editId||S.entryMode==='case'||$('#entrySave').disabled)return false;
+  clearTimeout(draftTimer);draftTimer=null;return persistDraft();
+}
+function fieldLeaveNeedsWarning(){
+  const entry=$('#entryOv');
+  if(entry?.classList.contains('open')){
+    if($('#entrySave').disabled)return true;
+    if(entryDirty()&&(S.editId||S.entryMode==='case'||!flushFieldDraftBeforeLeave()))return true;
+  }
+  return !!(fieldLotSession&&(fieldLotSession.dirty||fieldLotSession.busy)||productMemoSession?.busy||plannedWorkDialogSession?.busy||scheduleFlowSession?.busy);
+}
+window.addEventListener('beforeunload',event=>{try{if(!fieldLeaveNeedsWarning())return;}catch{}event.preventDefault();event.returnValue='';});
+window.addEventListener('pagehide',()=>{try{flushFieldDraftBeforeLeave();}catch{}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)try{flushFieldDraftBeforeLeave();}catch{}});
 function clearDraft(expected=S.entryDraftBase){
   clearTimeout(draftTimer);
   if(S.editId || S.entryMode==='case') return true;
@@ -5907,7 +5941,7 @@ async function renderBackupStatus(){
   if(!fieldSettingsReady())return;
   const session=fieldConnectionSession;
   $('#offlineReturnBtn').hidden=!fieldOffline;$('#deviceBackupBtn').hidden=driver.mode!=='gh';$('#expBtn').textContent=fieldOffline?'오프라인 전체 백업 (.json)':driver.mode==='gh'?'전체 자료 백업 (.json)':'이 기기 전체 백업 (.json)';
-  try{const items=await fieldOfflineTx('readonly',(tx,set)=>{const req=tx.objectStore('workspaces').getAll();req.onsuccess=()=>set(req.result);});if(!fieldSettingsCurrent(session))return;const select=$('#offlineWorkspaceSelect');select.innerHTML=items.length?items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(item=>`<option value="${esc(item.id)}">${esc(item.createdAt.slice(0,16).replace('T',' '))} · ${Object.keys(item.packet.files).filter(p=>/^data\/\d/.test(p)).length}일${item.id===fieldOffline?.id?' · 사용 중':''}</option>`).join(''):'<option value="">보관한 오프라인 작업공간 없음</option>';if(fieldOffline)select.value=fieldOffline.id;}catch(e){if(fieldSettingsCurrent(session))$('#backupStatus').textContent=e.message;}
+  try{const items=await fieldOfflineTx('readonly',(tx,set)=>{const req=tx.objectStore('workspaces').getAll();req.onsuccess=()=>set(req.result);});if(!fieldSettingsCurrent(session))return;const select=$('#offlineWorkspaceSelect');select.innerHTML=items.length?items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).map(item=>`<option value="${esc(item.id)}">${esc(item.createdAt.slice(0,16).replace('T',' '))} · ${Object.keys(item.packet.files).filter(p=>/^data\/\d/.test(p)).length}일${item.id===fieldOffline?.id?' · 사용 중':''}</option>`).join(''):'<option value="">보관한 오프라인 작업공간 없음</option>';select.disabled=!items.length;$('#openOfflineWorkspace').disabled=!items.length;if(fieldOffline)select.value=fieldOffline.id;}catch(e){if(fieldSettingsCurrent(session)){$('#openOfflineWorkspace').disabled=true;$('#backupStatus').textContent=e.message;}}
 }
 /* FIELD_BACKUP_END */
 
