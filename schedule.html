@@ -3468,24 +3468,18 @@ function compareInventory(state,inventoryRow,activity,options={}){
  if(!C.iso(asOf))throw Error('재고 비교 기준일을 YYYY-MM-DD로 지정해 주세요.');
  const group=activity?.forProduct(inventoryRow?.product);if(!group)return null;
  const numeric=value=>typeof value==='number'||typeof value==='string'?C.num(value):null;
- const result={status:'target-missing',current:numeric(inventoryRow?.current),plan:group.plan,produced:group.produced,remaining:group.remaining,target:null,projected:null,balance:null,currentBalance:null};
+ const result={status:'plan-invalid',current:numeric(inventoryRow?.current),plan:numeric(group.plan),produced:numeric(group.produced),remaining:numeric(group.remaining),target:null,projected:null,balance:null,currentBalance:null};
  // Today's active jobs cannot be compared against a different stock month or
  // a stale activity snapshot. The activity badge itself remains independent.
  if(options.stockMonth!==asOf.slice(0,7)||activity.asOf!==asOf)return{...result,status:'historical'};
  if(result.current==null)return{...result,status:'stock-invalid'};
- let memos;
- try{
-  const lookup=C.catalogLookup(state),idCounts=new Map();
-  for(const product of state.products||[])if(text(product.id))idCounts.set(text(product.id),(idCounts.get(text(product.id))||0)+1);
-  const identity=name=>{const product=lookup.product(name),id=text(product?.id),label=text(product?.name)||text(name);if(!label||id&&idCounts.get(id)!==1)return null;return id?'id:'+id:'name:'+label};
-  memos=(state.memos||[]).filter(memo=>identity(memo.product)===group.key);
- }catch{return{...result,status:'target-invalid'}}
- // Even equal duplicate values are ambiguous source rows. Never select one
- // by array order or replace a missing target with the production plan.
- if(memos.length>1)return{...result,status:'target-invalid'};
- const raw=memos[0]?.values?.[3];if(raw==null||typeof raw==='string'&&!raw.trim())return result;
- const target=numeric(raw);if(target==null||target<0)return{...result,status:'target-invalid'};
+ // Inventory comparison uses the active production plan as its target. The
+ // independent legacy catalog target is preserved but never read or changed.
+ const {plan,produced,remaining}=result;
+ if(!(plan>0)||produced==null||produced<0||remaining==null||remaining<=0||plan<=produced||Math.abs(plan-produced-remaining)>Math.max(1,plan,produced,remaining)*1e-9)return result;
+ const target=plan;
  const projected=result.current+result.remaining,balance=projected-target,currentBalance=result.current-target;
+ if(![projected,balance,currentBalance].every(Number.isFinite))return result;
  return{...result,target,projected,balance,currentBalance,status:currentBalance>=0?'covered':balance>0?'surplus':balance<0?'shortfall':'matched'};
 }
 root.ScheduleStockStatus={current,compareInventory};if(typeof module!=='undefined')module.exports=root.ScheduleStockStatus;
@@ -6732,8 +6726,7 @@ function secondaryStockRows(s,key,query='',hideZero=false,activity=globalThis.Sc
 function secondaryStockPlanText(info){
  if(!info)return'—';
  if(info.status==='historical')return'현재 월에서 비교';
- if(info.status==='target-missing')return'목표재고 입력 필요';
- if(info.status==='target-invalid')return'목표재고 확인 필요';
+ if(info.status==='plan-invalid')return'생산계획 확인 필요';
  if(info.status==='stock-invalid')return'현재고 확인 필요';
  if(info.status==='covered')return info.currentBalance>0?'현재 목표보다 '+fmt(info.currentBalance)+'조 여유':'현재 목표 달성';
  if(info.status==='shortfall')return'계획에 '+fmt(Math.abs(info.balance))+'조 추가 필요';
@@ -6745,7 +6738,7 @@ function secondaryStockPlanHTML(info){
  if(!info)return'<span class="stockPlanEmpty">—</span>';
  const valid=n=>typeof n==='number'&&Number.isFinite(n),tone=['covered','surplus','matched'].includes(info.status)?'good':info.status==='shortfall'?'short':'notice';
  const math=info.status==='historical'?'과거·미래 재고와 오늘 생산은 합산하지 않습니다.':valid(info.projected)?'현재고 '+fmt(info.current)+' + 남은 '+fmt(info.remaining)+' = 예상 '+fmt(info.projected)+'조':'';
- const basis=info.status==='historical'?'':(valid(info.target)?'목표 '+fmt(info.target)+'조':'목표재고는 품목·작업자에서 설정')+(valid(info.plan)?' · 생산계획 '+fmt(info.plan)+'조':'');
+ const basis=info.status==='historical'?'':valid(info.target)?'생산계획 '+fmt(info.target)+'조 = 목표재고':'생산계획 확인 필요';
  return'<div class="stockPlanCompare '+tone+'"><strong>'+esc(secondaryStockPlanText(info))+'</strong>'+(math?'<small>'+esc(math)+'</small>':'')+(basis?'<small>'+esc(basis)+'</small>':'')+'</div>';
 }
 // Catalog memo drafts have one storage key per connection, independent of inventory month.
@@ -6817,7 +6810,7 @@ function secondaryStockMemoGrid(key,rows,activity=globalThis.ScheduleStockStatus
 }
 function secondaryStockTable(key){
  const view=secondaryLedgerPrefs(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf:today()}),rows=secondaryStockRows(state,key,filter,view.hideZeroStock,activity);
- return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+'<p class="stockPlanHint">생산 중인 품목을 먼저 표시합니다. 목표재고와 비교해 여유·추가 필요를 확인하고, 완료되면 품명 순서로 돌아갑니다.</p>'+secondaryStockMemoGrid(key,rows,activity)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p><p>계획 여유 = 현재고 + 남은 생산량 − 목표재고. 남은 생산량은 진행 중 작업의 생산계획에서 누적 실적을 뺀 수량이며, 같은 품목의 여러 작업은 합산합니다. 목표재고는 품목·작업자 탭에서 입력합니다. 오늘 생산과 비교하므로 현재 월에서만 계산하고, 미래 교체·불출은 예상하지 않습니다.</p></details></section>';
+ return '<section class="card ledgerStockPanel"><div class="toolbar"><div><h2>'+esc(key)+' 현재고</h2><p class="secondaryScope">이월 + 생산 − 교체 · 선택한 재고 기준월</p></div><div class="actions"><input id="search" class="search" value="'+esc(filter)+'" placeholder="재고 품명 찾기" aria-label="재고 검색"><label class="ledgerStockFilter"><input type="checkbox" id="secondaryStockHideZero" '+(view.hideZeroStock?'checked':'')+'>재고 0 제외</label><span class="ledgerStockCount" role="status">'+rows.length+'품목 표시</span>'+btn('setOpening','기초재고 입력','',m().closed)+'<button data-ledger-stock-csv title="현재 정렬·검색과 저장된 보관정보·공용 메모를 CSV 파일로 내려받습니다.">재고표 내려받기</button></div></div>'+'<p class="stockPlanHint">목표재고 = 생산계획 조수입니다. 생산 중인 품목을 먼저 표시하고, 완료되면 품명 순서로 돌아갑니다.</p>'+secondaryStockMemoGrid(key,rows,activity)+'<details class="stockMemoHelp"><summary>재고 계산·보관정보 기준</summary><p>재고는 이월 + 생산 − 교체입니다. 불출은 별도로 기록합니다. 음수 재고와 기초재고 정정은 입력 기록을 확인해 주세요.</p><p>호기·조수와 보관장소·메모는 품명별 공용값으로 보관합니다. 마감월에서도 편집할 수 있으며 마감 수량·보고서는 유지됩니다. 호기·조수 입력은 보관정보이며 생산일정 배정을 변경하지 않습니다. 생산 중은 오늘까지의 저장 실적 기준으로 표시하고 완료·미착수 예약은 제외합니다.</p><p>계획 여유 = 현재고 + 남은 생산량 − 목표재고. 남은 생산량은 진행 중 작업의 생산계획에서 누적 실적을 뺀 수량이며, 같은 품목의 여러 작업은 합산합니다. 목표재고는 진행 중 생산계획 조수와 같은 값으로 자동 계산하며 별도로 입력하지 않습니다. 품목·작업자에 보관된 별도 목표값은 이 비교에 사용하지 않습니다. 오늘 생산과 비교하므로 현재 월에서만 계산하고, 미래 교체·불출은 예상하지 않습니다.</p></details></section>';
 }
 stockView=function(){
  const key=month,view=secondaryLedgerPrefs();
@@ -7011,7 +7004,7 @@ function secondaryBindLedger(){
  const hideZero=document.querySelector('#secondaryStockHideZero');if(hideZero){hideZero.disabled=!!busy;hideZero.onchange=execute(()=>secondaryLedgerChange({hideZeroStock:hideZero.checked}))}
   const stockExport=document.querySelector('[data-ledger-stock-csv]');if(stockExport)stockExport.onclick=execute(()=>{
    const asOf=today(),activity=globalThis.ScheduleStockStatus?.current(state,{asOf}),rows=secondaryStockRows(state,month,filter,secondaryLedgerPrefs().hideZeroStock,activity);
-   csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+asOf+')','계획 비교 (현재 월 기준)','생산계획 (조)','남은 생산 (조)','목표재고 (조)','완료 예상 재고 (조)','계획 여유·부족 (예상재고−목표, 조)','메모 · 품명 공통 (저장값)'],rows.map(r=>{
+   csv(['품명','이월','생산','교체 차감','현재고','kg','호기·조수 (저장값)','보관장소 (저장값)','생산 상태 ('+asOf+')','계획 비교 (현재 월 기준)','생산계획 (조)','남은 생산 (조)','목표재고 (=생산계획, 조)','완료 예상 재고 (조)','계획 여유·부족 (예상재고−목표, 조)','메모 · 품명 공통 (저장값)'],rows.map(r=>{
     const info=globalThis.ScheduleStockStatus?.compareInventory?.(state,r,activity,{stockMonth:month,asOf});
     return[r.product,r.opening,r.production,r.deduction,r.current,r.kg,ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'machineQty'),ScheduleBatch.stockMetaValue(state,{},secondaryStockMemoProduct(r.product),'location'),activity?.forProduct(r.product)?'생산 중':'',info?secondaryStockPlanText(info):'',info?.plan??null,info?.remaining??null,info?.target??null,info?.projected??null,info?.balance??null,secondaryStockMemoValue(r.product,{},true)];
    }),'재고표');
