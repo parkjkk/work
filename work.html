@@ -3425,10 +3425,10 @@ async function applyPlannedToBlock(item){
   const epoch=storeEpoch,date=S.date,worker=$('#fWorker').value,snapshot=formSnapshot(),drv=driver;
   try{const rows=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||worker!==$('#fWorker').value||!$('#entryOv').classList.contains('open'))return;if(formSnapshot()!==snapshot){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}const row=pendingApply(item.date,rows).find(row=>row.id===item.row.id);if(!row||!isPlannedPreparation(row)||row.plannedWork.state!=='waiting')throw Error('예정 작업이 변경되었거나 취소되었습니다. 목록을 다시 확인해 주세요.');item={...item,row};}catch(e){if(epoch===storeEpoch)toast(e.message);return;}
   const same=[...$('#prodBlocks').children].find(el=>plannedKey(plannedStartForms.get(el)?.ref||{})===plannedKey(item));if(same){same.querySelector('.pb-prod').focus();return;}
-  const el=[...$('#prodBlocks').children].find(el=>!el.querySelector('.pb-product').value.trim())||addBlock(null),row=item.row;
-  el.querySelector('.pb-product').value=row.product;el.querySelector('.pb-planmode').value=row.scheduleTarget?'continue':'start';el.querySelector('.pb-plan').value=row.scheduleTarget?'':row.plan;el.dataset.planModeChanged='1';
+  const el=[...$('#prodBlocks').children].find(el=>!el.querySelector('.pb-product').value.trim())||addBlock(null),row=item.row,progress=plannedGroupProgress(item),target=progress.target?.target||row.scheduleTarget;
+  el.querySelector('.pb-product').value=row.product;el.querySelector('.pb-planmode').value=progress.started||target?'continue':'start';el.querySelector('.pb-plan').value=progress.started||target?'':row.plan;el.dataset.planModeChanged='1';
   if(row.scheduleConditions)restoreScheduleForm(el,row.scheduleConditions,{baseline:false});
-  if(row.scheduleTarget)scheduleTargetForms.set(el,{before:{present:false},target:row.scheduleTarget,changed:true,context:null});
+  if(target)scheduleTargetForms.set(el,{before:{present:false},target,changed:true,context:null});
   plannedStartForms.set(el,{ref:{date:item.date,id:row.id},before:plannedSource(row)});syncPlanMode(el);updateProdProg(el);expandProduct(el,false);el.querySelector('.pb-quality').open=true;el.querySelector('.pb-team').open=false;renumberBlocks();syncQuickProducts();persistDraft();$('#plannedEntryChoices')?.remove();$('#recentLoad').hidden=true;$('#reservationLoad').hidden=true;$('#quickProducts [data-rid="'+el.dataset.rid+'"] .quick-stepper input')?.focus({preventScroll:true});
 }
 function plannedGroupItems(item){const route=item.row.scheduleConditions?.routing;if(!route?.group)return[item];return plannedWorkList({all:true}).items.filter(x=>x.date===item.date&&x.row.worker===item.row.worker&&x.row.plannedWork.state==='waiting'&&x.row.scheduleConditions?.routing?.group===route.group).sort((a,b)=>a.row.scheduleConditions.routing.lane-b.row.scheduleConditions.routing.lane||a.row.scheduleConditions.routing.order-b.row.scheduleConditions.routing.order);}
@@ -3698,7 +3698,7 @@ function planBadge(r){
   if(t && t.state === 'on') return `<span class="badge on" title="${fmtMD(pr.start)} 시작 · 계획 ${r2(pr.plan)}조 중 ${r2(pr.made)}조 · 남은 ${r2(t.remain)}조">생산중 ${r2(pr.made)}/${r2(pr.plan)}조 · ${t.pct}%</span>`;
   return '<span class="badge on">생산중</span>';
 }
-function updateProdProg(el){return withProjectedReadScope(()=>updateProdProgContents(el));}
+function updateProdProg(el){const result=withProjectedReadScope(()=>updateProdProgContents(el));void continueLinkedTeam(el);return result;}
 function updateProdProgContents(el){
   updateProductMemo(el);
   updateTeamForm(el);updatePreviousProducer(el);
@@ -3964,7 +3964,7 @@ function updateTeamForm(el){
  const select=el.querySelector('.pb-team-worker');if(!select)return;const selected=select.value,owner=$('#fWorker').value.replace(/\s+/g,''),names=[...new Set([...activeWorkers(),...S.rows.flatMap(productionPeople),selected].filter(n=>n&&(n!==owner||n===selected)))];
  const options='<option value="">혼자 작업</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');if(select._choices!==options){select.innerHTML=options;select._choices=options;select.value=names.includes(selected)?selected:'';}
  el.querySelector('.pb-team-time').hidden=!select.value;el.querySelector('.pb-team summary').textContent=select.value?'함께 작업 · '+owner+' + '+select.value:'함께 작업한 사람';
- const note=el.querySelector('.pb-team-note');note.textContent='함께 만든 수량은 한 번만 입력합니다. 담당자는 그대로 유지됩니다.';note.hidden=!select.value;
+ const note=el.querySelector('.pb-team-note');note.textContent='함께 만든 수량은 한 번만 입력합니다. 담당자는 그대로 유지됩니다.';note.hidden=!select.value;teamContinuationStatus(el);
 }
 function restoreTeamForm(el,row,form=null){
  let value=null,error='';try{value=productionTeamValue(row?.productionTeam,row?.worker||$('#fWorker').value)}catch(e){error=e.message}
@@ -3972,7 +3972,7 @@ function restoreTeamForm(el,row,form=null){
  const select=el.querySelector('.pb-team-worker');updateTeamForm(el);select.value='';el.querySelector('.pb-team-hours').value='';if(value){const m=value.members[0];if(![...select.options].some(o=>o.value===m.worker))select.add(new Option(m.worker,m.worker));select.value=m.worker;el.querySelector('.pb-team-hours').value=m.hours;}
  updateTeamForm(el);
 }
-function collectTeamFields(el){const form=productionTeamForms.get(el),value=teamFormValue(el);if(form?.error)throw Error(form.error);return form?.reviewed||progressStable(value)!==form?.initial?{productionTeam:value}:{};}
+function collectTeamFields(el){const form=productionTeamForms.get(el),value=teamFormValue(el),request=teamContinuationRequests.get(el);if(request?.key===teamContinuationContext(el)&&request?.error&&!form?.touched)throw Error(request.error);if(form?.error)throw Error(form.error);return form?.reviewed||progressStable(value)!==form?.initial?{productionTeam:value}:{};}
 function continueRecentTeam(el,rows){
  const owner=$('#fWorker').value,form=productionTeamForms.get(el);
  if(form?.touched||form?.before?.present||form?.reviewed||el.querySelector('.pb-team-worker').value||el.querySelector('.pb-team-hours').value)return false;
@@ -3980,9 +3980,53 @@ function continueRecentTeam(el,rows){
  if(candidates.length!==1)return false;const row=candidates[0];
  if(row.plan===0||row.plan==='0'||row.planIntent==='end'||row.productionCompletion)return false;
  let value;try{value=productionTeamValue(row.productionTeam,owner)}catch{return false}if(!value)return false;
+ const absent=value.members.find(member=>pendingApply(S.date,S.rows).some(r=>r.worker===member.worker&&isRest(r)));if(absent){const request=teamContinuationRequests.get(el);if(request)request.notice=absent.worker+'님은 오늘 휴무로 표시되어 있습니다.';return false;}
  // A new day's copied membership is a new field, not the old row's merge baseline.
  restoreTeamForm(el,{worker:owner,productionTeam:value},{before:{present:false},initial:progressStable(null),error:''});
  return true;
+}
+// Membership comes from the newest actual field row of this same work, never target.participants.
+const teamContinuationRequests=new WeakMap();let teamContinuationLock=0;
+window.addEventListener('production:lock',()=>{teamContinuationLock++;});
+function teamContinuationContext(el){return JSON.stringify([storeEpoch,activeScope,teamContinuationLock,S.date,$('#fWorker').value,fieldProductIdentity(el.querySelector('.pb-product').value),scheduleTargetKey(scheduleTargetForms.get(el)?.target),plannedKey(plannedStartForms.get(el)?.ref||{}),el.querySelector('.pb-planmode').value==='start'?'start':'continue']);}
+function teamContinuationStatus(el){
+ const stored=teamContinuationRequests.get(el),request=stored?.key===teamContinuationContext(el)?stored:null,form=productionTeamForms.get(el);let status=el.querySelector('.pb-team-load-status');
+ const message=form?.touched?'':request?.pending?'함께 작업한 사람을 불러오는 중…':request?.error||request?.notice||'';
+ if(!message){status?.remove();return;}
+ if(!status){status=document.createElement('p');status.className='pb-team-load-status pb-schedule-note';status.setAttribute('role','status');el.querySelector('.pb-team').after(status);}
+ status.replaceChildren(document.createTextNode(message));
+ if(request?.error&&!form?.touched){const retry=document.createElement('button');retry.type='button';retry.className='quiet-btn';retry.textContent='다시 불러오기';retry.onclick=()=>{teamContinuationRequests.delete(el);void continueLinkedTeam(el);};status.append(' ',retry);}
+}
+function continueLinkedTeam(el){
+ if(!el.isConnected||!$('#entryOv').classList.contains('open')||!AppAccess.unlocked||S.editId||S.entryMode==='case'||S.rows.some(row=>row.id===el.dataset.rid))return;
+ const previousRequest=teamContinuationRequests.get(el);if(previousRequest&&previousRequest.key!==teamContinuationContext(el)){teamContinuationRequests.delete(el);if(previousRequest.copied&&!productionTeamForms.get(el)?.touched)restoreTeamForm(el,{worker:$('#fWorker').value});teamContinuationStatus(el);}
+ const owner=$('#fWorker').value,product=fieldProductIdentity(el.querySelector('.pb-product').value),target=scheduleTargetForms.get(el)?.target,ref=plannedStartForms.get(el)?.ref,form=productionTeamForms.get(el);
+ if(!owner||!product||(!target&&!ref)||el.querySelector('.pb-planmode').value!=='continue'||form?.touched||form?.before?.present||form?.reviewed||el.querySelector('.pb-team-worker').value||el.querySelector('.pb-team-hours').value)return;
+ const key=teamContinuationContext(el),prior=teamContinuationRequests.get(el);if(prior?.key===key)return prior.promise;
+ const descriptor=target&&scheduleTargetDescriptor(target);if(descriptor?.complete||descriptor?.warning||target&&scheduleTargetDeleted(target))return;
+ const date=S.date,epoch=storeEpoch,drv=driver,projection=S.productionProgress,entries=(projection?.entries||[]).filter(e=>target&&e.worker===owner&&fieldProductIdentity(e)===product&&(e.originId||e.jobId)===(target.originId||target.jobId));
+ const byDate=new Map();for(const e of entries){const ds=e.path?.slice(5,15);if(!plannedDate(ds)||ds>=date)continue;if(!byDate.has(ds))byDate.set(ds,[]);byDate.get(ds).push(e);}
+ const matches=(row,ds)=>{
+  if(row.off||row.deleted||isPlannedPreparation(row)||row.worker!==owner||fieldProductIdentity(row)!==product)return false;
+  if(target&&row.scheduleTarget)return scheduleTargetKey(row.scheduleTarget)===scheduleTargetKey(target);
+  if(ref&&row.plannedWorkRef)return plannedKey(row.plannedWorkRef)===plannedKey(ref);
+  return(byDate.get(ds)||[]).some(e=>e.id===row.id&&progressStable(e.source)===progressStable(progressSourceFields(row)));
+ };
+ const days={...(productHistory.epoch===epoch?productHistory.days:{}),...S.progressDays,...dayCache,...plannedKnownDays()};
+ const dates=new Set(byDate.keys());for(const[ds,rows]of Object.entries(days))if(plannedDate(ds)&&ds<date&&Array.isArray(rows)&&pendingApply(ds,rows).some(row=>matches(row,ds)))dates.add(ds);
+ if(ref){const item=(projection?.plannedWorks||[]).find(item=>plannedKey(item)===plannedKey(ref));for(const start of item?.starts||[])if(plannedDate(start.date)&&start.date<date)dates.add(start.date);}
+ const latest=[...dates].sort().at(-1);if(!latest)return;
+ const request={key,pending:true,error:'',notice:'',promise:null};teamContinuationRequests.set(el,request);teamContinuationStatus(el);
+ const current=()=>el.isConnected&&$('#entryOv').classList.contains('open')&&AppAccess.unlocked&&drv===driver&&epoch===storeEpoch&&key===teamContinuationContext(el)&&teamContinuationRequests.get(el)===request&&!S.rows.some(row=>row.id===el.dataset.rid);
+ request.promise=(async()=>{
+  try{
+   const rows=await drv.loadDay(latest);if(!current())return;
+   // A deletion, clear, completion or ambiguity on the newest day must not revive an older team.
+   const candidates=pendingApply(latest,rows).filter(row=>matches(row,latest));
+   if(candidates.length===1&&continueRecentTeam(el,candidates)){request.copied=true;syncQuickProducts();saveDraft();}
+  }catch(error){if(current()&&!productionTeamForms.get(el)?.touched)request.error='함께 작업한 사람을 확인하지 못했습니다. 다시 불러오거나 직접 선택해 주세요.';}
+  finally{request.pending=false;if(current())teamContinuationStatus(el);}
+ })();return request.promise;
 }
 function teamEditMeta(el,payload){return Object.hasOwn(payload||{},'productionTeam')?{teamBefore:productionTeamForms.get(el)?.before||{present:false}}:{};}
 function mergeProductionTeams(rows,incoming,edits,strict){return incoming.map(row=>{
@@ -4670,7 +4714,7 @@ function addBlock(row){
   if(row?.plannedWorkRef){const pending=outboxAll().find(item=>item.date===S.date&&item.rows?.some(r=>r.id===row.id)),prior=pending?.scheduleEdits?.[row.id];plannedStartForms.set(el,{ref:fieldPlannedRef(row.plannedWorkRef),...(prior?.plannedStartBefore?{before:prior.plannedStartBefore}:{}),actualBefore:pending?prior?.plannedActualBefore||{present:false}:{present:true,value:plannedActualSource(row)}});}
   restoreTeamForm(el,row);
   el.querySelector('.pb-team-worker').onchange=()=>{productionTeamForms.get(el).touched=true;if(el.querySelector('.pb-team-worker').value&&!el.querySelector('.pb-team-hours').value)el.querySelector('.pb-team-hours').value=$('#fHours').value;updateTeamForm(el);saveDraft();};
-  el.querySelector('.pb-team-hours').addEventListener('input',()=>{productionTeamForms.get(el).touched=true;saveDraft();});
+  el.querySelector('.pb-team-hours').addEventListener('input',()=>{productionTeamForms.get(el).touched=true;teamContinuationStatus(el);saveDraft();});
   scheduleTargetForms.set(el,{before:ownFieldState(row,'scheduleTarget'),target:row?.scheduleTarget||null,changed:false,context:null});
   restoreScheduleForm(el,row?.scheduleConditions);
   restoreMachineActualForm(el,row?.machineActuals,{present:Object.prototype.hasOwnProperty.call(row||{},'machineActuals')});scheduleFormBaselines.set(el,scheduleFormSignature(scheduleFormValues(el)));
@@ -5221,6 +5265,14 @@ async function saveEntry(){
   if(globalThis.AppAccess&&!AppAccess.unlocked)return;
   if($('#entrySave').disabled) return;   /* 저장 진행 중 재진입 차단 (버튼·Ctrl+Enter 공통) */
   if(S.entryScope!==activeScope || S.entryDate!==S.date){ toast('날짜 또는 연결이 바뀌었습니다. 해당 날짜의 기록을 다시 열어 주세요.'); return; }
+  const pendingTeams=[...$('#prodBlocks').children].map(el=>teamContinuationRequests.get(el)).filter(request=>request?.pending);
+  if(pendingTeams.length){
+    const blocks=[...$('#prodBlocks').children],scope=activeScope,date=S.date,worker=$('#fWorker').value,button=$('#entrySave');button.disabled=true;button.textContent='함께 작업 확인 중…';
+    await Promise.all(pendingTeams.map(request=>request.promise));
+    const same=blocks.length===$('#prodBlocks').children.length&&blocks.every(el=>el.isConnected)&&scope===activeScope&&date===S.date&&worker===$('#fWorker').value&&$('#entryOv').classList.contains('open');
+    if(button.textContent==='함께 작업 확인 중…'){button.disabled=false;button.textContent=entrySaveLabel();}
+    if(same&&AppAccess.unlocked)return saveEntry();return;
+  }
   const epoch = storeEpoch;
   clearFieldErrs(); $('#entryErr').hidden = true;
   const worker = $('#fWorker').value.replace(/\s+/g, '');   /* '김 철수' → '김철수' (유령 작업자 방지) */
