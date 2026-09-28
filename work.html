@@ -856,6 +856,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 #scheduleFlowDialog .flow-fields{border:1px solid var(--line-in);border-radius:12px;padding:14px}#scheduleFlowDialog h3{margin:0 0 12px;font-size:16px;overflow-wrap:anywhere}#scheduleFlowDialog h3 small{font-size:12px;color:var(--ink-dim);font-weight:400}#scheduleFlowDialog label{display:block;min-width:0;font-size:12px;color:var(--ink-dim)}#scheduleFlowDialog .f-input{margin-top:5px;min-height:44px;width:100%;box-sizing:border-box}#scheduleFlowDialog [readonly]{background:var(--surface2);color:var(--ink-dim)}.flow-fields-grid,.flow-machine{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.flow-wide{grid-column:1/-1}.flow-machine{margin-top:10px}.flow-status{font-size:13px;font-weight:700;color:var(--accent-ink);line-height:1.6;min-height:22px}#scheduleFlowDialog footer{display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:-18px;padding:12px 0;background:var(--surface)}#scheduleFlowDialog .flow-produce{width:100%;margin-top:4px}
 @media(max-width:520px){#scheduleFlowDialog{padding:12px}#scheduleFlowDialog footer{bottom:-12px}#scheduleFlowDialog .pb-route-flow-tag{flex-basis:100%;background:none;padding:0}#scheduleFlowDialog .pb-route-flow-node{font-size:12px;padding:7px}#scheduleFlowDialog .pb-route-flow-arrow{margin-left:0}#scheduleFlowDialog .flow-fields{padding:10px}#scheduleFlowDialog footer .btn{padding-inline:12px}}
 #scheduleFlowDialog button:disabled{opacity:.45;cursor:default}#scheduleFlowDialog .flow-produce:not(:disabled){border-color:var(--accent);color:var(--accent-ink)}
+#scheduleFlowDialog .flow-remove{min-height:44px;color:var(--bad);border-color:var(--bad);margin-top:10px}#scheduleFlowDialog .flow-removed{margin:10px 0;padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--ink-dim);font-size:13px;line-height:1.6}#scheduleFlowDialog .flow-removed-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}#scheduleFlowDialog .flow-undo{min-height:44px;flex-shrink:0}#scheduleFlowDialog .flow-removed-row span{overflow-wrap:anywhere;min-width:0}
 @media print{#scheduleFlowDialog{display:none!important}}
 /* field-main-layout-v2: compact identity, shared roster actions and responsive names. */
 @media screen{
@@ -1922,7 +1923,9 @@ function ghDriver(cfg){
       const response=await ghFetch(FIELD_BRIDGE+'/api/field-schedule'+query,{method:save?'POST':'GET',headers:{...H,...(save?{'Content-Type':'application/json'}:{})},...(save?{body:JSON.stringify(input)}:{})},30000);
       assertContext(epoch);authCheck(response);const value=await response.json();assertContext(epoch);
       if(!response.ok)throw Error(value.error||'생산 흐름을 저장하지 못했습니다. 입력은 그대로 남아 있습니다.');
-      if(value.schema!==1||value.date!==input.date||!Array.isArray(value.items)||!value.items.length||value.items.length>50||typeof value.revision!=='string')throw Error('생산 흐름의 저장 결과를 확인하지 못했습니다.');
+      const removals=save?(input.items||[]).filter(item=>item.remove===true):[];
+      if(value.schema!==1||value.date!==input.date||!Array.isArray(value.items)||value.items.length>50||typeof value.revision!=='string'||!value.items.length&&!removals.length)throw Error('생산 흐름의 저장 결과를 확인하지 못했습니다.');
+      if(removals.length){const deleted=value.deletedTargets;if(!Array.isArray(deleted)||deleted.length!==removals.length||new Set(deleted.map(scheduleExactTargetKey)).size!==deleted.length||deleted.some(t=>!fieldScheduleTarget(t)||!removals.some(item=>scheduleExactTargetKey(item.target)===scheduleExactTargetKey(t)))||value.items.some(item=>deleted.some(t=>scheduleExactTargetKey(item.target)===scheduleExactTargetKey(t))))throw Error('예정 삭제 결과를 확인하지 못했습니다. 입력은 보관했습니다.');}
       for(const item of value.items){fieldScheduleTarget(item.target);if(typeof item.product!=='string'||!Number.isFinite(item.plan)||item.plan<=0||!item.before||!item.permissions)throw Error('작업 연결을 확인하지 못했습니다.');normalizeScheduleInput(item.conditions);}
       if(save)fieldSyncSoon();return value;
     },
@@ -2561,6 +2564,33 @@ function fieldScheduleTarget(value){
   return{schema:1,jobId:value.jobId,originId:value.originId,month:value.month,worker:value.worker,productId:value.productId};
 }
 function scheduleTargetKey(value){return value?JSON.stringify([value.originId,value.worker,value.productId]):'';}
+function scheduleExactTargetKey(value){return value?JSON.stringify([value.month,value.jobId,value.originId,value.worker,value.productId]):'';}
+const confirmedScheduleDeletes=new Map();
+function scheduleDeletedRecords(scope=activeScope){
+ const cached=LS.get('ilbo.cache.scheduleDeletedTargets',[],scope),known=new Map();
+ for(const record of [...(Array.isArray(cached)?cached:[]),...(confirmedScheduleDeletes.get(scope)||[])])try{const target=fieldScheduleTarget(record.target||record);if(target)known.set(scheduleExactTargetKey(target),{target,token:typeof record.token==='string'?record.token:'legacy'});}catch{}
+ return [...known.values()];
+}
+function scheduleDeletedTargets(scope=activeScope){return scheduleDeletedRecords(scope).map(record=>record.target);}
+function scheduleTargetDeleted(target){return !!target&&scheduleDeletedTargets().some(value=>scheduleExactTargetKey(value)===scheduleExactTargetKey(target));}
+function filterDeletedScheduleTargets(projection){if(projection)projection.targets=projection.targets.filter(item=>!scheduleTargetDeleted(item.target));return projection;}
+function rememberScheduleFlowDeleted(targets,scope=activeScope){
+ if(!targets?.length)return true;const known=new Map(scheduleDeletedRecords(scope).map(record=>[scheduleExactTargetKey(record.target),record]));
+ for(const target of targets){const checked=fieldScheduleTarget(target);known.set(scheduleExactTargetKey(checked),{target:checked,token:uid()});}
+ const values=[...known.values()],saved=LS.set('ilbo.cache.scheduleDeletedTargets',values,scope);if(saved)confirmedScheduleDeletes.delete(scope);else confirmedScheduleDeletes.set(scope,values);
+ if(scope===activeScope){filterDeletedScheduleTargets(S.productionProgress);if(S.productionProgress)LS.set('ilbo.cache.productionProgress',S.productionProgress,scope);}
+ return saved;
+}
+async function reconcileScheduleDeletes(projection,drv,epoch,scope,isCurrent){
+ if(drv.offline||typeof drv.scheduleFlow!=='function')return;
+ const candidates=scheduleDeletedRecords(scope).filter(record=>projection.targets.some(item=>scheduleExactTargetKey(item.target)===scheduleExactTargetKey(record.target)));let cursor=0;
+ await Promise.all(Array.from({length:Math.min(6,candidates.length)},async()=>{while(cursor<candidates.length){const record=candidates[cursor++],key=scheduleExactTargetKey(record.target);try{
+   const result=await drv.scheduleFlow({date:projection.asOf,target:record.target});
+   if(epoch!==storeEpoch||scope!==activeScope||drv!==driver||!AppAccess.unlocked||!isCurrent()||!result.items.some(item=>scheduleExactTargetKey(item.target)===key))continue;
+   const latest=scheduleDeletedRecords(scope);if(latest.find(item=>scheduleExactTargetKey(item.target)===key)?.token!==record.token)continue;
+   const remaining=latest.filter(item=>scheduleExactTargetKey(item.target)!==key);if(LS.set('ilbo.cache.scheduleDeletedTargets',remaining,scope))confirmedScheduleDeletes.delete(scope);
+ }catch{/* A missing target or offline response is not proof of restoration. */}}}));
+}
 function progressSourceFields(row){return Object.fromEntries(PROGRESS_SOURCE_FIELDS.filter(k=>Object.prototype.hasOwnProperty.call(row,k)).map(k=>[k,row[k]]));}
 function progressStable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
 function projectedWorkerAt(entry,date){let worker=entry.handoff?.originalWorker||entry.scheduleTarget?.worker||entry.target?.worker||entry.scheduleWorker||entry.worker;for(const h of entry.handoff?.changes||[])if(h.date<=date)worker=h.to;return worker;}
@@ -2632,7 +2662,7 @@ function resetProductionProgress(){
   productionProgressRead++;S.productionProgress=null;S.productionProgressMode='none';S.progressDays=null;
   if(driver.mode!=='gh')return;
   const cached=LS.get('ilbo.cache.productionProgress',null);
-  try{if(cached){S.productionProgress=parseProductionProgress(cached);S.productionProgressMode='cached';}}catch{}
+  try{if(cached){S.productionProgress=filterDeletedScheduleTargets(parseProductionProgress(cached));S.productionProgressMode='cached';}}catch{}
 }
 function progressSourceNote(projection=S.productionProgress){
   if(!projection)return driver.mode==='gh'?'현장 기록 기준 · 관리 집계 확인 대기':'현장 기록 기준';
@@ -2640,12 +2670,12 @@ function progressSourceNote(projection=S.productionProgress){
   return `관리 집계 ${projection.asOf} 기준 · ${stamp} 반영${S.productionProgressMode==='cached'?' · 보관한 자료':''}`;
 }
 async function loadProductionProgress(background=false){
-  const epoch=storeEpoch,seq=++productionProgressRead,drv=driver;
+  const epoch=storeEpoch,seq=++productionProgressRead,drv=driver,scope=activeScope;
   if((drv.mode!=='gh'&&!drv.offline)||typeof drv.loadProductionProgress!=='function')return;
   try{
     const value=await drv.loadProductionProgress();assertContext(epoch);if(seq!==productionProgressRead)return;
     if(deferFieldBackground(background))return;
-    if(value){const next=parseProductionProgress(value);S.productionProgress=next;S.productionProgressMode='ready';LS.set('ilbo.cache.productionProgress',next);}
+    if(value){const next=parseProductionProgress(value);await reconcileScheduleDeletes(next,drv,epoch,scope,()=>seq===productionProgressRead);assertContext(epoch);if(seq!==productionProgressRead||deferFieldBackground(background))return;filterDeletedScheduleTargets(next);S.productionProgress=next;S.productionProgressMode='ready';LS.set('ilbo.cache.productionProgress',next);}
     else{S.productionProgress=null;S.productionProgressMode='none';LS.remove('ilbo.cache.productionProgress');}
   }catch{if(epoch!==storeEpoch||seq!==productionProgressRead)return;if(deferFieldBackground(background))return;if(background)fieldRemotePending=true;S.productionProgressMode=S.productionProgress?'cached':'none';}
   if(epoch!==storeEpoch||seq!==productionProgressRead)return;
@@ -4297,10 +4327,10 @@ const scheduleTargetForms=new WeakMap();
 function reservationTargetAppliesToDate(entry,date=S.date){const owner=entry?.target?.month,dayMonth=String(date||'').slice(0,7),start=entry?.activeFrom||entry?.start;return owner===dayMonth||owner>dayMonth&&start<=date;}
 function eligibleScheduleTargets(product,date=S.date){
   if(S.productionProgressMode!=='ready'||!S.productionProgress||S.offline||driver.offline)return[];
-  return(S.productionProgress.targets||[]).filter(t=>reservationTargetAppliesToDate(t,date)&&(t.activeFrom||t.start)<=date&&fieldProductIdentity({product:t.product,productId:t.target.productId})===fieldProductIdentity(product));
+  return(S.productionProgress.targets||[]).filter(t=>!scheduleTargetDeleted(t.target)&&reservationTargetAppliesToDate(t,date)&&(t.activeFrom||t.start)<=date&&fieldProductIdentity({product:t.product,productId:t.target.productId})===fieldProductIdentity(product));
 }
 function scheduleTargetDescriptor(target,date=S.date){
-  if(!target)return null;const key=scheduleTargetKey(target),direct=S.productionProgress?.targets?.find(t=>scheduleTargetKey(t.target)===key);if(direct)return direct;
+  if(!target||scheduleTargetDeleted(target))return null;const key=scheduleTargetKey(target),direct=S.productionProgress?.targets?.find(t=>scheduleTargetKey(t.target)===key);if(direct)return direct;
   const entry=S.productionProgress?.entries?.find(e=>e.scheduleTarget&&scheduleTargetKey(e.scheduleTarget)===key&&e.schedule);
   return entry?{target:entry.scheduleTarget,worker:projectedWorkerAt(entry,date),product:entry.product,start:entry.schedule.start,end:entry.schedule.end,plan:entry.plan,produced:entry.produced,schedule:entry.schedule,participants:entry.participants||[entry.worker],revision:entry.schedule.revision,...(entry.handoff?{handoff:entry.handoff}:{})}:null;
 }
@@ -4308,7 +4338,7 @@ function reservationComplete(target){const plan=Number(target?.plan),produced=Nu
 function activeReservationTargets(worker,date=S.date){
   if(!worker||S.productionProgressMode!=='ready'||!S.productionProgress||S.offline||driver.offline)return[];
   const seen=new Set();return(S.productionProgress.targets||[]).filter(target=>{
-    const key=scheduleTargetKey(target.target);if(seen.has(key)||!reservationTargetAppliesToDate(target,date)||(target.activeFrom||target.start)>date||projectedWorkerAt(target,date)!==worker||reservationComplete(target))return false;seen.add(key);return true;
+    const key=scheduleTargetKey(target.target);if(scheduleTargetDeleted(target.target)||seen.has(key)||!reservationTargetAppliesToDate(target,date)||(target.activeFrom||target.start)>date||projectedWorkerAt(target,date)!==worker||reservationComplete(target))return false;seen.add(key);return true;
   }).sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(ar?.group||scheduleTargetKey(a.target)).localeCompare(String(br?.group||scheduleTargetKey(b.target)))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1)||String(a.product).localeCompare(String(b.product),'ko');});
 }
 function reservationFlowHTML(targets,date=S.date,title='오늘 작업 흐름',saved=false){
@@ -4320,7 +4350,7 @@ function entryReservationTargets(els){
  const selected=els.map(el=>scheduleTargetForms.get(el)?.target).filter(Boolean),keys=new Set(selected.map(scheduleTargetKey));
  const targets=S.productionProgressMode==='ready'&&!S.offline&&!driver.offline?(S.productionProgress?.targets||[]):[];
  const groupKey=t=>JSON.stringify([t.target.month,t.target.worker,t.schedule?.conditions?.routing?.group]),groups=new Set(targets.filter(t=>keys.has(scheduleTargetKey(t.target))&&t.schedule?.conditions?.routing?.group).map(groupKey));
- return targets.filter(t=>keys.has(scheduleTargetKey(t.target))||groups.has(groupKey(t)));
+ return targets.filter(t=>!scheduleTargetDeleted(t.target)&&(keys.has(scheduleTargetKey(t.target))||groups.has(groupKey(t))));
 }
 function renderEntryReservationFlow(els){
  const box=$('#entryReservationFlow');if(!box)return;
@@ -4331,7 +4361,7 @@ function renderEntryReservationFlow(els){
  if(box._flow!==html){box.innerHTML=html;box._flow=html;
   const ordered=[...flow].sort((a,b)=>{const ar=a.schedule?.conditions?.routing,br=b.schedule?.conditions?.routing;return String(a.target.month).localeCompare(String(b.target.month))||String(ar?.group||'').localeCompare(String(br?.group||''))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1);});
   box.querySelectorAll('.pb-route-flow-node').forEach((node,index)=>{const target=ordered[index];if(!target)return;const button=document.createElement('button');button.type='button';button.className=node.className;button.innerHTML=node.innerHTML;button.setAttribute('aria-label',target.product+' '+target.plan+'조 흐름 수정');button.onclick=()=>openScheduleFlowEditor(target.target);node.replaceWith(button);});
-  const hint=document.createElement('small');hint.className='quick-hint';hint.textContent='품목 상자를 누르면 품명·조수·순서를 수정할 수 있습니다.';box.append(hint);
+  const hint=document.createElement('small');hint.className='quick-hint';hint.textContent='품목을 누르면 품명·조수·순서를 바꾸거나 미생산 예정을 삭제할 수 있습니다.';box.append(hint);
  }
 }
 function renderReservationLoad(auto=false){
@@ -4509,23 +4539,38 @@ function openEntryRouting(){
 let scheduleFlowSession=null;
 function scheduleFlowCurrent(s){return scheduleFlowSession===s&&s.epoch===storeEpoch&&s.scope===activeScope&&s.date===S.date&&AppAccess.unlocked&&s.dialog.isConnected;}
 function scheduleFlowValues(item){return{product:item.product,plan:item.plan,conditions:item.conditions};}
-function scheduleFlowDirty(s){return s.items.some(item=>progressStable(scheduleFlowValues(item))!==progressStable(item.before));}
+function scheduleFlowDirty(s){return s.items.some(item=>item.remove===true||progressStable(scheduleFlowValues(item))!==progressStable(item.before));}
 function stashScheduleFlow(s){
  if(!s.items)return true;const all=LS.get('ilbo.scheduleFlowDrafts',{},s.scope),key=JSON.stringify([s.date,s.target]);
- if(scheduleFlowDirty(s))all[key]={items:s.items};else delete all[key];const ok=LS.set('ilbo.scheduleFlowDrafts',all,s.scope);if(!ok)s.status.textContent='입력 내용을 기기에 보관하지 못했습니다. 창을 닫기 전에 다시 저장해 주세요.';return ok;
+ if(progressStable(all[key]??null)!==(s.draftBase??'null')){if(!scheduleFlowDirty(s))return true;s.status.textContent='다른 창에 더 최근 흐름 입력이 있습니다. 현재 입력은 유지했습니다. 다른 창의 내용을 확인해 주세요.';return false;}
+ if(scheduleFlowDirty(s))all[key]={items:s.items,...(s.requestId?{requestId:s.requestId}:{})};else delete all[key];const ok=LS.set('ilbo.scheduleFlowDrafts',all,s.scope);if(ok)s.draftBase=progressStable(all[key]??null);else s.status.textContent='입력 내용을 기기에 보관하지 못했습니다. 창을 닫기 전에 다시 저장해 주세요.';return ok;
 }
+function clearScheduleFlowDraft(s){const all=LS.get('ilbo.scheduleFlowDrafts',{},s.scope),key=JSON.stringify([s.date,s.target]);if(progressStable(all[key]??null)!==(s.draftBase??'null'))return false;delete all[key];if(!LS.set('ilbo.scheduleFlowDrafts',all,s.scope))return false;s.draftBase='null';return true;}
 function closeScheduleFlow(force=false){const s=scheduleFlowSession;if(!s)return;if(!force&&(s.busy||!stashScheduleFlow(s)))return;scheduleFlowSession=null;s.dialog.close();s.dialog.remove();$('#entryRouting')?.focus({preventScroll:true});}
 window.addEventListener('production:lock',()=>closeScheduleFlow(true));
-function scheduleFlowTargets(s){return s.items.map(item=>({target:item.target,worker:item.target.worker,product:item.product,plan:item.plan,produced:item.produced,complete:item.complete===true,start:item.start,end:item.end,schedule:{conditions:item.conditions},participants:[item.target.worker]}));}
+function scheduleFlowTargets(s){return s.items.filter(item=>!item.remove).map(item=>({target:item.target,worker:item.target.worker,product:item.product,plan:item.plan,produced:item.produced,complete:item.complete===true,start:item.start,end:item.end,schedule:{conditions:item.conditions},participants:[item.target.worker]}));}
+function scheduleFlowPrevious(items,index){const route=items[index]?.conditions.routing;if(!route?.group)return -1;let previous=-1;for(let i=0;i<items.length;i++){const r=items[i].conditions.routing;if(!items[i].remove&&r?.group===route.group&&r.lane===route.lane&&r.order<route.order&&(previous<0||r.order>items[previous].conditions.routing.order))previous=i;}return previous;}
+function scheduleFlowRemoveBlocked(item){
+ if(item.permissions?.remove!==true)return item.removeReason||'이미 생산했거나 다른 기록에 연결된 품목은 삭제할 수 없습니다.';
+ if([...$('#prodBlocks').children].some(el=>scheduleExactTargetKey(scheduleTargetForms.get(el)?.target)===scheduleExactTargetKey(item.target)))return '오늘 입력표에 있는 품목입니다. 입력 내용을 확인하고 해당 품목을 입력표에서 뺀 뒤 예정 삭제를 선택하세요.';
+ return '';
+}
+function scheduleFlowToggleRemove(s,item){
+ if(!scheduleFlowCurrent(s)||s.busy)return;if(!item.remove){const reason=scheduleFlowRemoveBlocked(item);if(reason){s.status.textContent=reason;return;}}
+ const previous=item.remove;item.remove=!item.remove;if(item.remove&&!s.requestId)s.requestId=typeof crypto.randomUUID==='function'?crypto.randomUUID():uid();if(!stashScheduleFlow(s)){item.remove=previous;return;}
+ s.selected=scheduleTargetKey((item.remove?s.items.find(value=>!value.remove):item)?.target);scheduleFlowDraw(s);scheduleFlowFields(s);s.status.textContent=item.remove?item.product+' 삭제 예정 · 아래 저장을 누르면 생산일정표에서도 제외됩니다.':'삭제를 취소했습니다.';
+}
 function scheduleFlowDraw(s){
  const host=s.dialog.querySelector('.flow-diagram'),targets=scheduleFlowTargets(s);host.innerHTML=reservationFlowHTML(targets,s.date,'오늘 작업 흐름 · 품목을 눌러 수정',true);
  const ordered=[...targets].sort((a,b)=>{const ar=a.schedule.conditions.routing,br=b.schedule.conditions.routing;return String(a.target.month).localeCompare(b.target.month)||String(ar?.group||'').localeCompare(String(br?.group||''))||(ar?.lane||1)-(br?.lane||1)||(ar?.order||1)-(br?.order||1);});
  host.querySelectorAll('.pb-route-flow-node').forEach((node,index)=>{const item=ordered[index],key=scheduleTargetKey(item.target),button=document.createElement('button');button.type='button';button.className=node.className;button.innerHTML=node.innerHTML;button.dataset.flowTarget=key;button.setAttribute('aria-pressed',String(key===s.selected));button.setAttribute('aria-label',item.product+' '+item.plan+'조 수정');button.disabled=s.busy;button.onclick=()=>{s.selected=key;scheduleFlowDraw(s);scheduleFlowFields(s);[...host.querySelectorAll('[data-flow-target]')].find(node=>node.dataset.flowTarget===key)?.focus({preventScroll:true});};node.replaceWith(button);});
+ const removed=s.items.filter(item=>item.remove);if(removed.length){host.insertAdjacentHTML('beforeend','<div class="flow-removed"><b>저장하면 삭제할 예정 품목</b>'+removed.map((item,index)=>`<div class="flow-removed-row"><span>${esc(item.before.product)} · ${esc(item.before.plan)}조</span><button type="button" class="btn sec flow-undo" data-flow-undo="${index}" ${s.busy?'disabled':''}>되돌리기</button></div>`).join('')+'</div>');host.querySelectorAll('[data-flow-undo]').forEach(button=>button.onclick=()=>scheduleFlowToggleRemove(s,removed[Number(button.dataset.flowUndo)]));}
  s.dialog.querySelector('.flow-save').disabled=s.busy||!scheduleFlowDirty(s);s.dialog.querySelector('.flow-close').disabled=s.busy;s.dialog.querySelector('.flow-reload').disabled=s.busy;
 }
 function scheduleFlowReorder(s,index,parentIndex){
  const routes=s.items.map(item=>item.conditions.routing),route=routes[index];if(!route?.group)throw Error('연결된 생산 순서를 확인해 주세요.');
- const parents=s.items.map((item,i)=>{const r=routes[i];return r?.group===route.group&&r.order>1?s.items.findIndex((other,j)=>routes[j]?.group===r.group&&routes[j]?.lane===r.lane&&routes[j]?.order===r.order-1):-1;});
+ if(s.items.some(item=>item.remove))throw Error('예정 삭제를 먼저 저장한 뒤 생산 순서를 변경해 주세요.');
+ const parents=s.items.map((item,i)=>scheduleFlowPrevious(s.items,i));
  parents[index]=parentIndex;const used=new Set();for(let i=0;i<parents.length;i++){if(parents[i]>=0){if(used.has(parents[i]))throw Error('한 품목 다음에는 한 품목만 이어서 선택해 주세요.');used.add(parents[i]);}let cursor=i;const path=new Set();while(cursor>=0){if(path.has(cursor))throw Error('생산 순서가 서로 되돌아가지 않도록 선택해 주세요.');path.add(cursor);cursor=parents[cursor];}}
  const next=JSON.parse(JSON.stringify(s.items)),roots=parents.map((parent,i)=>parent<0?i:-1).filter(i=>i>=0),lanes=new Map(),usedLanes=new Set();
  for(const i of roots){const r=routes[i];if(r?.group===route.group&&r.order===1&&!usedLanes.has(r.lane)){lanes.set(i,r.lane);usedLanes.add(r.lane);}}
@@ -4534,11 +4579,13 @@ function scheduleFlowReorder(s,index,parentIndex){
  s.items=next;
 }
 function scheduleFlowFields(s){
- const panel=s.dialog.querySelector('.flow-fields'),index=s.items.findIndex(item=>scheduleTargetKey(item.target)===s.selected),item=s.items[index];if(!item){panel.innerHTML='';return;}
- const permissions=item.permissions,route=item.conditions.routing,prior=route?.order>1?s.items.findIndex(other=>other.conditions.routing?.group===route.group&&other.conditions.routing?.lane===route.lane&&other.conditions.routing?.order===route.order-1):-1;
+ const panel=s.dialog.querySelector('.flow-fields'),index=s.items.findIndex(item=>!item.remove&&scheduleTargetKey(item.target)===s.selected),item=s.items[index];if(!item){panel.innerHTML='<p class="flow-note">'+(s.items.some(item=>item.remove)?'저장하면 선택한 예정 품목이 흐름에서 삭제됩니다.':'이 흐름에 남은 예정 품목이 없습니다.')+'</p>';return;}
+ const permissions=item.permissions,route=item.conditions.routing,prior=scheduleFlowPrevious(s.items,index);
  const products=S.productCatalog?.products||[],readOnly=!permissions.product;
  panel.innerHTML=`<h3>${esc(item.product)} <small>${item.produced>0?'생산 중':'예정 작업'}</small></h3><div class="flow-fields-grid"><label>품명<input class="f-input flow-product" list="flowProductNames" value="${esc(item.product)}" ${readOnly?'readonly':''}><datalist id="flowProductNames">${products.map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist></label><label>계획 조수<input class="f-input flow-plan" type="number" min="0.001" step="any" value="${esc(item.plan)}" ${!permissions.plan?'readonly':''}></label><label class="flow-wide">시작 순서<select class="f-input flow-after" ${!permissions.routing||!route?.group?'disabled':''}><option value="-1">다른 품목과 같이 시작</option>${s.items.map((other,i)=>i!==index?`<option value="${i}">${esc(other.product)} 끝나면 시작</option>`:'').join('')}</select></label><label>앞으로 하루 조수<input class="f-input flow-daily" type="number" min="0.001" step="any" value="${item.conditions.daily??''}" ${!permissions.conditions?'readonly':''}></label></div><div class="flow-machines">${(item.conditions.machines||[]).map((machine,i)=>`<div class="flow-machine"><label>호기<input class="f-input" data-flow-machine="${i}" data-key="name" value="${esc(machine.name)}" ${!permissions.conditions?'readonly':''}></label><label>배정 조수<input class="f-input" type="number" min="0" step="any" data-flow-machine="${i}" data-key="qty" value="${machine.qty??''}" ${!permissions.conditions?'readonly':''}></label></div>`).join('')}</div><p class="flow-note">${esc(item.reason||'예정 내용만 수정합니다. 실제 생산량은 일보에 입력하세요.')}</p><button type="button" class="btn sec flow-produce">이 품목 오늘 생산 입력</button><p class="flow-produce-note"></p>`;
  panel.querySelector('.flow-after').value=String(prior);
+ if(s.items.some(value=>value.remove)){panel.querySelector('.flow-after').disabled=true;panel.querySelector('.flow-after').title='예정 삭제를 먼저 저장한 뒤 생산 순서를 변경하세요.';}
+ if(permissions.remove===true){panel.insertAdjacentHTML('beforeend','<button type="button" class="btn sec flow-remove">이 예정 품목 삭제</button><p class="flow-note">아직 생산하지 않은 이 품목만 삭제합니다. 함께 진행하는 다른 품목과 생산일보는 유지됩니다.</p>');panel.querySelector('.flow-remove').disabled=s.busy;panel.querySelector('.flow-remove').onclick=()=>scheduleFlowToggleRemove(s,item);}
  const changed=()=>{stashScheduleFlow(s);scheduleFlowDraw(s);const produce=panel.querySelector('.flow-produce');produce.disabled=s.busy||scheduleFlowDirty(s);panel.querySelector('.flow-produce-note').textContent=scheduleFlowDirty(s)?'예정 변경을 저장하면 오늘 생산을 입력할 수 있습니다.':'';};
  panel.querySelector('.flow-product').oninput=event=>{s.items[index].product=event.target.value;changed();};
  panel.querySelector('.flow-plan').oninput=event=>{const value=event.target.value===''?null:Number(event.target.value);s.items[index].plan=value;if(s.items[index].conditions.machines.length===1){s.items[index].conditions.machines[0].qty=value;panel.querySelector('[data-key="qty"]').value=value??'';}changed();};
@@ -4558,15 +4605,15 @@ async function openScheduleFlowEditor(target){
  const s={dialog,target,date:S.date,epoch:storeEpoch,scope:activeScope,drv:driver,status:dialog.querySelector('.flow-status'),busy:false,items:null,selected:scheduleTargetKey(target)};scheduleFlowSession=s;document.body.append(dialog);dialog.showModal();
  dialog.querySelector('.flow-close').onclick=()=>closeScheduleFlow();dialog.oncancel=event=>{event.preventDefault();closeScheduleFlow();};dialog.addEventListener('keydown',event=>event.stopPropagation());
  const cached=entryReservationTargets([...$('#prodBlocks').children]);if(cached.length)dialog.querySelector('.flow-diagram').innerHTML=reservationFlowHTML(cached,s.date,'오늘 작업 흐름 · 최신 조건 확인 중');
- dialog.querySelector('.flow-reload').onclick=()=>{if(!scheduleFlowCurrent(s)||s.busy)return;if(s.items&&scheduleFlowDirty(s)&&!confirm('저장하지 않은 예정 변경을 취소하고 최신 값을 불러올까요?'))return;const all=LS.get('ilbo.scheduleFlowDrafts',{},s.scope);delete all[JSON.stringify([s.date,s.target])];if(!LS.set('ilbo.scheduleFlowDrafts',all,s.scope)){s.status.textContent='기기 보관 상태를 갱신하지 못했습니다. 입력은 유지됩니다.';return;}closeScheduleFlow(true);openScheduleFlowEditor(s.target);};
+ dialog.querySelector('.flow-reload').onclick=()=>{if(!scheduleFlowCurrent(s)||s.busy)return;if(s.items&&scheduleFlowDirty(s)&&!confirm('저장하지 않은 예정 변경을 취소하고 최신 값을 불러올까요?'))return;if(!clearScheduleFlowDraft(s)){s.status.textContent='기기 보관 상태를 갱신하지 못했습니다. 입력은 유지됩니다.';return;}closeScheduleFlow(true);openScheduleFlowEditor(s.target);};
  dialog.querySelector('.flow-save').onclick=async()=>{if(!scheduleFlowCurrent(s)||s.busy||!s.items||!stashScheduleFlow(s))return;
-   for(const item of s.items){if(!item.product.trim()||!Number.isFinite(item.plan)||item.plan<=0){s.status.textContent='품명과 0보다 큰 계획 조수를 입력해 주세요.';return;}try{normalizeScheduleInput(item.conditions);}catch(error){s.status.textContent=error.message;return;}}
-   const sent={date:s.date,target:s.target,items:s.items.map(item=>({target:item.target,before:item.before,value:scheduleFlowValues(item)}))};s.busy=true;fieldWrites++;scheduleFlowDraw(s);dialog.querySelectorAll('.flow-fields input,.flow-fields select,.flow-produce').forEach(input=>input.disabled=true);s.status.textContent='예정 변경 저장 중…';
-   try{const result=await s.drv.scheduleFlow(sent,true);if(!scheduleFlowCurrent(s)||s.drv!==driver)return;const oldIndex=s.items.findIndex(item=>scheduleTargetKey(item.target)===s.selected),drafts=LS.get('ilbo.scheduleFlowDrafts',{},s.scope);delete drafts[JSON.stringify([s.date,s.target])];const cleared=LS.set('ilbo.scheduleFlowDrafts',drafts,s.scope);s.items=result.items;s.target=result.target||s.target;s.selected=scheduleTargetKey(s.items[Math.max(0,oldIndex)].target);s.status.textContent='예정 변경을 저장했습니다. 실제 생산 기록은 그대로 유지됩니다.'+(cleared?'':' 이 기기의 임시보관 상태를 확인해 주세요.');if(typeof fieldSyncSoon==='function')fieldSyncSoon();}
+   for(const item of s.items){if(item.remove){const reason=scheduleFlowRemoveBlocked(item);if(reason){s.status.textContent=reason;return;}continue;}if(!item.product.trim()||!Number.isFinite(item.plan)||item.plan<=0){s.status.textContent='품명과 0보다 큰 계획 조수를 입력해 주세요.';return;}try{normalizeScheduleInput(item.conditions);}catch(error){s.status.textContent=error.message;return;}}
+   const sent={date:s.date,target:s.target,...(s.items.some(item=>item.remove)?{requestId:s.requestId}:{}),items:s.items.map(item=>({target:item.target,before:item.before,value:item.remove?item.before:scheduleFlowValues(item),...(item.remove?{remove:true}:{})}))};s.busy=true;fieldWrites++;scheduleFlowDraw(s);dialog.querySelectorAll('.flow-fields input,.flow-fields select,.flow-produce,.flow-remove').forEach(input=>input.disabled=true);s.status.textContent='예정 변경 저장 중…';
+   try{const result=await s.drv.scheduleFlow(sent,true);if(!scheduleFlowCurrent(s)||s.drv!==driver)return;const oldIndex=s.items.findIndex(item=>scheduleTargetKey(item.target)===s.selected),remembered=rememberScheduleFlowDeleted(result.deletedTargets,s.scope),cleared=clearScheduleFlowDraft(s);s.items=result.items;delete s.requestId;s.target=result.target||s.target;s.selected=scheduleTargetKey(s.items.find(item=>scheduleTargetKey(item.target)===s.selected)?.target||s.items[Math.min(s.items.length-1,Math.max(0,oldIndex))]?.target);s.status.textContent=(result.deletedTargets?.length?'선택한 예정 품목을 삭제했습니다.':'예정 변경을 저장했습니다.')+' 실제 생산 기록은 그대로 유지됩니다.'+(cleared&&remembered?'':' 이 기기의 임시보관 상태를 확인해 주세요.');if(result.deletedTargets?.length)renderEntryReservationFlow([...$('#prodBlocks').children]);if(typeof fieldSyncSoon==='function')fieldSyncSoon();}
    catch(error){if(scheduleFlowCurrent(s))s.status.textContent=error.message||'저장하지 못했습니다. 수정 내용은 그대로 남아 있습니다.';}
    finally{fieldWrites--;s.busy=false;if(scheduleFlowCurrent(s)){scheduleFlowDraw(s);scheduleFlowFields(s);}}
  };
- try{if(typeof driver.scheduleFlow!=='function'||driver.offline)throw Error('서버에 연결한 뒤 생산 흐름을 수정해 주세요.');const result=await s.drv.scheduleFlow({date:s.date,target});if(!scheduleFlowCurrent(s)||s.drv!==driver)return;s.items=result.items;const draft=LS.get('ilbo.scheduleFlowDrafts',{},s.scope)[JSON.stringify([s.date,s.target])];if(draft?.items&&draft.items.length===s.items.length&&draft.items.every((item,i)=>scheduleTargetKey(item.target)===scheduleTargetKey(s.items[i].target))){s.items=s.items.map((item,i)=>({...item,...scheduleFlowValues(draft.items[i]),before:draft.items[i].before}));s.status.textContent='저장하지 않은 수정 내용을 불러왔습니다.';}else s.status.textContent='예정은 준비 기준이며, 실제 생산량과 날짜는 생산일보가 우선합니다.';if(!s.items.some(item=>scheduleTargetKey(item.target)===s.selected))s.selected=scheduleTargetKey(s.items[0].target);scheduleFlowDraw(s);scheduleFlowFields(s);}
+ try{if(typeof driver.scheduleFlow!=='function'||driver.offline)throw Error('서버에 연결한 뒤 생산 흐름을 수정해 주세요.');const result=await s.drv.scheduleFlow({date:s.date,target});if(!scheduleFlowCurrent(s)||s.drv!==driver)return;s.items=result.items;const draft=LS.get('ilbo.scheduleFlowDrafts',{},s.scope)[JSON.stringify([s.date,s.target])];s.draftBase=progressStable(draft??null);if(draft?.items&&draft.items.length===s.items.length&&draft.items.every((item,i)=>scheduleExactTargetKey(item.target)===scheduleExactTargetKey(s.items[i].target))){s.requestId=draft.requestId;s.items=s.items.map((item,i)=>({...item,...scheduleFlowValues(draft.items[i]),before:draft.items[i].before,...(draft.items[i].remove===true?{remove:true}:{})}));s.status.textContent='저장하지 않은 수정 내용을 불러왔습니다.';}else s.status.textContent='예정은 준비 기준이며, 실제 생산량과 날짜는 생산일보가 우선합니다.';if(!s.items.some(item=>!item.remove&&scheduleTargetKey(item.target)===s.selected))s.selected=scheduleTargetKey(s.items.find(item=>!item.remove)?.target);scheduleFlowDraw(s);scheduleFlowFields(s);}
  catch(error){if(scheduleFlowCurrent(s))s.status.textContent=error.message;}
 }
 function routingBuilderPlan(host,els){
@@ -4899,6 +4946,13 @@ async function suggestWorkerHours(){
  if(value!=null){const clean=!entryDirty();$('#fHours').value=value;if(clean)entrySnap=formSnapshot();}
 }
 
+function recentScheduleRowAvailable(row){
+ if(!row.scheduleTarget)return true;
+ if(scheduleTargetDeleted(row.scheduleTarget))return false;
+ if(S.productionProgressMode!=='ready'||!S.productionProgress||S.offline||driver.offline||Number(row.prod)>0)return true;
+ // A blank/zero old reservation is not a new plan when its exact target is gone.
+ return S.productionProgress.targets.some(item=>scheduleTargetKey(item.target)===scheduleTargetKey(row.scheduleTarget));
+}
 async function updateRecentBtn(auto){
   if(renderPlannedEntryChoices()){recentSeq++;return;}
   $$('#prodBlocks .pb').forEach(updateProdProg);
@@ -4919,7 +4973,7 @@ async function updateRecentBtn(auto){
     if(seq !== recentSeq || S.entryMode === 'case' || !$('#entryOv').classList.contains('open')) return;
     if(renderPlannedEntryChoices())return;
     if(rows === null) continue;
-    const mine = orderRows(rows).filter(r => r.worker === worker && !r.off&&!isPlannedPreparation(r));
+    const mine = orderRows(rows).filter(r => r.worker === worker && !r.off&&!isPlannedPreparation(r)&&recentScheduleRowAvailable(r));
     if(!mine.length) continue;
     const recentName=r=>S.productCatalog?(fieldProduct(S.productCatalog,r)?.active?fieldProductName(r):''):fieldProductName(r);
     const prods = [...new Set(mine.map(recentName).filter(Boolean))];

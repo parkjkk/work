@@ -540,6 +540,7 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 .pgBarMemoCommon section{margin-top:8px}
 .pgBarMemoIntro{font-size:.87rem;color:#4d6072;line-height:1.65;margin:6px 0 12px}
 .pgBarMemoField{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:.9rem}
+.pgBarMemoHeading{min-width:0;overflow-wrap:anywhere;word-break:normal;line-height:1.6}.pgBarMemoMeta{color:#52616c;font-size:.91em;font-weight:400}.pgBarMemoItemHeading{display:flex;align-items:flex-start;gap:7px}.pgBarMemoItemHeading>.pgBarMemoHeading{flex:1}.pgBarMemoItemHeading>button{flex:none;font-size:12px;min-height:30px;padding:3px 8px}
 .pgBarMemoField textarea{box-sizing:border-box;width:100%;min-height:96px;resize:vertical;line-height:1.65;padding:10px;border:1px solid #a9bacc;border-radius:6px;font:inherit;color:#203b51;background:#fff}
 .pgBarMemoRead{padding:10px;background:#fffbed;border:1px solid #e2d8b8;border-radius:6px;max-height:300px;overflow:auto}
 .pgBarMemoPending{font-size:.8rem;color:#815822;background:#fff5dd;padding:8px;border-radius:5px}
@@ -1631,14 +1632,19 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
  body.sheetWorkspace .sheetFilters{padding:8px;gap:6px}
  body.sheetWorkspace .sheetToolbar [data-sheet-command=save]{min-width:80px}
  body.sheetWorkspace .workspaceTabs button{font-size:12px;padding:8px 10px}
- body.sheetWorkspace #planGridSurface #pgSelectionInfo{display:flex;flex-wrap:wrap;gap:4px;height:90px;min-height:90px;padding:4px;margin:4px 0}
- body.sheetWorkspace #planGridSurface #pgSelectionText{flex:0 0 100%;height:32px;max-height:32px}
- body.sheetWorkspace #planGridSurface #pgSelectionInfo>button{flex:1 1 0;width:auto;min-width:0!important;max-width:none}
- body.sheetWorkspace #planGridSurface #pgSelectionInfo>.pgSelectionNew{display:block}
  body.sheetWorkspace .pgCustomRange{min-width:0;width:100%;align-self:end}
  body.sheetWorkspace .pgCustomRange>summary{font-size:12px;min-height:44px;padding:10px}
  body.sheetWorkspace .pgCustomRange>div{left:0;right:auto;width:min(320px,calc(100vw - 48px))}
  body.sheetWorkspace .pgFocusRangeControls .pgCustomRange>div{position:static;width:100%;max-width:none;grid-template-columns:1fr;box-shadow:none;margin-top:4px}
+}
+
+/* Match the touch selection controls even after rotation or a wide mobile viewport.
+   A flex row must not inherit the grid's full-width buttons and widen the document. */
+@media screen and (max-width:720px),screen and (pointer:coarse){
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo{display:flex;flex-wrap:wrap;gap:4px;height:90px;min-height:90px;padding:4px;margin:4px 0}
+ body.sheetWorkspace #planGridSurface #pgSelectionText{flex:0 0 100%;height:32px;max-height:32px}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>button{flex:1 1 0;width:auto;min-width:0!important;max-width:none}
+ body.sheetWorkspace #planGridSurface #pgSelectionInfo>.pgSelectionNew{display:block}
 }
 
 /* Current stock is the result column, distinct from inputs and production-row badges. */
@@ -5870,7 +5876,7 @@ function pgInspect(d){
  if(all)try{sheetApply(prepared,latest)}catch(e){conflicts.push(...(e.errors||[{id:'',field:'',message:e.message}]))}
  for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(prepared))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
  errors.push(...conflicts);
- for(const entry of prepared.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;if(row&&(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length))errors.push({id:entry.id,field:'',message:'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.'})}
+ for(const entry of prepared.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;const reason=row&&(typeof pgManualDeleteReason==='function'?pgManualDeleteReason(row,state,all):(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length?'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.':''));if(reason)errors.push({id:entry.id,field:'',message:reason})}
  const calendarChanges=pgCalendarChanges(d.baseCalendar||{},d.calendar||{});
  for(const changed of calendarChanges)if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
  for(const [id,message]of Object.entries(d.manualRateErrors||{}))if(!deleted.has(id)&&d.rows.some(r=>r.id===id))errors.push({id,field:'daily',message});
@@ -5889,8 +5895,11 @@ async function pgCommit(d){
  const calChanged=!pgEqual(d.baseCalendar,d.calendar),basisChanged=!pgEqual(d.baseScheduleAsOf,d.scheduleAsOf);
  if(basisChanged&&!pgEqual(d.baseScheduleAsOf,m().scheduleAsOf||null))throw Error('편집 중 계산 기준일이 변경되었습니다. 초안을 보관하고 다시 확인해 주세요.');
  if(calChanged&&!pgEqual(d.baseCalendar,pgCalendar(state)))throw Error('편집 중 휴일 원장이 변경되었습니다. 초안을 보관하고 최신 휴일과 다시 확인해 주세요.');
- const latest=pgRows(state,month),merged=sheetApply(d,latest,{validateRow:row=>pgValidate(row,latest)}),n=C.clone(state),oldMap=new Map(latest.map(r=>[r.id,r]));
+ const latest=pgRows(state,month),merged=sheetApply(d,latest),n=C.clone(state),oldMap=new Map(latest.map(r=>[r.id,r]));
  const changed=merged.filter(row=>!pgEqual(row,oldMap.get(row.id))),kept=new Set(merged.map(r=>r.id)),removed=latest.filter(r=>!kept.has(r.id));
+ // Validate the final surviving flow: a removed predecessor must not occupy
+ // the routing position that its next item now takes.
+ for(const row of changed)pgValidate(row,latest,null,merged);
  const affected=new Set([...changed,...removed].map(pgJobMonth));let created=false;
  for(const key of affected){if(!n.months[key]){n.months[key]=ScheduleNative.newMonth(key);created=true}n.months[key].jobUndo={year:key.slice(0,4),jobs:C.clone(n.months[key].jobs||[])}}
  for(const row of changed)O.upsert(n,pgJobMonth(row),'jobs',pgPersistJob(row),'일정표에서 작업조건 일괄 수정');
@@ -5940,7 +5949,7 @@ scheduleView=function(){
  <div id="pgCalendarExtras" class="pgCalendarExtras">
  <div class="pgCalendarControls"><label>휴일 대상<select id="pgCalTarget"><option value="">공장 전체</option>${state.workers.map(w=>`<option value="${esc(w)}">${esc(w)}</option>`).join('')}</select></label><label>시작 날짜<input id="pgCalStart" type="date" value="${month+'-01'}"></label><label>마지막 날짜<input id="pgCalEnd" type="date" value="${month+'-01'}"></label><label>처리<select id="pgCalMode"><option value="holiday">휴무로 표시</option><option value="clear">휴무 해제</option></select></label><button data-pg-command="calendar-range">선택 기간에 적용</button><button data-pg-command="calendar-undo">직전 휴일 변경 되돌리기</button></div>
  <details class="pgPattern"><summary>반복 휴일 등록</summary><div class="actions"><label>연장 주수<input id="pgWeeks" type="number" value="4" min="1" max="26"></label><button data-pg-command="calendar-extend">반복 휴일 적용</button><button data-pg-command="calendar-pattern-undo">반복 등록 되돌리기</button><span class="subtle">최근 4주 중 같은 요일에 3회 이상 쉬었으면 빈 날짜에만 휴무를 넣습니다.</span></div></details>
- <p class="pgHelp">휴일 칸을 누르면 표시·해제가 바뀝니다. Shift를 누른 채 다른 날짜를 누르면 사이 날짜에 같은 처리를 합니다. 건조 10일 계산에서는 노란 공장 휴일만 제외하고 일반 작업자 휴일은 그대로 셉니다.</p>
+ <p class="pgHelp">작업자 휴일의 빈칸을 누르면 그날 모두 휴무가 되고, 파란 휴를 다시 누르면 그 사람만 해제됩니다. Shift+다른 날짜는 선택한 작업자의 기간만 처리합니다. 노란 공장 휴일은 별도이며 건조 10일 계산에서도 제외합니다.</p>
  </div>
  <div id="pgLegend" class="pgLegend"><span><i class="pgSwatch pgRunning"></i>생산 중</span><span><i class="pgSwatch pgWaiting"></i>미착수</span><span><i class="pgSwatch pgComplete"></i>생산 종료</span><span><i class="pgSwatch pgManual"></i>미착수 예약</span><span><i class="pgSwatch pgFactory"></i>공장 휴무</span><span><i class="pgDryLegend">호</i>생산 종료 후 건조</span><span><i class="pgDryLegend projected">호</i>예상 건조</span><span style="color:#bd2525">→ 같은 호기 B/R 건조 짝</span><span class="pgHandoffLegend"><i>← →</i>작업 넘김</span><span><i class="pgSwatch pgOtherWork"></i>다른 업무</span></div>
  <div id="pgDrySearchPanel" class="pgDrySearch" role="search" aria-label="건조일 호기 찾기"><label for="pgDryQuery">건조 호기</label><input type="search" id="pgDryQuery" placeholder="예: 13호" title="Enter를 다시 누르면 다음 결과로 이동하고, 마지막 다음에는 처음으로 돌아갑니다." value="${esc(v.dryQuery||'')}" maxlength="40" autocomplete="off" enterkeyhint="search" aria-describedby="pgDrySearchStatus"><button data-pg-command="dry-find" title="가장 최근 건조일부터 찾기">찾기</button><button data-pg-command="dry-newer" aria-label="더 최근 건조 결과" title="더 최근 결과" disabled>←</button><button data-pg-command="dry-older" aria-label="이전 건조 결과" title="이전 날짜의 결과" disabled>→</button><span id="pgDrySearchStatus" role="status" aria-live="polite">현재 표 · 건조일 최신순 (예상 포함)</span></div>
@@ -6237,7 +6246,7 @@ function pgTimeline(g,preview){
  const actualDays=P.actualProductionDays(preview.state),hasActual=(worker,date)=>actualDays.has(JSON.stringify([worker,date]));
  const dateCells=render=>dates.map((d,i)=>render(d,i)).join('');
  const label=(worker,kind)=>`<div class="pgAxisLabel"><b>${esc(worker)}</b><span>${esc(kind)}</span></div>`;
- const holidayRow=(worker,isFactory=false)=>`<div class="pgGridRow pgHolidayRow">${label(isFactory?'공장 전체':worker,isFactory?'생산·건조 제외일':'생산 · 휴일')}<div class="pgDateCells">${dateCells(d=>{const mark=isFactory?factory.has(d)?'휴':'':preview.state.calendar.workers.find(r=>r.worker===worker&&r.date===d)?.mark||'',off=isFactory?factory.has(d):P.holiday(preview.state,worker,d),actual=!isFactory&&hasActual(worker,d),locked=g.locked()||preview.state.months[d.slice(0,7)]?.closed,description=`${isFactory?'공장 전체':worker} ${d} `+(actual?'실제 생산 · 생산일보 수량 우선. '+(mark?'원래 표시: '+mark+'. ':''):'')+(off?'휴무 표시, 누르면 표시 해제':'휴무 표시 없음, 누르면 표시');return`<button class="pgDay pgHoliday${dayClass(d)}${actual?' pgActualDay':off?' isHoliday':''}" data-pg-day="${d}" data-pg-date="${d}" data-pg-worker="${esc(worker)}" data-pg-factory="${isFactory?'1':'0'}" data-pg-actual="${actual}" title="${esc(description)}" aria-label="${esc(description)}" aria-pressed="${off}" ${locked?'disabled':''}>${actual?'생':esc(mark)}</button>`})}</div></div>`;
+ const holidayRow=(worker,isFactory=false)=>`<div class="pgGridRow pgHolidayRow">${label(isFactory?'공장 전체':worker,isFactory?'생산·건조 제외일':'생산 · 휴일')}<div class="pgDateCells">${dateCells(d=>{const mark=isFactory?factory.has(d)?'휴':'':preview.state.calendar.workers.find(r=>r.worker===worker&&r.date===d)?.mark||'',off=isFactory?factory.has(d):P.holiday(preview.state,worker,d),actual=!isFactory&&hasActual(worker,d),locked=g.locked()||preview.state.months[d.slice(0,7)]?.closed,description=`${isFactory?'공장 전체':worker} ${d} `+(actual?'실제 생산 · 생산일보 수량 우선. '+(mark?'원래 표시: '+mark+'. ':''):'')+(isFactory?(off?'공장 휴무 표시, 누르면 해제':'공장 휴무 표시 없음, 누르면 표시'):off?'휴무 표시, 누르면 이 작업자만 해제':'누르면 이 날짜에 모든 작업자를 휴무로 표시 · 다시 누르면 그 작업자만 해제');return`<button class="pgDay pgHoliday${dayClass(d)}${actual?' pgActualDay':off?' isHoliday':''}" data-pg-day="${d}" data-pg-date="${d}" data-pg-worker="${esc(worker)}" data-pg-factory="${isFactory?'1':'0'}" data-pg-actual="${actual}" title="${esc(description)}" aria-label="${esc(description)}" aria-pressed="${off}" ${locked?'disabled':''}>${actual?'생':esc(mark)}</button>`})}</div></div>`;
  const monthHead=`<div class="pgGridRow pgMonthHead">${label('일정표','휴일 칸 클릭 / 막대 선택')}<div class="pgMonths">${months.map(k=>`<b style="grid-column:span ${dates.filter(d=>d.startsWith(k)).length}">${k}</b>`).join('')}</div></div>`;
  const dayHead=`<div class="pgGridRow pgDateHead"><div class="pgAxisLabel pgDateSelectionLabel"><b>날짜</b><span data-pg-date-selection role="status">${esc(pgDateSelectionText(selectedDate,first,last))}</span><button type="button" data-pg-clear-date aria-label="선택 날짜 강조 해제" ${selectedDate?'':'hidden'}>해제</button></div><div class="pgDateCells">${dateCells(d=>`<button type="button" class="pgDay pgDateSelect${dayClass(d)}${[0,6].includes(dow(d))?' pgWeekend':''}" data-pg-day="${d}" data-pg-column-date="${d}" aria-label="${d} 모든 작업자의 날짜 열 강조" aria-pressed="${d===selectedDate}"><b>${Number(d.slice(8))}</b><small>${'일월화수목금토'[dow(d)]}</small></button>`)}</div></div>`;
  const body=workers.map(worker=>{
@@ -6430,6 +6439,17 @@ function pgRange(g,worker,factory,start,end,mode){
  if(!C.iso(start)||!C.iso(end)||start>end||P.days(start,end).length>740)throw Error('시작·마지막 날짜를 확인해 주세요. 범위는 740일 이내입니다.');
  pgCalendarEdit(g,cal=>{for(const date of P.days(start,end)){if(factory){const old=cal.factory.find(r=>(typeof r==='string'?r:r.date)===date);if(mode==='clear')cal.factory=cal.factory.filter(r=>(typeof r==='string'?r:r.date)!==date);else if(!old)cal.factory.push(date)}else{const old=cal.workers.find(r=>r.worker===worker&&r.date===date);if(mode==='clear')cal.workers=cal.workers.filter(r=>!(r.worker===worker&&r.date===date));else if(old)old.mark='휴';else cal.workers.push({id:C.id(),worker,date,mark:'휴'})}}});
 }
+function pgToggleWorkerHoliday(g,worker,date){
+ if(g.locked())return null;if(!C.iso(date)||typeof worker!=='string'||!worker.trim())throw Error('작업자와 휴무 날짜를 확인해 주세요.');
+ const workers=[...new Set([...pgWorkerOptions(),worker])];let result;
+ // One calendar edit preserves one-step undo and the ordinary per-worker/day
+ // three-way merge. Factory holidays and actual production stay independent.
+ pgCalendarEdit(g,cal=>{
+  if(P.holiday({calendar:cal},worker,date)){cal.workers=cal.workers.filter(r=>!(r.worker===worker&&r.date===date));result={mode:'clear',count:1};return}
+  for(const name of workers){if(P.holiday({calendar:cal},name,date))continue;const old=cal.workers.find(r=>r.worker===name&&r.date===date);if(old)old.mark='휴';else cal.workers.push({id:C.id(),worker:name,date,mark:'휴'})}
+  result={mode:'holiday',count:workers.length};
+ });return result;
+}
 function pgClearSelection(g){const v=pgView();v.timelineSelection=null;v.selectionActive=false;v.selected='';g.selected='';pgDetail(g);pgInlineManual(g);pgMarkSelection(g);pgMobileSelection(g)}
 function pgSelectedRow(g){return pgKeep(g.draft).find(r=>r.id===pgView().selected)}
 function pgSetField(g,key,value){const row=pgSelectedRow(g);if(!row||g.locked())return;g.set(row.id,key,value);for(const input of g.host()?.querySelectorAll('[data-cell]')||[])if(input.dataset.row===row.id&&input.dataset.cell===key&&input!==document.activeElement)input.value=value??''}
@@ -6437,7 +6457,7 @@ function bindPlanGrid(){
  pgObserver?.disconnect();pgObserver=null;pgDisconnectView();if(page!=='schedule'){document.body.classList.remove('pgFocusMode');return}const root=$('#planGridSurface'),g=sheetEditor(pgId);if(!root||!g)return;pgApplyDisplay();
  if(!g.draft.calendar)g.draft.calendar=pgCalendar(state);if(!g.draft.baseCalendar)g.draft.baseCalendar=pgCalendar(state);
  root.onclick=e=>{const otherWork=e.target.closest('[data-pg-otherwork]');if(otherWork){pgHandoffOtherInfo(otherWork.dataset.pgOtherwork);return}const cumulative=e.target.closest('button[data-pg-cumulative-job]');if(cumulative){pgOpenCumulativeInfo(cumulative.dataset.pgCumulativeWorker,cumulative.dataset.pgCumulativeDate,cumulative.dataset.pgCumulativeJob);return}const actual=e.target.closest('[data-pg-actual-row]');if(actual){pgOpenActualDaily(actual.dataset.pgActualRow,actual.dataset.pgMonth).catch(err=>toast(err.message));return}const workers=e.target.closest('[data-pg-workers]');if(workers){pgSetWorkerSelection(workers.dataset.pgWorkers==='all'?null:[],g);return}const item=e.target.closest('[data-pg-dry-key],.pgBar[data-pg-history]');if(item&&pgChooseTimeline(g,item,{toggleDate:true}))return;const select=e.target.closest('[data-pg-select]');if(select){const targetMonth=select.dataset.pgMonth;if(!pgKeep(g.draft).some(r=>r.id===select.dataset.pgSelect)){toast('보관된 완료 일정입니다. 실제 기록은 해당 월의 생산 입력에서 확인하세요.');return}g.select(select.dataset.pgSelect);return}
-  const cell=e.target.closest('[data-pg-date]');if(cell){if(g.locked())return;try{const worker=cell.dataset.pgWorker,isFactory=cell.dataset.pgFactory==='1',date=cell.dataset.pgDate,v=pgView(),anchor=v.anchor,off=isFactory?P.factory({calendar:g.draft.calendar}).includes(date):P.holiday({calendar:g.draft.calendar},worker,date),mode=off?'clear':'holiday';if(pgTouchControls()){ $('#pgCalTarget').value=isFactory?'':worker;$('#pgCalStart').value=date;$('#pgCalEnd').value=date;$('#pgCalMode').value=mode;v.calendarExpanded=true;if(v.focus)v.focusTools=true;pgApplyDisplay();toast('휴일 편집에서 대상·날짜를 확인하고 선택 기간에 적용을 누르세요.');return}if(e.shiftKey&&anchor&&anchor.worker===worker&&anchor.factory===isFactory){pgRange(g,worker,isFactory,[anchor.date,date].sort()[0],[anchor.date,date].sort()[1],anchor.mode)}else{v.anchor={worker,factory:isFactory,date,mode};pgRange(g,worker,isFactory,date,date,mode)}$('#pgCalTarget').value=isFactory?'':worker;$('#pgCalStart').value=e.shiftKey&&anchor?anchor.date:date;$('#pgCalEnd').value=date}catch(err){toast(err.message)}return}
+  const cell=e.target.closest('[data-pg-date]');if(cell){if(g.locked())return;try{const worker=cell.dataset.pgWorker,isFactory=cell.dataset.pgFactory==='1',date=cell.dataset.pgDate,v=pgView(),anchor=v.anchor,off=isFactory?P.factory({calendar:g.draft.calendar}).includes(date):P.holiday({calendar:g.draft.calendar},worker,date),mode=off?'clear':'holiday';if(isFactory&&pgTouchControls()){ $('#pgCalTarget').value='';$('#pgCalStart').value=date;$('#pgCalEnd').value=date;$('#pgCalMode').value=mode;v.calendarExpanded=true;if(v.focus)v.focusTools=true;pgApplyDisplay();toast('휴일 편집에서 대상·날짜를 확인하고 선택 기간에 적용을 누르세요.');return}if(e.shiftKey&&anchor&&anchor.worker===worker&&anchor.factory===isFactory){pgRange(g,worker,isFactory,[anchor.date,date].sort()[0],[anchor.date,date].sort()[1],anchor.mode)}else{v.anchor={worker,factory:isFactory,date,mode};if(isFactory)pgRange(g,worker,true,date,date,mode);else{const result=pgToggleWorkerHoliday(g,worker,date);if(result){v.anchor.mode=result.mode;toast(result.mode==='clear'?worker+' 휴무만 해제했습니다. 일정 변경 저장을 눌러 주세요.':date+' · '+result.count+'명 휴무로 표시했습니다. 파란 휴를 다시 누르면 그 사람만 해제합니다. 일정 변경 저장을 눌러 주세요.')}}}$('#pgCalTarget').value=isFactory?'':worker;$('#pgCalStart').value=e.shiftKey&&anchor?anchor.date:date;$('#pgCalEnd').value=date}catch(err){toast(err.message)}return}
   const button=e.target.closest('[data-pg-command]');if(!button)return;const action=button.dataset.pgCommand;
   try{
    if(['dry-find','dry-newer','dry-older'].includes(action)){pgFindDry(g,action==='dry-newer'?-1:action==='dry-older'?1:0);return}
@@ -6752,18 +6772,41 @@ function pgDirectApplyForm(g){
    if(s.companions?.length)return pgDirectApplyCompanions(g,s,command);
     const prepared=pgDirectPrepare(g,command);if(prepared.conversionRequired)throw Error('수기 전환을 선택한 뒤 적용해 주세요.');pgDirectCancel();pgDirectApplyPrepared(g,prepared);return true;
 }
-function pgDirectDeleteManual(g){
+// Check the current ledger again at deletion and final commit, including explicit
+// links that are not positive production yet. A forecast is never an actual.
+function pgManualDeleteReason(row,source=state,all=null){
+ if(!row)return'삭제할 예약을 다시 선택해 주세요.';
+ const owner=pgJobMonth(row),ledger=source.months[owner];if(ledger?.closed||ledger?.closeSnapshot)return'마감된 월의 수기 예약은 삭제할 수 없습니다.';
+ const stored=ledger?.jobs?.find(j=>j.id===row.id),actual=all?.find(x=>x.owner===owner&&x.job.id===row.id)?.job||P.jobs(source,owner).find(j=>j.id===row.id),versions=[row,stored,actual].filter(Boolean),origin=stored?.originId||row.originId||row.id;
+ if(versions.some(j=>!j.manual||j.sourceRowId||j.records?.length||pgDirectHistory(j)))return'생산·이월 실적이 없는 수기 예약만 삭제할 수 있습니다. 연결된 생산 기록은 유지됩니다.';
+ if(versions.some(j=>j.carried||j.carryFrom||j.carryBlocked||j.previousPlan>0||j.handoffBlocked||j.handoffs?.length||j.archived||j.ended||j.productionCompletion))return'이월·작업 넘기기·종료 기록과 연결된 예약은 삭제할 수 없습니다.';
+ for(const [key,value]of Object.entries(source.months)){
+  if((value.jobs||[]).some(j=>!j.deleted&&(key!==owner||j.id!==row.id)&&(j.originId||j.id)===origin))return'다른 월의 이월 작업과 연결된 예약은 삭제할 수 없습니다.';
+  if((value.rows||[]).some(r=>!r.deleted&&(key===owner&&r.jobId===row.id||r.scheduleTarget?.month===owner&&r.scheduleTarget?.jobId===row.id)))return'생산일보에 연결된 예약은 삭제할 수 없습니다. 연결된 기록을 먼저 확인해 주세요.';
+  if(key===owner&&(value.reservationBindings||[]).some(b=>b.jobId===row.id&&(value.rows||[]).some(r=>r.id===b.rowId&&!r.deleted)))return'생산일보에 연결된 예약은 삭제할 수 없습니다. 연결된 기록을 먼저 확인해 주세요.';
+ }
+ return'';
+}
+function pgDirectDeleteManual(g,selectedOnly=false){
  const s=pgDirectState.session;if(!s||s.mode!=='edit'||s.command.type==='create')throw Error('삭제할 수기 예약 기간바를 다시 선택해 주세요.');
+ if(g.locked()||m().closed)throw Error('읽기·저장 중이거나 마감된 일정은 삭제할 수 없습니다.');
  if(!pgEqual(s.baseRows,g.draft.rows))throw Error('표의 다른 변경이 있어 다시 선택해야 합니다. 현재 일정은 그대로 유지됩니다.');
- const ids=new Set(s.members.map(r=>r.id)),rows=pgKeep(g.draft).filter(r=>ids.has(r.id));
- if(!rows.length||rows.some(r=>!r.manual||r.sourceRowId)||s.history||rows.some(r=>pgDirectHistory(pgMeta(r))))throw Error('생산·이월 실적이 없는 수기 예약만 삭제할 수 있습니다.');
- if(rows.some(r=>state.months[pgJobMonth(r)]?.closed))throw Error('마감된 월의 수기 예약은 삭제할 수 없습니다.');
+ if(pgDirectHandoffChanged(s))throw Error('수정 중인 내용을 먼저 저장하거나 취소한 뒤 삭제해 주세요. 입력한 내용은 유지됩니다.');
+ const ids=new Set(selectedOnly?[s.command.id]:s.members.map(r=>r.id)),rows=pgKeep(g.draft).filter(r=>ids.has(r.id)),all=pgAllJobs(state);
+ if(!rows.length)throw Error('삭제할 수기 예약을 다시 선택해 주세요.');for(const row of rows){const reason=pgManualDeleteReason(row,state,all);if(reason)throw Error(reason)}
  const draft=C.clone(g.draft),base=new Set(draft.baseRows.map(r=>r.id));
  for(const row of rows){
-  if(base.has(row.id)){if(!draft.deleted.some(d=>d.id===row.id))draft.deleted.push({id:row.id,reason:'수기 예약 기간바에서 삭제'});}
+  if(base.has(row.id)){if(!draft.deleted.some(d=>d.id===row.id))draft.deleted.push({id:row.id,reason:selectedOnly?'생산 흐름에서 선택한 미착수 수기 예약만 삭제':'수기 예약 기간바에서 삭제'});}
   else draft.rows=draft.rows.filter(r=>r.id!==row.id);
   if(draft.manualRateErrors)delete draft.manualRateErrors[row.id];
  }
+ // Preserve stable IDs and each surviving lane's order; close only empty slots.
+ // The same routing normalizer/peer scope is used by the visual flow editor.
+ if(selectedOnly&&pgRouting(rows[0])?.group){
+  const peers=pgRoutingPeers(rows[0],pgKeep(draft)),lanes=[...new Set(peers.map(r=>r.routing.lane))];
+  lanes.forEach((lane,index)=>peers.filter(r=>r.routing.lane===lane).forEach((peer,order)=>{const routing=P.normalizeRouting({...peer.routing,lane:index+1,order:order+1});if(!pgEqual(routing,peer.routing)){if(peer.handoffs?.length||peer.carried||peer.carryBlocked)throw Error('이어지는 품목의 이월·작업 넘기기 순서를 먼저 확인해 주세요. 현재 예약은 유지됩니다.');peer.routing=routing;}}));
+ }
+ const checked=pgInspect(draft);if(!checked.ok)throw Error(checked.errors[0].message);
  g.draft=draft;if(ids.has(g.selected))g.selected='';if(ids.has(pgView().selected))pgView().selected='';
  pgDirectCancel();g.changed();g.refresh?.();return rows.length;
 }
@@ -6813,7 +6856,7 @@ function pgDirectOpenForm(baseResult=null){
  if(!session.initialForm&&original?.handoffs?.length&&typeof pgHandoffDailyValue==='function')session.form.daily=pgHandoffDailyValue(original);
  session.initialForm??=C.clone(session.form);pgDirectPreviewRate(g,'preview',baseResult);pgDirectRenderForm(g);
 }
-function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||session.companions?.length||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');if(id===session.command.id)return;const computed=pgDraftResult(pgDirectSnapshot(g)),access=pgDirectAccess(g,id,session.sourceMonth,computed.jobs,true);if(!access.ok)throw Error(access.reason);session.history=!!access.history;session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;session.previewPeriod=null;session.previewError=null;session.endMode=null;session.rateNotice=null;pgDirectOpenForm(computed)}
+function pgDirectSelectMember(g,id){const session=pgDirectState.session;if(!session||!session.members.some(r=>r.id===id))throw Error('현재 묶음의 품목을 선택해 주세요.');if(session.conversion||session.companions?.length||!pgEqual(session.form,session.initialForm))throw Error('지금 수정한 품목을 표에 적용하거나 취소한 뒤 다른 품목을 선택해 주세요.');if(id===session.command.id)return;const computed=pgDraftResult(pgDirectSnapshot(g)),access=pgDirectAccess(g,id,session.sourceMonth,computed.jobs,true);if(!access.ok)throw Error(access.reason);session.history=!!access.history;session.deleteArmed=false;session.memberDeleteArmed='';session.command.id=id;delete session.command.fields;session.form=null;session.initialForm=null;session.previewPeriod=null;session.previewError=null;session.endMode=null;session.rateNotice=null;pgDirectOpenForm(computed)}
 function pgDirectRateWorker(g,session){const original=pgKeep(g.draft).find(r=>r.id===session.command.id)||session.form;return (typeof pgHandoffRateTarget==='function'?pgHandoffRateTarget(original)?.to:null)||original.worker||''}
 function pgDirectHandoffNotice(g,session){return pgRouting(session.form)?.mode==='parallel'?'호기별 하루 조수는 유지합니다. 오늘 실적은 생산일보에서 입력하세요.':pgDirectRateWorker(g,session)+'의 남은 하루 조수를 수정합니다. 이전 실적·호기·순서는 유지됩니다.'}
 // Active/routed editor dates come only from this product's calculated rows. An actual-only
@@ -6841,11 +6884,11 @@ function pgDirectPreviewRate(g,field,baseResult=null){
 function pgDirectRenderForm(g){
  const session=pgDirectState.session,root=pgDirectState.root;if(!session||!session.form||!root)return;const previous=root.querySelector('.pgDirectEditor'),reopening=!!previous,viewport={x:window.scrollX||0,y:window.scrollY||0},editorScroll=previous?.scrollTop||0,active=previous?.contains(document.activeElement)?document.activeElement:null,focusKeys=['pdMember','pdField','pdAction','pdCompanion','pdExtra','pdCompanionMachine','pdKey','pdMachine','index','extra'],focusState=active?{keys:Object.fromEntries(focusKeys.filter(key=>active.dataset[key]!=null).map(key=>[key,active.dataset[key]])),start:active.selectionStart,end:active.selectionEnd}:null;root.querySelectorAll('.pgDirectEditor').forEach(el=>el.remove());
  const value=session.form,creating=session.command.type==='create',row=pgDirectRow(value.worker||session.worker),rateWorker=value.handoffs?.length?pgDirectRateWorker(g,session):'',autoSave=typeof workspace!=='undefined'&&workspace&&!workspace.offline&&!workspace.pendingMigration;
- const form=document.createElement('div');form.className='pgGridRow pgDirectEditor';const linked=!!value.sourceRowId,manual=creating||!!value.manual,scope=session.members.length?((session.members.length>1?'생산 묶음 '+session.members.length+'품목 · ':'')+session.members.reduce((n,r)=>n+r.machines.length,0)+'호기'+(session.history?' · 선택 품목의 조건 수정':' 함께 기간 변경')):'새 수기 계획',deletable=!creating&&manual&&!session.history&&session.members.every(r=>r.manual&&!r.sourceRowId),deleteLabel=session.members.length>1?session.members.length+'개 수기 예약 삭제':'수기 예약 삭제';
+ const form=document.createElement('div');form.className='pgGridRow pgDirectEditor';const linked=!!value.sourceRowId,manual=creating||!!value.manual,scope=session.members.length?((session.members.length>1?'생산 묶음 '+session.members.length+'품목 · ':'')+session.members.reduce((n,r)=>n+r.machines.length,0)+'호기'+(session.history?' · 선택 품목의 조건 수정':' 함께 기간 변경')):'새 수기 계획',deleteJobs=creating?[]:pgAllJobs(state),deletable=!creating&&session.members.every(r=>!pgManualDeleteReason(r,state,deleteJobs)),memberDeletable=!creating&&session.members.length>1&&!pgManualDeleteReason(session.members.find(r=>r.id===session.command.id),state,deleteJobs),deleteLabel=session.members.length>1?'묶음 전체 '+session.members.length+'개 삭제':'수기 예약 삭제',memberArmed=session.memberDeleteArmed===session.command.id;
  const productField=`<label>품명<input data-pd-field="product" list="pgDirectProducts" value="${esc(value.product||'')}" ${linked?'disabled':''} autocomplete="off"><datalist id="pgDirectProducts">${productOptions().map(p=>`<option value="${esc(p)}">`).join('')}</datalist></label>`,workerField=`<label>${value.handoffs?.length?'담당자 배정':'작업자'}${value.handoffs?.length?`<button type="button" data-pd-action="handoff" data-pd-assignment class="pgDirectHandoffButton">${esc(rateWorker)} · 배정 수정</button>`:`<select data-pd-field="worker" ${linked||!manual?'disabled':''}>${state.workers.map(w=>`<option ${w===value.worker?'selected':''}>${esc(w)}</option>`).join('')}</select>`}</label>`,startField=`<label>${pgRoutingFollower(value,pgKeep(g.draft))?'앞 품목이 끝난 뒤 시작':'시작일'}<input type="date" data-pd-field="start" value="${esc(session.previewPeriod?.start??value.start??'')}" ${pgRoutingFollower(value,pgKeep(g.draft))?'disabled title="앞 품목이 끝난 다음 생산일에 자동 시작"':''}></label>`,endField=`<label>${pgRouting(value)?'예상 종료':manual?'종료일':'자동 종료'}<input type="date" data-pd-field="end" value="${esc(session.previewPeriod?.end??value.end??'')}" ${manual&&!pgRouting(value)?'':'disabled'}></label>`,planField=`<label>만들 전체 조수<input inputmode="decimal" data-pd-field="plan" value="${esc(value.plan??'')}" ${linked?'disabled':''}></label>`,dailyField=`<label ${pgRouting(value)?.mode==='parallel'?'hidden':''}>${value.handoffs?.length?esc(rateWorker)+' 하루에 만들 조수':'하루에 만들 조수'}<input inputmode="decimal" data-pd-field="daily" value="${esc(value.daily??'')}" placeholder="예: 5">${manual&&!pgRouting(value)&&!session.history?'<small class="pgDirectDailyHint">종료일 지정 시 생략 가능</small>':''}</label>`;
  const fields=`<div class="pgDirectFields">${productField}${workerField}${startField}${endField}${planField}${dailyField}</div>`,basicFields=`<div class="pgDirectFields pgDirectBasicFields">${workerField}${startField}${endField}</div>`,firstProduct=`${creating?'<section class="pgDirectStep pgDirectPrimary"><div class="pgDirectStepHeading"><span>2</span><div><b>첫 품목과 호기</b><small>만들 전체 조수, 하루에 만들 조수, 사용할 호기를 입력합니다.</small></div></div><div class="pgDirectFields pgDirectProductFields">'+productField+planField+dailyField+'</div>':''}${pgDirectSequenceHTML(session,g)}${pgDirectMachinesHTML(value)}${creating?'</section>':''}`;
  const displayOptions=creating?`<details class="pgProductionOptions"><summary>일정 막대 모양</summary>${pgDirectDisplayHTML(session)}</details>`:`${pgDirectDisplayHTML(session)}<details class="pgProductionOptions"><summary>직접 순서를 바꿀 때만</summary><section class="pgRoutingPanel">${pgRoutingFieldsHTML(value,pgKeep(g.draft),'data-pd-routing',g.locked(),false,false)}</section></details>`;
- form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'생산 예약':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading${!creating?' pgDirectHeadingWithHandoff':''}"><div class="pgDirectHeadingText"><strong>${esc(scope)}</strong><span>${creating?'작업자와 시작일을 정한 뒤 품목이 같이 시작하는지, 뒤이어 시작하는지 고르세요.':'하루에 만들 조수를 바꾸면 예상 종료일이 다시 계산됩니다. · Esc로 취소'}</span></div>${!creating?'<div class="pgDirectHandoffAction"><button type="button" data-pd-action="handoff" class="pgDirectHandoffButton">작업 넘기기</button><small data-pd-handoff-hint hidden></small></div>':''}</div>${!creating?pgDirectFlowHTML(session,g):''}${creating?'<section class="pgDirectStep pgDirectBasics"><div class="pgDirectStepHeading"><span>1</span><div><b>기본 정보</b><small>작업자와 생산을 시작할 날짜를 정합니다.</small></div></div>'+basicFields+'</section>':fields}${firstProduct}${pgDirectCompanionsHTML(session,g)}${displayOptions}<div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 정하는 예약으로 바꾸기</label>`:''}<span class="pgDirectError" role="status">${esc(session.previewError||'')}</span><div>${deletable?`<button type="button" data-pd-action="delete-manual" class="pgDirectDelete${session.deleteArmed?' isArmed':''}" title="${session.deleteArmed?'삭제와 현재 일정표의 미저장 변경을 함께 서버에 저장합니다.':'한 번 더 확인한 뒤 삭제와 저장을 함께 실행합니다.'}">${session.deleteArmed?(session.members.length>1?session.members.length+'개 삭제하고 저장':'삭제하고 저장'):deleteLabel}</button>`:''}<button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary" title="${autoSave?'입력한 일정과 현재 일정표의 변경사항을 함께 서버에 저장합니다.':'일정표에 반영한 뒤 상단 저장 버튼으로 보관합니다.'}">${autoSave?(session.conversion?'예약 방식 바꾸고 저장':creating?'예약 저장':'수정하고 저장'):(session.conversion?'예약 방식 바꾸기':'일정표에 적용')}</button></div></div></div>`;
+ form.innerHTML=`<div class="pgAxisLabel"><b>${creating?'생산 예약':'일정 수정'}</b></div><div class="pgDirectForm"><div class="pgDirectHeading${!creating?' pgDirectHeadingWithHandoff':''}"><div class="pgDirectHeadingText"><strong>${esc(scope)}</strong><span>${creating?'작업자와 시작일을 정한 뒤 품목이 같이 시작하는지, 뒤이어 시작하는지 고르세요.':'하루에 만들 조수를 바꾸면 예상 종료일이 다시 계산됩니다. · Esc로 취소'}</span></div>${!creating?'<div class="pgDirectHandoffAction"><button type="button" data-pd-action="handoff" class="pgDirectHandoffButton">작업 넘기기</button><small data-pd-handoff-hint hidden></small></div>':''}</div>${!creating?pgDirectFlowHTML(session,g):''}${creating?'<section class="pgDirectStep pgDirectBasics"><div class="pgDirectStepHeading"><span>1</span><div><b>기본 정보</b><small>작업자와 생산을 시작할 날짜를 정합니다.</small></div></div>'+basicFields+'</section>':fields}${firstProduct}${pgDirectCompanionsHTML(session,g)}${displayOptions}<div class="pgDirectFooter">${!creating?`<label class="pgDirectMode"><input type="checkbox" data-pd-manual ${manual?'checked disabled':''}> 종료일을 직접 정하는 예약으로 바꾸기</label>`:''}<span class="pgDirectError" role="status">${esc(session.previewError||'')}</span><div>${memberDeletable?`<button type="button" data-pd-action="delete-member" class="pgDirectDelete${memberArmed?' isArmed':''}" title="선택한 미착수 품목만 삭제합니다. 다른 품목의 생산 기록과 일정은 유지합니다.">${esc(value.product)}만 ${memberArmed?'삭제하고 저장':'삭제'}</button>`:''}${deletable?`<button type="button" data-pd-action="delete-manual" class="pgDirectDelete${session.deleteArmed?' isArmed':''}" title="${session.deleteArmed?'삭제와 현재 일정표의 미저장 변경을 함께 서버에 저장합니다.':'한 번 더 확인한 뒤 삭제와 저장을 함께 실행합니다.'}">${session.deleteArmed?(session.members.length>1?session.members.length+'개 삭제하고 저장':'삭제하고 저장'):deleteLabel}</button>`:''}<button type="button" data-pd-action="cancel">취소</button><button type="button" data-pd-action="apply" class="primary" title="${autoSave?'입력한 일정과 현재 일정표의 변경사항을 함께 서버에 저장합니다.':'일정표에 반영한 뒤 상단 저장 버튼으로 보관합니다.'}">${autoSave?(session.conversion?'예약 방식 바꾸고 저장':creating?'예약 저장':'수정하고 저장'):(session.conversion?'예약 방식 바꾸기':'일정표에 적용')}</button></div></div></div>`;
  if(session.history){for(const el of form.querySelectorAll('[data-pd-field="product"],[data-pd-field="worker"],[data-pd-field="start"],[data-pd-field="end"],[data-pd-field="plan"],[data-pd-manual]'))el.disabled=true;session.rateNotice='생산 중 · 하루 조수와 호기 배정 수정 가능 · 실제 시작일과 실적은 유지';}
  if(value.handoffs?.length){for(const el of form.querySelectorAll('[data-pd-machine],[data-pd-routing]:not([data-pd-routing="barDisplay"]),[data-pd-action="add-machine"],[data-pd-action="remove-machine"]'))el.disabled=true;session.rateNotice=pgDirectHandoffNotice(g,session);if(pgRouting(value)?.mode==='parallel')for(const el of form.querySelectorAll('[data-pd-field="daily"]'))el.disabled=true;}
  if(session.members.length>1)form.querySelector('.pgDirectFields').insertAdjacentHTML('afterbegin',`<label>편집 품목<select data-pd-member ${session.conversion?'disabled':''}>${session.members.map(r=>`<option value="${esc(r.id)}" ${r.id===session.command.id?'selected':''} ${pgMeta(r).complete||pgMeta(r).stopped?'disabled':''}>${esc(r.product)} · ${esc(r.machines.map(m=>m.name).join(', '))}</option>`).join('')}</select></label>`);
@@ -6901,7 +6944,7 @@ function pgBindDirect(g){
   const flow=e.target.closest('[data-pg-flow]');if(flow){e.preventDefault();e.stopPropagation();try{if(pgDirectState.session)pgDirectSelectMember(g,flow.dataset.pgFlow);else pgDirectBegin(g,{mode:'edit',id:flow.dataset.pgFlow,sourceMonth:flow.dataset.pgFlowMonth})}catch(err){const area=root.querySelector('.pgDirectError');if(area)area.textContent=err.message;else toast(err.message)}return}const button=e.target.closest('[data-pd-action]'),s=pgDirectState.session;if(!button||!s)return;e.preventDefault();e.stopPropagation();const action=button.dataset.pdAction;if(action==='cancel'){pgDirectCancel(true);return}if(g.locked())return;
   if(action==='select-member'){try{pgDirectSelectMember(g,button.dataset.pdId)}catch(err){const area=root.querySelector('.pgDirectError');if(area)area.textContent=err.message;else toast(err.message)}return}
   if(action==='handoff'){try{pgDirectOpenHandoff(g)}catch(err){const message=root.querySelector('.pgDirectError');if(message)message.textContent=err.message;else toast(err.message)}return}
-  if(action==='delete-manual'){try{if(!s.deleteArmed){s.deleteArmed=true;pgDirectRenderForm(g);return}const count=pgDirectDeleteManual(g),remote=typeof workspace!=='undefined'&&workspace&&!workspace.pendingMigration;await g.save({successMessage:(count>1?count+'개 수기 예약을':'수기 예약을')+(remote?' 삭제하고 서버 저장까지 완료했습니다. 다른 기기에 자동 반영됩니다.':' 삭제해 기기에 저장했습니다. 서버 연결 후 다른 기기에 반영됩니다.')})}catch(err){const message=root.querySelector('.pgDirectError');if(message)message.textContent=err.message;else toast(err.message)}return}
+  if(action==='delete-manual'||action==='delete-member'){try{const selectedOnly=action==='delete-member',armed=selectedOnly?s.memberDeleteArmed===s.command.id:s.deleteArmed;if(!armed){if(selectedOnly){s.memberDeleteArmed=s.command.id;s.deleteArmed=false;}else{s.deleteArmed=true;s.memberDeleteArmed='';}pgDirectRenderForm(g);return}const label=selectedOnly?s.form.product+' 예약을':null,count=pgDirectDeleteManual(g,selectedOnly),remote=typeof workspace!=='undefined'&&workspace&&!workspace.offline&&!workspace.pendingMigration;await g.save({successMessage:(label||(count>1?count+'개 수기 예약을':'수기 예약을'))+(remote?' 삭제하고 서버 저장까지 완료했습니다. 생산일보의 작업 흐름에도 자동 반영됩니다.':' 삭제해 기기에 저장했습니다. 서버 연결 후 다른 기기에 반영됩니다.')})}catch(err){const message=root.querySelector('.pgDirectError');if(message)message.textContent=err.message;else toast(err.message)}return}
    if(action==='add-product'){if(s.history)return;s.companions??=[];s.companions.push({id:C.id(),product:'',plan:null,daily:null,startMode:'together',mode:'sequential',machines:[{name:'',qty:null}]});pgDirectRenderForm(g);return}
   if(action==='remove-product'){s.companions?.splice(Number(button.dataset.index),1);pgDirectRenderForm(g);return}
   if(action==='extra-add-machine'||action==='extra-remove-machine'){const item=s.companions?.[Number(button.dataset.extra)];if(!item)return;if(action==='extra-add-machine')item.machines.push({name:'',qty:null});else item.machines.splice(Number(button.dataset.index),1);pgDirectRenderForm(g);return}
@@ -7187,7 +7230,7 @@ function pgBarMemoTargets(period,g,snapshot=state){
   if(!id||!owner||seen.has(owner+'\0'+id))continue;seen.add(owner+'\0'+id);
   const draft=pgKeep(g.draft).filter(row=>row.id===id&&pgJobMonth(row)===owner),saved=(snapshot.months[owner]?.jobs||[]).filter(row=>row.id===id);
   const row=draft.length===1?draft[0]:saved.length===1?saved[0]:null;
-  if(row)out.push({id,owner,row,editable:draft.length===1&&!snapshot.months[owner]?.closed});
+  if(row)out.push({id,owner,row,parts:parts.filter(p=>p?.jobId===id&&(p.editMonth||period.editMonth||p.sourceMonth||period.sourceMonth)===owner),editable:draft.length===1&&!snapshot.months[owner]?.closed});
  }
  return out;
 }
@@ -7197,16 +7240,34 @@ function pgBarMemoSelected(g){
  if(choice?.kind==='dry'){const mark=$('#pgTimeline')?._pgDryRows?.find(r=>pgDryKey(r)===choice.key);if(mark){const matches=pgDryPeriods(mark,periods);if(matches.length===1)return matches[0]}}
  const row=pgSelectedRow(g);return row?periods.find(p=>p.memberIds?.includes(row.id)&&(!p.editMonth||p.editMonth===pgJobMonth(row)))||{jobId:row.id,editMonth:pgJobMonth(row),product:row.product,worker:row.worker}:null;
 }
-function pgBarMemoEntries(period,g,snapshot=state){return pgBarMemoTargets(period,g,snapshot).filter(item=>pgBarMemoText(item.row).trim()).map(item=>({product:C.catalogName(snapshot,item.row.product),text:pgBarMemoText(item.row),kind:'period'}))}
-function pgBarMemoCommon(period,snapshot){
- if(typeof ScheduleBatch==='undefined'||typeof ScheduleBatch.memoValue!=='function')return[];
- const out=[],seen=new Set();for(const part of period?.parts||[period]){if(!part?.product)continue;const product=C.catalogName(snapshot,part.product);if(seen.has(product))continue;seen.add(product);const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(text.trim())out.push({product,text,kind:'product'})}return out;
+function pgBarMemoSummary(row,parts=[],snapshot=state){
+ const product=C.catalogName(snapshot,row?.product||parts[0]?.product||''),savedPlan=C.num(row?.plan),plans=[...new Set(parts.map(p=>C.num(p.plan)).filter(n=>n!=null))];
+ // Period plans already include verified carry history. Never sum machine/owner
+ // segments or turn a missing plan into the scheduler's derived zero.
+ const periodPlan=plans.length===1&&(plans[0]>0||savedPlan!=null)?plans[0]:null,total=C.num(row?.totalPlan)??periodPlan,plan=total??savedPlan,remainingOnly=!!row?.carried&&total==null;
+ const planText=plan==null?'계획 미입력':(remainingOnly?'남은 계획 ':'계획 ')+pgFmt(plan)+'조';
+ let machines=Array.isArray(row?.machines)&&row.machines.length?row.machines:parts.filter(p=>p.machine).map(p=>({name:p.machine,qty:p.qty}));
+ if(machines.length&&plan!=null&&!remainingOnly)machines=P.machineQty({machines,totalPlan:plan});
+ const seen=new Set(),names=machines.map(machine=>{
+  const raw=String(machine.name??'').trim(),qty=C.num(machine.qty);if(!raw)return '';
+  const name=pgDirectIsLidLine(product,raw)?'뚜껑 라인':pgDirectMachineLabel(raw),key=name+'\0'+qty;if(seen.has(key))return '';seen.add(key);
+  return name+(machines.length>1?' '+(qty==null?'배정 미입력':pgFmt(qty)+'조'):qty!=null&&plan!=null&&qty!==plan?' (배정 '+pgFmt(qty)+'조)':'');
+ }).filter(Boolean);
+ return{product,meta:planText+' · '+(names.join(', ')||'호기 미입력')};
 }
-function pgBarMemoContent(entries){return entries.map(item=>`<section><b>${esc(item.product)}</b><p>${esc(item.text)}</p></section>`).join('')}
+function pgBarMemoHeading(item){return `<span class="pgBarMemoHeading"><b>${esc(item.product)}</b>${item.meta?`<span class="pgBarMemoMeta"> · ${esc(item.meta)}</span>`:''}</span>`}
+function pgBarMemoEntries(period,g,snapshot=state){return pgBarMemoTargets(period,g,snapshot).filter(item=>pgBarMemoText(item.row).trim()).map(item=>({...pgBarMemoSummary(item.row,item.parts,snapshot),text:pgBarMemoText(item.row),kind:'period'}))}
+function pgBarMemoCommon(period,snapshot,g=null,includeEmpty=false){
+ if(typeof ScheduleBatch==='undefined'||typeof ScheduleBatch.memoValue!=='function')return[];
+ const summaries=g?pgBarMemoTargets(period,g,snapshot).map(t=>pgBarMemoSummary(t.row,t.parts,snapshot)):[],groups=new Map();
+ for(const part of period?.parts||[period]){if(!part?.product)continue;const product=C.catalogName(snapshot,part.product);if(!groups.has(product))groups.set(product,[]);groups.get(product).push(part)}
+ const out=[];for(const [product,parts]of groups){const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(!text.trim()&&!includeEmpty)continue;const related=summaries.filter(s=>s.product===product),meta=[...new Set((related.length?related:[pgBarMemoSummary(null,parts,snapshot)]).map(s=>s.meta))].join(' / ');out.push({product,meta,text,kind:'product'})}return out;
+}
+function pgBarMemoContent(entries,commonEditable=false){return entries.map(item=>`<section><div class="pgBarMemoItemHeading">${pgBarMemoHeading(item)}${item.kind==='product'&&commonEditable?`<button type="button" data-pg-common-memo-edit="${esc(item.product)}">수정</button>`:''}</div><p>${esc(item.text)}</p></section>`).join('')}
 function pgBarMemoSyncButton(g){
  const area=$('#pgSelectionInfo');if(!area)return;
- let button=$('#pgBarMemoButton');if(!button){button=document.createElement('button');button.type='button';button.id='pgBarMemoButton';button.dataset.pgBarMemoOpen='';button.textContent='기간바 메모';area.querySelector('[data-pg-command="clear-selection"]')?.before(button);if(!button.isConnected)area.append(button)}
- const period=pgBarMemoSelected(g),targets=period?pgBarMemoTargets(period,g):[],notes=period?pgBarMemoEntries(period,g):[],common=period?pgBarMemoCommon(period,state):[];
+ let button=$('#pgBarMemoButton');if(!button){button=document.createElement('button');button.type='button';button.id='pgBarMemoButton';button.dataset.pgBarMemoOpen='';pgButtonLabel(button,'기간바 메모','메모');area.querySelector('[data-pg-command="clear-selection"]')?.before(button);if(!button.isConnected)area.append(button)}
+ const period=pgBarMemoSelected(g),targets=period?pgBarMemoTargets(period,g):[],notes=period?pgBarMemoEntries(period,g):[],common=period?pgBarMemoCommon(period,state,g):[];
  button.disabled=!period||!targets.length&&!notes.length&&!common.length;
  button.title=targets.some(t=>t.editable)&&!g.spec.readonly?'선택한 작업의 기간바 메모 입력·수정':'선택한 기간바의 메모 보기';
 }
@@ -7225,7 +7286,7 @@ function pgBarMemoShow(bar,g,x=null){
  if(pgBarMemoPopup?.bar===bar){clearTimeout(pgBarMemoPopup.timer);return}if(pgBarMemoPopup?.pinned)return;
  const entries=bar._pgMemoEntries||[],common=bar._pgMemoCommon||[];if(!entries.length&&!common.length)return;pgBarMemoHide();
  const el=document.createElement('aside');el.id='pgBarMemoPopover';el.className='pgBarMemoPopover';el.setAttribute('role','dialog');el.setAttribute('aria-label','기간바 메모');
- el.innerHTML=`<header><strong>${entries.length?'기간바 메모':'품목 공통 메모'}</strong><div><button type="button" data-pg-memo-pin aria-pressed="false">고정</button><button type="button" data-pg-memo-close aria-label="메모 닫기">×</button></div></header><div class="pgBarMemoContents" tabindex="0">${pgBarMemoContent(entries)}${common.length?`<div class="pgBarMemoCommon">${entries.length?'<h3>품목 공통 메모</h3>':''}${pgBarMemoContent(common)}</div>`:''}<details class="pgBarMemoDetails"><summary>일정 정보</summary><p>${esc(bar._pgMemoInfo||'')}</p></details></div><footer><button type="button" data-pg-memo-edit>메모 ${g.spec.readonly?'보기':'입력·수정'}</button></footer>`;
+ el.innerHTML=`<header><strong>${entries.length?'기간바 메모':'품목 공통 메모'}</strong><div><button type="button" data-pg-memo-pin aria-pressed="false">고정</button><button type="button" data-pg-memo-close aria-label="메모 닫기">×</button></div></header><div class="pgBarMemoContents" tabindex="0">${pgBarMemoContent(entries)}${common.length?`<div class="pgBarMemoCommon">${entries.length?'<h3>품목 공통 메모</h3>':''}${pgBarMemoContent(common,typeof pgCommonMemoAllowed==="function"?pgCommonMemoAllowed():!g.locked()&&!g.spec.readonly)}</div>`:''}<details class="pgBarMemoDetails"><summary>일정 정보</summary><p>${esc(bar._pgMemoInfo||'')}</p></details></div><footer><button type="button" data-pg-memo-edit>메모 ${g.spec.readonly?'보기':'입력·수정'}</button></footer>`;
  document.body.append(el);const popup=pgBarMemoPopup={el,bar,g,pinned:false,timer:null,x};bar.setAttribute('aria-describedby',el.id);pgBarMemoPosition(popup);
  if(typeof ResizeObserver==='function'){popup.resize=new ResizeObserver(()=>{if(pgBarMemoPopup===popup)pgBarMemoPosition(popup)});popup.resize.observe(el)}
  el.onpointerenter=()=>clearTimeout(popup.timer);el.onpointerleave=pgBarMemoLaterHide;
@@ -7239,10 +7300,10 @@ function pgBarMemoPaint(g,preview){
  const periods=new Map((timeline._pgPeriods||[]).map(p=>[pgPeriodKey(p),p]));
  for(const bar of timeline.querySelectorAll('.pgBar')){
   const period=periods.get(bar.dataset.pgPeriodKey);if(!period)continue;
-  const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state);bar._pgMemoEntries=entries;bar._pgMemoCommon=common;
+  const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state,g);bar._pgMemoEntries=entries;bar._pgMemoCommon=common;
   const status=pgPeriodPresentation(period);bar._pgMemoInfo=[period.worker+' · '+period.barText,status.label+(status.progress?' · '+status.progress:''),period.start+' ~ '+period.end,status.note,typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(period):'',...(period.parts||[period]).filter(p=>p.dry).map(p=>p.product+' '+p.machine+' · 건조 '+p.dry)].filter(Boolean).join('\n');
   bar.classList.toggle('pgHasMemo',!!entries.length);
-  if(entries.length){const mark=document.createElement('span');mark.className='pgMemoCorner';mark.setAttribute('aria-hidden','true');bar.append(mark);const text=entries.map(item=>'기간바 메모 · '+item.product+'\n'+item.text).join('\n');bar.setAttribute('aria-label',bar.getAttribute('aria-label')+' · '+text)}
+  if(entries.length){const mark=document.createElement('span');mark.className='pgMemoCorner';mark.setAttribute('aria-hidden','true');bar.append(mark);const text=entries.map(item=>'기간바 메모 · '+item.product+' · '+item.meta+'\n'+item.text).join('\n');bar.setAttribute('aria-label',bar.getAttribute('aria-label')+' · '+text)}
   // Keep the browser's original period description when no custom memo is shown.
   if(entries.length||common.length){bar.dataset.pgMemoPeriodTitle=bar.title;bar.removeAttribute('title')}
  }
@@ -7251,10 +7312,10 @@ function pgBarMemoPaint(g,preview){
 function pgBarMemoOpen(g,period=pgBarMemoSelected(g)){
  if(!period)return;if(busy||g.loading||g.saving){toast('자료 확인·저장이 끝난 뒤 메모를 열어 주세요.');return}
  if(pgDirectState.session?.form&&pgDirectHandoffChanged(pgDirectState.session)){toast('열려 있는 일정 수정 내용을 먼저 저장하거나 취소한 뒤 메모를 입력해 주세요.');return}
- const targets=pgBarMemoTargets(period,g),editable=!g.locked()&&targets.some(t=>t.editable),common=pgBarMemoCommon(period,state),scope=sheetScope(),ownerMonth=month;
+ const targets=pgBarMemoTargets(period,g),editable=!g.locked()&&targets.some(t=>t.editable),common=pgBarMemoCommon(period,state,g,true),scope=sheetScope(),ownerMonth=month;
  pgBarMemoHide();const d=$('#dialog');if(d.open)return;d.oninput=null;
  const baseline=new Map(targets.map(t=>[t.owner+'\0'+t.id,{text:pgBarMemoText(t.row),product:t.row.product,worker:t.row.worker,originId:t.row.originId,sourceRowId:t.row.sourceRowId}]));
- d.innerHTML=`<h2>기간바 메모</h2><p class="pgBarMemoIntro">${esc(period.worker||'')} · ${esc(period.barLabel||period.product||'선택 작업')}<br>${editable?'이 작업의 기간바에 표시됩니다. 내용을 비우고 저장하면 메모 표시가 사라집니다.':'조회 전용 · 저장된 메모를 확인할 수 있습니다.'}</p><form id="pgBarMemoForm">${targets.map(t=>`<label class="pgBarMemoField"><b>${esc(C.catalogName(state,t.row.product))}</b>${editable&&t.editable?`<textarea rows="4" maxlength="4000" data-pg-bar-memo-id="${esc(t.id)}" data-pg-bar-memo-owner="${esc(t.owner)}" placeholder="예: 다음 생산 전 케이스 상태 확인">${esc(pgBarMemoText(t.row))}</textarea>`:`<p class="pgBarMemoRead">${esc(pgBarMemoText(t.row)||'등록된 기간바 메모가 없습니다.')}</p>`}</label>`).join('')||'<p>이 보관 기간에는 연결된 작업 메모가 없습니다.</p>'}${common.length?`<details class="pgBarMemoCommon"><summary>품목 공통 메모 · ${common.length}품목</summary>${pgBarMemoContent(common)}</details>`:''}${editable&&g.dirty?'<p class="pgBarMemoPending">입력해 둔 다른 일정 변경도 함께 저장됩니다.</p>':''}<div class="actions"><button type="button" id="pgBarMemoClose">${editable?'취소':'닫기'}</button>${editable?'<button type="submit" class="primary" id="pgBarMemoSave">메모 저장</button>':''}</div></form>`;
+ d.innerHTML=`<h2>기간바 메모</h2><p class="pgBarMemoIntro">${esc(period.worker||'')} · ${esc(period.barLabel||period.product||'선택 작업')}<br>${editable?'이 작업의 기간바에 표시됩니다. 내용을 비우고 저장하면 메모 표시가 사라집니다.':'조회 전용 · 저장된 메모를 확인할 수 있습니다.'}</p><form id="pgBarMemoForm">${targets.map(t=>`<label class="pgBarMemoField">${pgBarMemoHeading(pgBarMemoSummary(t.row,t.parts,state))}${editable&&t.editable?`<textarea rows="4" maxlength="4000" data-pg-bar-memo-id="${esc(t.id)}" data-pg-bar-memo-owner="${esc(t.owner)}" placeholder="예: 다음 생산 전 케이스 상태 확인">${esc(pgBarMemoText(t.row))}</textarea>`:`<p class="pgBarMemoRead">${esc(pgBarMemoText(t.row)||'등록된 기간바 메모가 없습니다.')}</p>`}</label>`).join('')||'<p>이 보관 기간에는 연결된 작업 메모가 없습니다.</p>'}${common.length?`<details class="pgBarMemoCommon"><summary>품목 공통 메모 · ${common.length}품목</summary>${pgBarMemoContent(common,typeof pgCommonMemoAllowed==="function"?pgCommonMemoAllowed():!g.locked()&&!g.spec.readonly)}</details>`:''}${editable&&g.dirty?'<p class="pgBarMemoPending">입력해 둔 다른 일정 변경도 함께 저장됩니다.</p>':''}<div class="actions"><button type="button" id="pgBarMemoClose">${editable?'취소':'닫기'}</button>${editable?'<button type="submit" class="primary" id="pgBarMemoSave">메모 저장</button>':''}</div></form>`;
  const form=d.querySelector('#pgBarMemoForm');d.querySelector('#pgBarMemoClose').onclick=()=>d.close();
  form.onsubmit=async event=>{
   event.preventDefault();if(!editable||busy||g.locked())return;let finish=()=>{};
@@ -7286,13 +7347,14 @@ function pgBarMemoOpen(g,period=pgBarMemoSelected(g)){
 }
 function pgBarMemoBind(g){
  pgBarMemoBinding?.abort();pgBarMemoBinding=null;pgBarMemoHide();if(page!=='schedule')return;
- const root=$('#planGridSurface');if(!root)return;const controller=pgBarMemoBinding=new AbortController(),opts={signal:controller.signal};pgBarMemoSyncButton(g);
+ const root=$('#planGridSurface');if(!root)return;const controller=pgBarMemoBinding=new AbortController(),opts={signal:controller.signal};let touchFocus=false;pgBarMemoSyncButton(g);
+ root.addEventListener('pointerdown',event=>{touchFocus=event.pointerType==='touch'||event.pointerType==='pen'}, {...opts,capture:true});
  root.addEventListener('click',event=>{if(event.target.closest('[data-pg-bar-memo-open]')){event.preventDefault();pgBarMemoOpen(g)}},opts);
  root.addEventListener('pointerover',event=>{if(event.pointerType==='touch'||event.buttons)return;const bar=event.target.closest('.pgBar');if(bar)pgBarMemoShow(bar,g,event.clientX)},opts);
  root.addEventListener('pointerout',event=>{const bar=event.target.closest('.pgBar');if(bar&&!bar.contains(event.relatedTarget)&&!pgBarMemoPopup?.el.contains(event.relatedTarget))pgBarMemoLaterHide()},opts);
- root.addEventListener('focusin',event=>{const bar=event.target.closest('.pgBar');if(bar)pgBarMemoShow(bar,g)},opts);
+ root.addEventListener('focusin',event=>{const bar=event.target.closest('.pgBar');if(bar&&!touchFocus)pgBarMemoShow(bar,g)},opts);
  root.addEventListener('focusout',event=>{if(event.target.closest('.pgBar')&&!pgBarMemoPopup?.el.contains(event.relatedTarget))pgBarMemoLaterHide()},opts);
- document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pgBarMemoPopup){event.preventDefault();event.stopImmediatePropagation();pgBarMemoHide(true)}}, {...opts,capture:true});
+ document.addEventListener('keydown',event=>{touchFocus=false;if(event.key==='Escape'&&pgBarMemoPopup){event.preventDefault();event.stopImmediatePropagation();pgBarMemoHide(true)}}, {...opts,capture:true});
  document.addEventListener('pointerdown',event=>{const popup=pgBarMemoPopup;if(popup&&!popup.el.contains(event.target))pgBarMemoHide()}, {...opts,capture:true});
  window.addEventListener('resize',pgBarMemoHide,opts);window.addEventListener('production:lock',pgBarMemoHide,opts);
  document.addEventListener('scroll',event=>{if(pgBarMemoPopup&&!pgBarMemoPopup.el.contains(event.target))pgBarMemoHide()}, {...opts,capture:true,passive:true});
@@ -7305,6 +7367,58 @@ const pgLockBeforeMemo=pgLock;
 pgLock=function(g,cachedJobs=null){pgLockBeforeMemo(g,cachedJobs);pgBarMemoSyncButton(g)};
 const pgBindBeforeMemo=bindPlanGrid;
 bindPlanGrid=function(){pgBindBeforeMemo();pgBarMemoBind(sheetEditor(pgId))};
+
+// Product-wide notes reuse the catalog slot merge and ordinary durable save/ACK.
+// A separate product draft never submits unrelated stock-table or schedule edits.
+let pgCommonMemoOpenSequence=0;
+function pgCommonMemoAllowed(){return !!globalThis.AppAccess?.unlocked&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)&&!connectionPreview&&!localReadError}
+class PgCommonMemoEditor extends SheetEditor{
+ validStoredDraft(saved){return saved&&saved.schema===1&&saved.scope===this.scope&&Array.isArray(saved.draft?.rows)&&saved.draft.rows.length===1&&saved.draft.rows[0].product===this.spec.product&&saved.draft.rows[0].id===this.spec.product&&Array.isArray(saved.draft.baseRows)&&saved.draft.baseRows.length===1&&(saved.draft.memoEdits||[]).every(e=>e.product===this.spec.product)}
+}
+function pgCommonMemoEditor(product){
+ const key=sheetScope()+':catalog:period-common-memo:'+encodeURIComponent(product),id='period-common-memo:'+product,rows=[{id:product,product}];
+ const inspect=d=>{const result=ScheduleBatch.memoInspect(state,d);if(d.deleted?.length||!sheetEqual(d.rows,rows)||!sheetEqual(d.baseRows,rows)||(d.memoEdits||[]).some(e=>e.product!==product)){result.errors.push({id:product,field:'memo',message:'선택한 품목의 공통메모만 수정할 수 있습니다.'});result.ok=false}return result};
+ const spec={product,rows,readonly:!pgCommonMemoAllowed(),allowDelete:false,columns:[{key:'memo',label:'품목 공통메모',type:'textarea',value:(r,d)=>ScheduleBatch.memoValue(state,d,product)}],
+  createDraft:()=>({rows:C.clone(rows),baseRows:C.clone(rows),deleted:[],revision:0,baseMemos:C.clone(state.memos||[]),memoEdits:[]}),
+  patch:(d,rowId,fields)=>{if(rowId!==product||Object.keys(fields).some(k=>k!=='memo'))throw Error('선택한 품목의 메모만 수정할 수 있습니다.');ScheduleBatch.memoPatch(state,d,product,fields.memo)},inspect,
+  commit:async d=>{if(!pgCommonMemoAllowed())throw Error('현재 연결에서는 공통메모를 저장할 수 없습니다.');if(C.catalogName(state,product)!==product)throw Error('품명이 변경되었습니다. 최신 품목에서 다시 확인해 주세요.');const problem=secondaryStockMemoProblem(product);if(problem)throw Error(problem);const check=inspect(d);if(!check.ok)throw Error(check.errors[0].message);if(check.counts.changed){const next=ScheduleBatch.memoApply(state,d);for(const change of next.changes.slice(state.changes?.length||0))change.source='생산일정 공통메모';await persist(next,[],true)}}};
+ let g=sheetRegistry.get(key);if(!g){g=new PgCommonMemoEditor(id,key,spec);sheetRegistry.set(key,g)}else{g.spec=spec;g.month=month;if(!g.dirty&&!g.loading&&!g.saving&&!g.storageError)g.draft=g.fresh()}
+ return g;
+}
+async function pgCommonMemoOpen(product){
+ if(!pgCommonMemoAllowed()||busy)return;
+ const sequence=++pgCommonMemoOpenSequence,scope=sheetScope(),ownerMonth=month,name=C.catalogName(state,product),d=$('#dialog');
+ if(d.open&&$('#pgCommonMemoDialog'))return;
+ const parent=d.open?d.querySelector('#pgBarMemoForm'):null;
+ if(d.open&&parent){const g=sheetEditor(pgId);if([...parent.querySelectorAll('[data-pg-bar-memo-id]')].some(input=>{const row=pgKeep(g.draft).find(r=>r.id===input.dataset.pgBarMemoId&&pgJobMonth(r)===input.dataset.pgBarMemoOwner);return !row||input.value!==pgBarMemoText(row)})){toast('입력 중인 기간바 메모를 먼저 저장하거나 취소해 주세요.');return}}
+ else if(d.open)return;
+ const parentSignature=()=>parent?JSON.stringify([...parent.querySelectorAll('textarea')].map(input=>input.value)):null,openingSignature=parentSignature();
+ try{
+  const problem=secondaryStockMemoProblem(name);if(problem)throw Error(problem);
+  const g=pgCommonMemoEditor(name);await g.load();
+  if(sequence!==pgCommonMemoOpenSequence||!pgCommonMemoAllowed()||scope!==sheetScope()||ownerMonth!==month||page!=='schedule')return;
+  if(parent?(!d.open||!d.contains(parent)||parentSignature()!==openingSignature):d.open)return;
+  if(g.locked())throw Error(g.storageError||g.error||'메모 자료를 확인한 뒤 다시 열어 주세요.');
+  const value=ScheduleBatch.memoValue(state,g.draft,name);pgBarMemoHide();if(d.open)d.close();d.oninput=null;
+  d.innerHTML=`<section id="pgCommonMemoDialog"><h2>품목 공통메모 · ${esc(name)}</h2><p class="pgBarMemoIntro">같은 모델의 생산일보와 생산일정에서 함께 보입니다.<br>이 기간바에만 남길 내용은 기간바 메모에 적어 주세요.</p><form id="pgCommonMemoForm"><label class="pgBarMemoField"><b>${esc(name)}</b><textarea id="pgCommonMemoText" name="memo" rows="6" aria-label="품목 공통메모">${esc(value)}</textarea></label><div class="actions"><button type="button" id="pgCommonMemoCancel">취소</button><button type="submit" class="primary" id="pgCommonMemoSave">공통메모 저장</button></div></form></section>`;
+  const form=d.querySelector('#pgCommonMemoForm'),input=d.querySelector('#pgCommonMemoText');d.querySelector('#pgCommonMemoCancel').onclick=()=>d.close();
+  form.onsubmit=async event=>{
+   event.preventDefault();if(busy)return;let finish=()=>{};
+   try{
+    if(!pgCommonMemoAllowed()||scope!==sheetScope()||ownerMonth!==month||page!=='schedule'||g.scope!==scope)throw Error('작업 월이나 연결이 바뀌었습니다. 입력한 메모를 보관하고 다시 확인해 주세요.');
+    finish=dialogPending(d,'공통메모를 저장하고 있습니다…');
+    // An earlier failed save can already be queued remotely; confirm it first.
+    if(g.dirty){await g.save();if(g.dirty)throw Error(g.error||'앞선 저장을 확인하지 못했습니다. 입력 내용은 이 창에 남아 있습니다.');g.draft=g.fresh()}
+    if(g.locked())throw Error(g.error||'현재 메모를 저장할 수 없습니다.');
+    if(input.value!==ScheduleBatch.memoValue(state,g.draft,name)){g.set(name,'memo',input.value);await g.save()}
+    if(g.dirty)throw Error(g.error||'저장을 완료하지 못했습니다. 메모는 기기 초안에 남겨 두었습니다.');
+    d.close();toast(workspace&&!workspace.pendingMigration?'공통메모를 저장했습니다. 생산일보가 최신 자료를 받으면 표시됩니다.':'공통메모를 이 기기에 저장했습니다. 다른 기기와 공유하려면 서버 연결이 필요합니다.');
+   }catch(error){dialogFeedback(d,error.message,true)}finally{finish()}
+  };
+  protectNativeForm(d,form);d.showModal();input.focus();
+ }catch(error){toast(error.message)}
+}
+document.addEventListener('click',event=>{const button=event.target.closest?.('[data-pg-common-memo-edit]');if(!button||!pgCommonMemoAllowed())return;event.preventDefault();pgCommonMemoOpen(button.dataset.pgCommonMemoEdit)});
 
 // Secondary input tables. Injected after features.js and grid-ui.js in the app IIFE.
 const secondaryOriginalReportView=reportView;
@@ -8398,7 +8512,7 @@ function mobileRefresh(){
   if(hint.hidden===overflow)hint.hidden=!overflow;
  }
  for(const problem of main.querySelectorAll('[data-sheet-problem="true"]')){const menu=problem.closest('.mobileTools');if(menu)menu.open=true}
- const help=main.querySelector('.pgHelp');if(help){help.dataset.desktopHelp??=help.textContent;const text=small?'휴일 칸은 변경할 날짜 선택용입니다. 휴일 편집에서 대상·날짜를 확인하고 선택 기간에 적용을 누르세요. 건조일에는 노란 공장 휴일만 제외됩니다.':help.dataset.desktopHelp;if(help.textContent!==text)help.textContent=text}
+ const help=main.querySelector('.pgHelp');if(help){help.dataset.desktopHelp??=help.textContent;const text=small?'작업자 휴일의 빈칸을 누르면 그날 모두 휴무가 됩니다. 파란 휴를 누르면 그 사람만 해제됩니다. 노란 공장 휴일은 휴일 편집에서 적용하며 건조일에도 제외됩니다.':help.dataset.desktopHelp;if(help.textContent!==text)help.textContent=text}
  }finally{if(observing&&mobileScreen.observer===observer&&mobileScreen.observedMain===main&&main.isConnected)observer.observe(main,mobileObserverOptions)}
 }
 function mobileQueue(){if(!mobileScreen.frame)mobileScreen.frame=requestAnimationFrame(mobileRefresh)}
