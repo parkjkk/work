@@ -7263,7 +7263,7 @@ function pgBarMemoCommon(period,snapshot,g=null,includeEmpty=false){
  for(const part of period?.parts||[period]){if(!part?.product)continue;const product=C.catalogName(snapshot,part.product);if(!groups.has(product))groups.set(product,[]);groups.get(product).push(part)}
  const out=[];for(const [product,parts]of groups){const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(!text.trim()&&!includeEmpty)continue;const related=summaries.filter(s=>s.product===product),meta=[...new Set((related.length?related:[pgBarMemoSummary(null,parts,snapshot)]).map(s=>s.meta))].join(' / ');out.push({product,meta,text,kind:'product'})}return out;
 }
-function pgBarMemoContent(entries,commonEditable=false){return entries.map(item=>`<section><div class="pgBarMemoItemHeading">${pgBarMemoHeading(item)}${item.kind==='product'&&commonEditable?`<button type="button" data-pg-common-memo-edit="${esc(item.product)}">수정</button>`:''}</div><p>${esc(item.text)}</p></section>`).join('')}
+function pgBarMemoContent(entries,commonEditable=false){return entries.map(item=>`<section><div class="pgBarMemoItemHeading">${pgBarMemoHeading(item)}${item.kind==='product'&&commonEditable?`<button type="button" data-pg-common-memo-edit="${esc(item.product)}">${item.text.trim()?'수정':'입력'}</button>`:''}</div><p>${esc(item.text.trim()?item.text:'등록된 공통 메모가 없습니다.')}</p></section>`).join('')}
 function pgBarMemoSyncButton(g){
  const area=$('#pgSelectionInfo');if(!area)return;
  let button=$('#pgBarMemoButton');if(!button){button=document.createElement('button');button.type='button';button.id='pgBarMemoButton';button.dataset.pgBarMemoOpen='';pgButtonLabel(button,'기간바 메모','메모');area.querySelector('[data-pg-command="clear-selection"]')?.before(button);if(!button.isConnected)area.append(button)}
@@ -7300,11 +7300,12 @@ function pgBarMemoPaint(g,preview){
  const periods=new Map((timeline._pgPeriods||[]).map(p=>[pgPeriodKey(p),p]));
  for(const bar of timeline.querySelectorAll('.pgBar')){
   const period=periods.get(bar.dataset.pgPeriodKey);if(!period)continue;
-  const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state,g);bar._pgMemoEntries=entries;bar._pgMemoCommon=common;
+  const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state,g,true);bar._pgMemoEntries=entries;bar._pgMemoCommon=common;
   const status=pgPeriodPresentation(period);bar._pgMemoInfo=[period.worker+' · '+period.barText,status.label+(status.progress?' · '+status.progress:''),period.start+' ~ '+period.end,status.note,typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(period):'',...(period.parts||[period]).filter(p=>p.dry).map(p=>p.product+' '+p.machine+' · 건조 '+p.dry)].filter(Boolean).join('\n');
   bar.classList.toggle('pgHasMemo',!!entries.length);
   if(entries.length){const mark=document.createElement('span');mark.className='pgMemoCorner';mark.setAttribute('aria-hidden','true');bar.append(mark);const text=entries.map(item=>'기간바 메모 · '+item.product+' · '+item.meta+'\n'+item.text).join('\n');bar.setAttribute('aria-label',bar.getAttribute('aria-label')+' · '+text)}
-  // Keep the browser's original period description when no custom memo is shown.
+  // Product periods use the same summary popup even before their first memo.
+  // Only periods without a product/memo retain the native description.
   if(entries.length||common.length){bar.dataset.pgMemoPeriodTitle=bar.title;bar.removeAttribute('title')}
  }
  pgBarMemoSyncButton(g);
