@@ -540,16 +540,15 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 .pgBarMemoPopover .pgBarMemoScope{padding:10px;border-radius:6px;border:1px solid;min-width:0}
 .pgBarMemoPopover .pgBarMemoPeriod{background:#fff5f1;border-color:#d6b1a8;border-left:4px solid #be3935}
 .pgBarMemoPopover .pgBarMemoCommon{margin-top:10px;background:#f1f7ff;border-color:#b6cce1;border-left:4px solid #3674a2;color:#29485f;font-size:inherit}
-.pgBarMemoScopeTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pgBarMemoScopeTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .pgBarMemoPopover .pgBarMemoScope h3{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;font-weight:750;color:#89352d}
 .pgBarMemoPopover .pgBarMemoCommon h3{color:#245c86}
 .pgMemoLegendCorner{display:inline-block;width:0;height:0;border-top:9px solid #e02d32;border-left:9px solid transparent;flex:none}
-.pgBarMemoPopover .pgBarMemoScopeHint{font-size:12px;line-height:1.5;color:#52616c;margin:5px 0 9px}
 .pgBarMemoScope section:first-of-type{margin-top:0}
 .pgBarMemoUnavailable{color:#6a5e56;font-size:12px}
 .pgBarMemoIntro{font-size:.87rem;color:#4d6072;line-height:1.65;margin:6px 0 12px}
 .pgBarMemoField{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:.9rem}
-.pgBarMemoHeading{min-width:0;overflow-wrap:anywhere;word-break:normal;line-height:1.6}.pgBarMemoMeta{color:#52616c;font-size:.91em;font-weight:400}.pgBarMemoItemHeading{display:flex;align-items:flex-start;gap:7px}.pgBarMemoItemHeading>.pgBarMemoHeading{flex:1}.pgBarMemoItemHeading>button{flex:none;font-size:12px;min-height:30px;padding:3px 8px}
+.pgBarMemoHeading{min-width:0;overflow-wrap:anywhere;word-break:normal;line-height:1.6}.pgBarMemoMeta{color:#52616c;font-size:.91em;font-weight:400}.pgBarMemoLine{display:block;font-size:inherit;font-weight:700;color:inherit}.pgBarMemoItemHeading{display:flex;align-items:flex-start;gap:7px}.pgBarMemoItemHeading>.pgBarMemoHeading{flex:1}.pgBarMemoItemHeading>button{flex:none;font-size:12px;min-height:30px;padding:3px 8px}
 .pgBarMemoField textarea{box-sizing:border-box;width:100%;min-height:96px;resize:vertical;line-height:1.65;padding:10px;border:1px solid #a9bacc;border-radius:6px;font:inherit;color:#203b51;background:#fff}
 .pgBarMemoRead{padding:10px;background:#fffbed;border:1px solid #e2d8b8;border-radius:6px;max-height:300px;overflow:auto}
 .pgBarMemoPending{font-size:.8rem;color:#815822;background:#fff5dd;padding:8px;border-radius:5px}
@@ -7290,22 +7289,24 @@ function pgBarMemoSummary(row,parts=[],snapshot=state){
  const planText=plan==null?'계획 미입력':(remainingOnly?'남은 계획 ':'계획 ')+pgFmt(plan)+'조';
  let machines=Array.isArray(row?.machines)&&row.machines.length?row.machines:parts.filter(p=>p.machine).map(p=>({name:p.machine,qty:p.qty}));
  if(machines.length&&plan!=null&&!remainingOnly)machines=P.machineQty({machines,totalPlan:plan});
- const seen=new Set(),names=machines.map(machine=>{
+ const seen=new Set(),headingLines=[],names=machines.map(machine=>{
   const raw=String(machine.name??'').trim(),qty=C.num(machine.qty);if(!raw)return '';
   const name=pgDirectIsLidLine(product,raw)?'뚜껑 라인':pgDirectMachineLabel(raw),key=name+'\0'+qty;if(seen.has(key))return '';seen.add(key);
+  const amount=qty??(machines.length===1?plan:null),quantity=amount==null?'조수 미입력':(remainingOnly&&qty==null?'남은 ':'')+pgFmt(amount)+'조';headingLines.push(name+' '+product+' '+quantity);
   return name+(machines.length>1?' '+(qty==null?'배정 미입력':pgFmt(qty)+'조'):qty!=null&&plan!=null&&qty!==plan?' (배정 '+pgFmt(qty)+'조)':'');
  }).filter(Boolean);
- return{product,meta:planText+' · '+(names.join(', ')||'호기 미입력')};
+ if(!headingLines.length)headingLines.push('호기 미입력 '+product+' '+(plan==null?'조수 미입력':(remainingOnly?'남은 ':'')+pgFmt(plan)+'조'));
+ return{product,meta:planText+' · '+(names.join(', ')||'호기 미입력'),headingLines};
 }
-function pgBarMemoHeading(item){return `<span class="pgBarMemoHeading"><b>${esc(item.product)}</b>${item.meta?`<span class="pgBarMemoMeta"> · ${esc(item.meta)}</span>`:''}</span>`}
+function pgBarMemoHeading(item){if(item.kind==='product')return `<span class="pgBarMemoHeading"><b>${esc(item.product)}</b>${item.meta?`<span class="pgBarMemoMeta"> · ${esc(item.meta)}</span>`:''}</span>`;const lines=item.headingLines?.length?item.headingLines:[item.product+(item.meta?' · '+item.meta:'')];return `<span class="pgBarMemoHeading">${lines.map(line=>`<b class="pgBarMemoLine">${esc(line)}</b>`).join('')}</span>`}
 function pgBarMemoEntries(period,g,snapshot=state,includeEmpty=false){return pgBarMemoTargets(period,g,snapshot).filter(item=>includeEmpty||pgBarMemoText(item.row).trim()).map(item=>({...pgBarMemoSummary(item.row,item.parts,snapshot),text:pgBarMemoText(item.row),kind:'period'}))}
 function pgBarMemoCommon(period,snapshot,g=null,includeEmpty=false){
  if(typeof ScheduleBatch==='undefined'||typeof ScheduleBatch.memoValue!=='function')return[];
  const summaries=g?pgBarMemoTargets(period,g,snapshot).map(t=>pgBarMemoSummary(t.row,t.parts,snapshot)):[],groups=new Map();
  for(const part of period?.parts||[period]){if(!part?.product)continue;const product=C.catalogName(snapshot,part.product);if(!groups.has(product))groups.set(product,[]);groups.get(product).push(part)}
- const out=[];for(const [product,parts]of groups){const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(!text.trim()&&!includeEmpty)continue;const related=summaries.filter(s=>s.product===product),meta=[...new Set((related.length?related:[pgBarMemoSummary(null,parts,snapshot)]).map(s=>s.meta))].join(' / ');out.push({product,meta,text,kind:'product'})}return out;
+ const out=[];for(const [product,parts]of groups){const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(!text.trim()&&!includeEmpty)continue;const related=summaries.filter(s=>s.product===product),items=related.length?related:[pgBarMemoSummary(null,parts,snapshot)],meta=[...new Set(items.map(s=>s.meta))].join(' / '),headingLines=[...new Set(items.flatMap(s=>s.headingLines))];out.push({product,meta,headingLines,text,kind:'product'})}return out;
 }
-function pgBarMemoContent(entries,commonEditable=false){return entries.map(item=>`<section><div class="pgBarMemoItemHeading">${pgBarMemoHeading(item)}${item.kind==='product'&&commonEditable?`<button type="button" data-pg-common-memo-edit="${esc(item.product)}">${item.text.trim()?'수정':'입력'}</button>`:''}</div><p>${esc(item.text.trim()?item.text:item.kind==='period'?'등록된 기간바 메모가 없습니다.':'등록된 공통 메모가 없습니다.')}</p></section>`).join('')}
+function pgBarMemoContent(entries,commonEditable=false){return entries.map(item=>`<section><div class="pgBarMemoItemHeading">${pgBarMemoHeading(item)}${item.kind==='product'&&commonEditable?`<button type="button" data-pg-common-memo-edit="${esc(item.product)}">${item.text.trim()?'수정':'입력'}</button>`:''}</div><p>${esc(item.text.trim()?item.text:'메모 없음')}</p></section>`).join('')}
 function pgBarMemoSyncButton(g){
  const area=$('#pgSelectionInfo');if(!area)return;
  let button=$('#pgBarMemoButton');if(!button){button=document.createElement('button');button.type='button';button.id='pgBarMemoButton';button.dataset.pgBarMemoOpen='';pgButtonLabel(button,'기간바 메모','메모');area.querySelector('[data-pg-command="clear-selection"]')?.before(button);if(!button.isConnected)area.append(button)}
@@ -7329,7 +7330,7 @@ function pgBarMemoShow(bar,g,x=null){
  const entries=bar._pgMemoEntries||[],allEntries=bar._pgMemoAllEntries||entries,common=bar._pgMemoCommon||[];if(!allEntries.length&&!common.length)return;pgBarMemoHide();
  const period=$('#pgTimeline')?._pgPeriods?.find(p=>pgPeriodKey(p)===bar.dataset.pgPeriodKey),targets=period?pgBarMemoTargets(period,g):[],editable=!g.locked()&&!g.spec.readonly&&targets.some(t=>t.editable);
  const el=document.createElement('aside');el.id='pgBarMemoPopover';el.className='pgBarMemoPopover';el.setAttribute('role','dialog');el.setAttribute('aria-label','기간바와 품목 메모');
- el.innerHTML=`<header><strong>메모</strong><div><button type="button" data-pg-memo-pin aria-pressed="false">고정</button><button type="button" data-pg-memo-close aria-label="메모 닫기">×</button></div></header><div class="pgBarMemoContents" tabindex="0"><div class="pgBarMemoPeriod pgBarMemoScope" role="region" aria-label="기간바 전용 메모"><div class="pgBarMemoScopeTitle"><h3><span class="pgMemoLegendCorner" aria-hidden="true"></span>기간바 전용 메모</h3>${targets.length?`<button type="button" data-pg-memo-edit>기간바 메모 ${editable?(entries.length?'수정':'입력'):'보기'}</button>`:''}</div><p class="pgBarMemoScopeHint">이 작업에만 표시 · 메모가 있으면 빨간 모서리</p>${allEntries.length?pgBarMemoContent(allEntries):'<p class="pgBarMemoUnavailable">연결된 작업이 없어 기간바 메모를 입력할 수 없습니다.</p>'}</div>${common.length?`<div class="pgBarMemoCommon pgBarMemoScope" role="region" aria-label="품목 공통 메모"><div class="pgBarMemoScopeTitle"><h3>품목 공통 메모</h3></div><p class="pgBarMemoScopeHint">같은 품목의 모든 작업·생산일보에서 함께 사용</p>${pgBarMemoContent(common,typeof pgCommonMemoAllowed==="function"?pgCommonMemoAllowed():!g.locked()&&!g.spec.readonly)}</div>`:''}<details class="pgBarMemoDetails"><summary>일정 정보</summary><p>${esc(bar._pgMemoInfo||'')}</p></details></div>`;
+ el.innerHTML=`<header><strong>메모</strong><div><button type="button" data-pg-memo-pin aria-pressed="false">고정</button><button type="button" data-pg-memo-close aria-label="메모 닫기">×</button></div></header><div class="pgBarMemoContents" tabindex="0"><div class="pgBarMemoPeriod pgBarMemoScope" role="region" aria-label="기간바 전용 메모"><div class="pgBarMemoScopeTitle"><h3><span class="pgMemoLegendCorner" aria-hidden="true"></span>기간바 전용 메모</h3>${targets.length?`<button type="button" data-pg-memo-edit>기간바 메모 ${editable?(entries.length?'수정':'입력'):'보기'}</button>`:''}</div>${allEntries.length?pgBarMemoContent(allEntries):'<p class="pgBarMemoUnavailable">연결된 작업이 없어 기간바 메모를 입력할 수 없습니다.</p>'}</div>${common.length?`<div class="pgBarMemoCommon pgBarMemoScope" role="region" aria-label="품목 공통 메모"><div class="pgBarMemoScopeTitle"><h3>품목 공통 메모</h3></div>${pgBarMemoContent(common,typeof pgCommonMemoAllowed==="function"?pgCommonMemoAllowed():!g.locked()&&!g.spec.readonly)}</div>`:''}<details class="pgBarMemoDetails"><summary>일정 정보</summary><p>${esc(bar._pgMemoInfo||'')}</p></details></div>`;
  document.body.append(el);const popup=pgBarMemoPopup={el,bar,g,pinned:false,timer:null,x};bar.setAttribute('aria-describedby',el.id);pgBarMemoPosition(popup);
  if(typeof ResizeObserver==='function'){popup.resize=new ResizeObserver(()=>{if(pgBarMemoPopup===popup)pgBarMemoPosition(popup)});popup.resize.observe(el)}
  el.onpointerenter=()=>clearTimeout(popup.timer);el.onpointerleave=pgBarMemoLaterHide;
@@ -7344,7 +7345,7 @@ function pgBarMemoPaint(g,preview){
  for(const bar of timeline.querySelectorAll('.pgBar')){
   const period=periods.get(bar.dataset.pgPeriodKey);if(!period)continue;
   const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state,g,true);bar._pgMemoEntries=entries;bar._pgMemoAllEntries=pgBarMemoEntries(period,g,preview.state,true);bar._pgMemoCommon=common;
-  const status=pgPeriodPresentation(period);bar._pgMemoInfo=[period.worker+' · '+period.barText,status.label+(status.progress?' · '+status.progress:''),period.start+' ~ '+period.end,status.note,typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(period):'',...(period.parts||[period]).filter(p=>p.dry).map(p=>p.product+' '+p.machine+' · 건조 '+p.dry)].filter(Boolean).join('\n');
+  const status=pgPeriodPresentation(period);bar._pgMemoInfo=[period.worker+' · '+period.barText,status.label+(status.progress?' · '+status.progress:''),period.start+' ~ '+period.end,...bar._pgMemoAllEntries.map(item=>item.product+' · '+item.meta),status.note,typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(period):'',...(period.parts||[period]).filter(p=>p.dry).map(p=>p.product+' '+p.machine+' · 건조 '+p.dry)].filter(Boolean).join('\n');
   bar.classList.toggle('pgHasMemo',!!entries.length);
   if(entries.length){const mark=document.createElement('span');mark.className='pgMemoCorner';mark.setAttribute('aria-hidden','true');bar.append(mark);const text=entries.map(item=>'기간바 메모 · '+item.product+' · '+item.meta+'\n'+item.text).join('\n');bar.setAttribute('aria-label',bar.getAttribute('aria-label')+' · '+text)}
   // Product periods use the same summary popup even before their first memo.
