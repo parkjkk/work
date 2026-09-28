@@ -520,6 +520,33 @@ body.sheetWorkspace .pgSurface button.pgCumulativeRunLabel:hover,body.sheetWorks
 .pgHandoffDialog .pgHandoffForm>header{background:#233f55;color:#fff}.pgHandoffDialog .pgHandoffForm>header h2{color:#fff}.pgHandoffDialog .pgHandoffForm>header p{color:#dcebf3}.pgHandoffDialog .pgHandoffForm>header button{background:#fff;color:#28516d;border-color:#b6ccda}
 .pgHandoffModeLabel{margin-bottom:12px}.pgHandoffQuantity{display:grid;gap:10px;padding:12px;background:#f6f9fb;border:1px solid #d3e0e8;border-radius:8px;margin:10px 0}.pgHandoffQuantity>p{margin:0;font-size:12px;line-height:1.6;color:#4e6778}.pgHandoffQuantitySteps{display:flex;align-items:center;gap:12px;margin:10px 0}.pgHandoffQuantitySteps>p{flex:1;min-width:0;background:#fff;border:1px solid #c6dce5;border-radius:7px;padding:9px 11px}.pgHandoffQuantitySteps span,.pgHandoffQuantitySteps strong{display:block}.pgHandoffQuantitySteps p>span{font-size:12px;color:#566f7f}.pgHandoffQuantitySteps strong{font-size:14px;color:#194b64}.pgHandoffQuantitySteps>span{color:#2b6578;font-size:18px}@media(max-width:420px){.pgHandoffQuantitySteps{gap:6px}.pgHandoffQuantitySteps>p{padding:8px}.pgHandoffQuantitySteps strong{font-size:13px}}
 
+.pgMemoCorner{position:absolute;right:0;top:0;width:0;height:0;border-top:9px solid #e02d32;border-left:9px solid transparent;filter:drop-shadow(-1px 1px 0 #fff);pointer-events:none;z-index:4}
+.pgBar.pgHasMemo{padding-right:12px}
+#pgBarMemoButton{white-space:nowrap}
+.pgBarMemoPopover{position:fixed;z-index:10020;box-sizing:border-box;width:340px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);display:flex;flex-direction:column;margin:0;padding:0;background:#fffbed;color:#283b49;border:1px solid #bda968;border-radius:7px;box-shadow:0 5px 20px #172a3c38;font:13px/1.55 system-ui,sans-serif}
+.pgBarMemoPopover header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;min-height:0;height:auto;flex:none;padding:7px 10px;background:transparent;color:inherit;border-bottom:1px solid #e2d8b8;box-shadow:none}
+.pgBarMemoPopover header>div{display:flex;gap:5px}
+.pgBarMemoPopover button{padding:3px 9px;min-height:30px;font:inherit;line-height:1.3;color:#34475a;background:#fff;border:1px solid #c9c1a5;border-radius:5px;cursor:pointer}
+.pgBarMemoPopover button:focus-visible{outline:2px solid #345bc9;outline-offset:2px}
+.pgBarMemoContents{overflow:auto;overscroll-behavior:contain;max-height:310px;padding:10px 12px;min-height:0;scrollbar-gutter:stable}
+.pgBarMemoContents section+section{margin-top:12px;padding-top:9px;border-top:1px dashed #cfc6a9}
+.pgBarMemoContents p,.pgBarMemoRead,.pgBarMemoCommon p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
+.pgBarMemoPopover footer{display:flex;justify-content:flex-end;margin:0;padding:6px 10px;background:transparent;color:inherit;border-top:1px solid #e2d8b8}
+.pgBarMemoCommon{margin-top:12px;padding-top:9px;border-top:1px solid #d7dde2;color:#435668;font-size:.83rem}
+.pgBarMemoCommon h3{font-size:.79rem;margin:0 0 7px;color:#586878}
+.pgBarMemoCommon summary{cursor:pointer;font-weight:700}
+.pgBarMemoDetails{margin-top:10px;padding-top:7px;border-top:1px solid #e2d8b8;font-size:12px;color:#52616c}
+.pgBarMemoDetails summary{cursor:pointer}
+.pgBarMemoCommon section{margin-top:8px}
+.pgBarMemoIntro{font-size:.87rem;color:#4d6072;line-height:1.65;margin:6px 0 12px}
+.pgBarMemoField{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:.9rem}
+.pgBarMemoField textarea{box-sizing:border-box;width:100%;min-height:96px;resize:vertical;line-height:1.65;padding:10px;border:1px solid #a9bacc;border-radius:6px;font:inherit;color:#203b51;background:#fff}
+.pgBarMemoRead{padding:10px;background:#fffbed;border:1px solid #e2d8b8;border-radius:6px;max-height:300px;overflow:auto}
+.pgBarMemoPending{font-size:.8rem;color:#815822;background:#fff5dd;padding:8px;border-radius:5px}
+#pgBarMemoForm>.actions{justify-content:flex-end;margin-top:16px;position:sticky;bottom:0;background:#fff;padding-top:8px}
+@media(max-width:720px){.pgBarMemoPopover button{min-height:44px}.pgBarMemoContents{max-height:250px}.pgBarMemoField textarea{font-size:16px}#pgBarMemoForm>.actions button{min-height:44px}.pgBarMemoIntro{font-size:.86rem}}
+@media print{.pgBarMemoPopover,#pgBarMemoButton{display:none!important}}
+
 .pgDirectMovable{cursor:grab;touch-action:pan-x pan-y pinch-zoom;padding-left:10px;padding-right:10px}.pgDirectMovable:active,.pgDirectDragging .pgDirectMovable{cursor:grabbing}.pgDirectHandle{position:absolute;top:0;bottom:0;width:min(9px,22%);background:#ffffff40;cursor:ew-resize;touch-action:pan-x pan-y pinch-zoom}.pgDirectHandle.start{left:0;border-right:1px solid #ffffff70}.pgDirectHandle.end{right:0;border-left:1px solid #ffffff70}.pgDirectHandle:hover{background:#ffdc78b0}.pgRailGrid [data-direct-date]{cursor:crosshair;touch-action:pan-x pan-y pinch-zoom}.pgRailGrid [data-direct-date]:hover{background:#def0f8}.pgRailGrid [data-direct-date]:focus-visible{outline:2px solid #1673a3;outline-offset:-2px}.pgDirectDragging{user-select:none}.pgDirectGhost{position:absolute;top:2px;height:calc(100% - 4px);min-width:10px;z-index:5;pointer-events:none;border:2px dashed #047c93;background:#d3f2f4cb;color:#075b72;font-size:.65rem;line-height:20px;padding:0 4px;white-space:nowrap;overflow:hidden}.pgDirectEditor{position:relative;background:#f5fbfd;border-top:2px solid #268497;border-bottom:2px solid #268497;min-height:100px;z-index:6}.pgDirectEditor>.pgAxisLabel{align-self:stretch;align-items:flex-start;padding-top:10px;background:#e5f3f7}.pgDirectForm{position:sticky;left:var(--pg-label);width:min(880px,calc(100vw - var(--pg-label) - 85px));max-width:100%;padding:9px 11px;color:#24445a;min-width:0}.pgDirectHeading{display:flex;align-items:center;gap:10px;justify-content:space-between;font-size:.74rem;margin-bottom:8px}.pgDirectHeading span{font-size:.68rem;color:#627c8d}.pgDirectFields{display:grid;grid-template-columns:1.25fr 1fr 1.2fr 1.2fr .7fr .7fr;gap:8px}.pgDirectForm label{font-size:.67rem;gap:3px}.pgDirectFields input,.pgDirectFields select,.pgDirectMachines input{width:100%;min-width:0;border-radius:3px;min-height:31px;padding:5px;font-size:.75rem}.pgDirectMachines{display:flex;flex-wrap:wrap;gap:7px;align-items:end;margin-top:8px}.pgDirectMachines>div{display:flex;align-items:end;gap:4px;border:1px solid #c6dce7;background:#fff;border-radius:4px;padding:4px}.pgDirectMachines>div>span{font-size:.65rem;align-self:center;color:#6c8293;min-width:12px}.pgDirectMachines label{width:87px}.pgDirectMachines button{min-height:30px;padding:3px 7px;font-size:.73rem}.pgDirectFooter{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px}.pgDirectFooter>div{margin-left:auto;display:flex;gap:6px}.pgDirectFooter button{min-height:33px;padding:5px 12px;font-size:.76rem}.pgDirectForm .pgDirectMode{display:flex;flex-direction:row;align-items:center;font-size:.7rem;gap:5px}.pgDirectMode input{margin:0}.pgDirectError{font-size:.72rem;color:#a34723;line-height:1.5;flex:1 1 150px;min-width:0}.pgFocused .pgDirectForm{width:min(960px,calc(100vw - var(--pg-label) - 43px))}.pgCompact .pgDirectEditor{min-height:100px}.pgDirectEditor input:disabled,.pgDirectEditor select:disabled{color:#617788;background:#e9eff3}.pgDirectEditor button:disabled{opacity:.55}.pgDirectForm button:focus-visible{outline:3px solid #338bc1}
 @media(max-width:640px){.pgDirectHandle{width:min(12px,25%)}.pgDirectForm,.pgFocused .pgDirectForm{width:calc(100vw - var(--pg-label) - 36px);padding:7px}.pgDirectHeading{display:block;font-size:.66rem}.pgDirectHeading span{display:block;font-size:.59rem;margin-top:3px}.pgDirectFields{grid-template-columns:1fr 1fr;gap:6px}.pgDirectFields input,.pgDirectFields select{min-height:32px;font-size:.7rem}.pgDirectForm label{font-size:.6rem}.pgDirectMachines{gap:5px}.pgDirectMachines>div{padding:3px;gap:3px;max-width:100%}.pgDirectMachines label{width:67px}.pgDirectMachines input{font-size:.7rem}.pgDirectFooter button{font-size:.71rem;padding:5px 8px}.pgDirectFooter>div{width:100%;justify-content:flex-end}.pgDirectForm .pgDirectMode{font-size:.6rem}.pgDirectError{font-size:.65rem;flex-basis:100%}}
 @media print{.pgDirectEditor,.pgDirectHandle,.pgDirectGhost{display:none!important}}
@@ -4317,7 +4344,7 @@ function auditMeasureLookup(s,k,inventory,catalog){
  return product=>{const key=catalog.name(product),r=current.get(key),stock=stocks.get(key),a=audits.get(stock?.auditId),p=a?.preview?.find(row=>catalog.name(row.product)===key);return p&&r&&p.total!=null&&p.production===r.production&&p.deduction===r.deduction&&p.total===r.current?p.total:null};
 }
 function auditMeasure(s,k,product){const catalog=C.catalogLookup(s);return auditMeasureLookup(s,k,C.inventory(s,k),catalog)(product)}
-function carryFields(j){const fields=Object.fromEntries(['id','originId','product','worker','plan','daily','start','end','duration','group','machines','manual','note','stoppedAt','previousProduced','previousPlan','previousStart'].map(k=>[k,j[k]??null]));if(j.manualEndMode)fields.manualEndMode=j.manualEndMode;if(j.manualStartMode)fields.manualStartMode=j.manualStartMode;if(j.manualSource)fields.manualSource=j.manualSource;if(j.routing)fields.routing=clone(j.routing);if(j.handoffs)fields.handoffs=clone(j.handoffs);return fields}
+function carryFields(j){const fields=Object.fromEntries(['id','originId','product','worker','plan','daily','start','end','duration','group','machines','manual','note','stoppedAt','previousProduced','previousPlan','previousStart'].map(k=>[k,j[k]??null]));if(j.manualEndMode)fields.manualEndMode=j.manualEndMode;if(j.manualStartMode)fields.manualStartMode=j.manualStartMode;if(j.manualSource)fields.manualSource=j.manualSource;if(j.routing)fields.routing=clone(j.routing);if(j.handoffs)fields.handoffs=clone(j.handoffs);if(Object.hasOwn(j,'barMemo'))fields.barMemo=j.barMemo;return fields}
 function report(s,k){
  const m=s.months[k];if(m.closed&&m.closeSnapshot?.report){const saved=clone(m.closeSnapshot.report),catalog=C.catalogLookup(s);saved.rows=saved.rows.map(r=>({...r,category:reportCategory(catalog.name(r.product),r.category,catalog.identity(r.product))}));saved.auditIssues=monthEndCloseIssues(s,k);return saved;}
  const catalog=C.catalogLookup(s),inv=C.inventory(s,k),n=s.months[nextMonth(k)],invNames=new Set(inv.map(r=>catalog.name(r.product))),nextStocks=firstProductRows(n?.stocks,catalog),measure=auditMeasureLookup(s,k,inv,catalog),kgByProduct=new Map(),kgByDate=new Map(),actualByDate=new Map();let production=0,kg=0,defectKg=0;
@@ -5789,6 +5816,13 @@ function pgValidate(row,latest=pgRows(state,month),all=null,routingPeers=null){
  if(!/^\d{4}-\d{2}$/.test(owner)||!C.iso(owner+'-01'))pgError('start','저장할 월을 확인해 주세요.');
  if(state.months[owner]?.closed)pgError('start','마감된 월의 작업조건은 수정할 수 없습니다.');
  if(old&&pgJobMonth(old)!==owner)pgError('start','기존 작업의 저장 월은 이동할 수 없습니다. 시작·종료 날짜를 수정해 주세요.');
+ if(Object.hasOwn(row,'barMemo')&&(typeof row.barMemo!=='string'||row.barMemo.length>4000))pgError('barMemo','기간바 메모는 4,000자 이내로 입력해 주세요.');
+ // A period memo never changes production conditions. Existing incomplete or
+ // finished jobs may lack old scheduling inputs; preserve them exactly rather
+ // than forcing repairs while annotating or retrying that memo's pending ACK.
+ // The latter already has the same memo in the device ledger. Identity and
+ // closed-month guards stay, and all non-memo fields must remain unchanged.
+ if(old&&Object.hasOwn(row,'barMemo')){const withoutMemo=value=>Object.fromEntries(Object.entries(value).filter(([key])=>key!=='barMemo').sort(([a],[b])=>a.localeCompare(b)));if(pgEqual(withoutMemo(row),withoutMemo(old)))return;}
  if(!state.products.some(p=>p.name===row.product)&&(!old||old.product!==row.product))pgError('product','등록된 품명을 선택해 주세요.');
  if(!state.workers.includes(row.worker))pgError('worker','등록된 작업자를 선택해 주세요.');
  if(!C.iso(row.start))pgError('start','유효한 시작일을 입력해 주세요.');
@@ -7141,6 +7175,136 @@ function pgHandoffOtherInfo(id){
  const item=$('#pgTimeline')?._pgPeriods?.find(r=>r.otherWork&&r.id===id);if(!item)return;
  const dialog=$('#pgCumulativeInfoDialog');if(!dialog)return;dialog.innerHTML=`<h2 id="pgCumulativeInfoTitle">${esc(item.worker)} · ${esc(item.barText)}</h2><p>${esc(item.start)} ~ ${esc(item.end)}</p><p>휴무와 구분하는 다른 업무 일정입니다. 생산 누적에는 포함하지 않습니다.</p><button type="button" data-close>닫기</button>`;dialog.querySelector('[data-close]').onclick=()=>dialog.close();if(!dialog.open)dialog.showModal();
 }
+
+// Notes belong to a stable production job, never to a product or a screen position.
+let pgBarMemoBinding=null,pgBarMemoPopup=null,pgBarMemoRestoringFocus=false;
+const pgBarMemoText=row=>typeof row?.barMemo==='string'?row.barMemo:'';
+function pgBarMemoTargets(period,g,snapshot=state){
+ const out=[],seen=new Set(),parts=period?.parts||[period];
+ for(const part of parts){
+  if(!part||part.otherWork||part.orphanActual)continue;
+  const id=part.jobId,owner=part.editMonth||period.editMonth||part.sourceMonth||period.sourceMonth;
+  if(!id||!owner||seen.has(owner+'\0'+id))continue;seen.add(owner+'\0'+id);
+  const draft=pgKeep(g.draft).filter(row=>row.id===id&&pgJobMonth(row)===owner),saved=(snapshot.months[owner]?.jobs||[]).filter(row=>row.id===id);
+  const row=draft.length===1?draft[0]:saved.length===1?saved[0]:null;
+  if(row)out.push({id,owner,row,editable:draft.length===1&&!snapshot.months[owner]?.closed});
+ }
+ return out;
+}
+function pgBarMemoSelected(g){
+ const periods=$('#pgTimeline')?._pgPeriods||[],choice=pgView().timelineSelection;
+ if(choice?.kind==='period')return periods.find(p=>pgPeriodKey(p)===choice.key)||null;
+ if(choice?.kind==='dry'){const mark=$('#pgTimeline')?._pgDryRows?.find(r=>pgDryKey(r)===choice.key);if(mark){const matches=pgDryPeriods(mark,periods);if(matches.length===1)return matches[0]}}
+ const row=pgSelectedRow(g);return row?periods.find(p=>p.memberIds?.includes(row.id)&&(!p.editMonth||p.editMonth===pgJobMonth(row)))||{jobId:row.id,editMonth:pgJobMonth(row),product:row.product,worker:row.worker}:null;
+}
+function pgBarMemoEntries(period,g,snapshot=state){return pgBarMemoTargets(period,g,snapshot).filter(item=>pgBarMemoText(item.row).trim()).map(item=>({product:C.catalogName(snapshot,item.row.product),text:pgBarMemoText(item.row),kind:'period'}))}
+function pgBarMemoCommon(period,snapshot){
+ if(typeof ScheduleBatch==='undefined'||typeof ScheduleBatch.memoValue!=='function')return[];
+ const out=[],seen=new Set();for(const part of period?.parts||[period]){if(!part?.product)continue;const product=C.catalogName(snapshot,part.product);if(seen.has(product))continue;seen.add(product);const text=String(ScheduleBatch.memoValue(snapshot,{},product)||'');if(text.trim())out.push({product,text,kind:'product'})}return out;
+}
+function pgBarMemoContent(entries){return entries.map(item=>`<section><b>${esc(item.product)}</b><p>${esc(item.text)}</p></section>`).join('')}
+function pgBarMemoSyncButton(g){
+ const area=$('#pgSelectionInfo');if(!area)return;
+ let button=$('#pgBarMemoButton');if(!button){button=document.createElement('button');button.type='button';button.id='pgBarMemoButton';button.dataset.pgBarMemoOpen='';button.textContent='기간바 메모';area.querySelector('[data-pg-command="clear-selection"]')?.before(button);if(!button.isConnected)area.append(button)}
+ const period=pgBarMemoSelected(g),targets=period?pgBarMemoTargets(period,g):[],notes=period?pgBarMemoEntries(period,g):[],common=period?pgBarMemoCommon(period,state):[];
+ button.disabled=!period||!targets.length&&!notes.length&&!common.length;
+ button.title=targets.some(t=>t.editable)&&!g.spec.readonly?'선택한 작업의 기간바 메모 입력·수정':'선택한 기간바의 메모 보기';
+}
+function pgBarMemoHide(restoreFocus=false){
+ const popup=pgBarMemoPopup;if(!popup)return;const restore=restoreFocus===true&&popup.el.contains(document.activeElement)&&popup.bar?.isConnected;clearTimeout(popup.timer);popup.resize?.disconnect();popup.bar?.removeAttribute('aria-describedby');popup.el.remove();pgBarMemoPopup=null;
+ if(restore){pgBarMemoRestoringFocus=true;try{popup.bar.focus({preventScroll:true})}finally{pgBarMemoRestoringFocus=false}}
+}
+function pgBarMemoLaterHide(){const popup=pgBarMemoPopup;if(popup&&!popup.pinned){clearTimeout(popup.timer);popup.timer=setTimeout(()=>{if(pgBarMemoPopup===popup&&!popup.pinned)pgBarMemoHide()},180)}}
+function pgBarMemoPosition(popup){
+ if(!popup.bar.isConnected){pgBarMemoHide();return}const rect=popup.bar.getBoundingClientRect(),box=popup.el.getBoundingClientRect(),w=window.innerWidth,h=window.innerHeight;
+ const anchor=popup.x??Math.max(8,Math.min(rect.left,w-box.width-8)),left=Math.max(8,Math.min(anchor,w-box.width-8)),below=rect.bottom+7,top=below+box.height<=h-8?below:Math.max(8,rect.top-box.height-7);
+ popup.el.style.left=left+'px';popup.el.style.top=top+'px';
+}
+function pgBarMemoShow(bar,g,x=null){
+ if(pgBarMemoRestoringFocus||!bar?.isConnected||document.querySelector('dialog[open]')||globalThis.AppAccess&&!AppAccess.unlocked)return;
+ if(pgBarMemoPopup?.bar===bar){clearTimeout(pgBarMemoPopup.timer);return}if(pgBarMemoPopup?.pinned)return;
+ const entries=bar._pgMemoEntries||[],common=bar._pgMemoCommon||[];if(!entries.length&&!common.length)return;pgBarMemoHide();
+ const el=document.createElement('aside');el.id='pgBarMemoPopover';el.className='pgBarMemoPopover';el.setAttribute('role','dialog');el.setAttribute('aria-label','기간바 메모');
+ el.innerHTML=`<header><strong>${entries.length?'기간바 메모':'품목 공통 메모'}</strong><div><button type="button" data-pg-memo-pin aria-pressed="false">고정</button><button type="button" data-pg-memo-close aria-label="메모 닫기">×</button></div></header><div class="pgBarMemoContents" tabindex="0">${pgBarMemoContent(entries)}${common.length?`<div class="pgBarMemoCommon">${entries.length?'<h3>품목 공통 메모</h3>':''}${pgBarMemoContent(common)}</div>`:''}<details class="pgBarMemoDetails"><summary>일정 정보</summary><p>${esc(bar._pgMemoInfo||'')}</p></details></div><footer><button type="button" data-pg-memo-edit>메모 ${g.spec.readonly?'보기':'입력·수정'}</button></footer>`;
+ document.body.append(el);const popup=pgBarMemoPopup={el,bar,g,pinned:false,timer:null,x};bar.setAttribute('aria-describedby',el.id);pgBarMemoPosition(popup);
+ if(typeof ResizeObserver==='function'){popup.resize=new ResizeObserver(()=>{if(pgBarMemoPopup===popup)pgBarMemoPosition(popup)});popup.resize.observe(el)}
+ el.onpointerenter=()=>clearTimeout(popup.timer);el.onpointerleave=pgBarMemoLaterHide;
+ el.onfocusin=()=>{clearTimeout(popup.timer);popup.pinned=true;el.querySelector('[data-pg-memo-pin]').setAttribute('aria-pressed','true')};
+ el.querySelector('[data-pg-memo-pin]').onclick=()=>{popup.pinned=true;el.querySelector('[data-pg-memo-pin]').textContent='고정됨';el.querySelector('[data-pg-memo-pin]').setAttribute('aria-pressed','true')};
+ el.querySelector('[data-pg-memo-close]').onclick=()=>pgBarMemoHide(true);
+ el.querySelector('[data-pg-memo-edit]').onclick=()=>{const period=$('#pgTimeline')?._pgPeriods?.find(p=>pgPeriodKey(p)===bar.dataset.pgPeriodKey);pgBarMemoHide();pgBarMemoOpen(g,period)};
+}
+function pgBarMemoPaint(g,preview){
+ pgBarMemoHide();const timeline=$('#pgTimeline');if(!timeline)return;
+ const periods=new Map((timeline._pgPeriods||[]).map(p=>[pgPeriodKey(p),p]));
+ for(const bar of timeline.querySelectorAll('.pgBar')){
+  const period=periods.get(bar.dataset.pgPeriodKey);if(!period)continue;
+  const entries=pgBarMemoEntries(period,g,preview.state),common=pgBarMemoCommon(period,preview.state);bar._pgMemoEntries=entries;bar._pgMemoCommon=common;
+  const status=pgPeriodPresentation(period);bar._pgMemoInfo=[period.worker+' · '+period.barText,status.label+(status.progress?' · '+status.progress:''),period.start+' ~ '+period.end,status.note,typeof pgHandoffAssignmentText==='function'?pgHandoffAssignmentText(period):'',...(period.parts||[period]).filter(p=>p.dry).map(p=>p.product+' '+p.machine+' · 건조 '+p.dry)].filter(Boolean).join('\n');
+  bar.classList.toggle('pgHasMemo',!!entries.length);
+  if(entries.length){const mark=document.createElement('span');mark.className='pgMemoCorner';mark.setAttribute('aria-hidden','true');bar.append(mark);const text=entries.map(item=>'기간바 메모 · '+item.product+'\n'+item.text).join('\n');bar.setAttribute('aria-label',bar.getAttribute('aria-label')+' · '+text)}
+  // Keep the browser's original period description when no custom memo is shown.
+  if(entries.length||common.length){bar.dataset.pgMemoPeriodTitle=bar.title;bar.removeAttribute('title')}
+ }
+ pgBarMemoSyncButton(g);
+}
+function pgBarMemoOpen(g,period=pgBarMemoSelected(g)){
+ if(!period)return;if(busy||g.loading||g.saving){toast('자료 확인·저장이 끝난 뒤 메모를 열어 주세요.');return}
+ if(pgDirectState.session?.form&&pgDirectHandoffChanged(pgDirectState.session)){toast('열려 있는 일정 수정 내용을 먼저 저장하거나 취소한 뒤 메모를 입력해 주세요.');return}
+ const targets=pgBarMemoTargets(period,g),editable=!g.locked()&&targets.some(t=>t.editable),common=pgBarMemoCommon(period,state),scope=sheetScope(),ownerMonth=month;
+ pgBarMemoHide();const d=$('#dialog');if(d.open)return;d.oninput=null;
+ const baseline=new Map(targets.map(t=>[t.owner+'\0'+t.id,{text:pgBarMemoText(t.row),product:t.row.product,worker:t.row.worker,originId:t.row.originId,sourceRowId:t.row.sourceRowId}]));
+ d.innerHTML=`<h2>기간바 메모</h2><p class="pgBarMemoIntro">${esc(period.worker||'')} · ${esc(period.barLabel||period.product||'선택 작업')}<br>${editable?'이 작업의 기간바에 표시됩니다. 내용을 비우고 저장하면 메모 표시가 사라집니다.':'조회 전용 · 저장된 메모를 확인할 수 있습니다.'}</p><form id="pgBarMemoForm">${targets.map(t=>`<label class="pgBarMemoField"><b>${esc(C.catalogName(state,t.row.product))}</b>${editable&&t.editable?`<textarea rows="4" maxlength="4000" data-pg-bar-memo-id="${esc(t.id)}" data-pg-bar-memo-owner="${esc(t.owner)}" placeholder="예: 다음 생산 전 케이스 상태 확인">${esc(pgBarMemoText(t.row))}</textarea>`:`<p class="pgBarMemoRead">${esc(pgBarMemoText(t.row)||'등록된 기간바 메모가 없습니다.')}</p>`}</label>`).join('')||'<p>이 보관 기간에는 연결된 작업 메모가 없습니다.</p>'}${common.length?`<details class="pgBarMemoCommon"><summary>품목 공통 메모 · ${common.length}품목</summary>${pgBarMemoContent(common)}</details>`:''}${editable&&g.dirty?'<p class="pgBarMemoPending">입력해 둔 다른 일정 변경도 함께 저장됩니다.</p>':''}<div class="actions"><button type="button" id="pgBarMemoClose">${editable?'취소':'닫기'}</button>${editable?'<button type="submit" class="primary" id="pgBarMemoSave">메모 저장</button>':''}</div></form>`;
+ const form=d.querySelector('#pgBarMemoForm');d.querySelector('#pgBarMemoClose').onclick=()=>d.close();
+ form.onsubmit=async event=>{
+  event.preventDefault();if(!editable||busy||g.locked())return;let finish=()=>{};
+  try{
+   if(scope!==sheetScope()||ownerMonth!==month||page!=='schedule'||g!==sheetEditor(pgId))throw Error('작업 월이나 연결이 바뀌었습니다. 원래 일정에서 다시 열어 주세요.');
+   finish=dialogPending(d,g.dirty?'먼저 보관된 일정 변경의 저장 상태를 확인하고 있습니다…':'메모를 저장하고 있습니다…');
+   // A prior attempt may already be in the device ledger/outbox. Finish that
+   // exact ordinary save before changing its value; never promote an unacked
+   // local value to a remote baseline or bypass a real concurrent memo edit.
+   if(g.dirty){await g.save();if(g.dirty)throw Error(g.error||'앞선 저장을 확인하지 못했습니다. 새 메모 내용은 이 창에 남아 있습니다.');}
+   const changes=[];
+   for(const input of form.querySelectorAll('[data-pg-bar-memo-id]')){
+    const id=input.dataset.pgBarMemoId,owner=input.dataset.pgBarMemoOwner,base=baseline.get(owner+'\0'+id),rows=pgKeep(g.draft).filter(r=>r.id===id&&pgJobMonth(r)===owner),row=rows.length===1?rows[0]:null,value=input.value;
+    if(!row||state.months[owner]?.closed)throw Error('작업이 삭제되었거나 해당 월이 마감되었습니다. 입력한 메모는 남겨 두었습니다.');
+    if(!base||['product','worker','originId','sourceRowId'].some(key=>!pgEqual(base[key],row[key])))throw Error('작업 연결이 바뀌었습니다. 메모를 복사해 두고 최신 작업을 확인해 주세요.');
+    if(value.length>4000)throw Error('메모는 품목당 4,000자 이내로 입력해 주세요.');
+    if(pgBarMemoText(row)!==base.text&&pgBarMemoText(row)!==value)throw Error('이 메모가 다른 화면에서도 변경되었습니다. 입력 내용과 최신 메모를 확인해 주세요.');
+    if(value!==pgBarMemoText(row))changes.push({row,value});
+   }
+   if(!changes.length&&!g.dirty){d.close();return}
+   for(const {row,value}of changes){g.set(row.id,'barMemo',value);baseline.get(pgJobMonth(row)+'\0'+row.id).text=value;}
+   // The ordinary schedule queue/three-way merge and exact remote ACK remain authoritative.
+   dialogFeedback(d,'메모를 저장하고 있습니다…');await g.save();
+   if(g.dirty)throw Error(g.error||'저장이 완료되지 않았습니다. 메모는 기기 초안에 남겨 두었습니다.');
+   d.close();toast('기간바 메모를 저장했습니다.');
+  }catch(error){dialogFeedback(d,error.message,true)}finally{finish()}
+ };
+ if(editable)protectNativeForm(d,form);d.showModal();if(editable)form.querySelector('textarea')?.focus();
+}
+function pgBarMemoBind(g){
+ pgBarMemoBinding?.abort();pgBarMemoBinding=null;pgBarMemoHide();if(page!=='schedule')return;
+ const root=$('#planGridSurface');if(!root)return;const controller=pgBarMemoBinding=new AbortController(),opts={signal:controller.signal};pgBarMemoSyncButton(g);
+ root.addEventListener('click',event=>{if(event.target.closest('[data-pg-bar-memo-open]')){event.preventDefault();pgBarMemoOpen(g)}},opts);
+ root.addEventListener('pointerover',event=>{if(event.pointerType==='touch'||event.buttons)return;const bar=event.target.closest('.pgBar');if(bar)pgBarMemoShow(bar,g,event.clientX)},opts);
+ root.addEventListener('pointerout',event=>{const bar=event.target.closest('.pgBar');if(bar&&!bar.contains(event.relatedTarget)&&!pgBarMemoPopup?.el.contains(event.relatedTarget))pgBarMemoLaterHide()},opts);
+ root.addEventListener('focusin',event=>{const bar=event.target.closest('.pgBar');if(bar)pgBarMemoShow(bar,g)},opts);
+ root.addEventListener('focusout',event=>{if(event.target.closest('.pgBar')&&!pgBarMemoPopup?.el.contains(event.relatedTarget))pgBarMemoLaterHide()},opts);
+ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pgBarMemoPopup){event.preventDefault();event.stopImmediatePropagation();pgBarMemoHide(true)}}, {...opts,capture:true});
+ document.addEventListener('pointerdown',event=>{const popup=pgBarMemoPopup;if(popup&&!popup.el.contains(event.target))pgBarMemoHide()}, {...opts,capture:true});
+ window.addEventListener('resize',pgBarMemoHide,opts);window.addEventListener('production:lock',pgBarMemoHide,opts);
+ document.addEventListener('scroll',event=>{if(pgBarMemoPopup&&!pgBarMemoPopup.el.contains(event.target))pgBarMemoHide()}, {...opts,capture:true,passive:true});
+}
+const pgTimelineBeforeMemo=pgTimeline;
+pgTimeline=function(g,preview){pgTimelineBeforeMemo(g,preview);pgBarMemoPaint(g,preview)};
+const pgMarkSelectionBeforeMemo=pgMarkSelection;
+pgMarkSelection=function(g){pgMarkSelectionBeforeMemo(g);pgBarMemoSyncButton(g)};
+const pgLockBeforeMemo=pgLock;
+pgLock=function(g,cachedJobs=null){pgLockBeforeMemo(g,cachedJobs);pgBarMemoSyncButton(g)};
+const pgBindBeforeMemo=bindPlanGrid;
+bindPlanGrid=function(){pgBindBeforeMemo();pgBarMemoBind(sheetEditor(pgId))};
 
 // Secondary input tables. Injected after features.js and grid-ui.js in the app IIFE.
 const secondaryOriginalReportView=reportView;
@@ -8761,7 +8925,7 @@ const shareViewPages=new Set(['daily','schedule','scheduleSummary','stock','audi
 const shareViewActions=new Set([...shareViewPages,'lotSummary','csvScheduleSummary','csvDaily','csvStock','csvSchedule','csvReport','reportPrint','history','dryCalc']);
 const shareViewPlanCommands=new Set(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','mobile-view-tools','dry-tools','fit-width','compact','overview','calendar-tools','clear-selection','job-conditions','edit-selected','dry-find','dry-newer','dry-older']);
 const shareViewFields='[data-audit-filter],#auditPrintForm [name=location],#auditPrintForm [name=counter],#summarySearch,#summaryScope,#summaryStatus,#summarySort,#pgDryQuery,#monthSel,#search,#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgPairsAll,#secondaryAuditSelect,#secondaryLedgerSearch,#secondaryLedgerSort,[data-sheet-sort],[data-date-table-sort],#secondaryStockHideZero,[data-sheet-search],[data-sheet-view],[data-sheet-advanced],[data-sheet-new-date],[data-ledger-month],.workspaceFocusTableSelect,#dryEnd,#dryExclude';
-const shareViewButtons='.summaryViewChoice [data-summary-layout],#scheduleSummaryCards details>summary,[data-stock-filter-clear],.sheetEditor [data-sheet-search-clear],#summaryReset,[data-audit-reconcile-show],[data-audit-review-csv],[data-audit-review-close],.auditMonthlyCompare>summary,[data-audit-place],[data-secondary-print],#auditPrintCancel,#auditPrintForm [type=submit],#summaryGuide>summary,#scheduleSummaryTable details>summary,[data-share-refresh],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,#pgWorkerFilter>summary,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-ledger-csv],[data-ledger-stock-csv],[data-pg-column-date],[data-pg-clear-date],[data-pg-select],[data-pg-history],[data-pg-dry-key],[data-completion-close],[data-job-link-close],[data-job-link-open],[data-machine-actual-close],#runDry,#closeDry,#cancelReview';
+const shareViewButtons='[data-pg-bar-memo-open],[data-pg-memo-pin],[data-pg-memo-close],[data-pg-memo-edit],#pgBarMemoClose,.pgBarMemoDetails>summary,#pgBarMemoForm .pgBarMemoCommon>summary,.summaryViewChoice [data-summary-layout],#scheduleSummaryCards details>summary,[data-stock-filter-clear],.sheetEditor [data-sheet-search-clear],#summaryReset,[data-audit-reconcile-show],[data-audit-review-csv],[data-audit-review-close],.auditMonthlyCompare>summary,[data-audit-place],[data-secondary-print],#auditPrintCancel,#auditPrintForm [type=submit],#summaryGuide>summary,#scheduleSummaryTable details>summary,[data-share-refresh],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,#pgWorkerFilter>summary,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-ledger-csv],[data-ledger-stock-csv],[data-pg-column-date],[data-pg-clear-date],[data-pg-select],[data-pg-history],[data-pg-dry-key],[data-completion-close],[data-job-link-close],[data-job-link-open],[data-machine-actual-close],#runDry,#closeDry,#cancelReview';
 const shareViewMessage='공유 화면은 조회 전용입니다. 자료를 입력하거나 저장할 수 없습니다.';
 const shareViewPresent=hash=>new URLSearchParams(String(hash||'').replace(/^#/,'' )).has('view');
 function shareViewParse(hash){
