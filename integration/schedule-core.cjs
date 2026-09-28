@@ -132,6 +132,39 @@ function daily(r){const i=num(r.plaster),j=num(r.pours),g=num(r.cases),h=num(r.w
 function dryDate(end,excluded=[],days=10){if(!iso(end)||!Number.isInteger(days)||days<0)throw Error('유효한 종료일과 건조일수가 필요합니다.');const set=new Set(excluded);let d=new Date(end+'T00:00:00Z'),n=0;while(n<days){d.setUTCDate(d.getUTCDate()+1);if(!set.has(d.toISOString().slice(0,10)))n++}return d.toISOString().slice(0,10)}
 function sum(rows,f){return rows.reduce((s,r)=>s+(num(f(r))??0),0)}
 const fields={B:'day',C:'worker',D:'hours',E:'product',F:'plan',G:'cases',H:'waterRatio',I:'plaster',J:'pours',K:'defectUnit',L:'defectCount',S:'defectPart',T:'lot'};
+// inventory-heading-v1: Excel section labels are not zero-stock products.
+const inventoryHeadings=new Set(['바디','림','세면기','탱크','뚜껑','스톨','부속','보형,토수구']);
+const inventoryQuantityPresent=value=>value!=null&&text(value)!==''&&(num(value)==null||num(value)!==0);
+const inventoryQuantityFields=['opening','production','deduction','current','kg','original','physical','physicalKg','productionKg','replacementKg','auditQuantity','inheritedAuditQuantity'];
+function inventoryHeadingFilter(state,monthKeys=null){
+ const candidates=new Set(),protectedNames=new Set(),catalog=catalogLookup(state),heading=row=>inventoryHeadings.has(text(row?.product))?text(row.product):null;
+ const protect=row=>{const name=heading(row);if(name)protectedNames.add(name)};
+ const quantified=row=>inventoryQuantityFields.some(field=>inventoryQuantityPresent(row?.[field]))||['physical','auditQuantity','inheritedAuditQuantity'].some(field=>row?.[field]!=null&&text(row[field])!=='');
+ const imported=row=>row?.sourceType==='previous'||text(row?.source).split(', ').every(source=>/^\d{2,4}년\s*\d{1,2}월!(AT|BA)\d+$/.test(source));
+ const archived=new Map((state.archive||[]).map(sheet=>[sheet.name,sheet]));
+ const rawQuantity=row=>text(row?.source).split(', ').some(source=>{const match=/^(\d{2,4}년\s*\d{1,2}월)!(AT|BA)(\d+)$/.exec(source);if(!match)return false;const sheet=archived.get(match[1]);return (match[2]==='AT'?['AT','AR','AS','AU']:['BA','AY','AZ','BB']).some(column=>inventoryQuantityPresent(val(sheet,column+match[3])))});
+ for(const name of inventoryHeadings)if(catalog.product(name))protectedNames.add(name);
+ // Ambiguous user-declared aliases are still evidence, never an inferred section label.
+ for(const product of state.products||[])if(!product.deleted)for(const value of [product.name,...(product.aliases||[]),...(product.renameFrom||[])]){
+  const name=text(typeof value==='string'?value:value?.name);if(inventoryHeadings.has(name))protectedNames.add(name);
+ }
+ const stock=row=>{const name=heading(row);if(!name)return;if(quantified(row)||rawQuantity(row)||!imported(row)||row.auditId||text(row.note))protectedNames.add(name);else candidates.add(name)};
+ const audit=row=>{if(text(row?.note)||inventoryQuantityPresent(row?.book)||(row?.counts||row?.locations||[]).some(value=>value!=null&&text(value)!=='')||(row?.raw||[]).some(value=>text(value)!==''))protect(row)};
+ const months=new Set(monthKeys==null?Object.keys(state.months||{}):[].concat(monthKeys));
+ for(const key of months){const previous=state.months?.[key]?.openingSource;if(previous&&previous<key&&state.months[previous])months.add(previous)}
+ for(const key of months){const month=state.months?.[key];if(!month)continue;
+  for(const row of month.stocks||[])stock(row);
+  // An explicit record, including preparation/zero, is evidence of an actual item.
+  for(const field of ['rows','issues','jobs','plans'])for(const row of month[field]||[])protect(row);
+  for(const row of month.closeSnapshot?.inventory||[]){if(imported(row))stock(row);else if(quantified(row))protect(row)}
+  for(const row of month.closeSnapshot?.report?.rows||[])if(quantified(row))protect(row);
+  for(const row of month.carryOut?.openings||[])if(quantified(row))protect(row);
+  for(const session of month.auditSessions||[])for(const row of session.items||[])audit(row);
+ }
+ for(const row of state.counts||[])audit(row);
+ for(const row of state.memos||[])if((row.values||[]).some((value,index)=>index<3?text(value)!=='':inventoryQuantityPresent(value)))protect(row);
+ return row=>{const name=heading(row);return !name||!candidates.has(name)||protectedNames.has(name)||quantified(row)};
+}
 function managementProducts(master){
  const products=[],byName=new Map(),fields=['cases','waterRatio','kg','adjustedWaterRatio','measured','note'];
  const usable=name=>name&&!/합계|품명/.test(name),source=(column,row)=>({sheet:'관리',cell:column+row});
@@ -142,7 +175,6 @@ function managementProducts(master){
   if(existing){existing.catalogSources.push(source('BD',r));const first=existing.catalogReview?.candidates||[{sourceRow:existing.catalogSources[0].cell.slice(2)*1,...Object.fromEntries(fields.map(f=>[f,existing[f]]))}];const candidates=[...first,candidate];existing.catalogReview={status:'needs-review',candidates};for(const field of fields)existing[field]=candidates.every(c=>JSON.stringify(c[field])===JSON.stringify(candidates[0][field]))?candidates[0][field]:['measured','note'].includes(field)?'':null;}
   else{const product={id:'product:'+name,rev:1,name,...Object.fromEntries(fields.map(f=>[f,candidate[f]])),catalogSources:[source('BD',r)]};products.push(product);byName.set(name,product)}
  }
- const inventoryHeadings=new Set(['바디','림','세면기','탱크','뚜껑','스톨','부속','보형,토수구']);
  for(const column of ['V','AB'])for(let r=9;r<=300;r++){
   const name=text(val(master,column+r));if(!usable(name)||inventoryHeadings.has(name))continue;const existing=byName.get(name);
   if(existing)existing.catalogSources.push(source(column,r));else{const product={id:'product:'+name,rev:1,name,cases:null,waterRatio:null,kg:null,adjustedWaterRatio:null,measured:'',note:'',catalogSources:[source(column,r)]};products.push(product);byName.set(name,product)}
@@ -211,7 +243,7 @@ function normalize(book){
  const months={};for(const s of book.sheets){const mt=/^(\d{2,4})년\s*(\d{1,2})월$/.exec(s.name);if(!mt)continue;const year=+mt[1]<100?2000+(+mt[1]):+mt[1],month=+mt[2],key=year+'-'+String(month).padStart(2,'0');let day=null,worker='',lot='';const rows=[],headerRows=[],unitInfo=catalogUnitSourceInfo(s);
  for(let r=9;r<=250;r++){const b=num(val(s,'B'+r));if(b>0&&b<32)day=b;const w=text(val(s,'C'+r));if(w)worker=w;const lt=text(val(s,'T'+r));if(lt)lot=lt;const explicit={day:val(s,'B'+r)!=null,worker:!!text(val(s,'C'+r)),hours:val(s,'D'+r)!=null,pours:val(s,'J'+r)!=null,lot:!!text(val(s,'T'+r))};const header=explicit.day||explicit.worker||explicit.hours;const p=text(val(s,'E'+r));if(header&&!p&&day)headerRows.push({id:key+':header:'+r,date:date(year,month,day),worker,hours:num(val(s,'D'+r)),explicit,header:true});if(!p||/합계|총계/.test(p)||!day)continue;const rec={id:key+':row:'+r,rev:1,explicit,header,sourceRow:r,date:date(year,month,day),worker,lot,source:s.name+'!'+r};for(const[c,f]of Object.entries(fields))if(!['day','worker','lot'].includes(f))rec[f]=['product','defectPart'].includes(f)?text(val(s,c+r)):num(val(s,c+r));const unitSources=catalogUnitSources(s,r,unitInfo);if(Object.keys(unitSources).length)rec.unitSources=unitSources;rec.original=Object.fromEntries(['M','N','O','P','Q','R'].map(c=>[c,num(val(s,c+r))]));rows.push(rec)}
  const modern=text(val(s,'U8'))==='품명'&&text(val(s,'AC8')).includes('재고');const stocks=[],plans=[],plaster=[];
- if(modern){for(const[name,op,prod,iss,cur]of [['AO','AT','AR','AS','AU'],['AV','BA','AY','AZ','BB']])for(let r=10;r<=200;r++){const p=text(val(s,name+r));if(!p||/합계|바디|림$/.test(p)&&p.length<4)continue;stocks.push({id:key+':stock:'+p,rev:1,product:p,opening:num(val(s,op+r)),production:num(val(s,prod+r)),deduction:num(val(s,iss+r)),current:num(val(s,cur+r)),source:s.name+'!'+op+r})}
+ if(modern){for(const[name,op,prod,iss,cur]of [['AO','AT','AR','AS','AU'],['AV','BA','AY','AZ','BB']])for(let r=10;r<=200;r++){const p=text(val(s,name+r));if(!p||/합계/.test(p)&&p.length<4)continue;stocks.push({id:key+':stock:'+p,rev:1,product:p,opening:num(val(s,op+r)),production:num(val(s,prod+r)),deduction:num(val(s,iss+r)),current:num(val(s,cur+r)),source:s.name+'!'+op+r})}
  for(let r=10;r<=200;r++){const p=text(val(s,'U'+r));if(p)plans.push({id:key+':plan:'+r,rev:1,product:p,plan:num(val(s,'V'+r)),produced:num(val(s,'W'+r)),input:text(val(s,'X'+r)),sourceStart:num(val(s,'DI'+r)),sourceEnd:num(val(s,'DJ'+r)),previousPlan:num(val(s,'Y'+r)),previousProduced:num(val(s,'Z'+r)),source:s.name+'!U'+r})}
  for(let r=9;r<50;r++){const d=num(val(s,'BJ'+r));if(d>=1&&d<=31)plaster.push({id:key+':plaster:'+d,rev:1,date:date(year,month,d),used:num(val(s,'BK'+r)),actual:num(val(s,'BL'+r))})}}
  months[key]={id:key,rev:1,name:s.name,modern,closed:!Object.values(s.cells).some(c=>'f'in c),rows,headerRows,stocks,plans,plaster,issues:issues.filter(i=>i.date.startsWith(key)),summary:modern?{production:num(val(s,'W9')),kg:num(val(s,'AB9')),stock:num(val(s,'AD9')),stockKg:num(val(s,'AF9'))}:null,auditStamp:text(val(s,'DZ4'))};
@@ -220,13 +252,14 @@ function normalize(book){
  const audit=book.sheets.find(s=>s.name==='몰드 실사');const counts=[];if(audit)for(let r=6;r<=500;r++){const p=text(val(audit,'B'+r));if(p&&!/합계/.test(p))counts.push({id:'count:'+r,rev:1,product:p,book:num(val(audit,'D'+r)),locations:['F','G','H','I','J'].map(c=>num(val(audit,c+r))),note:text(val(audit,'M'+r))})}
  const schedule=book.sheets.find(s=>s.name==='생산일정(요약)'),scheduleRows=[];if(schedule)for(let r=3;r<=1000;r++){const cells=Array.from({length:22},(_,i)=>val(schedule,col(i+1)+r));if(cells.some(v=>v!=null&&v!==''))scheduleRows.push({row:r,cells})}
  if(scheduleAsOf)for(const[key,m]of Object.entries(months))if(m.modern&&!m.closed&&key.slice(0,4)===scheduleAsOf.slice(0,4))m.scheduleAsOf=scheduleAsOf;
- return{schema:1,app:'johyeong-schedule',importedAt:new Date().toISOString(),source:book.source||'Excel',sourceHash:book.sha256||'',products,workers,months,memos,counts,locations:audit?['F','G','H','I','J'].map(c=>text(val(audit,c+'5'))):[],scheduleRows,scheduleHistory:savedSchedulePeriods(book.sheets,book.styles),scheduleDryHistory:savedScheduleDryMarkers(book.sheets),archive:book.sheets.map(s=>({name:s.name,state:s.state,cells:s.cells,merges:s.merges||[]})),changes:[]};
+ const result={schema:1,app:'johyeong-schedule',importedAt:new Date().toISOString(),source:book.source||'Excel',sourceHash:book.sha256||'',products,workers,months,memos,counts,locations:audit?['F','G','H','I','J'].map(c=>text(val(audit,c+'5'))):[],scheduleRows,scheduleHistory:savedSchedulePeriods(book.sheets,book.styles),scheduleDryHistory:savedScheduleDryMarkers(book.sheets),archive:book.sheets.map(s=>({name:s.name,state:s.state,cells:s.cells,merges:s.merges||[]})),changes:[]};
+ for(const [key,month]of Object.entries(result.months))month.stocks=month.stocks.filter(inventoryHeadingFilter(result,key));return result;
 }
 function inventory(state,key){
- const initial=state.months[key];if(!initial)return[];if(initial.closed&&initial.closeSnapshot?.inventory)return clone(initial.closeSnapshot.inventory);
+ const initial=state.months[key];if(!initial)return[];const keep=inventoryHeadingFilter(state,key);if(initial.closed&&initial.closeSnapshot?.inventory)return clone(initial.closeSnapshot.inventory).filter(keep);
  const catalog=catalogLookup(state);
  function calculate(key){
-  const m=state.months[key];if(!m)return[];if(m.closed&&m.closeSnapshot?.inventory)return clone(m.closeSnapshot.inventory);
+  const m=state.months[key];if(!m)return[];if(m.closed&&m.closeSnapshot?.inventory)return clone(m.closeSnapshot.inventory).filter(keep);
   const name=m.closed?text:catalog.name,previous=m.openingSource&&m.openingSource<key?calculate(m.openingSource):[],groups=new Map();
   const group=value=>{const product=name(value);if(!product)return null;if(!groups.has(product))groups.set(product,{stocks:[],previous:[],production:0,deduction:0});return groups.get(product)};
   for(const r of m.stocks){const g=group(r.product);if(g)g.stocks.push(r)}
@@ -235,7 +268,7 @@ function inventory(state,key){
   for(const r of previous){const g=group(r.product);if(g)g.previous.push(r)}
   return [...groups].map(([product,g])=>{const ss=g.stocks;if(!m.closed&&g.previous.length>1)throw Error('이전 월의 품명 연결이 중복됩니다: '+product);const carried=g.previous[0]?.current,opening=ss.length?sum(ss,s=>s.sourceType==='previous'?(carried??(state.months[m.openingSource]?0:s.opening)):s.opening):(carried??0),production=g.production,deduction=g.deduction,current=opening+production-deduction,kg=catalog.current(catalog.name(product))?.kg;return{product,opening,production,deduction,current,kg:kg==null?null:current*kg,original:ss.some(s=>s.current!=null)?sum(ss,s=>s.current):null,source:ss.map(s=>s.source).join(', ')}});
  }
- return calculate(key);
+ return calculate(key).filter(keep);
 }
 function completionValue(value){if(value==null)return null;if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||value.stockQty!=null&&(typeof value.stockQty!=='number'||!Number.isFinite(value.stockQty)||value.stockQty<0)||value.reason!=='stock'&&value.stockQty!=null)throw Error('완료 사유와 재고 활용 조수를 확인해 주세요.');return{reason:value.reason,note:value.note,stockQty:value.stockQty??null}}
 function validateRecord(r){for(const f of['cases','plaster','pours','waterRatio','defectUnit','defectCount','fieldScrapKg','fieldDefQty','hours'])if(r[f]!=null&&(!Number.isFinite(r[f])||r[f]<0))throw Error('수량·시간에는 0 이상의 숫자를 입력해 주세요.');if(!iso(r.date)||!text(r.worker)||!text(r.product))throw Error('날짜·작업자·품명을 입력해 주세요.');if(r.missingPlan||r.plan!=null&&(!Number.isFinite(r.plan)||r.plan<0)||r.productionPlanQty!=null&&(!Number.isFinite(r.productionPlanQty)||r.productionPlanQty<=0))throw Error('계획수량을 확인해 주세요.');completionValue(r.productionCompletion);if(Object.prototype.hasOwnProperty.call(r,'scheduleTarget'))scheduleTargetValue(r.scheduleTarget);return true}
@@ -249,6 +282,6 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,completionValue,validateRecord,updateDaily};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
