@@ -6105,17 +6105,21 @@ function pgTimelineBarLabel(parts,full){
  return full;
 }
 function pgTimelineGroups(rows,jobs){
- const jobMap=new Map(jobs.map(j=>[j.id,j])),groups=new Map();
+ const jobMap=new Map(jobs.map(j=>[j.id,j])),groups=new Map(),conflictedJobs=new Set();
+ // An overlap belongs to the reservation, not one machine's display identity.
+ // Keep actual/pending and ownership boundaries while collecting its machines.
+ const conflictKey=(row,job)=>JSON.stringify([row.editMonth||job._ownerMonth||row.sourceMonth,row.worker,job.worker||row.worker,row.jobId||row.id,pgAssignmentDisplayKey(row)]);
+ for(const row of rows)if(row.reservationConflict)conflictedJobs.add(conflictKey(row,jobMap.get(row.jobId)||{}));
  for(const source of rows){
   const job=jobMap.get(source.jobId)||{},routing=pgRouting(job),explicit=!!source.explicitRouting||!!routing,editMonth=source.editMonth||job._ownerMonth||source.sourceMonth;
   const row=explicit?{...source,jobDaily:typeof P.dailyAt==='function'?P.dailyAt(job,source.start):job.daily,explicitRouting:true,editMonth,routingGroup:source.routingGroup??routing?.group??'',routingLane:source.routingLane??routing?.lane??1,routingOrder:source.routingOrder??routing?.order??1,routingMode:source.routingMode??routing?.mode,routingBarDisplay:(routing?.barDisplay??source.routingBarDisplay)==='separate'?'separate':'combined'}:{...source,jobDaily:typeof P.dailyAt==='function'?P.dailyAt(job,source.start):job.daily,editMonth};
-  const identity=P.productionGroupKey(job,source),separate=explicit&&row.routingBarDisplay==='separate',key=JSON.stringify([editMonth,row.worker,job.worker||source.worker,separate?['machine',row.jobId||row.id,row.id||row.machine]:identity,explicit?false:!!row.reservationConflict,pgAssignmentDisplayKey(row)]);
+  const identity=P.productionGroupKey(job,source),separate=explicit&&row.routingBarDisplay==='separate',key=JSON.stringify([editMonth,row.worker,job.worker||source.worker,separate?['machine',row.jobId||row.id,row.id||row.machine]:identity,explicit?false:conflictedJobs.has(conflictKey(row,job)),pgAssignmentDisplayKey(row)]);
   if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);
  }
  return [...groups.values()].map(parts=>{
   const first=parts.find(r=>!r.actualOnly&&!r.orphanActual)||parts[0],starts=parts.map(r=>r.explicitRouting?r.start:r.groupStart||r.start).filter(Boolean).sort(),ends=parts.map(r=>r.explicitRouting?r.end:r.groupEnd||r.end).filter(Boolean).sort();
   const barText=parts.length===1&&first.sourceLabel?first.sourceLabel:parts.map(r=>(r.machine?r.machine+' ':'')+r.product+' '+fmt(r.orphanActual?r.produced:r.qty)+'조'+(r.orphanActual?' 실적':'')).join(' / ');
-  return{...first,start:starts[0],end:ends.at(-1),dry:parts.map(r=>r.dry).filter(Boolean).sort().at(-1),parts,memberIds:[...new Set(parts.map(r=>r.jobId))],barText,barLabel:pgTimelineBarLabel(parts,barText),actualOnly:parts.every(r=>r.actualOnly),orphanActual:parts.every(r=>r.orphanActual),manual:parts.every(r=>r.manual),projected:parts.some(r=>r.projected),status:parts.some(r=>String(r.status||'').replace(/\s/g,'')==='생산중')?'생산중':first.status};
+  return{...first,start:starts[0],end:ends.at(-1),dry:parts.map(r=>r.dry).filter(Boolean).sort().at(-1),parts,memberIds:[...new Set(parts.map(r=>r.jobId))],barText,barLabel:pgTimelineBarLabel(parts,barText),reservationConflict:parts.some(r=>r.reservationConflict),reservationConflictProducts:[...new Set(parts.flatMap(r=>r.reservationConflictProducts||[]))],actualOnly:parts.every(r=>r.actualOnly),orphanActual:parts.every(r=>r.orphanActual),manual:parts.every(r=>r.manual),projected:parts.some(r=>r.projected),status:parts.some(r=>String(r.status||'').replace(/\s/g,'')==='생산중')?'생산중':first.status};
  });
 }
 function pgSameProductionLine(a,b){if(a.explicitRouting&&b.explicitRouting&&a.jobId===b.jobId&&(a.routingMode==='parallel'||b.routingMode==='parallel')&&a.machine!==b.machine)return false;return a.worker===b.worker&&(!(a.explicitRouting&&b.explicitRouting)||String(a.routingGroup||'')===String(b.routingGroup||'')&&(!a.routingGroup?a.jobId===b.jobId:true)&&Number(a.routingLane)===Number(b.routingLane))}
@@ -6123,12 +6127,25 @@ function pgSameProductionLine(a,b){if(a.explicitRouting&&b.explicitRouting&&a.jo
 function pgTimelineSegments(period,periods){
  if(period.otherWork)return pgDisplaySegments(period.start,period.end);
  const parts=period.parts||[period],pending=parts.every(p=>p.manual&&p.projected&&String(p.status||'').replace(/\s/g,'')!=='생산중');
- const provided=parts.some(p=>Array.isArray(p.displaySegments)),base=provided?parts.flatMap(p=>Array.isArray(p.displaySegments)?p.displaySegments:pgDisplaySegments(p.groupStart||p.start,p.groupEnd||p.end)):pgDisplaySegments(period.start,period.end);
+ const provided=parts.some(p=>Array.isArray(p.displaySegments)),base=provided?parts.flatMap(p=>Array.isArray(p.displaySegments)?p.displaySegments:pgDisplaySegments(p.start,p.end)):pgDisplaySegments(period.start,period.end);
  let segments=base.filter(p=>C.iso(p.start)&&C.iso(p.end)&&p.start<=p.end).map(p=>({...p}));
- if(pending)for(const actual of periods.filter(p=>pgSameProductionLine(p,period)&&(p.parts||[p]).some(r=>!r.projected||String(r.status||'').replace(/\s/g,'')==='생산중'))){
-  if(!C.iso(actual.start)||!C.iso(actual.end))continue;segments=segments.flatMap(p=>p.end<actual.start||p.start>actual.end?[p]:[p.start<actual.start?{start:p.start,end:P.add(actual.start,-1)}:null,p.end>actual.end?{start:P.add(actual.end,1),end:p.end}:null].filter(Boolean));
+ const ownVisible=segments,continuous=provided&&pending&&segments.length&&parts.length>1&&parts[0].jobId&&parts.every(p=>!p.explicitRouting&&p.jobId===parts[0].jobId);
+ const subtract=(ranges,cut)=>ranges.flatMap(p=>p.end<cut.start||p.start>cut.end?[p]:[p.start<cut.start?{start:p.start,end:P.add(cut.start,-1)}:null,p.end>cut.end?{start:P.add(cut.end,1),end:p.end}:null].filter(Boolean));
+ // One legacy reservation remains a calendar span across machine transitions
+ // and holidays. Remove only explicitly hidden portions of each machine; an
+ // entirely hidden job must not leave a bar made solely of transition days.
+ if(continuous){
+  segments=pgDisplaySegments(period.start,period.end);
+  for(const part of parts)if(Array.isArray(part.displaySegments)){
+   let hidden=pgDisplaySegments(part.start,part.end);
+   for(const visible of part.displaySegments)if(C.iso(visible.start)&&C.iso(visible.end)&&visible.start<=visible.end)hidden=subtract(hidden,visible);
+   for(const cut of hidden)segments=subtract(segments,cut);
+  }
  }
- const merged=[];for(const piece of segments.sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end))){const previous=merged.at(-1);if(previous&&piece.start<=P.add(previous.end,1)){if(piece.end>previous.end)previous.end=piece.end}else merged.push({...piece})}return merged;
+ if(pending)for(const actual of periods.filter(p=>pgSameProductionLine(p,period)&&(p.parts||[p]).some(r=>!r.projected||String(r.status||'').replace(/\s/g,'')==='생산중'))){
+  if(!C.iso(actual.start)||!C.iso(actual.end))continue;segments=subtract(segments,actual);
+ }
+ const merged=[];for(const piece of segments.sort((a,b)=>a.start.localeCompare(b.start)||a.end.localeCompare(b.end))){const previous=merged.at(-1);if(previous&&piece.start<=P.add(previous.end,1)){if(piece.end>previous.end)previous.end=piece.end}else merged.push({...piece})}return continuous?merged.filter(piece=>ownVisible.some(own=>piece.start<=own.end&&piece.end>=own.start)):merged;
 }
 function pgTimelineLanes(periods){
  const pieces=r=>Array.isArray(r.displaySegments)?r.displaySegments:pgDisplaySegments(r.start,r.end),lanes=[],routeKey=r=>r.explicitRouting&&r.routingBarDisplay==='separate'?'machine:'+JSON.stringify([r.editMonth,r.jobId||r.id,r.id||r.machine]):'',fits=(lane,row)=>lane.every(other=>pieces(other).every(a=>pieces(row).every(b=>a.end<b.start||b.end<a.start)));
