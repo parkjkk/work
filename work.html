@@ -5209,7 +5209,7 @@ function openEntry(row, presetName, mode){
   }
   $('#entryWorkerLabel').textContent=$('#fWorker').value||'선택 안 됨';$('#workerDetails').open=!$('#fWorker').value;
   syncQuickProducts();
-  if(row && !isCase) expandProduct($('#prodBlocks .pb'),false);
+  if(!isCase) $$('#prodBlocks .pb').forEach(el=>expandProduct(el,false));
   $('#fWorker').classList.remove('need');
   $('#entryOv').classList.add('open');
   renderPlannedEntryChoices();renderEntryWorkChoice();
