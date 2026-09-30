@@ -482,7 +482,32 @@ const manualCalendarPolicy='marked-holidays-v2';
 const manualUsesCalendar=j=>!!j.manual&&!j.firstActual&&!j.complete&&!(j.carried&&j.previousProduced>0);
 function manualWork(s,worker,d){if(!C.iso(d))return false;return !factory(s).includes(d)&&!holiday(s,worker,d)&&!otherWorkOn(s,worker,d)}
 function nextManualWork(s,worker,d){for(let i=0;i<740;i++,d=add(d,1))if(manualWork(s,worker,d))return d;throw Error('2년 안에 수기 작업 가능한 날짜이 없습니다.')}
-const reservationLayoutPolicy='manual-transition-gap-v5';
+const reservationLayoutPolicy='manual-transition-gap-v6';
+// A completed preparation day is dated attendance, not production and not a
+// holiday. It only supplies a lower bound for work that has never started.
+// Keep manualWork unchanged: the existing two-day transition gap must still
+// count genuine preparation days as available labour, rather than add them twice.
+function casePreparationDays(s){
+ const scope=assignmentCalendarScopes.get(s);if(scope?.casePreparationDays)return scope.casePreparationDays;
+ const unique=new Map();for(const [month,value]of Object.entries(s.months||{}))for(const row of Array.isArray(value.fieldAttendance)?value.fieldAttendance:[]){
+  if(!row||row.deleted||typeof row.worker!=='string'||!row.worker.trim()||!C.iso(row.date)||row.date.slice(0,7)!==month||String(row.offKind||'').normalize('NFKC').replace(/\s/g,'')!=='케이스교체'||!Number.isFinite(row.hours)||row.hours<=0||row.hours>24)continue;
+  unique.set(row.worker+'\0'+row.date,{worker:row.worker,date:row.date});
+ }
+ const rows=[...unique.values()].sort((a,b)=>a.date.localeCompare(b.date));if(scope)scope.casePreparationDays=rows;return rows;
+}
+function casePreparationStart(s,worker,through){
+ if(!C.iso(through))return null;
+ const date=casePreparationDays(s).filter(row=>row.worker===worker&&row.date<=through).at(-1)?.date;
+ return date?{date,start:nextManualWork(s,worker,add(date,1))}:null;
+}
+function casePreparationCutoff(s,owner,worker,requestedToday,options){
+ if(C.iso(options.asOf)&&(!options.asOfMonth||options.asOfMonth===owner))return options.asOf;
+ if(C.iso(requestedToday))return requestedToday;
+ // A calculation without an explicit display date still sees newly saved
+ // preparation in the selected/prior months. Do not advance global production
+ // asOf or read another worker/future month's attendance into this fallback.
+ return [asOf(s,owner),...casePreparationDays(s).filter(row=>row.worker===worker&&row.date.slice(0,7)<=owner).map(row=>row.date)].sort().at(-1);
+}
 function afterProductionGap(s,worker,end){
  if(!C.iso(end))throw Error('앞 작업의 생산 종료일을 확인해 주세요.');
  let date=add(end,1);for(let i=0;i<3;i++){date=nextManualWork(s,worker,date);if(i<2)date=add(date,1)}return date;
@@ -780,12 +805,14 @@ function scheduleAllRead(s,requestedToday,options={}){
  // jobs, never a later companion's date or an unverified carried balance.
  for(const owner of months)if(!s.months[owner].closed)for(const row of base[owner].rows||[])if(row.orphanActual&&row.status==='생산중'&&!(C.iso(activeStarts.get(row.worker))&&row.end<activeStarts.get(row.worker)))cursors.set(row.worker,{end:null,blocked:true,predecessor:{groupKey:row.groupId,jobIds:[row.jobId],products:[row.product],ownerMonths:[owner],end:null},reason:'연결되지 않은 실제 생산의 작업·예상 종료일을 확인해야 다음 수기 일정을 배치할 수 있습니다.'});
  pending.sort((a,b)=>(a.requestedStart||'9999').localeCompare(b.requestedStart||'9999')||a.owner.localeCompare(b.owner)||a.key.localeCompare(b.key));
- for(const group of pending){const previous=cursors.get(group.worker),manualFallback=!!previous?.blocked,anchor=manualFallback?null:previous,status=manualFallback?'manual':previous?'chained':'first';let prepared=null,calculated=null,start=null,end=null,reason='';
+ for(const group of pending){const previous=cursors.get(group.worker),manualFallback=!!previous?.blocked,anchor=manualFallback?null:previous,status=manualFallback?'manual':previous?'chained':'first';let prepared=null,calculated=null,start=null,end=null,reason='',casePreparation=null;
   try{
    if(group.members.some(e=>e.job.carryBlocked))throw Error('이월 작업 연결을 확인해야 수기 일정을 배치할 수 있습니다.');
    start=anchor?afterProductionGap(s,group.worker,anchor.end):group.requestedStart;
    if(group.members.some(e=>e.job.manualStartMode==='date')&&C.iso(group.requestedStart)&&group.requestedStart>start)start=group.requestedStart;
    if(!C.iso(start))throw Error('수기 작업의 시작일을 확인해 주세요.');
+   const preparation=casePreparationStart(s,group.worker,casePreparationCutoff(s,group.owner,group.worker,requestedToday,options));
+   if(preparation&&preparation.start>start){start=preparation.start;casePreparation=preparation;}
    const legacy=group.members.filter(e=>!e.job.routing),legacyEnds=legacy.map(e=>{const savedPeriod=manualFallback&&e.job.manualEndMode!=='daily'&&C.iso(e.job.start)&&C.iso(e.job.end)&&e.job.end>=e.job.start,duration=manualDuration(s,savedPeriod?{...e.job,manualEndMode:'date'}:e.job),calculatedEnd=manualDurationEnd(s,group.worker,start,duration),keepEnd=savedPeriod||!anchor&&e.job.manualEndMode==='date'&&C.iso(e.job.end);return keepEnd&&e.job.end>calculatedEnd?e.job.end:calculatedEnd}),legacyEnd=legacyEnds.sort().at(-1)||null;
    prepared=group.members.map(entry=>{const job=clone(entry.job);if(job.routing){const offset=C.iso(job.start)&&C.iso(group.requestedStart)?Math.round((Date.parse(job.start)-Date.parse(group.requestedStart))/86400000):0;job.start=add(start,offset)}else{job.start=start;job.end=legacyEnd;job.duration=null;job.afterPrevious=false}return job});
    calculated=scheduleBase(s,group.owner,requestedToday,settings(group.owner,{inputJobs:prepared,isolatedGroup:true,skipSourceDry:true}));
@@ -793,7 +820,7 @@ function scheduleAllRead(s,requestedToday,options={}){
    end=calculated.rows.map(row=>row.end).filter(C.iso).sort().at(-1);if(!end)throw Error('수기 작업의 생산 종료일을 계산할 수 없습니다.');
    for(const job of prepared)effective.get(group.owner).set(job.id,job);
   }catch(error){reason=error.message}
-  for(const entry of group.members){const parts=reason?[]:calculated.rows.filter(row=>row.jobId===entry.job.id),starts=parts.map(row=>row.start).filter(C.iso).sort(),ends=parts.map(row=>row.end).filter(C.iso).sort();layouts.set(entry.key,{ownerMonth:entry.owner,jobId:entry.job.id,groupKey:group.key,worker:entry.job.worker,requestedStart:entry.job.start||null,requestedEnd:entry.job.end||null,start:starts[0]||null,end:ends.at(-1)||null,groupStart:reason?null:start,groupEnd:reason?null:end,status:reason?'blocked':status,gapWorkdays:2,predecessor:previous?.predecessor||null,reason:reason||(manualFallback?'앞 작업의 종료일이 정해지지 않아 저장한 수기 예약조건을 사용합니다.':'')})}
+  for(const entry of group.members){const parts=reason?[]:calculated.rows.filter(row=>row.jobId===entry.job.id),starts=parts.map(row=>row.start).filter(C.iso).sort(),ends=parts.map(row=>row.end).filter(C.iso).sort();layouts.set(entry.key,{ownerMonth:entry.owner,jobId:entry.job.id,groupKey:group.key,worker:entry.job.worker,requestedStart:entry.job.start||null,requestedEnd:entry.job.end||null,start:starts[0]||null,end:ends.at(-1)||null,groupStart:reason?null:start,groupEnd:reason?null:end,status:reason?'blocked':status,gapWorkdays:2,...(casePreparation?{casePreparation:clone(casePreparation)}:{}),predecessor:previous?.predecessor||null,reason:reason||(manualFallback?'앞 작업의 종료일이 정해지지 않아 저장한 수기 예약조건을 사용합니다.':'')})}
   cursors.set(group.worker,{end:reason?null:end,blocked:!!reason,predecessor:predecessor(group,reason?null:end),reason:reason||''});
  }
  for(const owner of months){

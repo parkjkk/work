@@ -94,16 +94,20 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   const schedule=scheduleForJob(month,job),route=schedule?.conditions?.routing,routeKey=route?.group?month+'\0'+job.worker+'\0'+route.group:null;
   if(!Number.isFinite(produced)||!Number.isFinite(plan)||plan<=0||!hasActual&&!job.manual||hasActual&&!(typeof start==='string'&&start<=asOf))continue;
   const scheduleActive=!!schedule&&schedule.start<=asOf&&(!schedule.end||asOf<=schedule.end),complete=progress?.complete===true||!progress&&job.complete===true;
-  targetCandidates.push({month,job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete});
+  // A dated preparation may move a still-valid reservation beyond today. Keep
+  // its exact identity available to already-entered actual drafts; activeFrom
+  // continues to prevent automatic production entry before the new start.
+  const preparationDeferred=!!(job.manual&&!hasActual&&!complete&&schedule&&schedule.start>asOf&&(conditionSchedules.get(month)||[]).some(row=>{const evidence=row.reservationLayout?.casePreparation;return row.jobId===job.id&&!row.reservationBlocked&&evidence&&typeof evidence.date==='string'&&evidence.date<=asOf&&typeof evidence.start==='string'&&evidence.start>evidence.date&&evidence.start<=schedule.start}));
+  targetCandidates.push({month,job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete,preparationDeferred});
  }
  // Keep a started group's pending successor visible across the completion-day
  // gap. Its activeFrom still controls automatic entry on the next workday.
  const startedRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&candidate.hasActual).map(candidate=>candidate.routeKey));
  const activeRouteKeys=new Set(targetCandidates.filter(candidate=>candidate.routeKey&&!candidate.complete&&(candidate.scheduleActive||startedRouteKeys.has(candidate.routeKey))).map(candidate=>candidate.routeKey));
  for(const candidate of targetCandidates){
-  const {job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete}=candidate;
-  if(!(hasActual&&!complete||job.manual&&(scheduleActive&&!complete||routeKey&&activeRouteKeys.has(routeKey))))continue;
-  const activeFrom=schedule?.start||start;if(typeof activeFrom!=='string'||activeFrom>asOf&&!routeKey)continue;
+  const {job,target,product,progress,handoff,start,produced,plan,hasActual,schedule,routeKey,scheduleActive,complete,preparationDeferred}=candidate;
+  if(!(hasActual&&!complete||job.manual&&(scheduleActive&&!complete||preparationDeferred||routeKey&&activeRouteKeys.has(routeKey))))continue;
+  const activeFrom=schedule?.start||start;if(typeof activeFrom!=='string'||activeFrom>asOf&&!routeKey&&!preparationDeferred)continue;
   const value={target,worker:workerAt(job,asOf),product:product.name,start:schedule?.start||start,end:schedule?.end||null,activeFrom,plan,produced,complete,completedAt:complete?(progress?.completedAt||job.completedAt||null):null,schedule,participants:participantsFor(job),...(handoff?{handoff}:{})};targets.push({...value,revision:hash(value)});
  }
  entries.sort((a,b)=>(a.path+'\0'+a.id).localeCompare(b.path+'\0'+b.id));
