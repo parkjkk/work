@@ -65,14 +65,16 @@
 
 /* Read-only progress beside the existing editable plan column. */
 .sheetEditor[data-sheet-id="production"] td[data-result="currentProgress"]{padding:3px 6px;text-align:left;background:#f4f7fb;vertical-align:middle}
-.productionProgress{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;column-gap:4px;line-height:1.25;min-height:33px;color:#304767}
-.productionProgress>strong{grid-column:1/-1;font-size:.77rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.productionProgress{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;align-items:center;line-height:1.35;min-width:0;color:#304767}
+.productionProgress>strong{font-size:.82rem;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:left}
 .productionProgress>strong span{font-weight:500;color:#738398}
-.productionProgress>small{font-size:.66rem;white-space:nowrap;align-self:center}
+.productionProgress>small{font-size:.72rem;white-space:normal;align-self:center;text-align:right}
 .productionProgress>small b{font-weight:500}
-.productionProgress>button{min-height:19px;padding:1px 4px;font-size:.61rem;line-height:1.3;border:1px solid #c2cfdf;border-radius:4px;background:#fff;color:#455b85;white-space:nowrap}
-.productionProgress>button:focus-visible{outline:2px solid #5162ba;outline-offset:1px}
-.productionProgress>button:disabled{opacity:.55;cursor:default}
+.productionProgress>.productionTargetNote{grid-column:1/-1;text-align:left;overflow-wrap:anywhere}
+.productionProgressActions{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+.productionProgressActions>button{min-height:27px;max-width:100%;padding:3px 5px;font-size:11px;line-height:1.35;border:1px solid #c2cfdf;border-radius:4px;background:#fff;color:#455b85;white-space:normal;overflow-wrap:anywhere}
+.productionProgressActions>button:focus-visible{outline:2px solid #5162ba;outline-offset:1px}
+.productionProgressActions>button:disabled{opacity:.55;cursor:default}
 .productionProgress.isComplete>small{color:#28745c}.productionProgress.isComplete>small b{font-weight:650}
 .productionProgressEmpty{font-size:.71rem;color:#8b96a5}
 .productionProgressBasis{padding:5px 10px;background:#eef1f9;border-bottom:1px solid #dce2ef;color:#4a5874;font-size:.7rem;line-height:1.4}
@@ -82,9 +84,23 @@
 .productionCompletionHelp{color:#738197;font-size:.78rem;line-height:1.5}.productionCompletionError{color:#b14c56;font-size:.82rem;min-height:1em}.productionCompletionMemo{white-space:pre-wrap;overflow-wrap:anywhere}
 #productionCompletionForm .actions{justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:18px}
 #productionCompletionForm label[hidden]{display:none!important}
-@media(max-width:700px){.productionProgress>button{min-height:28px;font-size:.7rem}.productionProgress{min-height:42px}.productionProgressBasis{font-size:.73rem}}
-@media print{.productionProgress>button{display:none}.productionProgress{display:block;min-height:0}.productionProgress>strong,.productionProgress>small{display:block;font-size:8px}.productionProgressBasis{font-size:8px}}
+@media(max-width:700px){.productionProgressActions>button{min-height:40px;padding:6px 8px;font-size:12px}.productionProgress>strong{font-size:14px}.productionProgressBasis{font-size:.73rem}}
+@media print{.productionProgressActions{display:none!important}.productionProgress{display:block;min-height:0}.productionProgress>strong,.productionProgress>small{display:block;font-size:8px;text-align:left}.productionProgressBasis{font-size:8px}}
+@media screen and (min-width:721px){
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked>tbody>tr[data-row]{position:relative}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked>tbody>tr[data-row]>th:first-child{grid-row:1;min-height:36px;padding-right:40px}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked>tbody>tr[data-sheet-worker-lead="true"]>th:first-child::after{content:''}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked td.productionWorkerCell{grid-column:1/-1;grid-row:1;margin:0 40px;padding:0;border:0;background:transparent}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked td.productionWorkerCell::before{content:none}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked .productionWorkerCell>div{position:static;flex-direction:row;align-items:center;justify-content:space-between;padding:3px 4px}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked>tbody>tr[data-row]>td.rowActions{position:absolute;z-index:4;top:3px;right:8px;width:32px;height:32px;padding:0;border:0;background:transparent}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked td.rowActions::before{content:none}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked td.rowActions button{width:100%;min-height:32px}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] .sheetStacked [data-cell="product"]{text-align:left;font-weight:600}
+}
 @media screen{
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] td[data-result="currentProgress"]{padding:7px 8px}
+ body.sheetWorkspace .sheetEditor[data-sheet-id="production"] td[data-result="gypsumDayLot"]{text-align:center;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
  body.sheetWorkspace .productionDateRail button[data-date][aria-current="date"]{border-bottom:3px solid #286f76}
  body.sheetWorkspace .productionDateRail button[data-date][aria-current="date"] b{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:1px 2px}
  body.sheetWorkspace .productionDateRail .productionTodayTag{display:inline-block;font-size:9px;line-height:1.25;font-weight:700;color:#1b6269}
@@ -1023,10 +1039,6 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .productionViewCaption>span:first-child{display:block}
  body.sheetWorkspace .productionProgressBasis{font-size:12px;line-height:1.55;padding:8px 9px}
  body.sheetWorkspace .sheetEditor[data-sheet-id=production] td[data-result=currentProgress]{padding:5px 6px}
- body.sheetWorkspace .productionProgress{grid-template-columns:minmax(0,1fr) 62px;grid-template-rows:auto auto;gap:2px 4px;min-height:44px;align-items:center}
- body.sheetWorkspace .productionProgress>strong{grid-column:1;grid-row:1;font-size:13px}
- body.sheetWorkspace .productionProgress>small{grid-column:1;grid-row:2;font-size:11px;line-height:1.4;white-space:normal}
- body.sheetWorkspace .productionProgress>button{grid-column:2;grid-row:1/3;min-width:62px;padding:5px 3px;white-space:normal;font-size:12px;line-height:1.35}
  body.sheetWorkspace .productionProgressEmpty{font-size:12px}
 
  /* Stock, audit, close and management use the same touch-sized form controls. */
@@ -1247,10 +1259,6 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .inputSheet.sheetFitted .productionWorkerName{overflow-wrap:anywhere;max-width:100%}
  body.sheetWorkspace .inputSheet.sheetFitted td :is(input,select,textarea){min-width:0;max-width:100%;padding-inline:4px}
  body.sheetWorkspace .inputSheet.sheetFitted td.calculated{padding-inline:4px;overflow-wrap:anywhere}
- body.sheetWorkspace .inputSheet.sheetFitted .productionProgress{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;min-width:0}
- body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>strong{flex-basis:100%;white-space:normal;overflow-wrap:anywhere}
- body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>small{white-space:normal;overflow-wrap:anywhere}
- body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button{max-width:100%;white-space:normal;margin-left:auto}
  body.sheetWorkspace .inputSheet.sheetFitted .sheetGroupBar{width:100%;max-width:100%;left:0;box-sizing:border-box;flex-wrap:wrap}
  body.sheetWorkspace .inputSheet.sheetFitted [data-sheet-group-actions]{min-width:0;max-width:100%;flex-wrap:wrap}
  body.sheetWorkspace .inputSheet.sheetFitted textarea[data-cell]{overflow-wrap:anywhere}
@@ -1343,9 +1351,6 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell .productionWorkerName{font-size:14px}
  body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerCell select{width:100%;min-width:0}
  body.sheetWorkspace .inputSheet.sheetStacked .productionWorkerPicker{flex:1;min-width:0}
- body.sheetWorkspace .inputSheet.sheetStacked .productionProgress{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:3px 5px}
- body.sheetWorkspace .inputSheet.sheetStacked .productionProgress>strong{font-size:16px}
- body.sheetWorkspace .inputSheet.sheetStacked .productionProgress>button{min-width:80px;padding:7px 9px}
  body.sheetWorkspace .inputSheet.sheetStacked>tbody>tr[data-row]>td.rowActions{position:absolute;top:8px;right:8px;width:44px;height:44px;padding:0;border:0;background:transparent}
  body.sheetWorkspace .inputSheet.sheetStacked td.rowActions::before{content:none}
  body.sheetWorkspace .inputSheet.sheetStacked .rowActions button{width:100%;border:1px solid #e3d7d7;border-radius:6px}
@@ -1415,9 +1420,6 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
 
 /* Keep the schedule-link action separate from production completion. */
 @media screen{
-body.sheetWorkspace .productionProgress>button[data-sheet-view-command="productionJobLink"]{grid-column:1/-1;grid-row:3;justify-self:start;min-width:0;margin:3px 0 0;padding:3px 6px}
-body.sheetWorkspace .productionProgress>button[data-sheet-view-command="machineActuals"]{grid-column:1/-1;grid-row:4;justify-self:start;min-width:0;margin:3px 0 0;padding:3px 6px}
-body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-sheet-view-command="productionJobLink"],[data-sheet-view-command="machineActuals"]){flex-basis:auto;margin-left:0}
 [data-machine-actual-row]+[data-machine-actual-row]{margin-top:10px}
 }
 
@@ -1511,7 +1513,7 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
  body.sheetWorkspace .productionProgress>strong{color:#34465f;font-weight:650}
  body.sheetWorkspace .productionProgress>strong span{color:#7b8698}
  body.sheetWorkspace .productionProgress:not(.isComplete)>small{color:#687790}
- body.sheetWorkspace .productionProgress>button{color:#495da1;border-color:#c9d3e8;background:#fff}
+ body.sheetWorkspace .productionProgressActions>button{color:#495da1;border-color:#c9d3e8;background:#fff}
  body.sheetWorkspace .productionProgressEmpty{color:#7b8698}
  body.sheetWorkspace :is(.productionSource summary,.secondarySection>summary,.secondaryHistory>summary,.managementHelp>summary){color:#5f6e85}
  body.sheetWorkspace .managementGuide{background:#f4f6fa;border-color:#dce2eb;color:#65728a}
@@ -5484,11 +5486,12 @@ function productionProgressHTML(row,g){
  const reservationStatus=p?.reservationWarning?'일정 확인':'';
  const linkTitle=p?.reservationWarning||(p?.reservationLink?'미리 만든 일정에 연결되어 있습니다. 누르면 일정과 호기를 확인합니다.':'생산 일정과 호기, 하루 생산량을 확인합니다.');
  const link=deleted||typeof productionJobLinkDialog!=='function'?'':'<button type="button" data-sheet-view-command="productionJobLink" data-id="'+esc(row.id)+'" aria-label="'+esc(row.worker+' '+row.product+' '+(reservationStatus?reservationStatus+' · ':'')+'생산 일정·호기 확인')+'" title="'+esc(linkTitle)+'">'+(reservationStatus?'<span data-reservation-status="review">'+reservationStatus+'</span> · ':'')+'생산 일정·호기</button>'+(p?.jobId||Array.isArray(row.machineActuals)?'<button type="button" data-sheet-view-command="machineActuals" data-id="'+esc(row.id)+'" title="여러 호기에 나눠 생산한 오늘 수량을 입력합니다.">호기별 생산량</button>':'');
- if(!p?.jobId)return '<div class="productionProgress"><span class="productionProgressEmpty" title="'+esc(cache.error||p?.warning||'이 기록에 연결된 작업 계획이 없습니다.')+'">'+esc(cache.error||p?.warning?'확인 필요':'계획 없음')+'</span>'+link+'</div>';
- const credit=row.scheduleTarget?'<small class="productionTargetNote">'+esc((p.scheduleWorker||row.scheduleTarget.worker||'담당자')+' 작업에 합산')+'</small>':'';
+ if(!p?.jobId)return '<div class="productionProgress"><span class="productionProgressEmpty" title="'+esc(cache.error||p?.warning||'이 기록에 연결된 작업 계획이 없습니다.')+'">'+esc(cache.error||p?.warning?'확인 필요':'계획 없음')+'</span>'+(link?'<div class="productionProgressActions">'+link+'</div>':'')+'</div>';
+ const creditedWorker=p.scheduleWorker||row.scheduleTarget?.worker||'';
+ const credit=row.scheduleTarget&&(!creditedWorker||!row.worker||creditedWorker!==row.worker)?'<small class="productionTargetNote">'+esc((creditedWorker||'담당자')+' 작업에 합산')+'</small>':'';
  const title=productionProgressBasis(g)+' · 같은 작업의 날짜별 행에 같은 누적을 표시합니다.'+(p.warning?' '+p.warning:'')+(p.complete&&p.completedAt?' · 완료일 '+p.completedAt:'');
  const button=deleted?'':'<button type="button" data-sheet-view-command="productionCompletion" data-id="'+esc(row.id)+'" '+(!p.complete&&g.locked()?'disabled':'')+' aria-label="'+esc(row.worker+' '+row.product+' '+(p.complete?'생산완료 내용':'생산완료 처리'))+'">'+(p.complete?'내용':'완료 처리')+'</button>';
- return '<div class="productionProgress '+(p.complete?'isComplete':'')+'" data-production-progress="'+esc(row.id)+'" title="'+esc(title)+'"><strong>'+esc(fmt(p.produced))+' <span>/ '+esc(fmt(p.plan))+'조</span></strong><small>'+esc(p.percent==null?'진행률 미정':fmt(p.percent,1)+'%')+' · <b>'+esc(productionProgressStatus(p))+'</b></small>'+credit+button+link+'</div>';
+ return '<div class="productionProgress '+(p.complete?'isComplete':'')+'" data-production-progress="'+esc(row.id)+'" title="'+esc(title)+'"><strong>'+esc(fmt(p.produced))+' <span>/ '+esc(fmt(p.plan))+'조</span></strong><small class="productionProgressStatus">'+esc(p.percent==null?'진행률 미정':fmt(p.percent,1)+'%')+' · <b>'+esc(productionProgressStatus(p))+'</b></small>'+credit+((button||link)?'<div class="productionProgressActions">'+button+link+'</div>':'')+'</div>';
 }
 function productionMachineActualDialog(g,id){
  const row=g.draft.rows.find(r=>r.id===id);if(!row||g.draft.deleted.some(r=>r.id===id))throw Error('입력할 생산행을 찾지 못했습니다.');
@@ -5699,15 +5702,15 @@ function productionAddProduct(g,date,worker=''){
 dailyView=function(){
  const key=month,scope=sheetScope(),B=ScheduleBatch,closed=m().closed,products=state.products.filter(p=>!p.inactive).map(p=>p.name).sort(typeof ProductOrder!=='undefined'?ProductOrder.compareProducts:(a,b)=>a.localeCompare(b,'ko',{numeric:true})),workers=state.workers;
  const columns=[
-  {key:'workerGroup',label:'작업자',width:74,hideCalcLabel:true,calc:r=>r.worker||'미지정'},
+  {key:'workerGroup',label:'작업자',width:82,hideCalcLabel:true,calc:r=>r.worker||'미지정'},
   {key:'date',label:'날짜',type:'date',width:132,advanced:true},
   {key:'worker',label:'작업자 정정',type:'select',options:workers,width:98,advanced:true},
-  {key:'product',label:'품명',options:products,width:108},
-  {key:'pours',label:'생산 조',type:'number',width:54},
-  {key:'plan',label:'계획 / 종료',type:'number',width:64},
-  {key:'currentProgress',label:'오늘까지 누적 / 계획',width:132,hideCalcLabel:true,calc:productionProgressText,html:productionProgressHTML},
-  {key:'hours',label:'근무 h',type:'number',width:48},
-  {key:'gypsumDayLot',label:'날짜별 석고 로트',width:140,calc:r=>gypsumLotLabel(r.date)||(r.lot?r.lot+' (개별 기록)':'미기록')},{key:'lot',label:'기존 개별 LOT',width:110,advanced:true},
+  {key:'product',label:'품명',options:products,width:112},
+  {key:'pours',label:'생산 조',type:'number',width:62},
+  {key:'plan',label:'계획 / 종료',type:'number',width:72},
+  {key:'currentProgress',label:'오늘까지 누적 / 계획',width:250,hideCalcLabel:true,calc:productionProgressText,html:productionProgressHTML},
+  {key:'hours',label:'근무 h',type:'number',width:54},
+  {key:'gypsumDayLot',label:'석고 로트',width:100,calc:r=>gypsumLotLabel(r.date)||(r.lot?r.lot+' (개별 기록)':'미기록')},{key:'lot',label:'기존 개별 LOT',width:110,advanced:true},
   {key:'waterRatio',label:'혼수율 %',type:'number',width:78,advanced:true},
   {key:'fieldScrapKg',label:'현장 불량 총 kg',type:'number',width:112,advanced:true,title:()=> '현장일보와 함께 사용하는 불량 총량 · 빈칸은 미입력, 0은 불량 없음'},
   {key:'fieldDefQty',label:'현장 불량 개수',type:'number',width:104,advanced:true,title:()=> '현장일보와 함께 사용하는 불량 개수 · 빈칸은 미입력, 0은 불량 없음'},
@@ -5716,7 +5719,7 @@ dailyView=function(){
   {key:'defectUnit',label:'불량 kg/개',type:'number',width:92,advanced:true,readonly:r=>C.dailyQuality(r).fieldKg,title:r=>C.dailyQuality(r).fieldKg?'기존 직접입력 보관값 · 현장 불량 총 kg 칸에서 수정':'불량 1개의 석고량 · 총 kg과 다릅니다'},
   {key:'defectPart',label:'불량 부위·비고',width:155,advanced:true},
   {key:'productionKg',label:'생산 kg',width:68,calc:r=>fmt(C.daily(productionPreview(r,key)).plaster)},
-  {key:'productMemo',label:'메모 · 품명 공통',type:'textarea',width:350,value:(r,d)=>{try{return B.memoValue(state,d,r.product)}catch(e){return e.message}},disabled:r=>!String(r.product||'').trim()||!state.products.some(p=>p.name===String(r.product).trim())&&!(state.memos||[]).some(x=>String(x.product||'').trim()===String(r.product).trim())||(state.memos||[]).filter(x=>String(x.product||'').trim()===String(r.product).trim()).length>1,title:r=>'같은 품명에 공통 적용 · 모바일 Enter / PC Shift+Enter 줄바꿈'},
+  {key:'productMemo',label:'메모 · 품명 공통',type:'textarea',width:280,value:(r,d)=>{try{return B.memoValue(state,d,r.product)}catch(e){return e.message}},disabled:r=>!String(r.product||'').trim()||!state.products.some(p=>p.name===String(r.product).trim())&&!(state.memos||[]).some(x=>String(x.product||'').trim()===String(r.product).trim())||(state.memos||[]).filter(x=>String(x.product||'').trim()===String(r.product).trim()).length>1,title:r=>'같은 품명에 공통 적용 · 모바일 Enter / PC Shift+Enter 줄바꿈'},
   {key:'defectKg',label:'불량 kg',width:92,advanced:true,calc:r=>fmt(C.daily(productionPreview(r,key)).defect)},
   {key:'cases',label:'케이스 수/조',type:'number',width:80,advanced:true},
   {key:'plaster',label:'석고 kg/조',type:'number',width:96,advanced:true},
@@ -8800,7 +8803,8 @@ function mobileFitColumns(main,small,resetPosition=false){
   const widths={__rowNumber:44,workerGroup:72,product:108,pours:60,plan:64};
   const bases=columns.map(col=>{col.dataset.baseWidth??=col.style.width;const base=parseFloat(col.dataset.baseWidth);return Number.isFinite(base)?small&&production?(widths[col.dataset.sheetCol]??base):base:100});
   const total=bases.reduce((sum,width)=>sum+width,0),viewport=table.closest('.sheetViewport'),available=viewport?.clientWidth||0;
-  const stacked=small?sheetId!=='plaster-month':available>0&&total>available*1.65;
+  // Keep production names and its always-visible actions readable before columns become cramped.
+  const stacked=small?sheetId!=='plaster-month':available>0&&total>available*(production?1.2:1.65);
   const previous=mobileScreen.fits.get(table),signature=[small,production,fit,stacked,available,...columns.map((col,index)=>col.dataset.sheetCol+':'+bases[index])].join('|'),same=previous?.signature===signature&&previous.viewport===viewport&&mobileSameNodes(previous.columns,columns);
   if(table.classList.contains('sheetFitted')!==fit)table.classList.toggle('sheetFitted',fit);
   if(table.classList.contains('sheetStacked')!==stacked)table.classList.toggle('sheetStacked',stacked);
