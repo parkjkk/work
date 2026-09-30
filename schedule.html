@@ -1483,7 +1483,7 @@ body.sheetWorkspace .inputSheet.sheetFitted .productionProgress>button:is([data-
  body.sheetWorkspace .inputSheet td :is(input,select,textarea){color:#2d3b50;background-color:transparent}
  body.sheetWorkspace .inputSheet td :is(input,select,textarea):focus{background-color:#f5f6ff;outline-color:#5c69d7}
  body.sheetWorkspace .inputSheet td :is(input,select,textarea):disabled{color:#687588;background-color:#f6f7f9}
- body.sheetWorkspace .inputSheet tr:not(.deleted):not(.selected):not(.productionPending):hover>td:not(.cellError):not(.productionWorkerCell):not(.calculated){background:#fafbfe}
+ body.sheetWorkspace .inputSheet tr:not(.deleted):not(.selected):not(.productionPending):not(:focus-within):hover>td:not(.cellError):not(.productionWorkerCell):not(.calculated){background:#fafbfe}
  body.sheetWorkspace .inputSheet td.calculated{background:#f6f7fa;color:#556174}
  body.sheetWorkspace .inputSheet tr.selected:not(.deleted)>td:not(.cellError){background:#edf0ff}
  body.sheetWorkspace .inputSheet tr.edited>td{box-shadow:inset 0 -2px #c6cef0}
@@ -2117,6 +2117,11 @@ body.sheetWorkspace .auditReviewDialog>.actions>.dialogFeedback{flex:1 0 100%;bo
  body.sheetWorkspace .auditReconcileTools{padding:0 8px 10px}
  body.sheetWorkspace .inputSheet td input,body.sheetWorkspace .inputSheet td select{font-size:16px}
  body.sheetWorkspace .auditCompactHeader>label{flex-basis:100%}
+}
+/* Follow actual cell focus without changing selection handlers, values or print output. */
+@media screen{
+ body.sheetWorkspace .inputSheet tbody tr:focus-within:not(.deleted)>td:is([data-result="product"],:has(>[data-cell="product"])):not(.cellError){background:#d6e7ff;color:#173e68;box-shadow:inset 3px 0 #4167ac;font-weight:650}
+ body.sheetWorkspace .inputSheet tbody tr:focus-within:not(.deleted)>td:not(.cellError)>[data-cell="product"]{background:transparent;color:#173e68;font-weight:650}
 }
 </style><script>(function(root){'use strict';
 // Login is independent of repository credentials. Offline verification cannot
