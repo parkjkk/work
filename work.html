@@ -4615,7 +4615,7 @@ function updateDefSummary(el, restoreOpen=false){
 const scheduleFormBaselines=new WeakMap(),scheduleFormOriginals=new WeakMap(),scheduleReviewedForms=new WeakSet(),scheduleReferences=new WeakMap(),scheduleDiscardForms=new WeakSet(),machineActualBaselines=new WeakMap(),machineActualSignatures=new WeakMap(),scheduleManagedForms=new WeakMap(),scheduleEditTokens=new WeakMap(),scheduleTouchedForms=new WeakSet();
 function scheduleFormContext(el){return JSON.stringify([S.date,$('#fWorker').value.trim(),fieldProductIdentity(el.querySelector('.pb-product').value),el.dataset.rid]);}
 const scheduleTargetForms=new WeakMap();
-function reservationTargetAppliesToDate(entry,date=S.date){const owner=entry?.target?.month,dayMonth=String(date||'').slice(0,7),start=entry?.activeFrom||entry?.start;return owner===dayMonth||owner>dayMonth&&start<=date;}
+function reservationTargetAppliesToDate(entry,date=S.date){const owner=entry?.target?.month,dayMonth=String(date||'').slice(0,7),start=entry?.activeFrom||entry?.start;return owner===dayMonth||owner>dayMonth&&start<=date||owner<dayMonth&&start<=date&&Number.isFinite(entry?.produced)&&entry.produced>0&&!reservationComplete(entry);}
 function eligibleScheduleTargets(product,date=S.date){
   if(S.productionProgressMode!=='ready'||!S.productionProgress||S.offline||driver.offline)return[];
   return(S.productionProgress.targets||[]).filter(t=>!scheduleTargetDeleted(t.target)&&reservationTargetAppliesToDate(t,date)&&(t.activeFrom||t.start)<=date&&fieldProductIdentity({product:t.product,productId:t.target.productId})===fieldProductIdentity(product));
@@ -5245,6 +5245,26 @@ function recentScheduleRowAvailable(row){
  // A blank/zero old reservation is not a new plan when its exact target is gone.
  return S.productionProgress.targets.some(item=>scheduleTargetKey(item.target)===scheduleTargetKey(row.scheduleTarget));
 }
+function continueRecentScheduleTarget(el,rows,date){
+ const state=scheduleTargetForms.get(el),owner=$('#fWorker').value.trim(),product=el.querySelector('.pb-product').value;
+ // Continue an exact prior work, never guess a same-product reservation in another month.
+ if(!plannedDate(date)||date>=S.date||S.editId||S.rows.some(r=>r.id===el.dataset.rid)||entryRowForms.get(el)?.value||state?.before?.present||state?.target||state?.changed||el.querySelector('.pb-planmode').value==='start')return false;
+ const same=(rows||[]).filter(r=>r.worker===owner&&fieldProductIdentity(r)===fieldProductIdentity(product));
+ if(same.length!==1)return false;const row=same[0];
+ if(row.off||row.deleted||isPlannedPreparation(row)||row.plan===0||row.plan==='0'||row.planIntent==='end'||row.productionCompletion||!Object.hasOwn(row,'scheduleTarget')||!row.scheduleTarget||!recentScheduleRowAvailable(row))return false;
+ let target;try{target=fieldScheduleTarget(row.scheduleTarget);}catch{return false;}
+ const item=fieldProduct(S.productCatalog,row);
+ if(row.productId&&row.productId!==target.productId||item&&item.id!==target.productId||!item&&!row.productId||scheduleTargetDeleted(target))return false;
+ const known=S.productionProgressMode==='ready'&&!S.offline&&!driver.offline?scheduleTargetDescriptor(target):null;
+ if(known&&(reservationComplete(known)||known.warning||known.handoff&&projectedWorkerAt(known,S.date)!==owner))return false;
+ scheduleTargetForms.set(el,{...(state||{}),before:{present:false},target,changed:true,ambiguous:false,context:null});
+ return true;
+}
+async function recentContinuationDay(date){
+ const rows=driver.mode==='gh'&&(S.offline||driver.offline)?getCachedDay(date):await driver.loadDay(date);
+ if(!Array.isArray(rows))throw Error('최근 기록을 확인하지 못했습니다. 연결을 확인한 뒤 다시 불러와 주세요.');
+ return {raw:rows,rows:pendingApply(date,rows)};
+}
 async function updateRecentBtn(auto){
   if(renderPlannedEntryChoices()){recentSeq++;return;}
   $$('#prodBlocks .pb').forEach(updateProdProg);
@@ -5257,30 +5277,37 @@ async function updateRecentBtn(auto){
   if(renderReservationLoad(auto)){box.hidden=true;box.innerHTML='';return;}
   /* 자리를 먼저 잡아 두어 나중에 나타나며 폼을 밀어내지 않게 */
   box.hidden = false; box.innerHTML = '<div class="recent-ph">최근 기록 확인 중…</div>';
-  const seq = ++recentSeq;
+  const seq = ++recentSeq,date=S.date,epoch=storeEpoch,drv=driver,lock=teamContinuationLock;
+  const current=()=>seq===recentSeq&&date===S.date&&epoch===storeEpoch&&drv===driver&&lock===teamContinuationLock&&AppAccess.unlocked&&$('#fWorker').value.trim()===worker&&!S.editId&&S.entryMode!=='case'&&$('#entryOv').classList.contains('open');
   for(let i=1; i<=7; i++){   /* 연휴 뒤에도 직전 근무일을 찾도록 7일까지 */
-    const d = parseDate(S.date); d.setDate(d.getDate()-i);
+    const d = parseDate(date); d.setDate(d.getDate()-i);
     const ds = fmtDate(d);
-    const rows = await loadDayCached(ds);
-    if(seq !== recentSeq || S.entryMode === 'case' || !$('#entryOv').classList.contains('open')) return;
+    let loaded;try{loaded=await recentContinuationDay(ds);}catch(e){if(current()){box.textContent=e.message;box.hidden=false;}return;}
+    if(!current())return;
     if(renderPlannedEntryChoices())return;
-    if(rows === null) continue;
-    const mine = orderRows(rows).filter(r => r.worker === worker && !r.off&&!isPlannedPreparation(r)&&recentScheduleRowAvailable(r));
-    if(!mine.length) continue;
+    const ownRows=loaded.rows.filter(r=>r.worker===worker&&!r.off&&!isPlannedPreparation(r));
+    const mine = orderRows(ownRows).filter(r=>!r.deleted&&recentScheduleRowAvailable(r));
+    if(!mine.length){if(ownRows.length||loaded.raw.some(r=>r.worker===worker&&!r.off&&!isPlannedPreparation(r)))break;continue;}
     const recentName=r=>S.productCatalog?(fieldProduct(S.productCatalog,r)?.active?fieldProductName(r):''):fieldProductName(r);
     const prods = [...new Set(mine.map(recentName).filter(Boolean))];
     if(!prods.length) break;
-    const lastQ = {}; mine.forEach(r => { const name=recentName(r);if(name)lastQ[name]=r.prod; });   /* 수량은 힌트로만 사용 */
     box.innerHTML = `<button type="button" class="recent-btn">↩ ${esc(worker)}님 ${d.getMonth()+1}/${d.getDate()} 제품 ${prods.length}개 그대로 불러오기<br><span>${esc(prods.slice(0,4).join(', '))}${prods.length>4 ? ' 외 '+(prods.length-4)+'개' : ''}</span></button>`;
     box.hidden = false;
-    box.querySelector('.recent-btn').onclick = () => {
-      prods.forEach(p => {
+    const button=box.querySelector('.recent-btn');button.onclick = async () => {
+      if(!current()||button.disabled)return;const before=formSnapshot();button.disabled=true;
+      let fresh;try{fresh=await recentContinuationDay(ds);}catch(e){if(current()){button.disabled=false;toast(e.message);}return;}
+      if(!current()||formSnapshot()!==before){if(current())button.disabled=false;return;}
+      const latest=orderRows(fresh.rows).filter(r=>r.worker===worker&&!r.off&&!r.deleted&&!isPlannedPreparation(r)&&recentScheduleRowAvailable(r));
+      const names=[...new Set(latest.map(recentName).filter(Boolean))],lastQ={};latest.forEach(r=>{const name=recentName(r);if(name)lastQ[name]=r.prod;});
+      if(!names.length){box.hidden=true;box.innerHTML='';toast('최근 기록이 변경되어 불러오지 않았습니다. 작업을 다시 확인해 주세요.');return;}
+      names.forEach(p => {
         const already = [...$('#prodBlocks').children].some(el => fieldProductIdentity(el.querySelector('.pb-product').value) === fieldProductIdentity(p));
         if(already) return;
         const empty = [...$('#prodBlocks').children].find(el => !el.querySelector('.pb-product').value.trim());
         const el = empty || addBlock(null);
         el.querySelector('.pb-product').value = p;
-        continueRecentTeam(el,mine);
+        continueRecentScheduleTarget(el,fresh.rows,ds);
+        continueRecentTeam(el,latest);
         const lq = lastQ[p]; el.querySelector('.pb-prod').placeholder = (lq !== '' && lq != null) ? `지난번 ${lq}` : '0';
       });
       box.hidden = true; box.innerHTML = '';
@@ -5289,9 +5316,9 @@ async function updateRecentBtn(auto){
       const f=[...$('#quickProducts').querySelectorAll('input')].find(i=>!i.value.trim());
       if(f){ $('#quickProducts').scrollIntoView({block:'start'}); f.focus({preventScroll:true}); }
       toast(auto ? `${worker}님 ${d.getMonth()+1}/${d.getDate()} 제품을 채웠습니다 — 수량만 입력 (다른 제품이면 ✕ 빼기)` : '제품명을 채웠습니다 — 수량만 입력하세요');
-      if(auto) entrySnap = formSnapshot();   /* 자동 채움은 사용자 입력이 아님 */
+      if(auto){clearTimeout(draftTimer);entrySnap = formSnapshot();}   /* 자동 채움은 사용자 입력이 아님 */
     };
-    if(auto){ box.querySelector('.recent-btn').click(); clearTimeout(draftTimer); }   /* 자동 채움은 임시저장하지 않음 */
+    if(auto)await button.onclick();   /* 자동 채움은 임시저장하지 않음 */
     return;
   }
   box.hidden = true; box.innerHTML = '';   /* 못 찾음 */

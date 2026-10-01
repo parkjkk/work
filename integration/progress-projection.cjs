@@ -12,7 +12,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
  const indexes=new Map(),entries=[],targets=[],unsafeJobs=new Set(),unlinkedProducts=new Set(),ix=productIndex(state.products);
  const progressFor=({month,row})=>{if(!indexes.has(month))indexes.set(month,planning.dailyProgress(state,month,{asOf}));return indexes.get(month).get(row.id)};
  const jobKey=(progress,month)=>progress?.originId||[month,progress?.jobId].join(':');
- const conditionJobs=new Map(),conditionSchedules=new Map(),planningContext={jobs:new Map()};let allSchedules=null;
+ const conditionJobs=new Map(),conditionSchedules=new Map(),planningContext={jobs:new Map(),asOf};let allSchedules=null;
  const workerAt=(job,date)=>{try{return typeof planning.workerAt==='function'?planning.workerAt(job,date):job.worker}catch{return null}};
  const jobsFor=month=>{if(!conditionJobs.has(month)){const m=state.months[month];conditionJobs.set(month,m?.closed&&m.closeSnapshot?.schedule?.jobs||(typeof planning.jobs==='function'?planning.jobs(state,month,planningContext):[]))}return conditionJobs.get(month)};
  const canonicalRow=row=>{const product=ix.resolve(row);return product?{...row,product:product.name,productId:product.id}:row};
