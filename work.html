@@ -219,6 +219,7 @@ main.wide{max-width:none}
 .rowcard:has(.memo-preview) .product-memo-link{grid-column:1/-1;grid-row:2}
 .rowcard:has(.memo-preview) .rc-sub{grid-column:1/-1;grid-row:3}
 .product-memo-link .memo-preview{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.product-memo-link .memo-product-label{flex:0 1 auto;max-width:50%;margin-right:8px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
 .product-memo-link.is-empty{display:inline-flex;min-height:30px;font-size:11.5px;color:var(--ink-faint)}
 .product-memo-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #productMemoDialog{box-sizing:border-box;width:min(540px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);overflow:auto}
@@ -2085,8 +2086,8 @@ async function pollFieldRevision(){
     const rev=await drv.revision();
     assertContext(epoch);
     if(rev===fieldRevision&&!fieldRemotePending)return;
-    fieldRevision=rev;
-    if(fieldRefreshBlocked()){fieldRemotePending=true;renderSyncInfo();return;}
+    const revisionChanged=rev!==fieldRevision;fieldRevision=rev;
+    if(fieldRefreshBlocked()){fieldRemotePending=true;renderSyncInfo();if(revisionChanged&&productMemoSession&&!productMemoSession.busy)void refreshProductMemoStock();return;}
     fieldRemotePending=false;
     // 수정이 없는 화면만 다시 읽는다. 입력 폼과 보관된 원본은 변경하지 않는다.
     for(const k of Object.keys(monthCache))delete monthCache[k];
@@ -2469,7 +2470,45 @@ const S = {
 const CHECK_KEYS = ['cs','gap','inlet','face','bubble'];
 let productCatalogRead=0;
 // Product-wide management notes are separate from daily rows, remarks and the daily outbox.
-let productMemoSession=null,productMemoGeneration=0;
+let productMemoSession=null,productMemoGeneration=0,productMemoStockRead=0,productMemoStockState=null;
+// Stock is display-only management inventory, never memo text or a daily-row field.
+function parseProductMemoInventory(value){
+  if(!value||value.schema!==1||value.policy!=='product-memo-stock-v1'||!Array.isArray(value.months)||value.months.length>1200)return null;
+  const months=[],seen=new Set();
+  for(const m of value.months){
+    if(!m||!/^\d{4}-(0[1-9]|1[0-2])$/.test(m.month)||seen.has(m.month)||!['ready','unavailable'].includes(m.status)||!Array.isArray(m.items)||m.items.length>50000)return null;
+    seen.add(m.month);const ids=new Set(),items=[];
+    for(const r of m.items){if(!r||typeof r.productId!=='string'||!r.productId||ids.has(r.productId)||typeof r.product!=='string'||!r.product.trim()||!(r.current===null||typeof r.current==='number'&&Number.isFinite(r.current)))return null;ids.add(r.productId);items.push({productId:r.productId,product:r.product,current:r.current});}
+    months.push({month:m.month,status:m.status,items});
+  }
+  return{schema:1,policy:value.policy,months};
+}
+function productMemoStockInfo(id){
+  const month=new Date(Date.now()+9*60*60*1000).toISOString().slice(0,7),state=productMemoStockState||{inventory:S.productionProgress?.inventory,mode:S.productionProgressMode,updatedAt:S.productionProgress?.updatedAt};
+  let current=null,reason='재고 확인 전';
+  if(driver.offline||!navigator.onLine)reason='오프라인 · 재고 확인 필요';
+  else if(state.mode==='ready'){
+    const matches=state.inventory?.months?.filter(m=>m.month===month)||[],m=matches.length===1?matches[0]:null,rows=m?.items?.filter(r=>r.productId===id)||[];
+    if(m?.status==='ready'&&rows.length===1&&Number.isFinite(rows[0].current)){current=rows[0].current;reason='관리 장부';}
+    else reason='해당 월 재고 확인 필요';
+  }else if(state.mode==='loading')reason='재고 확인 중';else if(state.mode==='failed'||state.mode==='cached')reason='최신 재고 확인 필요';
+  const stamp=typeof state.updatedAt==='string'&&!Number.isNaN(Date.parse(state.updatedAt))?new Date(state.updatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+  return{text:current===null?'—':(current===0?0:current).toLocaleString('ko-KR',{maximumFractionDigits:20}),title:month+' '+reason+(current!==null&&stamp?' · '+stamp+' 반영':'')};
+}
+function productMemoStockLabel(p){const stock=productMemoStockInfo(p.id);return{text:p.name+' ('+stock.text+')',title:stock.title};}
+function refreshProductMemoStockLabels(){
+  document.querySelectorAll('[data-memo-stock-product]').forEach(el=>{const p=S.productCatalog?.products.find(p=>p.id===el.dataset.memoStockProduct);if(!p)return;const label=productMemoStockLabel(p);el.textContent=label.text+(el.id==='productMemoTitle'?' · 관리 메모':'');el.title=label.title;el.setAttribute('aria-label',label.text+' · '+label.title);const button=el.closest('[data-product-memo]');if(button)button.setAttribute('aria-label',label.text+' 관리 메모 '+(typeof p.memo==='string'&&p.memo.trim()?'보기·수정':'추가')+' · '+label.title);});
+}
+function resetProductMemoStock(){productMemoStockRead++;productMemoStockState=null;}
+async function refreshProductMemoStock(){
+  const seq=++productMemoStockRead,epoch=storeEpoch,scope=activeScope,drv=driver,current=()=>seq===productMemoStockRead&&epoch===storeEpoch&&scope===activeScope&&drv===driver&&AppAccess.unlocked;
+  if(!AppAccess.unlocked)return;
+  if(drv.offline||!navigator.onLine||typeof drv.loadProductionProgress!=='function'){productMemoStockState={mode:'failed',inventory:null};refreshProductMemoStockLabels();return;}
+  productMemoStockState={mode:'loading',inventory:null};refreshProductMemoStockLabels();
+  try{const value=await drv.loadProductionProgress();if(!current())return;const next=value&&parseProductionProgress(value);productMemoStockState={mode:next?'ready':'failed',inventory:next?.inventory||null,updatedAt:next?.updatedAt};}
+  catch{if(!current())return;productMemoStockState={mode:'failed',inventory:null};}
+  if(current())refreshProductMemoStockLabels();
+}
 function productMemoMap(key,scope=activeScope){const value=LS.get(key,{},scope);return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}
 function productMemoPut(key,id,value,scope=activeScope){const entries=Object.entries(productMemoMap(key,scope)).filter(([name])=>name!==id);if(value!==null)entries.push([id,value]);return LS.set(key,Object.fromEntries(entries),scope)}
 function applyProductMemoPending(catalog,fresh){
@@ -2484,8 +2523,8 @@ function applyProductMemoPending(catalog,fresh){
 }
 function productMemoLink(value){
   const p=fieldProduct(S.productCatalog,value);if(!p)return'';
-  const memo=typeof p.memo==='string'?p.memo:'',has=!!memo.trim(),cached=S.productCatalogMode==='cached';
-  return `<button type="button" class="product-memo-link${has?'':' is-empty'}" data-product-memo="${esc(p.id)}" title="${cached?'보관한 관리 메모':'관리 메모'} · 눌러서 보기·수정" aria-label="${esc(p.name)} 관리 메모 ${has?'보기·수정':'추가'}">${has?`<span class="memo-preview">${esc(memo.replace(/\s+/g,' ').trim())}</span>`:'메모 +'}</button>`;
+  const memo=typeof p.memo==='string'?p.memo:'',has=!!memo.trim(),cached=S.productCatalogMode==='cached',label=productMemoStockLabel(p);
+  return `<button type="button" class="product-memo-link${has?'':' is-empty'}" data-product-memo="${esc(p.id)}" title="${cached?'보관한 관리 메모':'관리 메모'} · 눌러서 보기·수정" aria-label="${esc(label.text)} 관리 메모 ${has?'보기·수정':'추가'} · ${esc(label.title)}"><span class="memo-product-label" data-memo-stock-product="${esc(p.id)}" title="${esc(label.title)}" aria-label="${esc(label.text+' · '+label.title)}">${esc(label.text)}</span>${has?`<span class="memo-preview">${esc(memo.replace(/\s+/g,' ').trim())}</span>`:'메모 +'}</button>`;
 }
 function bindProductMemoLinks(host){host?.querySelectorAll('[data-product-memo]').forEach(button=>button.onclick=event=>{event.stopPropagation();openProductMemo(button.dataset.productMemo)})}
 function updateProductMemo(el){
@@ -2509,7 +2548,7 @@ function openProductMemo(id){
   const memo=typeof p.memo==='string'?p.memo:'',stored=productMemoMap('ilbo.productMemoDrafts'),draft=Object.hasOwn(stored,id)?stored[id]:null,usable=draft&&typeof draft.memo==='string'&&draft.memo.length<=100000&&typeof draft.baseMemo==='string';
   const dialog=document.createElement('dialog');dialog.id='productMemoDialog';dialog.setAttribute('aria-labelledby','productMemoTitle');dialog.innerHTML='<h2 id="productMemoTitle"></h2><p class="memo-source">품목 공용 메모 · 저장하면 생산관리에도 반영됩니다.</p><textarea aria-label="품목 공용 메모" maxlength="100000" spellcheck="false"></textarea><div class="memo-conflict" hidden><b>현재 저장된 메모</b><div class="memo-current" tabindex="0"></div><button type="button" class="btn sec memo-use-current">현재 메모를 기준으로 이어 수정</button></div><p class="memo-status" role="status"></p><div class="memo-actions"><button type="button" class="btn sec memo-close">닫기</button><button type="button" class="btn pri memo-save">메모 저장</button></div>';
   const s={id,epoch:storeEpoch,scope:activeScope,generation:++productMemoGeneration,dialog,input:dialog.querySelector('textarea'),status:dialog.querySelector('.memo-status'),baseMemo:usable?draft.baseMemo:memo,baseRevision:usable&&typeof draft.baseRevision==='string'?draft.baseRevision:S.productCatalog.revision,busy:false,conflict:null};productMemoSession=s;
-  dialog.querySelector('h2').textContent=p.name+' · 관리 메모';s.input.value=usable?draft.memo:memo;
+  const title=dialog.querySelector('h2'),label=productMemoStockLabel(p);title.dataset.memoStockProduct=p.id;title.textContent=label.text+' · 관리 메모';title.title=label.title;s.input.value=usable?draft.memo:memo;
   const save=dialog.querySelector('.memo-save'),buttons=()=>{save.disabled=s.busy||s.conflict!==null||s.input.value===s.baseMemo;s.input.readOnly=s.busy};
   if(usable)s.status.textContent='이 기기에 보관한 작성 내용입니다.';else if(S.productCatalogMode==='cached')s.status.textContent='보관한 메모입니다. 연결되면 최신 내용과 비교해 저장합니다.';
   s.input.oninput=()=>{if(!productMemoCurrent(s))return;stashProductMemo(s);buttons()};
@@ -2528,7 +2567,7 @@ function openProductMemo(id){
     }catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code==='memo-conflict'&&typeof error.currentMemo==='string'){s.conflict=error.currentMemo;dialog.querySelector('.memo-current').textContent=error.currentMemo||'(빈 메모)';dialog.querySelector('.memo-conflict').hidden=false;s.status.textContent='다른 곳에서 메모가 바뀌었습니다. 입력 내용은 그대로 유지했습니다.';}else s.status.textContent=(error.isNetwork?'연결이 끊겨 작성 내용을 보관했습니다. 연결 후 메모 저장을 다시 눌러 주세요.':error.message);}
     finally{fieldWrites--;s.busy=false;if(productMemoCurrent(s))buttons()}
   };
-  document.body.append(dialog);dialog.showModal();buttons();s.input.focus();s.input.setSelectionRange(s.input.value.length,s.input.value.length);
+  document.body.append(dialog);dialog.showModal();buttons();s.input.focus();s.input.setSelectionRange(s.input.value.length,s.input.value.length);void refreshProductMemoStock();
 }
 function resetProductCatalog(){
   closeScheduleFlow(true);
@@ -2670,6 +2709,7 @@ function parseProductionProgress(value){
     return{target,worker:t.worker,product:t.product,start:t.start,end:t.end,...(t.activeFrom?{activeFrom:t.activeFrom}:{}),plan:t.plan,produced:t.produced,...(t.complete!==undefined?{complete:t.complete}:{}),...(t.completedAt!==undefined?{completedAt:t.completedAt}:{}),schedule:checked.schedule||null,participants:checked.participants||[t.worker],revision:t.revision,...(checked.handoff?{handoff:checked.handoff}:{})};
   });
   const result={schema:1,kind:value.kind,revision:value.revision,updatedAt:value.updatedAt,asOf:value.asOf,entries,targets},bySource=new Map(),byIdentity=new Map(),byWorker=new Map();
+  if(value.inventory!==undefined)result.inventory=parseProductMemoInventory(value.inventory);
   if(value.plannedWorks!==undefined)result.plannedWorks=validatePlannedProjection(value.plannedWorks);
   for(const e of entries){bySource.set(e.path+'#'+e.id,e);const key=progressIdentity(e);if(!byIdentity.has(key))byIdentity.set(key,[]);byIdentity.get(key).push(e);for(const worker of new Set([e.worker,e.scheduleTarget?.worker,e.scheduleWorker,...(e.participants||[]),...(e.handoff?[e.handoff.originalWorker,...e.handoff.changes.map(h=>h.to)]:[])])){if(!byWorker.has(worker))byWorker.set(worker,[]);byWorker.get(worker).push(e);}}
   if(value.receipts!=null){if(!Array.isArray(value.receipts))throw Error('관리 반영 확인 형식을 확인해 주세요.');const seen=new Set();result.receipts=value.receipts.map(r=>{const key=r?.path+'#'+r?.id;if(typeof r?.path!=='string'||!/^data\/\d{4}-\d{2}-\d{2}\.json$/.test(r.path)||!validDate(r.path.slice(5,15))||typeof r.id!=='string'||!r.id||seen.has(key)||!r.source||r.source.id!==r.id)throw Error('관리 반영 확인 형식을 확인해 주세요.');seen.add(key);return{path:r.path,id:r.id,source:receiptSourceFields(r.source)};});}
@@ -2699,6 +2739,7 @@ function latestProjectedEntry(projection,entry){
 /* PRODUCTION_PROGRESS_PROJECTION_END */
 let productionProgressRead=0;
 function resetProductionProgress(){
+  resetProductMemoStock();
   productionProgressRead++;S.productionProgress=null;S.productionProgressMode='none';S.progressDays=null;
   if(driver.mode!=='gh')return;
   const cached=LS.get('ilbo.cache.productionProgress',null);
@@ -2710,7 +2751,7 @@ function progressSourceNote(projection=S.productionProgress){
   return `관리 집계 ${projection.asOf} 기준 · ${stamp} 반영${S.productionProgressMode==='cached'?' · 보관한 자료':''}`;
 }
 async function loadProductionProgress(background=false){
-  const epoch=storeEpoch,seq=++productionProgressRead,drv=driver,scope=activeScope;
+  const epoch=storeEpoch,seq=++productionProgressRead,drv=driver,scope=activeScope,stockSeq=++productMemoStockRead;
   if((drv.mode!=='gh'&&!drv.offline)||typeof drv.loadProductionProgress!=='function')return;
   try{
     const value=await drv.loadProductionProgress();assertContext(epoch);if(seq!==productionProgressRead)return;
@@ -2719,6 +2760,7 @@ async function loadProductionProgress(background=false){
     else{S.productionProgress=null;S.productionProgressMode='none';LS.remove('ilbo.cache.productionProgress');}
   }catch{if(epoch!==storeEpoch||seq!==productionProgressRead)return;if(deferFieldBackground(background))return;if(background)fieldRemotePending=true;S.productionProgressMode=S.productionProgress?'cached':'none';}
   if(epoch!==storeEpoch||seq!==productionProgressRead)return;
+  if(stockSeq===productMemoStockRead&&AppAccess.unlocked){productMemoStockState={inventory:S.productionProgress?.inventory||null,mode:S.productionProgressMode,updatedAt:S.productionProgress?.updatedAt};refreshProductMemoStockLabels();}
   if(S.tab==='input')renderInput();
   if(S.tab==='month'&&lastDraw&&`${lastDraw.y}-${pad2(lastDraw.m)}`===S.month)drawMonth(lastDraw.days,lastDraw.y,lastDraw.m);
   $$('#prodBlocks .pb').forEach(updateProdProg);
@@ -2863,6 +2905,8 @@ function renderManagedProgressTableContents(days,summary){
 
 /* ================= 데이터 ================= */
 window.addEventListener('production:lock',invalidateProductMemoDialog);
+window.addEventListener('production:lock',resetProductMemoStock);
+window.addEventListener('offline',refreshProductMemoStockLabels);
 let loadSeq = 0, refreshing = 0;   /* refreshing = 진행 중인 조회 수 (저장의 loadSeq++ 와 분리) */
 function pendingRowsFor(date){
   return outboxAll().filter(i => i.date === date).flatMap(i => i.rows || []);
