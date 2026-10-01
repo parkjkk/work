@@ -5567,14 +5567,29 @@ function sheetConflictMessage(conflicts){
  if(monthConflict){const changed=value=>Object.keys({...monthConflict.base,...value}).filter(key=>!['rev','history','kind','policyVersion'].includes(key)&&!sheetEqual(monthConflict.base?.[key],value?.[key])).map(key=>monthLabels[key]||'월 기준정보'),local=[...new Set(changed(monthConflict.local))],remote=[...new Set(changed(monthConflict.remote))];return monthConflict.id+'월의 저장 대기 내용과 최신자료를 자동으로 합치지 못했습니다. 기기 변경: '+(local.join('·')||'변경 이력')+' / 서버 변경: '+(remote.join('·')||'변경 이력')+'. 입력은 이 기기에 보관했습니다.'}
  return'';
 }
+function sheetSaveFailureInfo(error){
+ const code=error?.code,status=error?.status,name=error?.name,message=typeof error?.message==='string'?error.message:'';
+ // Classify known failure signals; never echo request URLs, tokens or raw errors.
+ if(code==='DEVICE_CONFLICT')return{code,message:'다른 창에서 기기자료를 먼저 저장했습니다. 최신 기기자료와 전송 대기를 확인해 주세요.'};
+ if(code==='CATALOG_UNIT_SYNC')return{code,message:'품목 기준값과 월자료의 반영이 아직 끝나지 않았습니다. 저장한 기기의 전송 상태를 확인해 주세요.'};
+ if(code==='AUDIT_TRANSFER_SYNC')return{code,message:'실사 반영·월마감의 연결 근거를 확인해야 합니다. 실사 전달 상태를 확인해 주세요.'};
+ if(Number.isInteger(status)&&status>=400&&status<=599){const descriptions={401:'GitHub 인증이 만료되었거나 유효하지 않습니다.',403:'저장소 쓰기 권한 또는 요청 한도에 막혔습니다.',404:'저장소·브랜치·파일에 접근하지 못했습니다.',409:'저장하는 동안 원격 자료가 다시 변경되었습니다.',422:'서버가 저장 자료를 받아들이지 않았습니다.',429:'서버 요청 한도에 도달했습니다.'};return{code:'HTTP_'+status,status,message:(descriptions[status]||(status>=500?'저장 서버가 일시적으로 응답하지 못했습니다.':'서버가 저장 요청을 거절했습니다.'))+' (HTTP '+status+')'}}
+ if(name==='QuotaExceededError')return{code:'DEVICE_QUOTA',message:'기기 저장 공간이 부족해 전송 확인을 보관하지 못했습니다.'};
+ if(name==='AbortError'||name==='TimeoutError')return{code:'REQUEST_INTERRUPTED',message:'저장 요청의 응답이 지연되거나 요청이 중단되었습니다.'};
+ if(/Failed to fetch|fetch failed|NetworkError|network request failed|Load failed/i.test(message)||name==='NetworkError')return{code:'NETWORK',message:'서버에 연결하지 못했습니다. 네트워크 연결을 확인해 주세요.'};
+ if(name==='SyntaxError'||/파일 크기 또는 데이터 형식|저장자료.*형식|기준자료 형식|월자료.*누락|월자료의 기준정보|지원하지 않는 저장자료|중복 또는 누락된.*ID/.test(message))return{code:'DATA_FORMAT',message:'저장 자료의 형식이나 필수 정보가 맞지 않아 처리를 멈췄습니다.'};
+ if(/기기 저장소/.test(message)||name==='InvalidStateError'||name==='SecurityError')return{code:'DEVICE_STORAGE',message:'브라우저의 기기 저장소에 접근하지 못했습니다. 사이트 저장 허용 상태를 확인해 주세요.'};
+ if(/연결 정보가 변경|종료된 저장소 연결/.test(message))return{code:'CONNECTION_CHANGED',message:'저장 중 저장소 연결이 변경되었습니다.'};
+ return{code:'SAVE_UNCONFIRMED',message:'서버 저장 결과를 확인하지 못했습니다.'};
+}
 async function sheetAwaitRemoteAck(client=typeof workspace==='undefined'?null:workspace){
  if(!client||client.pendingMigration||client.closed||typeof client.flush!=='function')return false;
  await client.flush();
  const savingPlan=[...sheetRegistry.values()].find(g=>g.saving&&g.id==='plan-jobs'&&g.scope===client.key);
  if(savingPlan&&(client.envelope.heldSchedules||[]).some(h=>!savingPlan.heldOnSave?.includes(h.id)))throw Error('일정 변경은 최신 생산자료와 확인이 필요해 따로 보관했습니다. 상단의 보관한 일정 확인에서 비교해 주세요. 입력 초안은 유지됩니다.');
  if(client.envelope?.queue?.length){
-  const conflicts=client.lastError?.conflicts||[],conflict=conflicts.length,e=Error(conflict?(sheetConflictMessage(conflicts)||'저장 대기 내용과 최신자료를 자동으로 합치지 못했습니다. 입력은 이 기기에 보관했습니다. 충돌 내용을 확인해 주세요.'):'서버 저장을 완료하지 못했습니다. 변경 내용은 이 기기에 보관했습니다. 연결 상태를 확인하고 다시 전송해 주세요.');
-  if(conflict)e.conflicts=client.lastError.conflicts;throw e;
+  const conflicts=client.lastError?.conflicts||[],conflict=conflicts.length,info=sheetSaveFailureInfo(client.lastError),e=Error(conflict?(sheetConflictMessage(conflicts)||'저장 대기 내용과 최신자료를 자동으로 합치지 못했습니다. 입력은 이 기기에 보관했습니다. 충돌 내용을 확인해 주세요.'):info.message+' 입력과 전송 대기는 이 기기에 보관했습니다.');
+  if(conflict)e.conflicts=client.lastError.conflicts;else{e.code=info.code;if(info.status)e.status=info.status}throw e;
  }
  return true;
 }
@@ -10369,21 +10384,30 @@ function explicitRecoveryPlan(g,owner){
  if(!direct.size||!Array.isArray(e.queue)||!e.queue.length||e.queue.some(q=>q.path!==path))return null;
  const queue=e.queue,ids=new Set(queue.map(q=>q.id));if(ids.size!==queue.length||queue.some(q=>typeof q.id!=='string'||!q.id||typeof q.groupId!=='string'||!q.groupId))return null;
  if(!Array.isArray(e.groups))return null;const groups=e.groups,baseline=e.baseline?.[path];if(!explicitRecoverySame(queue[0].base,baseline)||!explicitRecoverySame(ScheduleNative.packMonth(e.state.months[key]),queue.at(-1).local))return null;
- const merge=kind==='plaster'?S.mergePlasterMonth:S.mergeIssueMonth;let previous=baseline;const covered=new Map();
+ const merge=kind==='plaster'?S.mergePlasterMonth:S.mergeIssueMonth;let previous=baseline;const covered=new Map(),original=explicitRecoveryIndex(baseline?.[0]?.[kind]);if(!original)return null;
  for(const q of queue){
   const matching=groups.filter(x=>x.id===q.groupId),group=matching[0];if(matching.length!==1||q.viewOnly||q.unitPhase||group.unitSync||group.auditOperations?.length||(!Array.isArray(group.acked)||group.acked.length)||['partial','complete'].includes(group.status)||!Array.isArray(group.ids)||new Set(group.ids).size!==group.ids.length||!Array.isArray(group.paths)||group.paths.length!==1||group.paths.some(p=>p!==path)||group.ids.some(id=>!ids.has(id))||!group.ids.includes(q.id)||group.ids.some(id=>queue.find(v=>v.id===id)?.groupId!==group.id))return null;
   if(!explicitRecoverySame(q.base,previous)||q.base?.length!==1||q.local?.length!==1)return null;
   const b=q.base[0],l=q.local[0];if(b.id!==key||l.id!==key||b.closeSnapshot||l.closeSnapshot)return null;
   const proof=merge(b,l,b);if(!proof||proof.conflict||!explicitRecoverySame(proof.record,l))return null;
-  const before=explicitRecoveryIndex(b[kind]),after=explicitRecoveryIndex(l[kind]);if(!before||!after||before.size!==after.size)return null;
+  const before=explicitRecoveryIndex(b[kind]),after=explicitRecoveryIndex(l[kind]);if(!before||!after||kind!=='plaster'&&before.size!==after.size)return null;
   for(const [id,old]of before){const next=after.get(id);if(!next)return null;if(explicitRecoverySame(old,next))continue;
-   // Existing identities only: additions, deletions and retargeting remain strict.
+   // Existing identities cannot disappear or be retargeted, even when a first
+   // input for another previously empty plaster date is also in this queue.
    if(old.date!==next.date||kind==='issues'&&old.product!==next.product)return null;
    const edit=direct.get(kind==='plaster'?old.date:id);if(!edit)return null;
    const changed=[...new Set([...Object.keys(old),...Object.keys(next)])].filter(f=>!explicitRecoverySame(old[f],next[f]));
    if(changed.some(f=>f!=='rev'&&(!fields.includes(f)||!edit.fields.has(f))))return null;
    if(kind==='plaster'&&d.plasterRecordIds?.[old.date]!=null&&d.plasterRecordIds[old.date]!==id)return null;
-   covered.set(id,{id,date:old.date,product:old.product});
+   covered.set(id,covered.get(id)||{id,date:old.date,product:old.product});
+  }
+  for(const [id,next]of after)if(!before.has(id)){
+   const edit=direct.get(next.date),value=edit?.after?.actual;
+   if(kind!=='plaster'||!edit||edit.before.actual!=null||value==null||String(value).trim()===''||!Number.isFinite(Number(value))||Number(value)<0||d.plasterRecordIds?.[next.date]!=null||original.has(id)||[...original.values(),...before.values()].some(row=>row.date===next.date))return null;
+   // A first daily usage input carries only the scalar/date identity. Unknown
+   // generated fields must not be silently dropped by recovery.
+   if(Object.keys(next).some(field=>!['id','date','actual','rev'].includes(field))||!C.iso(next.date)||next.date.slice(0,7)!==key||typeof next.actual!=='number'||!Number.isFinite(next.actual)||next.actual<0||next.rev!==1)return null;
+   covered.set(id,{id,date:next.date,inserted:true});
   }
   previous=q.local;
  }
@@ -10394,7 +10418,13 @@ function explicitRecoveryRemote(plan,snapshot){
  const remote=snapshot?.baseline?.[plan.path]?.[0],base=plan.baseline[0];if(!remote||remote.id!==plan.key||remote.closed||remote.deleted||remote.closeSnapshot)return false;
  const records=explicitRecoveryIndex(remote[plan.kind]);if(!records)return false;const dates=new Set();
  for(const row of records.values()){if(!C.iso(row.date)||row.date.slice(0,7)!==plan.key)return false;if(plan.kind==='plaster'){if(dates.has(row.date)||row.actual!=null&&row.actual!==''&&!(typeof row.actual==='number'&&Number.isFinite(row.actual)&&row.actual>=0))return false;dates.add(row.date)}}
- for(const old of plan.covered){const now=records.get(old.id);if(!now||now.date!==old.date||plan.kind==='issues'&&now.product!==old.product)return false}
+ for(const old of plan.covered){const now=records.get(old.id);
+  if(old.inserted){
+   if(plan.kind!=='plaster'||now&&now.date!==old.date)return false;
+   const baselineEvents=new Set((base.history||[]).map(event=>event.id));
+   if((remote.history||[]).some(event=>!baselineEvents.has(event.id)&&event.before&&(event.before.id===old.id||event.before.date===old.date)&&(event.type==='삭제:plaster'||event.type==='plaster'&&event.after?.date!==old.date)))return false;
+  }else if(!now||now.date!==old.date||plan.kind==='issues'&&now.product!==old.product)return false;
+ }
  // The ledger itself may conflict, but closing/carry/stock/history changes must
  // still meet the existing independently saved ledger contract.
  const masked=C.clone(remote);masked[plan.kind]=C.clone(base[plan.kind]);const merge=plan.kind==='plaster'?S.mergePlasterMonth:S.mergeIssueMonth,proof=merge(base,plan.queue[0].local[0],masked);
