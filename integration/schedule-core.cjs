@@ -274,6 +274,13 @@ function inventory(state,key){
 function memoInventory(state,key){
  return memoInventoryRead(state,key,{readCache:new Map(),checked:new Map()});
 }
+function memoInventoryCurrent(state,currentMonth){
+ const scope={readCache:new Map(),checked:new Map()};
+ if(/^\d{4}-(0[1-9]|1[0-2])$/.test(currentMonth))for(const key of Object.keys(state?.months||{}).filter(key=>/^\d{4}-(0[1-9]|1[0-2])$/.test(key)&&key<=currentMonth).sort().reverse()){
+  const result=memoInventoryRead(state,key,scope);if(result.empty!==true)return result;
+ }
+ return{month:currentMonth,status:'unavailable',items:[]};
+}
 function memoInventories(state){
  const scope={readCache:new Map(),checked:new Map()};
  return Object.keys(state?.months||{}).filter(key=>/^\d{4}-(0[1-9]|1[0-2])$/.test(key)).sort().map(key=>memoInventoryRead(state,key,scope));
@@ -301,9 +308,9 @@ function memoInventoryRead(state,key,scope){
    const ok=stocks.length?stocks.every(r=>r.sourceType==='previous'?(carried.length?inherited():state.months[m.openingSource]?true:valid(r.opening)):valid(r.opening)):inherited();
    checked.set(cacheKey,ok);return ok;
   };
-  const rows=new Map();for(const row of read(key)){const p=ix.resolve(row.product);if(!p)continue;if(!rows.has(p.id))rows.set(p.id,[]);rows.get(p.id).push(row)}
+  const inventoryRows=read(key),rows=new Map();for(const row of inventoryRows){const p=ix.resolve(row.product);if(!p)continue;if(!rows.has(p.id))rows.set(p.id,[]);rows.get(p.id).push(row)}
   const items=products.map(p=>{const matches=rows.get(p.id)||[],current=matches.length===1&&typeof matches[0].current==='number'&&Number.isFinite(matches[0].current)&&inspect(key,matches[0].product)?matches[0].current:null;return{productId:p.id,product:p.name,current}}).sort((a,b)=>a.productId.localeCompare(b.productId));
-  return{month:key,status:'ready',items};
+  return{month:key,status:'ready',items,...(!inventoryRows.length?{empty:true}:{})};
  }catch{return unavailable()}
 }
 function completionValue(value){if(value==null)return null;if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||value.stockQty!=null&&(typeof value.stockQty!=='number'||!Number.isFinite(value.stockQty)||value.stockQty<0)||value.reason!=='stock'&&value.stockQty!=null)throw Error('완료 사유와 재고 활용 조수를 확인해 주세요.');return{reason:value.reason,note:value.note,stockQty:value.stockQty??null}}
@@ -318,6 +325,6 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventories};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventoryCurrent,memoInventories};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
