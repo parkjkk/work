@@ -155,7 +155,7 @@ function projectProgress(state,snapshot,previous,now=new Date().toISOString(),pl
   plannedWorks.push({date:file.date,row:{...Object.fromEntries(planFields.filter(k=>own(row,k)).map(k=>[k,copy(row[k])])),product:product.name,productId:product.id,plannedWork:plan},starts});
  }
  plannedWorks.sort((a,b)=>(a.date+'#'+a.row.id).localeCompare(b.date+'#'+b.row.id));
- const core=require('./schedule-core.cjs'),inventory={schema:1,policy:'product-memo-stock-v2',months:core.memoInventories(state)};
+ const core=require('./schedule-core.cjs'),inventory={schema:1,policy:'product-memo-stock-v3',months:core.memoInventories(state)};
  const revision=hash({asOf,entries,targets,receipts,history,hoursHistory,plannedWorks,inventory});if(previous?.schema===1&&previous.kind==='schedule-production-progress'&&previous.revision===revision&&hash({asOf:previous.asOf,entries:previous.entries,targets:previous.targets,receipts:previous.receipts,history:previous.history,hoursHistory:previous.hoursHistory,plannedWorks:previous.plannedWorks,inventory:previous.inventory})===revision)return copy(previous);
  return{schema:1,kind:'schedule-production-progress',revision,updatedAt:date.toISOString(),asOf,entries,targets,receipts,history,hoursHistory,plannedWorks,inventory};
 }

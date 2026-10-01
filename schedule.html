@@ -2618,10 +2618,13 @@ function inventory(state,key){
 function memoInventory(state,key){
  return memoInventoryRead(state,key,{readCache:new Map(),checked:new Map()});
 }
+function memoInventoryPrepared(month){
+ return !!(month.closed||month.stocks.length||month.openingSource||month.closeSnapshot);
+}
 function memoInventoryCurrent(state,currentMonth){
  const scope={readCache:new Map(),checked:new Map()};
  if(/^\d{4}-(0[1-9]|1[0-2])$/.test(currentMonth))for(const key of Object.keys(state?.months||{}).filter(key=>/^\d{4}-(0[1-9]|1[0-2])$/.test(key)&&key<=currentMonth).sort().reverse()){
-  const result=memoInventoryRead(state,key,scope);if(result.empty!==true)return result;
+  const result=memoInventoryRead(state,key,scope);if(result.empty!==true&&result.unprepared!==true)return result;
  }
  return{month:currentMonth,status:'unavailable',items:[]};
 }
@@ -2654,7 +2657,11 @@ function memoInventoryRead(state,key,scope){
   };
   const inventoryRows=read(key),rows=new Map();for(const row of inventoryRows){const p=ix.resolve(row.product);if(!p)continue;if(!rows.has(p.id))rows.set(p.id,[]);rows.get(p.id).push(row)}
   const items=products.map(p=>{const matches=rows.get(p.id)||[],current=matches.length===1&&typeof matches[0].current==='number'&&Number.isFinite(matches[0].current)&&inspect(key,matches[0].product)?matches[0].current:null;return{productId:p.id,product:p.name,current}}).sort((a,b)=>a.productId.localeCompare(b.productId));
-  return{month:key,status:'ready',items,...(!inventoryRows.length?{empty:true}:{})};
+  const month=state.months[key],unprepared=!memoInventoryPrepared(month);
+  // A new month's production alone does not establish its opening inventory.
+  // Never skip malformed source quantities as though the ledger were unprepared.
+  if(unprepared&&(!['stocks','rows','issues'].every(k=>Array.isArray(month[k]))||month.rows.some(r=>!valid(r.pours))||month.issues.some(r=>!valid(r.replacement))))return unavailable();
+  return{month:key,status:'ready',items,...(!inventoryRows.length?{empty:true}:{}),...(unprepared?{unprepared:true}:{})};
  }catch{return unavailable()}
 }
 function completionValue(value){if(value==null)return null;if(!value||typeof value!=='object'||Array.isArray(value)||!['stock','plan-change','other'].includes(value.reason)||typeof value.note!=='string'||value.stockQty!=null&&(typeof value.stockQty!=='number'||!Number.isFinite(value.stockQty)||value.stockQty<0)||value.reason!=='stock'&&value.stockQty!=null)throw Error('완료 사유와 재고 활용 조수를 확인해 주세요.');return{reason:value.reason,note:value.note,stockQty:value.stockQty??null}}
