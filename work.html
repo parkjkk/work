@@ -1071,6 +1071,46 @@ table.sh td.num{font-variant-numeric:tabular-nums}
     #plannedWorkDialog .planned-dialog-actions [data-planned-reload],#plannedWorkDialog .planned-dialog-actions [data-planned-cancel]{grid-column:1/-1}
   }
 }
+/* field-content-width-v1: size numeric fields for their content; keep touch and print dimensions. */
+@media screen and (min-width:600px){
+  #setOv #rosterList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px}
+  #setOv .roster-hd,#setOv .roster-empty{grid-column:1/-1}
+  #setOv .roster-row{min-width:0;min-height:48px;padding-block:8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+  #setOv #rosterAdd{flex:0 1 280px}
+  #entryOv .pb-state-choice{max-width:490px}
+  #entryOv .pb-start-plan{max-width:280px}
+  #entryOv .pb-completion-reason{max-width:320px}
+  #entryOv .pb-completion-stock{max-width:180px}
+  #entryOv .pb-body>.pb-product{max-width:480px}
+  #entryOv .pb-body>.stepper{max-width:360px}
+  #entryOv .pb-schedule-head,#entryOv .pb-machine-row{max-width:520px}
+  #entryOv .pb-schedule-daily-label{max-width:280px}
+  #entryOv .pb-defect-fields{display:grid;grid-template-columns:160px 160px minmax(0,1fr);gap:6px 12px;align-items:start}
+  #entryOv .pb-defect>summary{margin-bottom:0}
+  #entryOv .pb-defect-fields>.f-label{margin:4px 0 0;grid-row:1}
+  #entryOv .pb-defect-fields>.f-label:has(+.pb-scrap){grid-column:1}
+  #entryOv .pb-defect-fields>.f-label:has(+.pb-defqty){grid-column:2}
+  #entryOv .pb-defect-fields>.f-label:has(+.pb-defpart){grid-column:3}
+  #entryOv .pb-defect-fields>.pb-scrap{grid-column:1;grid-row:2}
+  #entryOv .pb-defect-fields>.pb-defqty{grid-column:2;grid-row:2}
+  #entryOv .pb-defect-fields>.pb-defpart{grid-column:3;grid-row:2}
+  #entryOv .pb-defect-fields>.pb-partchips{grid-column:3;grid-row:3;margin-top:0!important}
+  #entryOv .pb-defect-fields>.pb-defclear{grid-column:1/3;grid-row:3;justify-self:start;width:auto;margin:0;min-height:44px;padding-inline:12px}
+}
+@media screen and (min-width:900px){
+  main.month-wide{max-width:960px}
+  #entryOv .pb-production-state{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
+  #entryOv .pb-state-choice{flex:1 1 400px}
+  #entryOv .pb-start-plan{flex:0 1 260px;margin-top:0}
+  #entryOv .pb-completion{flex-basis:100%;margin-top:0}
+  table.mon[data-month-table="worker"]{table-layout:fixed}
+  table.mon[data-month-table="worker"] th:first-child{width:140px}
+  table.mon[data-month-table="worker"] th:nth-child(n+2):nth-child(-n+5){width:82px}
+  table.mon[data-month-table="worker"] th:nth-child(6){width:104px}
+  table.mon[data-month-table="worker"] td{white-space:normal;overflow-wrap:anywhere}
+  table.mon[data-month-table="day"] th:first-child{width:130px}
+  table.mon[data-month-table="product"] th:nth-child(3),table.mon[data-month-table="product"] th:nth-child(4),table.mon[data-month-table="product"] th:nth-child(5),table.mon[data-month-table="product"] th:nth-child(6){width:110px}
+}
 /* Entry inspection layout: retain existing controls and both theme variables. */
 #entryOv .pb-today-guide{margin:6px 0;padding:0;border:0;border-radius:0;background:none;color:var(--ink-dim);font-size:12px;line-height:1.45}
 #entryOv .pb-inspection-hint{margin:0 0 8px;color:var(--ink-dim);font-size:12px;line-height:1.45}
@@ -4349,6 +4389,7 @@ function blockHTML(){
   </div>
   <details class="defect pb-defect">
     <summary><span class="df-sum">불량 여부 · 수량·부위 입력</span></summary>
+    <div class="pb-defect-fields">
     <div class="f-label">불량석고량 (kg)</div>
     <input class="f-input pb-scrap" inputmode="decimal" placeholder="0">
     <div class="f-label">불량수량 (개수)</div>
@@ -4357,6 +4398,7 @@ function blockHTML(){
     <input class="f-input pb-defpart" placeholder="예: 상형1" autocomplete="off">
     <div class="chips pb-partchips" style="margin-top:7px"></div>
     <button type="button" class="pb-defclear">불량 없음으로 지우기</button>
+    </div>
   </details>
   <div class="f-label">비고 <span class="hint">△·Ⅹ 체크 시 사유를 꼭 적어주세요</span></div>
   <textarea class="f-input pb-remark" placeholder="사유 및 특이사항"></textarea></details>`;

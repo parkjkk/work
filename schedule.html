@@ -1887,6 +1887,59 @@ body.workspaceFocused .monthlyOverview .moHeading p{font-size:10px}
  body.sheetWorkspace .summaryCardLots .summaryLotDetails summary,body.sheetWorkspace .summaryCardDetail>summary{min-height:44px}
 }
 
+/* LOT lookup answers a date question first; scheduled work stays a separate view. */
+.summaryMode{display:flex;gap:5px;padding:12px 14px 0;flex-wrap:wrap}
+.summaryMode button{min-height:38px;padding:7px 18px;font-weight:600}
+.summaryMode button[aria-pressed=true],.lotUsageChoices button[aria-pressed=true]{background:#eaf1f8;border-color:#668ca9;color:#174969;box-shadow:inset 0 -2px #36718f}
+.summaryPanel[data-summary-mode=lots] .summaryJobFilter,.summaryPanel[data-summary-mode=lots] .summaryViewChoice,.summaryPanel[data-summary-mode=lots] #scheduleSummaryCards,.summaryPanel[data-summary-mode=lots] #scheduleSummaryTable{display:none!important}
+.summaryPanel[data-summary-mode=lots] .summaryFilters{display:block!important;padding-bottom:6px}
+.summaryPanel[data-summary-mode=lots] .summarySearch{display:flex!important;max-width:440px}
+#scheduleLotLookup{padding:0 14px 14px}
+.lotUsageChoices{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+.lotUsageChoices button{font-variant-numeric:tabular-nums;min-height:36px;padding:6px 12px}
+.lotUsageSummary{border:1px solid #c8d9e6;background:#f7fbfe;border-radius:9px;padding:14px 18px}
+.lotUsageSummary>header,.lotUsageJobs>header{display:flex;align-items:center;justify-content:space-between;gap:12px;background:none;color:#233e54;height:auto;padding:0}
+.lotUsageSummary header small{font-size:12px;color:#526e83}.lotUsageSummary h2{margin:1px 0 0;font-size:22px;letter-spacing:.02em}
+.lotUsageStatus{padding:4px 9px;border-radius:5px;background:#e4edf4;color:#335c77;font-weight:600;font-size:12px;white-space:nowrap}
+.lotUsagePeriod{margin-top:12px}.lotUsageOccurrence{font-size:12px;color:#4f6d82}.lotUsagePeriod+.lotUsagePeriod{border-top:1px solid #d7e2eb;padding-top:12px}
+.lotUsagePeriod dl{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);gap:10px;max-width:620px;align-items:center;margin:0}
+.lotUsagePeriod dt{font-size:12px;color:#4c6579}.lotUsagePeriod dd{margin:5px 0 0;font-size:25px;font-weight:700;line-height:1.25;color:#203f57;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.lotUsagePeriod dl>span{color:#7490a4;text-align:center;font-size:20px}.lotUsagePeriod dd.lotUsageOngoing{color:#187457}
+.lotUsagePeriod p,.lotUsageBasis{font-size:12px;line-height:1.6;margin:8px 0 0;color:#536d80;word-break:keep-all;overflow-wrap:anywhere}
+.lotUsageBasis{padding-top:9px;border-top:1px solid #dce6ee;margin-top:12px}.lotUsageUndated{padding:12px 0 0;font-size:13px;color:#735321}.lotUsageUndated p{margin:7px 0 0;color:#536d80}
+.lotUsageWarning{margin-top:9px;font-size:12px;color:#76551f}.lotUsageWarning summary{cursor:pointer}.lotUsageWarning p{line-height:1.6;max-height:200px;overflow:auto}
+.lotUsagePrintWarning{display:none}
+.lotUsageJobs{margin-top:18px}.lotUsageJobs h3{font-size:15px;margin:0}.lotUsageJobs header>span{color:#617487;font-size:12px}.lotUsageJobs>.lotUsageJobTable{margin-top:9px}
+.lotUsageJobTable .tableWrap{margin:0;border:1px solid #d5e0eb;border-radius:6px;max-height:58vh;overflow:auto}
+.lotUsageJobTable table{width:100%;min-width:690px;table-layout:fixed}.lotColProduct{width:24%}.lotColMachine{width:9%}.lotColWorker{width:13%}.lotColDate{width:18%}
+.lotUsageJobTable th{font-size:12px;white-space:nowrap;text-align:left;position:sticky;top:0;z-index:1;background:#eaf1f7}
+.lotUsageJobTable td{font-size:13px;vertical-align:top;padding:8px 10px;white-space:normal;overflow-wrap:anywhere}.lotUsageJobTable td:nth-child(n+4){font-variant-numeric:tabular-nums}
+.lotUsageJobDetail{margin-top:3px;font-size:11px;color:#566f82}.lotUsageJobDetail summary{cursor:pointer;min-height:22px}.lotUsageJobDetail div{max-height:220px;overflow:auto;line-height:1.5}.lotUsageJobDetail p{margin:6px 0}
+.lotUsageJobCards{display:none}.lotUsageEmpty{margin:0;padding:22px 12px;text-align:center;color:#627587;font-size:13px;line-height:1.6}
+@media screen{
+ body.sheetWorkspace .summaryPanel{max-width:1200px}
+ body.sheetWorkspace .summaryPanel[data-summary-mode=lots]{max-width:1040px}
+ body.sheetWorkspace #scheduleSummaryTable table{table-layout:fixed;width:1166px;min-width:1166px;max-width:none}
+ body.sheetWorkspace #scheduleSummaryTable td{min-width:0;max-width:none;padding:7px 8px;line-height:1.45}
+ body.sheetWorkspace #scheduleSummaryTable th{padding:8px 7px}
+ .summaryLotUse{display:inline-block;vertical-align:top;margin:0 4px 3px 0!important}
+ .summaryPanel #scheduleSummaryTable .summaryLotDates,.summaryPanel .summaryCardLots .summaryLotDates{display:none}
+ .summaryLotNumbers>span{padding:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+ .summaryLotNumbers .summaryLotJump{padding:3px 6px;min-height:26px;border:0;background:transparent;color:#294d65;font:inherit;font-weight:650;white-space:normal;overflow-wrap:anywhere}
+ .summaryLotNumbers .summaryLotJump:hover{background:#dce9f3;text-decoration:underline}
+}
+@media screen and (max-width:720px){
+ .summaryMode{padding:10px 10px 0;display:grid;grid-template-columns:1fr 1fr}.summaryMode button{min-height:44px;padding:6px 10px}
+ #scheduleLotLookup{padding:0 10px 12px}.lotUsageChoices button{min-height:44px}
+ .lotUsageSummary{padding:12px}.lotUsageSummary h2{font-size:21px}.lotUsagePeriod dd{font-size:clamp(18px,5.4vw,21px)}.lotUsagePeriod dl{gap:6px;grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr)}
+ .lotUsageJobs{margin-top:14px}.lotUsageJobs>header{align-items:baseline;flex-wrap:wrap;gap:5px}.lotUsageJobTable{display:none}.lotUsageJobCards{display:grid;gap:7px;margin-top:8px}
+ .lotUsageJobCard{border:1px solid #d6e1eb;border-radius:7px;padding:10px;background:#fff}.lotUsageJobCard>strong{font-size:14px;color:#24445b}.lotUsageJobCard>span{float:right;font-size:12px;color:#586d80}
+ .lotUsageJobCard dl{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:9px 0 0}.lotUsageJobCard dt{font-size:11px;color:#61778b}.lotUsageJobCard dd{margin:2px 0 0;font-size:13px;color:#2b4a63;font-weight:600}
+ .lotUsageJobDetail summary,.lotUsageWarning summary{min-height:44px;display:flex;align-items:center;gap:5px}.lotUsageJobDetail summary:before,.lotUsageWarning summary:before{content:'▸'}.lotUsageJobDetail[open] summary:before,.lotUsageWarning[open] summary:before{content:'▾'}
+ .summaryLotNumbers .summaryLotJump{min-height:38px;padding:6px 8px}
+}
+@media print{.lotUsageSummary>header,.lotUsageJobs>header{display:flex!important}.summaryMode,.lotUsageChoices{display:none!important}.lotUsageJobCards{display:none!important}.lotUsageJobTable{display:block!important}.lotUsageJobTable .tableWrap{max-height:none;overflow:visible}.lotUsageJobDetail div{max-height:none;overflow:visible}.lotUsageSummary{break-inside:avoid}.lotUsageSummary:has(.lotUsagePrintWarning){break-inside:auto}.lotUsageWarning{display:none!important}.lotUsagePrintWarning{display:block;max-height:none;overflow:visible;font-size:12px;line-height:1.6;color:#593f16}}
+
 /* Stocktake controls stay close to the quantity grid; no ledger changes. */
 body.sheetWorkspace[data-workspace-page="audit"] .top{margin-bottom:5px}
 body.sheetWorkspace[data-workspace-page="audit"] .workspaceTools{margin:4px 0 8px;padding:0;min-height:32px}
@@ -2129,6 +2182,67 @@ body.sheetWorkspace .auditReviewDialog>.actions>.dialogFeedback{flex:1 0 100%;bo
 @media screen{
  body.sheetWorkspace .inputSheet tbody tr:focus-within:not(.deleted)>td:is([data-result="product"],:has(>[data-cell="product"])):not(.cellError){background:#d6e7ff;color:#173e68;box-shadow:inset 3px 0 #4167ac;font-weight:650}
  body.sheetWorkspace .inputSheet tbody tr:focus-within:not(.deleted)>td:not(.cellError)>[data-cell="product"]{background:transparent;color:#173e68;font-weight:650}
+}
+/* Content-sized work areas. Keep this screen-only and leave the timeline canvas,
+   summary, input nodes, quantity controls and printed worksheets unchanged. */
+@media screen{
+ body.sheetWorkspace[data-workspace-page=home] .grid2{align-items:start;gap:12px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stat{padding:12px 14px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stat strong{margin:6px 0 4px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stats{margin-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=report] .workspacePane .tableWrap :is(th,td){padding-block:8px}
+ body.sheetWorkspace[data-workspace-page=report] .workspacePane .card{padding:14px}
+ body.sheetWorkspace[data-workspace-page=settings] .card{padding:14px;margin-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=settings] .card>p{margin-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel{padding:10px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel>.toolbar{margin-bottom:8px;gap:8px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel>.sheetEditor{margin-top:0;margin-bottom:0}
+ body.sheetWorkspace[data-workspace-page=master] .managementGuide{padding-block:7px;margin-block:6px}
+ /* Three print choices need three useful fields, rather than three quarters of
+    the generic four-column form. The printed document is a separate iframe. */
+ body.sheetWorkspace #auditPrintForm .formGrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 14px}
+ body.sheetWorkspace #auditPrintForm .formGrid>label:last-child{grid-column:1/-1}
+ body.sheetWorkspace #auditPrintForm .formGrid :is(input,select){width:100%}
+ body.sheetWorkspace #auditPrintForm [data-dialog-feedback]:empty{display:none}
+}
+@media screen and (min-width:721px){
+ body.sheetWorkspace:not(.workspaceFocused)[data-workspace-page=audit] .sheetEditor:has(.sheetViewport>table>colgroup>col:nth-child(4):last-child){max-width:920px}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col=product]{width:40%!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col=book]{width:22%!important}
+ body.sheetWorkspace[data-workspace-page=audit] .inputSheet:has(>colgroup>col:nth-child(4):last-child) col[data-sheet-col^=location]{width:auto!important}
+ body.sheetWorkspace:not(.workspaceFocused)[data-workspace-page=report] [data-sheet-id=plaster-month]{max-width:820px}
+ body.sheetWorkspace[data-workspace-page=report] [data-sheet-id=plaster-month] .sheetViewport>.inputSheet{width:100%;margin:0}
+ body.sheetWorkspace:not(.workspaceFocused)[data-workspace-page=stock] [data-sheet-id=issue-ledger]{max-width:1040px}
+ body.sheetWorkspace[data-workspace-page=stock] [data-sheet-id=issue-ledger] .sheetViewport>.inputSheet{width:100%;margin:0}
+ body.sheetWorkspace[data-workspace-page=master] .inputSheet.sheetStacked>tbody>tr[data-row]{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px 8px;padding-bottom:10px}
+ body.sheetWorkspace[data-workspace-page=master] .inputSheet.sheetStacked td:is([data-sheet-key=name],:has(textarea)){grid-column:span 2}
+ body.sheetWorkspace[data-workspace-page=master] .inputSheet.sheetStacked td[data-sheet-key=name] input{text-align:left}
+}
+@media screen and (min-width:721px) and (max-width:980px){
+ body.sheetWorkspace #nav{grid-template-columns:repeat(5,minmax(0,1fr))}
+ body.sheetWorkspace #nav button{min-height:44px;padding-inline:5px;white-space:nowrap}
+ body.sheetWorkspace[data-workspace-page=daily] [data-sheet-id=production] .inputSheet.sheetStacked>tbody>tr[data-row]{grid-template-columns:repeat(6,minmax(0,1fr))}
+ body.sheetWorkspace[data-workspace-page=daily] [data-sheet-id=production] .sheetStacked td{grid-column:span 3}
+ body.sheetWorkspace[data-workspace-page=daily] [data-sheet-id=production] .sheetStacked td:is([data-sheet-key=hours],[data-sheet-key=gypsumDayLot],[data-sheet-key=productionKg]){grid-column:span 2}
+ body.sheetWorkspace[data-workspace-page=daily] [data-sheet-id=production] .sheetStacked td:is([data-sheet-key=product],[data-sheet-key=currentProgress]){grid-column:1/-1}
+ body.sheetWorkspace[data-workspace-page=daily] [data-sheet-id=production] .sheetStacked td:has(textarea){grid-column:1/-1}
+ body.sheetWorkspace[data-workspace-page=daily] .productionDateRail{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:44px;overflow-x:auto;gap:3px;padding-block:4px}
+ body.sheetWorkspace[data-workspace-page=daily] .productionDateRail button{min-height:38px}
+}
+@media screen and (max-width:720px){
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel{padding:0;border:0;background:transparent;box-shadow:none}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel>.toolbar{padding:0 2px;gap:6px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel .actions{gap:6px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel .secondaryScope{margin-top:2px;font-size:11px}
+ body.sheetWorkspace[data-workspace-page=stock] .ledgerStockPanel>.sheetEditor{border-radius:8px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stat{padding:10px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stat strong{margin:5px 0 3px}
+ body.sheetWorkspace:is([data-workspace-page=home],[data-workspace-page=report]) .stat small{line-height:1.4;display:block}
+ body.sheetWorkspace[data-workspace-page=report] .workspaceTabs{gap:3px;margin-top:7px;padding-bottom:5px}
+ body.sheetWorkspace[data-workspace-page=master] .managementGuide{padding:4px 0;border:0;background:transparent}
+ body.sheetWorkspace[data-workspace-page=master] .sheetEditor{margin-top:8px}
+ body.sheetWorkspace[data-workspace-page=daily] .sheetStacked td.productionWorkerCell{background:transparent;border:0;margin-left:40px}
+ body.sheetWorkspace #auditPrintForm .formGrid{grid-template-columns:minmax(0,1fr)}
 }
 </style><script>(function(root){'use strict';
 // Login is independent of repository credentials. Offline verification cannot
@@ -5085,9 +5199,53 @@ function scheduleSummaryRows(s=state,asOf=today()){
  });
 }
 
+// LOT change intervals and dated production observations are different facts.
+// Keep both so a lookup never substitutes a job's planned span for LOT usage.
+function scheduleLotUsage(s,items,asOf=today()){
+ if(!C.iso(asOf))throw Error('로트 조회 기준 날짜를 확인해 주세요.');
+ const entries=new Map(),clean=v=>typeof v==='string'?v.trim():'',ensure=lot=>{
+  if(!entries.has(lot))entries.set(lot,{lot,periods:[],firstActual:null,lastActual:null,actualDates:[],rows:[],warning:''});
+  return entries.get(lot);
+ },events=GypsumLots.events(s.gypsumLots||[]),changes=[];
+ // Re-registering the same current code does not start a new usage interval.
+ // A code returning after a different code is a separate interval.
+ for(const event of events)if(changes.at(-1)?.lot!==event.lot)changes.push(event);
+ const previousDay=date=>new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+ for(let i=0;i<changes.length;i++){
+  const event=changes[i],next=changes[i+1],planned=event.date>asOf,ended=!!next&&(planned||next.date<=asOf);
+  ensure(event.lot).periods.push({start:event.date,end:ended?(next.overlap?next.date:previousDay(next.date)):null,ongoing:!planned&&!ended,planned,transitionDate:next?.date||null,transitionOverlap:!!next?.overlap,nextLot:next?.lot||null,startOverlap:i>0&&event.overlap,source:'common'});
+ }
+ for(const row of items||[]){
+  const dated=new Map();
+  for(const day of row.lotDays||[]){
+   if(!C.iso(day.date)||day.date>asOf||!['common','daily'].includes(day.source))continue;
+   for(const value of day.lots||[]){const lot=clean(value);if(!lot)continue;if(!dated.has(lot))dated.set(lot,new Set());dated.get(lot).add(day.date)}
+  }
+  for(const [lot,dates]of dated){const ordered=[...dates].sort(),entry=ensure(lot);entry.actualDates.push(...ordered);entry.rows.push({row,dates:ordered,firstActual:ordered[0],lastActual:ordered.at(-1)})}
+  // Retain the existing, explicitly undated history lookup. Date-bearing
+  // contradictory raw notes are not promoted to a second LOT identity.
+  const legacy=row.legacyLots||[];
+  if(!dated.size&&!row.actualDates?.length&&row.lotText!=='생산 후 확인'&&legacy.length&&legacy.every(scheduleSummaryPlainLot)){
+   for(const lot of new Set(legacy.map(clean)))ensure(lot).rows.push({row,dates:[],firstActual:null,lastActual:null});
+  }
+ }
+ for(const entry of entries.values()){
+  entry.actualDates=[...new Set(entry.actualDates)].sort();entry.firstActual=entry.actualDates[0]||null;entry.lastActual=entry.actualDates.at(-1)||null;
+  entry.rows.sort((a,b)=>(a.firstActual||'9999-12-31').localeCompare(b.firstActual||'9999-12-31')||String(a.row.product||'').localeCompare(String(b.row.product||''),'ko')||String(a.row.worker||'').localeCompare(String(b.row.worker||''),'ko'));
+  const warnings=[],undated=entry.rows.filter(r=>!r.dates.length).length;
+  if(!entry.periods.length)warnings.push('공용 변경 기록이 없어 사용 시작·종료일은 확인할 수 없습니다.');
+  if(!entry.actualDates.length)warnings.push('연결된 생산 실적일이 없습니다.');
+  if(undated)warnings.push('날짜 근거가 없는 기존 기록 '+undated+'건은 실적일에 포함하지 않았습니다.');
+  for(const item of entry.rows)if(clean(item.row.traceWarning))warnings.push(clean(item.row.traceWarning));
+  entry.warning=[...new Set(warnings)].join(' ');
+ }
+ return[...entries.values()].sort((a,b)=>a.lot.localeCompare(b.lot,'ko',{numeric:true}));
+}
+
 // A read-only projection of the same schedule used by the production timeline.
-const scheduleSummaryControls={scope:'month',status:'all',sort:'dry-desc',search:'',layout:'cards'};
+const scheduleSummaryControls={scope:'month',status:'all',sort:'dry-desc',search:'',layout:'cards',mode:'auto',selectedLot:''};
 let scheduleSummaryCurrent=[];
+let scheduleSummaryLotCurrent=null,scheduleSummaryActiveMode='jobs';
 function scheduleSummaryLotInfo(r){
  const current=[...new Set((r.lots||[]).filter(Boolean))],legacy=(r.legacyLots||[]).filter(Boolean);
  // Legacy notes can contain several unrelated date ranges. Do not turn those
@@ -5109,8 +5267,8 @@ function scheduleSummaryLotEvidence(r){return(r.lotDays||[]).map(day=>{
 }).join('\n')}
 function scheduleSummaryLotCell(r){
  const info=scheduleSummaryLotInfo(r),numbers=info.codes.length?info.codes.map(code=>{
-  const groups=(r.lotGroups||[]).filter(g=>g.lot===code),dates=groups.map(g=>'<small class="summaryLotDates">'+esc(scheduleSummaryLotDates(g.dates,true))+' · '+(g.source==='common'?'공용 기록':'일보 기록')+'</small>').join('');
-  return '<div class="summaryLotUse"><span class="summaryLotNumbers"><span title="'+esc(code)+'">'+esc(code)+'</span></span>'+dates+'</div>';
+  const groups=(r.lotGroups||[]).filter(g=>g.lot===code),dates=groups.map(g=>{const first=g.dates[0],last=g.dates.at(-1);return '<small class="summaryLotDates">'+esc(first.slice(5).replace('-','/')+(first!==last?' ~ '+last.slice(5).replace('-','/'):'')+' · '+g.dates.length+'일')+'</small>'}).join('');
+  return '<div class="summaryLotUse"><span class="summaryLotNumbers"><span><button type="button" class="summaryLotJump" data-summary-lot-open="'+esc(code)+'" title="이 로트의 사용 시작·종료 보기">'+esc(code)+'</button></span></span>'+dates+'</div>';
  }).join(''):'<span class="summaryLotEmpty">'+esc(info.text)+'</span>';
  const notes=[info.oldOnly?'기존 기록 · 날짜 확인 필요':'',r.missingLotDates?.length?'미확인 '+r.missingLotDates.length+'일':'',r.lotConflictDates?.length?'기록 상이 '+r.lotConflictDates.length+'일':''].filter(Boolean);
  const status=notes.length?'<span class="summaryLotNote">'+esc(notes.join(' · '))+'</span>':info.codes.length&&info.warning?'<span class="summaryLotNote">일부 기록 확인 필요</span>':'';
@@ -5119,7 +5277,7 @@ function scheduleSummaryLotCell(r){
 }
 function scheduleSummaryView(){
  const c=scheduleSummaryControls,options=(list,value)=>list.map(([key,label])=>`<option value="${key}" ${key===value?'selected':''}>${label}</option>`).join('');
- return head('생산일정 요약','작업별 생산기간·건조일·석고 로트를 찾아봅니다.',btn('schedule','일정표 보기')+btn('csvScheduleSummary','CSV 내려받기'))+`<section class="summaryPanel" data-summary-layout="${esc(c.layout||'cards')}"><div class="summaryFilters"><label class="summarySearch">품명 · 작업자 · 호기 · 로트<input id="summarySearch" type="search" value="${esc(c.search)}" placeholder="찾을 이름이나 로트 번호" autocomplete="off"></label><label>조회 범위<select id="summaryScope">${options([['month','선택월 일정'],['all','전체 기간']],c.scope)}</select></label><label>생산 기록<select id="summaryStatus">${options([['all','전체'],['actual','실적 있는 작업'],['plan','실적 없는 예약']],c.status)}</select></label><label>정렬<select id="summarySort">${options([['dry-desc','건조일 · 늦은 날짜부터'],['dry-asc','건조일 · 이른 날짜부터'],['start-desc','시작일 · 늦은 날짜부터'],['start-asc','시작일 · 이른 날짜부터'],['worker','작업자 · 이름순']],c.sort)}</select></label></div><div class="summaryMeta"><div class="summaryResultState"><span id="summaryCount" role="status" aria-live="polite"></span><button id="summaryReset" type="button" hidden>검색·기록 조건 해제</button></div><details id="summaryGuide"><summary>표와 로트 읽는 법</summary><p>선택월에 생산기간이나 건조일이 걸친 일정을 표시합니다. 전체 기간으로 바꾸면 지난 작업도 찾을 수 있습니다.</p><p>예약 조수는 해당 호기에서 만들기로 한 조수입니다. 작업을 넘긴 구간에는 같은 수량이 표시될 수 있어 합산하지 않습니다. 기간은 시작일부터 종료일까지의 달력일입니다.</p><p>석고 로트는 실제 생산 기록이 있는 날짜로 확인합니다. 호기별 실적이 없으면 해당 품목 작업의 사용 로트를 표시합니다. 두 로트를 쓴 날은 사용량을 임의로 나누지 않으며 미래 일정의 로트는 예측하지 않습니다. 날짜별 공용 기록을 우선하고, 공용 기록이 없는 날은 해당 일보의 단일 로트 번호를 표시합니다. 번호 아래의 날짜와 출처를 확인하세요. 미확인 날짜와 서로 다른 기록은 따로 표시하며, 날짜 근거가 없는 과거 값은 ‘기존 기록’으로 구분합니다.</p></details></div><div class="summaryViewChoice" role="group" aria-label="일정 요약 표시 방식"><button type="button" data-summary-layout="cards" aria-controls="scheduleSummaryCards" aria-pressed="${c.layout!=='table'}">간단히 보기</button><button type="button" data-summary-layout="table" aria-controls="scheduleSummaryTable" aria-pressed="${c.layout==='table'}">전체표 보기</button></div><div id="scheduleSummaryCards" class="summaryCards"></div><div id="scheduleSummaryTable"></div></section>`;
+ return head('생산일정 요약','작업별 생산기간·건조일·석고 로트를 찾아봅니다.',btn('schedule','일정표 보기')+btn('csvScheduleSummary','CSV 내려받기'))+`<section class="summaryPanel" data-summary-layout="${esc(c.layout||'cards')}"><div class="summaryMode" role="group" aria-label="조회할 내용"><button type="button" data-summary-mode="jobs">작업별 일정</button><button type="button" data-summary-mode="lots">석고 로트 조회</button></div><div class="summaryFilters"><label class="summarySearch"><span id="summarySearchLabel">품명 · 작업자 · 호기 · 로트</span><input id="summarySearch" type="search" value="${esc(c.search)}" placeholder="찾을 이름이나 로트 번호" autocomplete="off"></label><label class="summaryJobFilter">조회 범위<select id="summaryScope">${options([['month','선택월 일정'],['all','전체 기간']],c.scope)}</select></label><label class="summaryJobFilter">생산 기록<select id="summaryStatus">${options([['all','전체'],['actual','실적 있는 작업'],['plan','실적 없는 예약']],c.status)}</select></label><label class="summaryJobFilter">정렬<select id="summarySort">${options([['dry-desc','건조일 · 늦은 날짜부터'],['dry-asc','건조일 · 이른 날짜부터'],['start-desc','시작일 · 늦은 날짜부터'],['start-asc','시작일 · 이른 날짜부터'],['worker','작업자 · 이름순']],c.sort)}</select></label></div><div class="summaryMeta"><div class="summaryResultState"><span id="summaryCount" role="status" aria-live="polite"></span><button id="summaryReset" type="button" hidden>검색·기록 조건 해제</button></div><details id="summaryGuide"><summary>표와 로트 읽는 법</summary><p>선택월에 생산기간이나 건조일이 걸친 일정을 표시합니다. 전체 기간으로 바꾸면 지난 작업도 찾을 수 있습니다.</p><p>예약 조수는 해당 호기에서 만들기로 한 조수입니다. 작업을 넘긴 구간에는 같은 수량이 표시될 수 있어 합산하지 않습니다. 기간은 시작일부터 종료일까지의 달력일입니다.</p><p>석고 로트는 실제 생산 기록이 있는 날짜로 확인합니다. 호기별 실적이 없으면 해당 품목 작업의 사용 로트를 표시합니다. 두 로트를 쓴 날은 사용량을 임의로 나누지 않으며 미래 일정의 로트는 예측하지 않습니다. 날짜별 공용 기록을 우선하고, 공용 기록이 없는 날은 해당 일보의 단일 로트 번호를 표시합니다. 로트 번호를 누르면 해당 로트의 사용 시작·종료와 관련 품목을 따로 볼 수 있습니다. 상세 날짜와 출처는 사용 기록에서 확인하세요. 미확인 날짜와 서로 다른 기록은 따로 표시하며, 날짜 근거가 없는 과거 값은 ‘기존 기록’으로 구분합니다.</p></details></div><div class="summaryViewChoice" role="group" aria-label="일정 요약 표시 방식"><button type="button" data-summary-layout="cards" aria-controls="scheduleSummaryCards" aria-pressed="${c.layout!=='table'}">간단히 보기</button><button type="button" data-summary-layout="table" aria-controls="scheduleSummaryTable" aria-pressed="${c.layout==='table'}">전체표 보기</button></div><div id="scheduleLotLookup" hidden></div><div id="scheduleSummaryCards" class="summaryCards"></div><div id="scheduleSummaryTable"></div></section>`;
 }
 function scheduleSummaryFiltered(items,c=scheduleSummaryControls){
  const from=month+'-01';
@@ -5142,13 +5300,65 @@ function scheduleSummaryCard(r){
  return '<article class="summaryJobCard"><header><strong>'+esc(v[2])+'</strong><span class="summaryCardStatus">'+esc(v[8])+'</span></header><p class="summaryCardOwner">'+esc(v[0]||'작업자 미지정')+' · '+esc(v[1]||'호기 미정')+'</p><dl class="summaryCardFacts"><div><dt>예약 조수</dt><dd>'+esc(fmt(v[3]))+'조</dd></div><div><dt>건조일</dt><dd class="summaryCardDry">'+esc(v[6])+'</dd></div><div class="summaryCardPeriod"><dt>생산기간</dt><dd>'+esc(v[4])+' ~ '+esc(v[5])+'</dd>'+(v[7]?'<small>'+esc(v[7])+'</small>':'')+'</div></dl><section class="summaryCardLots"><b>석고 로트</b>'+scheduleSummaryLotCell(r)+(v[10]?'<p class="summaryCardOverlap"><b>두 로트 사용일</b> '+esc(v[10])+'</p>':'')+'</section>'+(detail?'<details class="summaryCardDetail"><summary>작업 상세</summary><p>'+esc(detail)+'</p></details>':'')+'</article>';
 }
 const scheduleSummaryHeaders=['작업자','호기','품명','예약 조수','생산시작','생산종료','건조일','기간 (달력일)','상태','석고 로트','두 로트 사용일'];
+function scheduleLotLookupMode(usage,items,c=scheduleSummaryControls){
+ if(c.mode==='lots'||c.mode==='jobs')return c.mode;
+ const query=c.search.trim().toLocaleLowerCase('ko-KR');
+ return query&&usage.some(x=>x.lot.toLocaleLowerCase('ko-KR')===query)&&!items.some(x=>[x.product,x.worker].some(v=>String(v||'').toLocaleLowerCase('ko-KR')===query))?'lots':'jobs';
+}
+function scheduleLotLookupMatches(usage,query){const q=query.trim().toLocaleLowerCase('ko-KR');return usage.filter(x=>!q||x.lot.toLocaleLowerCase('ko-KR').includes(q))}
+function scheduleLotPeriodState(period){return period.planned?'사용 예정':period.ongoing?'사용 중':'사용 종료'}
+function scheduleLotPeriodNotes(period){
+ return [period.startOverlap?'시작일 '+period.start+' · 이전 로트와 함께 사용':'',period.nextLot&&period.transitionDate?(period.ongoing||period.planned?'전환 예정 ': '전환 ')+period.transitionDate+' · '+period.nextLot+(period.transitionOverlap?' · 이날 두 로트 함께 사용':''):''].filter(Boolean);
+}
+function scheduleLotPeriodMarkup(period,index,total){
+ const end=period.planned?(period.end||'미정'):period.ongoing?'사용 중':period.end||'미확인';
+ return '<section class="lotUsagePeriod">'+(total>1?'<b class="lotUsageOccurrence">'+(index+1)+'번째 사용기간</b>':'')+'<dl><div><dt>'+(period.planned?'사용 시작 예정':'사용 시작')+'</dt><dd>'+esc(period.start||'미확인')+'</dd></div><span aria-hidden="true">→</span><div><dt>'+(period.planned?'종료 예정':'사용 종료')+'</dt><dd class="'+(period.ongoing?'lotUsageOngoing':'')+'">'+esc(end)+'</dd></div></dl>'+scheduleLotPeriodNotes(period).map(note=>'<p>'+esc(note)+'</p>').join('')+'</section>';
+}
+function scheduleLotUsageDetail(item){
+ const row=item.row,dates=item.dates||[];
+ return '<details class="lotUsageJobDetail"><summary>작업 정보</summary><div><p>전체 생산기간 '+esc(row.start||'미정')+' ~ '+esc(row.endText||row.end||'미정')+'</p><p>이 로트가 기록된 날 '+esc(dates.length?scheduleSummaryLotDates(dates):'날짜 확인 필요')+'</p>'+([row.lotScopeText,row.traceWarning].filter(Boolean).map(x=>'<p>'+esc(x)+'</p>').join(''))+'</div></details>';
+}
+function scheduleLotLookupMarkup(usage,selected){
+ if(!usage.length)return '<p class="lotUsageEmpty">검색한 로트 기록이 없습니다.</p>';
+ const choices=usage.length>1?'<div class="lotUsageChoices" role="group" aria-label="조회할 석고 로트">'+usage.map(x=>'<button type="button" data-summary-lot="'+esc(x.lot)+'" aria-pressed="'+(x.lot===selected.lot)+'">'+esc(x.lot)+'</button>').join('')+'</div>':'';
+ const periods=selected.periods||[],active=periods.find(p=>p.ongoing),futureOnly=periods.length&&periods.every(p=>p.planned),status=active?'사용 중':futureOnly?'사용 예정':periods.some(p=>p.planned)?'재사용 예정':periods.length?'사용 종료':'시작·종료 미확인';
+ const periodMarkup=periods.length?periods.map((p,i)=>scheduleLotPeriodMarkup(p,i,periods.length)).join(''):'<div class="lotUsageUndated"><b>공용 변경 기록이 없어 사용 시작·종료를 알 수 없습니다.</b>'+(selected.firstActual?'<p>일보에서 확인된 기간 '+esc(selected.firstActual)+' ~ '+esc(selected.lastActual)+'</p>':'<p>날짜가 확인되는 생산실적이 없습니다.</p>')+'</div>';
+ const linked=[...(selected.rows||[])].sort((a,b)=>String(a.firstActual||'9999').localeCompare(String(b.firstActual||'9999'))||String(a.row.product||'').localeCompare(String(b.row.product||''),'ko'));
+ const headers=['품명','호기','작업자','이 로트 첫 기록','이 로트 마지막 기록','건조일'];
+ const tableRows=linked.map(item=>{const row=item.row;return tr([td('<strong>'+esc(row.product)+'</strong>'+scheduleLotUsageDetail(item)),td(esc(row.machine||'미지정')),td(esc(row.worker||'미지정')),td(esc(item.firstActual||'미확인')),td(esc(item.lastActual||'미확인')),td(esc(row.dry||'미정'))])});
+ const cards=linked.map(item=>{const row=item.row;return '<article class="lotUsageJobCard"><strong>'+esc(row.product)+'</strong><span>'+esc(row.machine||'호기 미지정')+' · '+esc(row.worker||'작업자 미지정')+'</span><dl><div><dt>이 로트 첫 기록</dt><dd>'+esc(item.firstActual||'미확인')+'</dd></div><div><dt>마지막 기록</dt><dd>'+esc(item.lastActual||'미확인')+'</dd></div><div><dt>건조일</dt><dd>'+esc(row.dry||'미정')+'</dd></div></dl>'+scheduleLotUsageDetail(item)+'</article>'}).join('');
+ return choices+'<section class="lotUsageSummary"><header><div><small>석고 로트</small><h2>'+esc(selected.lot)+'</h2></div><span class="lotUsageStatus">'+esc(status)+'</span></header>'+periodMarkup+'<p class="lotUsageBasis">'+(periods.length?'공용 로트 변경 기록 기준 · 품목별 실제 기록은 아래 표에서 확인':selected.firstActual?'일보 기록만 확인되므로 마지막 기록일을 사용 종료일로 보지 않습니다.':'기존 기록에 번호만 있어 사용기간을 확인할 수 없습니다.')+'</p>'+(selected.warning?'<details class="lotUsageWarning"><summary>기록 확인 사항</summary><p>'+esc(selected.warning)+'</p></details><p class="lotUsagePrintWarning"><b>기록 확인 사항</b><br>'+esc(selected.warning)+'</p>':'')+'</section><section class="lotUsageJobs"><header><h3>이 로트를 사용한 품목</h3><span>'+linked.length+'개 작업 · 전체 기간</span></header>'+(linked.length?'<div class="lotUsageJobTable">'+table(headers,tableRows).replace('<table>','<table data-mobile-layout="table"><colgroup><col class="lotColProduct"><col class="lotColMachine"><col class="lotColWorker"><col class="lotColDate"><col class="lotColDate"><col class="lotColDate"></colgroup>')+'</div><div class="lotUsageJobCards">'+cards+'</div>':'<p class="lotUsageEmpty">연결된 생산실적이 없습니다. 공용 기록의 사용기간만 표시합니다.</p>')+'</section>';
+}
+function exportScheduleLotUsage(item){
+ if(!item)return;
+ const periods=item.periods||[],periodText=periods.map(p=>(p.start||'미확인')+' ~ '+(p.ongoing?'사용 중':p.end||'미정')+(p.planned?' (예정)':'')).join(' / '),basis=periods.length?'공용 로트 변경 기록':'공용 변경 기록 없음 · 시작/종료 미확인';
+ const links=item.rows?.length?item.rows:[null];
+ csv(['석고 로트','로트 사용기간','기간 근거','품명','호기','작업자','이 로트 첫 기록','이 로트 마지막 기록','건조일','이 로트 기록일','확인 사항','전환 기록'],links.map(x=>[item.lot,periodText,basis,x?.row.product||'',x?.row.machine||'',x?.row.worker||'',x?.firstActual||'',x?.lastActual||'',x?.row.dry||'',(x?.dates||[]).join(', '),item.warning||'',periods.flatMap(scheduleLotPeriodNotes).join(' / ')]),'석고로트_'+item.lot);
+}
 function bindScheduleSummary(){
  if(page!=='scheduleSummary')return;
- const items=scheduleSummaryRows(state,today()),draw=()=>{
+ const items=scheduleSummaryRows(state,today()),usage=scheduleLotUsage(state,items,today()),draw=()=>{
+  const c=scheduleSummaryControls,mode=scheduleLotLookupMode(usage,items,c),panel=document.querySelector('.summaryPanel');
+  scheduleSummaryActiveMode=mode;panel.dataset.summaryMode=mode;
+  for(const button of panel.querySelectorAll('[data-summary-mode]'))button.setAttribute('aria-pressed',String(button.dataset.summaryMode===mode));
+  $('#summarySearchLabel').textContent=mode==='lots'?'석고 로트 번호':'품명 · 작업자 · 호기 · 로트';
+  $('#summarySearch').placeholder=mode==='lots'?'찾을 석고 로트 번호':'찾을 이름이나 로트 번호';
+  $('#summaryGuide').hidden=mode==='lots';$('#scheduleLotLookup').hidden=mode!=='lots';
+  $('#summaryReset').hidden=!(c.search||mode==='jobs'&&c.status!=='all');
+  if(mode==='lots'){
+   const matches=scheduleLotLookupMatches(usage,c.search),query=c.search.trim(),folded=matches.filter(x=>x.lot.toLocaleLowerCase('ko-KR')===query.toLocaleLowerCase('ko-KR'));
+   const exact=matches.find(x=>x.lot===query)||(folded.length===1?folded[0]:null);
+   const selected=matches.find(x=>x.lot===c.selectedLot)||exact||matches.find(x=>x.periods.some(p=>p.ongoing))||matches.at(-1)||null;
+   scheduleSummaryLotCurrent=selected;if(selected)c.selectedLot=selected.lot;
+   $('#summaryCount').textContent='전체 기간 · '+matches.length+'개 로트 · 월 선택과 관계없이 조회';
+   $('#scheduleLotLookup').innerHTML=scheduleLotLookupMarkup(matches,selected);
+   for(const button of panel.querySelectorAll('[data-summary-lot]'))button.onclick=()=>{c.selectedLot=button.dataset.summaryLot;draw()};
+   return;
+  }
+  scheduleSummaryLotCurrent=null;
   scheduleSummaryCurrent=scheduleSummaryFiltered(items);
-  const c=scheduleSummaryControls,scopeRows=scheduleSummaryFiltered(items,{...c,status:'all',search:''});
+  const scopeRows=scheduleSummaryFiltered(items,{...c,status:'all',search:''});
   $('#summaryCount').textContent=(c.scope==='all'?'전체 기간':month)+' · '+scheduleSummaryCurrent.length.toLocaleString('ko-KR')+' / '+scopeRows.length.toLocaleString('ko-KR')+'개 일정'+(c.status==='actual'?' · 실적 있는 작업':c.status==='plan'?' · 실적 없는 예약':'')+(c.search.trim()?' · 검색 중':'');
-  $('#summaryReset').hidden=!(c.search||c.status!=='all');
   $('#scheduleSummaryCards').innerHTML=scheduleSummaryCurrent.length?scheduleSummaryCurrent.map(scheduleSummaryCard).join(''):'<p class="summaryCardEmpty">조회 조건에 맞는 일정이 없습니다.</p>';
   $('#scheduleSummaryTable').innerHTML=table(scheduleSummaryHeaders,scheduleSummaryCurrent.map(r=>{const values=scheduleSummaryCells(r);return tr(values.map((value,i)=>{
    let text=esc(value);if(i===3)text=fmt(value);
@@ -5156,14 +5366,16 @@ function bindScheduleSummary(){
    if(i===6&&r.dry)text='<span class="summaryDry">'+text+'</span>';
    if(i===9)text=scheduleSummaryLotCell(r);
    return td(text,i===3?'num':'');
-  }))})).replace('<table>','<table data-mobile-layout="table">');
+  }))})).replace('<table>','<table data-mobile-layout="table"><colgroup>'+[82,64,112,74,114,132,108,104,82,180,114].map(w=>'<col style="width:'+w+'px">').join('')+'</colgroup>');
+  for(const button of panel.querySelectorAll('[data-summary-lot-open]'))button.onclick=()=>{c.mode='lots';c.search=button.dataset.summaryLotOpen;c.selectedLot=c.search;$('#summarySearch').value=c.search;draw()};
  };
- for(const [id,key]of [['summarySearch','search'],['summaryScope','scope'],['summaryStatus','status'],['summarySort','sort']])$('#'+id).addEventListener(key==='search'?'input':'change',e=>{scheduleSummaryControls[key]=e.target.value;draw()});
+ for(const [id,key]of [['summarySearch','search'],['summaryScope','scope'],['summaryStatus','status'],['summarySort','sort']])$('#'+id).addEventListener(key==='search'?'input':'change',e=>{scheduleSummaryControls[key]=e.target.value;if(key==='search')scheduleSummaryControls.selectedLot='';draw()});
  $('#summaryReset').onclick=()=>{scheduleSummaryControls.search='';scheduleSummaryControls.status='all';$('#summarySearch').value='';$('#summaryStatus').value='all';draw();$('#summarySearch').focus({preventScroll:true})};
+ for(const button of document.querySelectorAll('[data-summary-mode]'))button.onclick=()=>{scheduleSummaryControls.mode=button.dataset.summaryMode;draw()};
  for(const button of document.querySelectorAll('.summaryViewChoice [data-summary-layout]'))button.onclick=()=>{const layout=button.dataset.summaryLayout;scheduleSummaryControls.layout=layout;document.querySelector('.summaryPanel').dataset.summaryLayout=layout;for(const item of document.querySelectorAll('.summaryViewChoice [data-summary-layout]'))item.setAttribute('aria-pressed',String(item.dataset.summaryLayout===layout));};
  draw();
 }
-function exportScheduleSummary(){csv([...scheduleSummaryHeaders,'로트 확인 안내','이전 로트 원문 (참고)','날짜별 로트 근거'],scheduleSummaryCurrent.map(r=>[...scheduleSummaryCells(r),[r.lotScopeText,r.traceWarning].filter(Boolean).join(' · '),(r.legacyLots||[]).join(' / '),scheduleSummaryLotEvidence(r)]),'생산일정요약'+(scheduleSummaryControls.scope==='all'?'_전체기간':''))}
+function exportScheduleSummary(){if(scheduleSummaryActiveMode==='lots')return exportScheduleLotUsage(scheduleSummaryLotCurrent);csv([...scheduleSummaryHeaders,'로트 확인 안내','이전 로트 원문 (참고)','날짜별 로트 근거'],scheduleSummaryCurrent.map(r=>[...scheduleSummaryCells(r),[r.lotScopeText,r.traceWarning].filter(Boolean).join(' · '),(r.legacyLots||[]).join(' / '),scheduleSummaryLotEvidence(r)]),'생산일정요약'+(scheduleSummaryControls.scope==='all'?'_전체기간':''))}
 
 (function(root){'use strict';
 const POLICY='monthly-overview-1',C=root.ScheduleCore,O=root.ScheduleOperations;
@@ -9514,7 +9726,7 @@ const shareViewPages=new Set(['daily','schedule','scheduleSummary','stock','audi
 const shareViewActions=new Set([...shareViewPages,'lotSummary','csvScheduleSummary','csvDaily','csvStock','csvSchedule','csvReport','reportPrint','history','dryCalc']);
 const shareViewPlanCommands=new Set(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','mobile-view-tools','dry-tools','fit-width','compact','overview','calendar-tools','clear-selection','job-conditions','edit-selected','dry-find','dry-newer','dry-older']);
 const shareViewFields='[data-audit-filter],#auditPrintForm [name=location],#auditPrintForm [name=counter],#auditPrintForm [name=layout],#summarySearch,#summaryScope,#summaryStatus,#summarySort,#pgDryQuery,#monthSel,#search,#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgPairsAll,#secondaryAuditSelect,#secondaryLedgerSearch,#secondaryLedgerSort,[data-sheet-sort],[data-date-table-sort],#secondaryStockHideZero,[data-sheet-search],[data-sheet-view],[data-sheet-advanced],[data-sheet-new-date],[data-ledger-month],.workspaceFocusTableSelect,#dryEnd,#dryExclude';
-const shareViewButtons='[data-secondary-imported-audits]>summary,[data-pg-bar-memo-open],[data-pg-memo-pin],[data-pg-memo-close],[data-pg-memo-edit],#pgBarMemoClose,.pgBarMemoDetails>summary,#pgBarMemoForm .pgBarMemoCommon>summary,.summaryViewChoice [data-summary-layout],#scheduleSummaryCards details>summary,[data-stock-filter-clear],.sheetEditor [data-sheet-search-clear],#summaryReset,[data-audit-step],[data-audit-counted-show],[data-audit-counted-csv],[data-audit-counted-close],[data-audit-reconcile-show],[data-audit-review-csv],[data-audit-review-close],.auditMonthlyCompare>summary,[data-audit-place],[data-secondary-print],#auditPrintCancel,#auditPrintForm [type=submit],#summaryGuide>summary,#scheduleSummaryTable details>summary,[data-share-refresh],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,#pgWorkerFilter>summary,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-ledger-csv],[data-ledger-stock-csv],[data-pg-column-date],[data-pg-clear-date],[data-pg-select],[data-pg-history],[data-pg-dry-key],[data-completion-close],[data-job-link-close],[data-job-link-open],[data-machine-actual-close],#runDry,#closeDry,#cancelReview';
+const shareViewButtons='[data-summary-lot-open],[data-summary-mode],[data-summary-lot],#scheduleLotLookup details>summary,[data-secondary-imported-audits]>summary,[data-pg-bar-memo-open],[data-pg-memo-pin],[data-pg-memo-close],[data-pg-memo-edit],#pgBarMemoClose,.pgBarMemoDetails>summary,#pgBarMemoForm .pgBarMemoCommon>summary,.summaryViewChoice [data-summary-layout],#scheduleSummaryCards details>summary,[data-stock-filter-clear],.sheetEditor [data-sheet-search-clear],#summaryReset,[data-audit-step],[data-audit-counted-show],[data-audit-counted-csv],[data-audit-counted-close],[data-audit-reconcile-show],[data-audit-review-csv],[data-audit-review-close],.auditMonthlyCompare>summary,[data-audit-place],[data-secondary-print],#auditPrintCancel,#auditPrintForm [type=submit],#summaryGuide>summary,#scheduleSummaryTable details>summary,[data-share-refresh],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,#pgWorkerFilter>summary,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-ledger-csv],[data-ledger-stock-csv],[data-pg-column-date],[data-pg-clear-date],[data-pg-select],[data-pg-history],[data-pg-dry-key],[data-completion-close],[data-job-link-close],[data-job-link-open],[data-machine-actual-close],#runDry,#closeDry,#cancelReview';
 const shareViewMessage='공유 화면은 조회 전용입니다. 자료를 입력하거나 저장할 수 없습니다.';
 const shareViewPresent=hash=>new URLSearchParams(String(hash||'').replace(/^#/,'' )).has('view');
 function shareViewParse(hash){
