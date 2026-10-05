@@ -60,6 +60,8 @@
 .heldScheduleNotice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.heldScheduleNotice button{flex:none}.heldScheduleCard{border:1px solid var(--line,#ccd5df);border-radius:10px;padding:12px;margin:12px 0;overflow-wrap:anywhere}.heldScheduleCard h4{margin:12px 0 4px}.heldScheduleField{display:grid;grid-template-columns:minmax(90px,.6fr) repeat(2,minmax(0,1fr));gap:8px;padding:6px 0;border-bottom:1px solid var(--line,#ccd5df)}
 @media(max-width:720px){.heldScheduleField{grid-template-columns:1fr}.heldScheduleField span{padding-left:8px}}
 @media print{.heldScheduleNotice{display:none!important}}
+.heldCopyNotice{display:flex;align-items:center;justify-content:space-between;gap:6px 12px;flex-wrap:wrap}.heldCopyNotice button{flex:none}
+@media print{.heldCopyNotice{display:none!important}}
 
 @media(max-width:720px){.sheetViewport>.mobileDateSort{position:sticky;left:0;display:flex;width:max-content;max-width:100%;box-sizing:border-box;padding:5px 8px;margin:0;background:#f8fafc;border-bottom:1px solid #dae4eb;z-index:1}}
 
@@ -3290,6 +3292,8 @@ class GithubStore{
  async api(path,options={}){if(this.disposed)throw Error('종료된 저장소 연결입니다.');const writing=options.method&&options.method.toUpperCase()!=='GET';if(writing)this.reads.clear();const epoch=this.epoch,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);try{const repo=`https://api.github.com/repos/${this.config.owner}/${this.config.repo}`,response=await this.request(repo+path,{...options,signal:controller.signal,headers:{Accept:'application/vnd.github+json','Authorization':'Bearer '+this.config.token,...options.headers}});if(epoch!==this.epoch||this.disposed)throw Error('연결 정보가 변경되었습니다.');if(!response.ok){const e=Error(response.status===401?'GitHub 인증을 확인해 주세요.':response.status===403?'저장소 권한 또는 요청 한도를 확인해 주세요.':response.status===404?'저장소·브랜치·파일 접근 권한을 확인해 주세요.':'GitHub 저장 요청 실패 ('+response.status+')');e.status=response.status;throw e}const data=await response.json();if(epoch!==this.epoch||this.disposed)throw Error('연결 정보가 변경되었습니다.');return data}finally{clearTimeout(timeout);if(writing)this.reads.clear()}}
  async check(){const r=await this.api('');if(!r.private)throw Error('업무 데이터는 비공개 저장소에 연결해 주세요.');return{private:r.private,defaultBranch:r.default_branch,name:r.full_name}}
  async headRevision(){const branch=String(this.config.branch||'main').split('/').map(encodeURIComponent).join('/'),r=await this.api('/git/ref/heads/'+branch);return typeof r?.object?.sha==='string'?r.object.sha:''}
+ // One listing of a folder at an exact commit: file path -> Git blob sha.
+ async blobShas(folder,ref){if(!/^[a-f0-9]{40,64}$/i.test(ref||''))throw Error('저장소의 조회 기준 버전을 확인하지 못했습니다. 다시 불러와 주세요.');const list=await this.api('/contents/'+String(folder).split('/').map(encodeURIComponent).join('/')+'?ref='+encodeURIComponent(ref));if(!Array.isArray(list))throw Error('폴더 목록 형식을 확인해 주세요.');const out={};for(const item of list)if(item?.type==='file'&&typeof item.path==='string'&&/^[a-f0-9]{40,64}$/i.test(item.sha||''))out[item.path]=item.sha.toLowerCase();return out}
  // Share only an unfinished read on this exact connection. Settled data never becomes a stale HTTP cache.
  async get(path,allowMissing=false,options={}){if(this.disposed)throw Error('종료된 저장소 연결입니다.');const epoch=this.epoch,ref=options.snapshot?await this.headRevision():options.ref;if((options.snapshot||ref!=null)&&!/^[a-f0-9]{40,64}$/i.test(ref||''))throw Error('저장소의 조회 기준 버전을 확인하지 못했습니다. 다시 불러와 주세요.');if(this.disposed||epoch!==this.epoch)throw Error('연결 정보가 변경되었습니다.');const key=path+'\0'+Boolean(allowMissing)+'\0'+(ref||'');let task=this.reads.get(key);if(!task){task=this.read(path,allowMissing,ref);this.reads.set(key,task);task.finally(()=>{if(this.reads.get(key)===task)this.reads.delete(key)}).catch(()=>{})}const result=await task;if(this.disposed||epoch!==this.epoch)throw Error('연결 정보가 변경되었습니다.');return {...clone(result),...(ref?{revision:ref}:{})}}
  async read(path,allowMissing=false,ref){
@@ -3457,11 +3461,24 @@ function acknowledgedAuditOnly(q,records){
  return changes>0&&auditSame(expected,local);
 }
 function acceptedAuditOperations(state,keys){const done=new Set();for(const [source,m]of Object.entries(state.months||{}))for(const t of m.auditTransfers||[])if((keys.includes(source)||keys.includes(t.targetMonth))&&state.months[t.targetMonth]?.auditSessions?.some(a=>a.id===t.auditId&&a.operationId===t.operationId&&a.status==='applied')&&state.months[t.targetMonth]?.operations?.some(o=>o.id===t.operationId))done.add(t.operationId);return [...done]}
+// A month file this device already holds may stand in for a download only when
+// the commit being read lists the same Git blob for it and the held copy is
+// still exactly what was read from (or written as) that blob. The mark ties
+// the remembered blob name and that content together, so a copy or a name
+// changed by any other code path is downloaded again instead of being trusted.
+const blobSha=/^[a-f0-9]{40,64}$/i;
+function blobMark(sha,text){let a=0xdeadbeef^text.length,b=0x41c6ce57^text.length;for(const part of [sha,text])for(let i=0;i<part.length;i++){const c=part.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return text.length+':'+(b>>>0).toString(16).padStart(8,'0')+(a>>>0).toString(16).padStart(8,'0')}
+function heldBlob(sha,records){return typeof sha==='string'&&blobSha.test(sha)&&Array.isArray(records)?{sha:sha.toLowerCase(),mark:blobMark(sha.toLowerCase(),JSON.stringify(records))}:null}
+function rememberBlob(e,path,blob){if(blob)(e.blobs??={})[path]=blob;else if(e.blobs)delete e.blobs[path]}
 // Read every listed month before publishing any state; cap active requests and preserve catalog order.
-async function readMonths(client,keys,allowMissing=false,ref){
+// With held copies, one listing of the pinned commit decides which months are
+// unchanged; without a remembered blob the reads are exactly as before.
+async function readMonths(client,keys,allowMissing=false,ref,held=null){
  for(const key of keys)if(!/^\d{4}-\d{2}$/.test(key))throw Error('월 목록이 올바르지 않습니다.');
- const out=new Array(keys.length);let cursor=0,failure=null;
- const run=async()=>{while(!failure&&cursor<keys.length){const index=cursor++,key=keys[index],path='months/'+key+'.json';try{const result=await client.get(path,allowMissing,{ref});if(!result.data)throw Error('기준자료에 연결된 월자료가 없습니다: '+key);if(result.data.schema!==1||!Array.isArray(result.data.records))throw Error('월자료 형식을 확인해 주세요.');out[index]={key,path,records:result.data.records,month:unpackMonth(key,result.data.records)}}catch(e){failure??=e}}};
+ const out=new Array(keys.length),kept=path=>{const blob=held?.blobs?.[path];return blob&&typeof blob.sha==='string'&&blobSha.test(blob.sha)&&Array.isArray(held.baseline?.[path])?blob:null};let cursor=0,failure=null,listed=null;
+ if(held&&blobSha.test(ref||'')&&typeof client.blobShas==='function'&&keys.some(key=>kept('months/'+key+'.json')))try{listed=await client.blobShas('months',ref)}catch{listed=null}
+ const reuse=(key,path)=>{const blob=listed&&kept(path);if(!blob||listed[path]!==blob.sha.toLowerCase())return null;const text=JSON.stringify(held.baseline[path]);if(blobMark(listed[path],text)!==blob.mark)return null;try{const records=JSON.parse(text);return{key,path,records,month:unpackMonth(key,records),blob:{sha:blob.sha,mark:blob.mark}}}catch{return null}};
+ const run=async()=>{while(!failure&&cursor<keys.length){const index=cursor++,key=keys[index],path='months/'+key+'.json';try{const same=reuse(key,path);if(same){out[index]=same;continue}const result=await client.get(path,allowMissing,{ref});if(!result.data)throw Error('기준자료에 연결된 월자료가 없습니다: '+key);if(result.data.schema!==1||!Array.isArray(result.data.records))throw Error('월자료 형식을 확인해 주세요.');out[index]={key,path,records:result.data.records,month:unpackMonth(key,result.data.records),blob:heldBlob(result.sha,result.data.records)}}catch(e){failure??=e}}};
  await Promise.all(Array.from({length:Math.min(4,keys.length)},run));if(failure)throw failure;return out;
 }
 async function optionalStatus(read){let timer;try{return await Promise.race([read,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),400)})])}finally{clearTimeout(timer)}}
@@ -3587,27 +3604,27 @@ class Workspace{
    try{return await this.client.saveRecords(q.path,remote.data.records,local)}catch(error){if(attempt===2||!error.conflicts?.length||error.conflicts.some(c=>!q.viewKeys.includes(String(c.id).replace(/^schedule-view:/,''))))throw error}
   }
  }
- async readSnapshot({canApply,ownedUnitSync}={}){
+ async readSnapshot({canApply,ownedUnitSync,held}={}){
   if(this.closed||this.pendingMigration||this.resolving||this.envelope.queue.length)throw Error('전송·복구를 마친 뒤 최신자료를 확인해 주세요.');
   const before=this.envelope,signature=JSON.stringify(before),current=()=>!this.closed&&this.envelope===before&&JSON.stringify(this.envelope)===signature&&(!canApply||canApply());
   if(!current())return null;await this.client.check();if(!current())return null;
   const cat=await this.client.get('meta/catalog.json',false,{snapshot:true});if(!current())return null;
   if(cat.data?.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');
-  const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':clone(cat.data.records)};
-  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
-  for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=clone(result.records)}
+  const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':clone(cat.data.records)},blobs={};
+  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,held||before)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
+  for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=clone(result.records);if(result.blob)blobs[result.path]=result.blob}
   // The explicit recovery reader may inspect its exact received prepare,
   // including a dependent month whose response was lost. Whole-producer proof
   // validates this mixed snapshot before any write; adoptSnapshot still blocks it.
   const owned=ownedUnitSync&&JSON.stringify(state.catalogUnitSync)===JSON.stringify(ownedUnitSync)&&Object.keys(ownedUnitSync).every(k=>['id','months'].includes(k))&&typeof ownedUnitSync.id==='string'&&Array.isArray(ownedUnitSync.months)&&ownedUnitSync.months.length&&new Set(ownedUnitSync.months).size===ownedUnitSync.months.length&&ownedUnitSync.months.every(k=>months.includes(k));
   if(!current())return null;const problem=owned?null:unitSyncError(state);if(problem)throw problem;
-  const snapshot={state,baseline};snapshotOwners.set(snapshot,{owner:this,before,signature});return snapshot;
+  const snapshot={state,baseline,...(Object.keys(blobs).length?{blobs}:{})};snapshotOwners.set(snapshot,{owner:this,before,signature});return snapshot;
  }
  async adoptSnapshot(snapshot,{canApply}={}){
   const proof=snapshotOwners.get(snapshot);if(!proof||proof.owner!==this)throw Error('현재 연결에서 확인한 최신자료가 아닙니다. 다시 불러와 주세요.');
   const current=()=>!this.closed&&!this.pendingMigration&&!this.resolving&&!this.envelope.queue.length&&this.envelope===proof.before&&JSON.stringify(this.envelope)===proof.signature&&(!canApply||canApply());
   if(!current())return null;const state=clone(snapshot.state),baseline=clone(snapshot.baseline),problem=unitSyncError(state);if(problem)throw problem;
-  let applied=false;const e=await this.mutate(e=>{e.state=state;e.baseline=baseline;applied=true},{canCommit:current});
+  let applied=false;const e=await this.mutate(e=>{e.state=state;e.baseline=baseline;if(snapshot.blobs)e.blobs=clone(snapshot.blobs);else delete e.blobs;applied=true},{canCommit:current});
   if(!applied||e.state!==state)return null;snapshotOwners.delete(snapshot);this.loaded=true;this.empty=false;this.catalogBlocked=null;this.lastError=null;this.initialSyncStatus=null;this.status('GitHub 최신자료 · 입력 초안 유지');return e.state;
  }
  async open({canApply,includeSyncStatus=false}={}){
@@ -3620,11 +3637,11 @@ class Workspace{
   const [,cat]=await Promise.all([check,catalogRead]),syncStatus=statusRead?await statusRead:null;
   if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;
   if(!cat.data){if(this.envelope.queue.length&&this.envelope.state){this.loaded=true;return this.envelope.state}if(this.envelope.state)throw Error('기존 저장소의 기준자료가 없어졌습니다. 신규자료로 덮어쓰지 않습니다.');this.loaded=true;this.empty=true;return null}
-  if(cat.data.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':cat.data.records};
-  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
-  for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=result.records}
+  if(cat.data.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':cat.data.records},blobs={};
+  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,this.envelope)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
+  for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=result.records;if(result.blob)blobs[result.path]=result.blob}
   if(this.closed)throw Error('저장소 연결이 변경되었습니다.');if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;const problem=this.ownsUnitSync(state.catalogUnitSync?.id)?null:unitSyncError(state);if(canApply&&!canApply())return null;let applied=false;
-  const e=await this.mutate(e=>{if(e.queue.length)return;e.state=state;e.baseline=baseline;applied=true},{canCommit:()=>!this.explicitRecoveryLease&&this.explicitRecoveryRevision===recoveryRevision&&(!canApply||canApply())});if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;if(canApply&&(!applied||e.state!==state))return null;
+  const e=await this.mutate(e=>{if(e.queue.length)return;e.state=state;e.baseline=baseline;if(Object.keys(blobs).length)e.blobs=blobs;else delete e.blobs;applied=true},{canCommit:()=>!this.explicitRecoveryLease&&this.explicitRecoveryRevision===recoveryRevision&&(!canApply||canApply())});if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;if(canApply&&(!applied||e.state!==state))return null;
   this.loaded=true;this.catalogBlocked=problem;this.lastError=problem;if(applied&&e.state===state&&syncStatus?.data&&syncStatus.sha&&!problem)this.initialSyncStatus={state,result:syncStatus};
   const transfers=auditTransferIssues(e.state);this.status(problem?problem.message:transfers.length?auditError(transfers).message:e.queue.length?'기기 변경자료 · 전송 대기':'GitHub 최신자료');return e.state;
  }
@@ -3652,7 +3669,7 @@ class Workspace{
    const replacement=split.replacements.map(v=>{const qid=C.id();e.groups.push({id:qid,ids:[qid],paths:[q.path],acked:[],status:'pending'});return {...v,id:qid,groupId:qid,path:q.path}});
    const first=e.queue.findIndex(v=>ids.has(v.id));e.queue=e.queue.filter(v=>!ids.has(v.id));e.queue.splice(first,0,...replacement);
    for(const g of e.groups)if(groups.has(g.id)){g.status='held';g.heldSchedule=id}
-   e.baseline[q.path]=clone(remote.data.records);applyRecords(e.state,q.path,split.current);held=true;
+   e.baseline[q.path]=clone(remote.data.records);rememberBlob(e,q.path,heldBlob(remote.sha,e.baseline[q.path]));applyRecords(e.state,q.path,split.current);held=true;
   });
   if(held){this.lastError=null;this.onState(clone(e.state));this.status('일정 변경은 확인용으로 보관 · 다른 입력 저장 계속')}
   return held;
@@ -3666,12 +3683,12 @@ class Workspace{
     const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!acknowledgedAuditOnly(q,remote.data.records))throw error;
     result=remote;
    }if(this.closed)return;await this.guardWrite(q);
-   const extra={};if(q.path==='meta/catalog.json')for(const key of unpackCatalog(result.data.records).months)if(!this.envelope.state.months[key]){const path='months/'+key+'.json';extra[path]=(await this.client.get(path,false,{ref:result.revision})).data.records}
-   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current,{strict:this.strictWrite(later,e)});
+   const extra={},extraBlobs={};if(q.path==='meta/catalog.json')for(const key of unpackCatalog(result.data.records).months)if(!this.envelope.state.months[key]){const path='months/'+key+'.json',read=await this.client.get(path,false,{ref:result.revision});extra[path]=read.data.records;extraBlobs[path]=heldBlob(read.sha,read.data.records)}
+   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);if(/^months\//.test(q.path))rememberBlob(e,q.path,heldBlob(result.sha,e.baseline[q.path]));e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current,{strict:this.strictWrite(later,e)});
      // This request is already on the server, so it must leave the outbox even
      // when a later one cannot be rebased. That one keeps its own basis and
      // meets the ordinary conflict handling when it becomes the head.
-     if(rebased.conflicts.length)break;later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
+     if(rebased.conflicts.length)break;later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;rememberBlob(e,path,extraBlobs[path]);applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
    this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':'GitHub 저장 완료');
   }catch(err){
    // Only a business conflict is separable. Authentication, unit migration,
@@ -3716,8 +3733,8 @@ class Workspace{
   // With nothing left to send, continue from the latest GitHub ledger.
   if(!this.envelope.queue.length&&valid()){
    const before=this.envelope,current=()=>valid()&&this.envelope===before&&!this.envelope.queue.length;
-   const reader=new Workspace(this.config);let snapshot=null;try{snapshot=await reader.readSnapshot({canApply:current})}catch{}finally{reader.close()}
-   if(snapshot&&current())await this.mutate(e=>{if(e.queue.length)return;e.state=clone(snapshot.state);e.baseline=clone(snapshot.baseline)},{canCommit:current});
+   const reader=new Workspace(this.config);let snapshot=null;try{snapshot=await reader.readSnapshot({canApply:current,held:before})}catch{}finally{reader.close()}
+   if(snapshot&&current())await this.mutate(e=>{if(e.queue.length)return;e.state=clone(snapshot.state);e.baseline=clone(snapshot.baseline);if(snapshot.blobs)e.blobs=clone(snapshot.blobs);else delete e.blobs},{canCommit:current});
    this.loaded=true;this.catalogBlocked=null;this.onState(clone(this.envelope.state));
   }
   this.status('자동으로 합치지 못한 이전 저장 '+removed+'건은 기기에 따로 보관 · 저장 계속');
@@ -3743,7 +3760,7 @@ class Workspace{
   for(const key of await S.localKeys(this.key+':recovery:'))if(/^:recovery:(?:acknowledged-draft|queued-save|explicit-save):/.test(key.slice(this.key.length))&&!referenced.has(key)){if(this.closed)return false;await S.localSet(key,null)}
   return true;
  }
- async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error('GitHub 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status('GitHub 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
+ async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error('GitHub 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;if(temp.envelope.blobs)e.blobs=temp.envelope.blobs;else delete e.blobs;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status('GitHub 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
  async initialize(key){if(!this.empty)throw Error('자료가 이미 있는 저장소입니다.');const s=emptyState();s.months[key]=newMonth(key);await this.save(s,[key],true);return s}
  close(){this.closed=true;this.initialSyncStatus=null;this.releaseExplicitRecovery(this.explicitRecoveryToken);this.client.invalidate()}
 }
@@ -5540,11 +5557,20 @@ function enrich(s,book){s.calendar={factory:[],workers:[]};s.migrationWarnings=[
 </script><script>(function(){'use strict';
 const C=ScheduleCore,S=ScheduleStorage,$=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),fmt=(n,d=1)=>n==null?'—':Number(n).toLocaleString('ko-KR',{maximumFractionDigits:d}),today=()=>new Date(Date.now()+9*3600000).toISOString().slice(0,10);
 const tabs=[['daily','생산일보'],['schedule','생산일정'],['scheduleSummary','일정 요약'],['stock','재고·불출'],['audit','몰드 실사'],['report','마감·보고서'],['master','품목·작업자'],['home','월 현황'],['source','원본·전환 점검'],['settings','설정·백업']];
-let state=null,month='',page='daily',filter='',draftProducts=[],busy=false,workspace=null,connectionStatus='기기자료 확인 중…',booting=true,localReadError='',connectionOpening=null,connectionPreview=null,connectionBusyBefore=false;
+let state=null,month='',page='daily',filter='',draftProducts=[],busy=false,workspace=null,connectionStatus='기기자료 확인 중…',booting=true,localReadError='',connectionOpening=null,connectionPreview=null,connectionBusyBefore=false,heldCopy=null;
 const m=()=>state?.months[month];
+// Connection details without a token: the ledger copy this device already holds
+// is shown read-only until the token is entered again. Nothing is written.
+function heldCopyOnly(){return !!heldCopy&&!workspace&&state===heldCopy.state}
+const heldCopyMessage='접근 토큰을 입력하면 저장할 수 있습니다. 지금은 이 기기에 보관된 자료를 조회만 합니다.';
+// Buttons that only start a new record, a deletion or a month step say so at
+// once instead of opening a form that cannot be saved (each ends in persist()).
+const heldCopyWrites=['newEntry','newIssue','newProduct','newWorker','newJob','manualJob','newAudit','newMonth','closeMonth','setOpening','plaster','deleteIssue','deleteDaily','undoJobs'];
 function ensureLocalState(){if(state)return;state=ScheduleNative.emptyState();state.source='웹 직접 입력';month=today().slice(0,7);state.months[month]=ScheduleNative.newMonth(month)}
 function hasBusinessData(s){return !!s&&(['products','workers','memos','counts','scheduleRows','archive'].some(k=>s[k]?.length)||s.calendar?.factory?.length||s.calendar?.workers?.length||Object.values(s.months||{}).some(x=>x.closed||['rows','issues','stocks','plans','jobs','auditSessions','plaster','history'].some(k=>x[k]?.length)))}
-function localNotice(){if(localReadError)return `<div class="notice" role="alert">기기 보관자료를 읽지 못했습니다. 기존 자료 보호를 위해 입력 저장을 보류합니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요. ${esc(localReadError)}</div>`;if(connectionPreview===workspace&&connectionPreview)return '<div class="notice blue" role="status">기기 보관자료를 먼저 표시했습니다. 최신자료를 확인하는 동안 조회만 가능합니다.</div>';return (page==='settings'&&(!workspace||workspace.pendingMigration)?'<div class="notice localNotice">입력 자료는 현재 브라우저에 보관됩니다. 다른 기기에서도 사용하려면 저장소에 연결해 기기자료를 저장하세요.</div>':'')+heldScheduleNotice()}
+// A browser that is not connected and holds no data says so in one line with a
+// button to the connection settings. Preparing data before connecting still works.
+function localNotice(){if(localReadError)return `<div class="notice" role="alert">기기 보관자료를 읽지 못했습니다. 기존 자료 보호를 위해 입력 저장을 보류합니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요. ${esc(localReadError)}</div>`;if(connectionPreview===workspace&&connectionPreview)return '<div class="notice blue" role="status">기기 보관자료를 먼저 표시했습니다. 최신자료를 확인하는 동안 조회만 가능합니다.</div>';if(heldCopyOnly())return '<div class="notice blue heldCopyNotice" role="status"><span>접근 토큰이 없어 이 기기에 보관된 자료만 보여 줍니다(조회 전용).'+(heldCopy.pending?' 보내지 못한 입력 '+Number(heldCopy.pending)+'건도 그대로 있습니다.':'')+'</span> <button type="button" data-action="settings" data-token-entry>토큰 입력</button></div>';if(!workspace&&!booting&&page!=='settings'&&!hasBusinessData(state)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active))return '<div class="notice blue heldCopyNotice" role="status"><span>이 브라우저는 아직 데이터 저장소에 연결되지 않았습니다. 다른 기기에서 저장한 자료는 연결하면 보입니다.</span> <button type="button" data-action="settings">저장소 연결</button></div>'+heldScheduleNotice();return (page==='settings'&&(!workspace||workspace.pendingMigration)?'<div class="notice localNotice">입력 자료는 현재 브라우저에 보관됩니다. 다른 기기에서도 사용하려면 저장소에 연결해 기기자료를 저장하세요.</div>':'')+heldScheduleNotice()}
 
 function toast(s){document.querySelector('.toast')?.remove();const e=document.createElement('div');e.className='toast';e.setAttribute('role','status');e.textContent=s;document.body.append(e);setTimeout(()=>e.remove(),5000)}
 function table(headers,rows){return`<div class="tableWrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td colspan="${headers.length}" class="empty">해당 자료가 없습니다.</td></tr>`}</tbody></table></div>`}
@@ -5568,21 +5594,21 @@ function sourceView(){
  ['자료 저장','기기 보관·전송 대기·충돌 확인','화면 상단의 현재 저장 결과를 확인']
  ].map(r=>tr(r.map(x=>td(esc(x))))))}</section>${state.migrationWarnings?.length?`<section class="card"><h2>원본 일정 확인사항</h2>${table(['출처','내용'],state.migrationWarnings.map(w=>tr([td(esc(w.source)),td(esc(w.message))])))}</section>`:''}<section class="card"><h2>원본 시트 조회</h2>${available?`<div class="toolbar"><select id="sheetSelect" aria-label="원본 시트 선택">${archive.filter(s=>s.name!=='사용설명서').map(s=>`<option ${s.name===m().name?'selected':''}>${esc(s.name)}</option>`).join('')}</select><span class="subtle">저장 당시 값 · 수식 재계산 없음</span></div>`:''}<div id="archiveView"></div></section><section class="card"><h2>원본 오류 위치</h2>${!available&&names.length?'<p>현재 기기에 원본 셀을 불러오지 않아 오류 위치는 조회하지 않았습니다. 설정·백업의 GitHub 전체 자료 백업에 보관된 원본이 포함됩니다.</p>':table(['시트','셀','저장된 오류'],cached.slice(0,100).map(r=>tr([td(esc(r.sheet)),td(esc(r.cell)),td(esc(r.value))])))}<p class="footerNote">원본 오류는 실제 생산·재고 숫자로 사용하지 않습니다.</p></section>`;
 }
-function connectionView(first=false){let config={};try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'{}')}catch(e){}return `<div class="top"><div><h1>${first?'조형 생산관리 시작하기':'연결·백업'}</h1><p class="subtle">웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.</p></div></div><section class="card"><h2>데이터 저장소 연결</h2><div class="formGrid"><label>GitHub 계정<input id="owner" value="${esc(config.owner||'parkjkk')}" placeholder="계정 이름" autocomplete="off"></label><label>데이터 저장소<input id="repo" value="${esc(config.repo||'schedule-data')}" autocomplete="off"></label><label>브랜치<input id="branch" value="${esc(config.branch||'main')}"></label><label>시작할 월<input id="firstMonth" type="month" value="${today().slice(0,7)}"></label><label class="full">접근 토큰<input id="token" type="password" autocomplete="off" placeholder="이 데이터 저장소의 Contents 읽기·쓰기 권한"></label><label class="full" style="display:block;font-weight:400"><input id="rememberConnection" type="checkbox"> 내 기기에서 연결 유지</label></div><p class="footerNote">업무 데이터용 비공개 저장소를 연결합니다. 새 저장소는 README를 포함해 생성해야 합니다. 연결 유지 선택 시 토큰은 이 브라우저에 저장되며 HTML·GitHub 자료·공유주소에는 포함되지 않습니다.</p><div class="actions"><button class="primary" data-action="connect">연결하고 자료 열기</button><span id="connectionResult" class="subtle"></span></div></section>${first?'<section class="card"><h2>HTML 먼저 준비하기</h2><p>저장소 연결 전 기준정보와 입력 화면을 준비할 수 있습니다. 자료는 이 기기에 보관하며 연결 후 최초 이전으로 저장합니다.</p><button data-action="startDraft">연결 전 입력 시작</button></section>':`<section class="card"><h2>저장 상태</h2><p>${esc(connectionStatus)}</p><div class="actions"><button data-action="retry">대기 자료 다시 전송</button><button data-action="refresh">GitHub 최신자료 읽기</button><button data-action="remoteBackup">GitHub 전체자료 백업</button></div><div id="conflictList"></div></section><section class="card"><h2>최초 이전 · 복구</h2><p class="subtle">엑셀은 기존자료를 처음 옮길 때만 사용합니다. 평소 입력과 수정은 웹 화면에서 진행합니다.</p><div class="actions"><button data-action="import">최초 엑셀자료 이전</button><button data-action="migrate">이 기기 이전자료를 GitHub에 저장</button><button data-action="export">기기 보관자료 내려받기</button></div><p class="source">${esc(state?.source||'')}</p></section>`}`}
+function connectionView(first=false){let config={},keep=true;try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'{}')}catch(e){}try{keep=localStorage.getItem('schedule.v1.keep')!=='off'||!!localStorage.getItem('schedule.v1.token')}catch(e){}return `<div class="top"><div><h1>${first?'조형 생산관리 시작하기':'연결·백업'}</h1><p class="subtle">웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.</p></div></div><section class="card"><h2>데이터 저장소 연결</h2><div class="formGrid"><label>GitHub 계정<input id="owner" value="${esc(config.owner||'parkjkk')}" placeholder="계정 이름" autocomplete="off"></label><label>데이터 저장소<input id="repo" value="${esc(config.repo||'schedule-data')}" autocomplete="off"></label><label>브랜치<input id="branch" value="${esc(config.branch||'main')}"></label><label>시작할 월<input id="firstMonth" type="month" value="${today().slice(0,7)}"></label><label class="full">접근 토큰<input id="token" type="password" autocomplete="off" placeholder="이 데이터 저장소의 Contents 읽기·쓰기 권한"></label><label class="full" style="display:block;font-weight:400"><input id="rememberConnection" type="checkbox" ${keep?'checked':''}> 내 기기에서 연결 유지</label></div><p class="footerNote">업무 데이터용 비공개 저장소를 연결합니다. 새 저장소는 README를 포함해 생성해야 합니다. 연결 유지 선택 시 토큰은 이 브라우저에 저장되며 HTML·GitHub 자료·공유주소에는 포함되지 않습니다.</p><div class="actions"><button class="primary" data-action="connect">연결하고 자료 열기</button><span id="connectionResult" class="subtle"></span></div></section>${first?'<section class="card"><h2>HTML 먼저 준비하기</h2><p>저장소 연결 전 기준정보와 입력 화면을 준비할 수 있습니다. 자료는 이 기기에 보관하며 연결 후 최초 이전으로 저장합니다.</p><button data-action="startDraft">연결 전 입력 시작</button></section>':`<section class="card"><h2>저장 상태</h2><p>${esc(connectionStatus)}</p><div class="actions"><button data-action="retry">대기 자료 다시 전송</button><button data-action="refresh">GitHub 최신자료 읽기</button><button data-action="remoteBackup">GitHub 전체자료 백업</button></div><div id="conflictList"></div></section><section class="card"><h2>최초 이전 · 복구</h2><p class="subtle">엑셀은 기존자료를 처음 옮길 때만 사용합니다. 평소 입력과 수정은 웹 화면에서 진행합니다.</p><div class="actions"><button data-action="import">최초 엑셀자료 이전</button><button data-action="migrate">이 기기 이전자료를 GitHub에 저장</button><button data-action="export">기기 보관자료 내려받기</button></div><p class="source">${esc(state?.source||'')}</p></section>`}`}
 function settingsView(){return connectionView(false)+'<details class="card"><summary>기존 엑셀과 전환 내용 확인</summary><p class="footerNote">최초 이전한 원본 시트와 계산 대조 범위를 확인합니다.</p><button data-action="source">원본·전환 점검 열기</button></details>'}
-function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){if(a==='report'&&b.dataset.workspacePanel==='plaster'&&typeof workspaceScreen!=='undefined')workspaceScreen.panels.set('report','plaster');page=a;render();return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
-function bindPage(){if(page==='scheduleSummary')bindScheduleSummary();const search=$('#search');if(search)search.oninput=e=>{const pos=e.target.selectionStart;filter=e.target.value;render();$('#search').focus();$('#search').setSelectionRange(pos,pos)};document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{try{await entry(m().rows.find(r=>r.id===b.dataset.edit))}catch(e){toast(e.message)}});if(page==='settings')showConflicts();if(page==='source'){$('#sheetSelect')?.addEventListener('change',showArchive);showArchive()}}
+function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){if(a==='report'&&b.dataset.workspacePanel==='plaster'&&typeof workspaceScreen!=='undefined')workspaceScreen.panels.set('report','plaster');page=a;render();return}if(typeof heldCopyOnly==='function'&&heldCopyOnly()&&heldCopyWrites.includes(a)){toast(heldCopyMessage);return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
+function bindPage(){if(page==='scheduleSummary')bindScheduleSummary();const search=$('#search');if(search)search.oninput=e=>{const pos=e.target.selectionStart;filter=e.target.value;render();$('#search').focus();$('#search').setSelectionRange(pos,pos)};document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{try{await entry(m().rows.find(r=>r.id===b.dataset.edit))}catch(e){toast(e.message)}});if(page==='settings')showConflicts();const keep=$('#rememberConnection');if(keep)keep.onchange=()=>{try{if(keep.checked){localStorage.removeItem('schedule.v1.keep');const token=sessionStorage.getItem('schedule.v1.token');if(token&&workspace)localStorage.setItem('schedule.v1.token',token)}else{localStorage.setItem('schedule.v1.keep','off');localStorage.removeItem('schedule.v1.token')}}catch(e){}};if(page==='source'){$('#sheetSelect')?.addEventListener('change',showArchive);showArchive()}}
 function showArchive(){if(!state.archive.length){$('#archiveView').innerHTML='<p class="empty">최초 이전한 원본은 GitHub 전체자료 백업에 포함됩니다. 현재 화면은 웹 원장을 사용합니다.</p>';return}const s=state.archive.find(s=>s.name===$('#sheetSelect').value),maxR=Math.min(300,Math.max(...Object.keys(s.cells).map(a=>+a.match(/\d+/)[0]))),maxC=Math.min(44,Math.max(...Object.keys(s.cells).map(a=>C.ci(a.match(/[A-Z]+/)[0]))));const rows=[];for(let r=1;r<=maxR;r++){if(!Object.keys(s.cells).some(a=>+a.match(/\d+/)[0]===r))continue;rows.push(tr([td(r,'source'),...Array.from({length:maxC},(_,i)=>{const cell=s.cells[C.col(i+1)+r],v=cell?.v;return td(`<span title="${esc(C.col(i+1)+r)}">${esc(v==null?'':typeof v==='number'?fmt(v,4):String(v).replace(/(?:암호|비밀번호|password)\s*[:=]?\s*\d+/gi,'보호정보 생략'))}</span>`)})]))}$('#archiveView').innerHTML=`<div class="archivePane">${table(['행',...Array.from({length:maxC},(_,i)=>C.col(i+1))],rows)}</div><p class="footerNote">앞 44열·300행 조회. 내려받는 전체 기기자료에는 모든 시트의 읽은 셀 값이 포함됩니다.</p>`}
 function csv(headers,rows,name){const safe=x=>{let s=String(x??'');if(/^[=+@-]/.test(s)&&isNaN(Number(s)))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'};download('\ufeff'+[headers,...rows].map(r=>r.map(safe).join(',')).join('\r\n'),name+'_'+month+'.csv','text/csv;charset=utf-8')}
 function download(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}
-async function entry(existing){if(localReadError)throw Error('기기 보관자료를 읽지 못해 입력을 열 수 없습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');draftProducts=existing?[C.clone(existing)]:[{product:'',plan:null,pours:null,waterRatio:null,defectCount:null,defectUnit:null,defectPart:''}];const draftKey='draft:'+(workspace?.key||'migration-preview')+':'+month,saved=existing?null:await S.localGet(draftKey),last=existing?null:await S.localGet(draftKey+':last');if(saved?.products?.length)draftProducts=saved.products;const d=$('#dialog');d.innerHTML=`<h2>${existing?'생산기록 수정':'여러 품목 생산기록 입력'}</h2><div class="notice blue">날짜·작업자·근무시간·LOT를 한 번 입력하고 여러 품목을 함께 저장합니다. 네트워크가 끊기면 보관 후 다시 전송합니다.</div><div class="entryHead formGrid"><label>작업일<input type="date" id="entryDate" value="${esc(existing?.date||saved?.date||(today().startsWith(month)?today():month+'-01'))}"></label><label>작업자<select id="entryWorker"><option value="">선택</option>${state.workers.map(w=>`<option ${w===(existing?.worker||saved?.worker||last?.worker)?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>근무시간<input id="entryHours" type="number" step="0.25" min="0" value="${existing?.hours??saved?.hours??''}" placeholder="실제 근무시간"></label><label>석고 LOT<input id="entryLot" value="${esc(existing?.lot||saved?.lot||last?.lot||'')}"></label></div><div id="entryProducts"></div><div class="actions"><button id="addProduct" ${existing?'hidden':''}>+ 품목 추가</button></div><div class="actions" style="justify-content:flex-end;margin-top:24px"><button id="cancelEntry">취소</button><button id="saveEntry" class="primary">생산기록 저장</button></div>`;drawProducts();$('#cancelEntry').onclick=()=>d.close();$('#addProduct').onclick=()=>{readProducts();draftProducts.push({product:'',plan:null,pours:null});drawProducts()};$('#saveEntry').onclick=async()=>{if(busy)return;busy=true;const finish=dialogPending(d);try{readProducts();const next=C.clone(state),date=$('#entryDate').value,worker=$('#entryWorker').value,hours=C.num($('#entryHours').value),lot=$('#entryLot').value.trim(),batchId=C.id();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product);if(!p)throw Error('기준정보에 있는 품명을 선택해 주세요.');if(r.jobId){const j=P.jobs(state,month).find(j=>j.id===r.jobId);if(!j||j.worker!==worker||j.product!==r.product)throw Error('선택한 연결 작업의 작업자·품명이 입력과 다릅니다.');}C.updateDaily(next,month,{...r,date,worker,hours:i===0?hours:null,lot,plaster:existing&&existing.product===r.product?existing.plaster:p.kg,cases:existing&&existing.product===r.product?existing.cases:p.cases,explicit:existing?.explicit||{day:i===0,worker:i===0,hours:i===0&&hours!=null,pours:r.pours!=null,lot:i===0&&!!lot},batchId:existing?.batchId||batchId,source:r.source||'웹 입력'})});await persist(next,[month]);if(!existing){await S.localSet(draftKey,null);await S.localSet(draftKey+':last',{worker,lot})}d.close();busy=false;render();toast('생산기록을 저장했습니다. 상단에서 GitHub 전송 상태를 확인할 수 있습니다.')}catch(e){dialogFeedback(d,e.message,true)}finally{busy=false;finish()}};if(!existing)d.oninput=()=>{readProducts();S.localSet(draftKey,{date:$('#entryDate').value,worker:$('#entryWorker').value,hours:C.num($('#entryHours').value),lot:$('#entryLot').value,products:C.clone(draftProducts)}).catch(()=>toast('입력 초안 저장 공간을 확인해 주세요.'))};else d.oninput=null;protectNativeForm(d,d);d.showModal()}
+async function entry(existing){if(localReadError)throw Error('기기 보관자료를 읽지 못해 입력을 열 수 없습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');if(heldCopyOnly())throw Error(heldCopyMessage);draftProducts=existing?[C.clone(existing)]:[{product:'',plan:null,pours:null,waterRatio:null,defectCount:null,defectUnit:null,defectPart:''}];const draftKey='draft:'+(workspace?.key||'migration-preview')+':'+month,saved=existing?null:await S.localGet(draftKey),last=existing?null:await S.localGet(draftKey+':last');if(saved?.products?.length)draftProducts=saved.products;const d=$('#dialog');d.innerHTML=`<h2>${existing?'생산기록 수정':'여러 품목 생산기록 입력'}</h2><div class="notice blue">날짜·작업자·근무시간·LOT를 한 번 입력하고 여러 품목을 함께 저장합니다. 네트워크가 끊기면 보관 후 다시 전송합니다.</div><div class="entryHead formGrid"><label>작업일<input type="date" id="entryDate" value="${esc(existing?.date||saved?.date||(today().startsWith(month)?today():month+'-01'))}"></label><label>작업자<select id="entryWorker"><option value="">선택</option>${state.workers.map(w=>`<option ${w===(existing?.worker||saved?.worker||last?.worker)?'selected':''}>${esc(w)}</option>`).join('')}</select></label><label>근무시간<input id="entryHours" type="number" step="0.25" min="0" value="${existing?.hours??saved?.hours??''}" placeholder="실제 근무시간"></label><label>석고 LOT<input id="entryLot" value="${esc(existing?.lot||saved?.lot||last?.lot||'')}"></label></div><div id="entryProducts"></div><div class="actions"><button id="addProduct" ${existing?'hidden':''}>+ 품목 추가</button></div><div class="actions" style="justify-content:flex-end;margin-top:24px"><button id="cancelEntry">취소</button><button id="saveEntry" class="primary">생산기록 저장</button></div>`;drawProducts();$('#cancelEntry').onclick=()=>d.close();$('#addProduct').onclick=()=>{readProducts();draftProducts.push({product:'',plan:null,pours:null});drawProducts()};$('#saveEntry').onclick=async()=>{if(busy)return;busy=true;const finish=dialogPending(d);try{readProducts();const next=C.clone(state),date=$('#entryDate').value,worker=$('#entryWorker').value,hours=C.num($('#entryHours').value),lot=$('#entryLot').value.trim(),batchId=C.id();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product);if(!p)throw Error('기준정보에 있는 품명을 선택해 주세요.');if(r.jobId){const j=P.jobs(state,month).find(j=>j.id===r.jobId);if(!j||j.worker!==worker||j.product!==r.product)throw Error('선택한 연결 작업의 작업자·품명이 입력과 다릅니다.');}C.updateDaily(next,month,{...r,date,worker,hours:i===0?hours:null,lot,plaster:existing&&existing.product===r.product?existing.plaster:p.kg,cases:existing&&existing.product===r.product?existing.cases:p.cases,explicit:existing?.explicit||{day:i===0,worker:i===0,hours:i===0&&hours!=null,pours:r.pours!=null,lot:i===0&&!!lot},batchId:existing?.batchId||batchId,source:r.source||'웹 입력'})});await persist(next,[month]);if(!existing){await S.localSet(draftKey,null);await S.localSet(draftKey+':last',{worker,lot})}d.close();busy=false;render();toast('생산기록을 저장했습니다. 상단에서 GitHub 전송 상태를 확인할 수 있습니다.')}catch(e){dialogFeedback(d,e.message,true)}finally{busy=false;finish()}};if(!existing)d.oninput=()=>{readProducts();S.localSet(draftKey,{date:$('#entryDate').value,worker:$('#entryWorker').value,hours:C.num($('#entryHours').value),lot:$('#entryLot').value,products:C.clone(draftProducts)}).catch(()=>toast('입력 초안 저장 공간을 확인해 주세요.'))};else d.oninput=null;protectNativeForm(d,d);d.showModal()}
 function drawProducts(){$('#entryProducts').innerHTML=draftProducts.map((r,i)=>`<div class="productEntry" data-product-index="${i}"><header><b>품목 ${i+1}</b>${draftProducts.length>1?`<button class="removeProduct" data-i="${i}">삭제</button>`:''}</header><div class="formGrid"><label class="wide">품명<select class="productName"><option value="">품명 선택</option>${[...state.products].sort((a,b)=>globalThis.ProductOrder?.compareProducts(a,b)||0).map(p=>`<option value="${esc(p.name)}" ${p.name===r.product?'selected':''}>${esc(p.name)} · ${fmt(p.kg)}kg</option>`).join('')}</select></label><label class="wide">연결 작업<select class="jobRef"><option value="">배치 자동 연결</option>${P.jobs(state,month).filter(j=>!j.complete||j.id===r.jobId).map(j=>`<option value="${esc(j.id)}" ${j.id===r.jobId?'selected':''}>${esc(j.worker)} · ${esc(j.product)} · ${esc(j.start)}</option>`).join('')}</select></label><label>주입횟수 / 생산 조<input class="pours" type="number" min="0" step="0.5" value="${r.pours??''}"></label><label>작업 구분<select class="workMode"><option value="continue" ${r.plan==null?'selected':''}>계속 생산</option><option value="start" ${r.plan>0?'selected':''}>생산 시작</option><option value="end" ${r.plan===0?'selected':''}>종료·중단</option></select></label><label>시작 계획수량<input class="plan" type="number" min="1" step="0.5" value="${r.plan>0?r.plan:''}" ${r.plan>0?'':'disabled'}></label><label>혼수율 %<input class="ratio" type="number" step="0.1" min="0" value="${r.waterRatio??''}" placeholder="실제 입력값"></label><label>불량 개수<input class="defectCount" ${Object.hasOwn(r,'fieldDefQty')?'disabled title="현장일보에서 수정하는 불량 개수입니다."':''} type="number" min="0" step="1" value="${r.defectCount??''}"></label><label>불량 1개 석고 kg<input class="defectUnit" ${Object.hasOwn(r,'fieldScrapKg')?'disabled title="현장일보의 총불량 kg을 사용합니다. 현장일보에서 수정해 주세요."':''} type="number" min="0" step="0.1" value="${r.defectUnit??''}"></label><label class="full">불량 부위 / 비고<input class="defectPart" value="${esc(r.defectPart)}"></label></div><div class="output" data-calc="${i}">품명과 주입횟수를 입력하면 계산됩니다.</div></div>`).join('');document.querySelectorAll('.removeProduct').forEach(b=>b.onclick=()=>{readProducts();draftProducts.splice(+b.dataset.i,1);drawProducts()});document.querySelectorAll('.productEntry').forEach(e=>{e.querySelector('.workMode').onchange=()=>{e.querySelector('.plan').disabled=e.querySelector('.workMode').value!=='start';updateEntryOutput()};e.querySelectorAll('input,select').forEach(i=>i.addEventListener('input',updateEntryOutput))});updateEntryOutput()}
 function readProducts(){document.querySelectorAll('.productEntry').forEach((e,i)=>{const mode=e.querySelector('.workMode').value;draftProducts[i]={...draftProducts[i],product:e.querySelector('.productName').value,jobId:e.querySelector('.jobRef').value||null,pours:C.num(e.querySelector('.pours').value),plan:mode==='end'?0:mode==='start'?C.num(e.querySelector('.plan').value):null,waterRatio:C.num(e.querySelector('.ratio').value),defectCount:C.num(e.querySelector('.defectCount').value),defectUnit:C.num(e.querySelector('.defectUnit').value),defectPart:e.querySelector('.defectPart').value.trim()};if(mode==='start'&&!(draftProducts[i].plan>0))draftProducts[i].missingPlan=true;else delete draftProducts[i].missingPlan})}
 function updateEntryOutput(){readProducts();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product),d=C.daily({...r,plaster:p?.kg,cases:p?.cases});document.querySelector(`[data-calc="${i}"]`).textContent=`생산 석고 ${fmt(d.plaster)} kg  ·  탈형 ${fmt(d.demould)}개  ·  물 ${fmt(d.water)} kg  ·  불량률 ${d.rate==null?'—':fmt(d.rate*100,2)+'%'}`})}
 function dryDialog(){const d=$('#dialog');d.oninput=null;d.innerHTML=`<h2>건조일 계산 확인</h2><p>생산 종료 다음날부터 10일을 셉니다. 주말과 작업자 ‘휴’는 포함하고 공장 전체 제외일만 뺍니다.</p><div class="formGrid"><label class="wide">생산 종료일<input id="dryEnd" type="date" value="${today()}"></label><label class="full">공장 제외일 · 한 줄에 하나<textarea id="dryExclude" placeholder="2026-09-15"></textarea></label></div><p id="dryResult" class="output"></p><div class="actions"><button id="runDry" class="primary">계산</button><button id="closeDry">닫기</button></div>`;$('#runDry').onclick=()=>{try{const excluded=$('#dryExclude').value.split(/\s+/).filter(Boolean);if(excluded.some(x=>!C.iso(x)))throw Error('제외일을 YYYY-MM-DD로 입력해 주세요.');$('#dryResult').textContent='건조 완료일 '+C.dryDate($('#dryEnd').value,excluded)}catch(e){toast(e.message)}};$('#closeDry').onclick=()=>d.close();d.showModal();$('#runDry').click()}
 $('#file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(localReadError)throw Error('기존 기기자료를 읽지 못해 이전을 보류했습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');$('#saveState').textContent='엑셀 자료 읽는 중…';const next=await ScheduleWorkbook.read(file);if(hasBusinessData(state)){const ok=confirm('현재 기기자료를 먼저 전체 내려받은 뒤 새 파일로 바꾸시겠습니까?');if(!ok)return;download(JSON.stringify(state),'조형_교체전_백업_'+today()+'.json','application/json')}await S.localSet('migration-preview',next);state=next;month='';page='settings';setStatus('최초 이전자료 · GitHub 반영 전');render();toast('최초 이전자료를 준비했습니다. GitHub에 저장하려면 이전자료 저장을 누르세요.')}catch(err){toast(err.message);$('#saveState').textContent='불러오기 실패 · 기존자료 유지'}finally{e.target.value=''}};
 function setStatus(message){connectionStatus=message;$('#saveState').textContent=message}
-async function persist(next,keys=[],catalog=false){if(connectionOpening)throw Error('최신자료를 확인하는 동안 조회만 가능합니다. 불러오기가 끝난 뒤 저장해 주세요.');if(localReadError)throw Error('기존 기기자료를 읽지 못해 저장을 보류했습니다. 저장 허용 설정을 확인하고 새로고침해 주세요.');const owner=workspace;let message='';if(owner?.pendingMigration){await S.localSet('migration-preview',next);message='연결 전 기기자료 · 최초 이전 저장 필요'}else if(owner){next=await owner.save(next,keys,catalog)}else{await S.localSet('migration-preview',next);message='기기에 보관 · GitHub 반영 전'}if(workspace!==owner)throw Error('저장 중 연결이 바뀌었습니다. 원래 연결의 입력은 보관했습니다.');state=next;if(message)setStatus(message)}
+async function persist(next,keys=[],catalog=false){if(connectionOpening)throw Error('최신자료를 확인하는 동안 조회만 가능합니다. 불러오기가 끝난 뒤 저장해 주세요.');if(localReadError)throw Error('기존 기기자료를 읽지 못해 저장을 보류했습니다. 저장 허용 설정을 확인하고 새로고침해 주세요.');if(typeof heldCopyOnly==='function'&&heldCopyOnly())throw Error(heldCopyMessage);const owner=workspace;let message='';if(owner?.pendingMigration){await S.localSet('migration-preview',next);message='연결 전 기기자료 · 최초 이전 저장 필요'}else if(owner){next=await owner.save(next,keys,catalog)}else{await S.localSet('migration-preview',next);message='기기에 보관 · GitHub 반영 전'}if(workspace!==owner)throw Error('저장 중 연결이 바뀌었습니다. 원래 연결의 입력은 보관했습니다.');state=next;if(message)setStatus(message)}
 // Device housekeeping runs only while nothing is loading or saving, so it can
 // never compete with a save. It retries later instead of interrupting work.
 function scheduleHousekeeping(owner,attempt=0){
@@ -5595,7 +5621,7 @@ function scheduleHousekeeping(owner,attempt=0){
 }
 async function connect(config,initialMonth,{keepPage=false}={}){
  if(localReadError)throw Error('기기 보관자료를 먼저 복원한 뒤 연결해 주세요. 저장 허용 설정을 확인하고 새로고침해 주세요.');
- const previous=workspace,beforeState=state,prepared=previous&&!previous.pendingMigration?null:state,beforeMonth=month;
+ const previous=workspace,beforeState=state,prepared=previous&&!previous.pendingMigration||heldCopyOnly()?null:state,beforeMonth=month;
  const next=new ScheduleNative.Workspace(config,message=>{if(workspace===next)setStatus(next.pendingMigration?'기기자료 준비됨 · 최초 이전 저장 필요':message)},updated=>{if(workspace===next&&!next.pendingMigration){state=updated;if(!$('#dialog').open)render()}});
  if(!connectionOpening)connectionBusyBefore=busy;next.previewEditors=connectionOpening?.previewEditors||new Set();connectionOpening=next;connectionPreview=null;busy=true;
  workspace=next;state=null;setStatus('GitHub 자료 읽는 중…');render();let cached=null;
@@ -5605,7 +5631,7 @@ async function connect(config,initialMonth,{keepPage=false}={}){
   const loaded=await next.open({includeSyncStatus:true});if(workspace!==next)return;
   if(loaded){state=loaded;await next.flush()}else state=await next.initialize(initialMonth||today().slice(0,7));
   if(hasBusinessData(prepared)&&!hasBusinessData(state)){state=prepared;next.pendingMigration=true;setStatus('기기자료 준비됨 · 연결·백업에서 최초 이전 저장')}
-  previous?.close();if(!state.months[month])month='';if(!keepPage)page=next.pendingMigration?'settings':'daily';
+  previous?.close();heldCopy=null;if(!state.months[month])month='';if(!keepPage)page=next.pendingMigration?'settings':'daily';
   scheduleHousekeeping(next);
  }catch(e){
   if(workspace!==next)return;
@@ -5622,10 +5648,18 @@ async function restoreConnection(){
   try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null');token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')}
   catch(e){toast('저장된 연결 설정을 읽지 못했습니다. 연결·백업에서 다시 입력할 수 있습니다.')}
   if(config&&token){try{await connect({...config,token},undefined,{keepPage:true})}catch(e){toast(e.message)}}
+  else if(config)await showHeldCopy(config);
  }finally{ensureLocalState();booting=false;render()}
 }
+async function showHeldCopy(config){
+ try{
+  const reader=new ScheduleNative.Workspace({...config,token:''});let held;try{held=await reader.cache()}finally{reader.close()}
+  if(!held||!Object.keys(held.months||{}).length)return false;
+  state=held;heldCopy={state:held,key:reader.key,pending:reader.envelope.queue?.length||0};setStatus('기기 보관자료 · 조회 전용 · 토큰 입력 필요');return true;
+ }catch(e){return false}
+}
 async function nativeAction(action){
- if(action==='connect'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim()||'main',token:$('#token').value.trim()};if(!config.token)throw Error('데이터 저장소 접근 토큰을 입력해 주세요.');const first=$('#firstMonth').value,remember=$('#rememberConnection').checked;await connect(config,first);localStorage.setItem('schedule.v1.connection',JSON.stringify({owner:config.owner,repo:config.repo,branch:config.branch}));sessionStorage.setItem('schedule.v1.token',config.token);if(remember)localStorage.setItem('schedule.v1.token',config.token);else localStorage.removeItem('schedule.v1.token');return}
+ if(action==='connect'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim()||'main',token:$('#token').value.trim()};if(!config.token)throw Error('데이터 저장소 접근 토큰을 입력해 주세요.');const first=$('#firstMonth').value,remember=$('#rememberConnection').checked;await connect(config,first);localStorage.setItem('schedule.v1.connection',JSON.stringify({owner:config.owner,repo:config.repo,branch:config.branch}));sessionStorage.setItem('schedule.v1.token',config.token);if(remember){localStorage.setItem('schedule.v1.token',config.token);localStorage.removeItem('schedule.v1.keep')}else{localStorage.removeItem('schedule.v1.token');localStorage.setItem('schedule.v1.keep','off')}return}
  if(action==='retry'){if(!workspace)throw Error('저장소를 연결해 주세요.');await workspace.flush();if(workspace.lastError?.conflicts){toast('같은 월 또는 기준정보가 다른 기기에서 바뀌었습니다. 대기 기록은 보존되어 있습니다.');showConflicts()}return}
  if(action==='refresh'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료를 먼저 확인해 주세요.');state=await workspace.open();render();return}
  if(action==='remoteBackup'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료가 있습니다. 먼저 전송하거나 기기자료를 별도로 내려받아 주세요.');const backup=await workspace.open();for(const name of backup.archiveNames||[]){const a=await workspace.client.get('archive/'+encodeURIComponent(name)+'.json');backup.archive.push(a.data.records[0])}download(JSON.stringify(backup),'조형_GitHub_전체백업_'+today()+'.json','application/json');toast('전체 파일 조회가 완료되어 백업을 만들었습니다.');return}
@@ -6098,7 +6132,9 @@ if(typeof module!=='undefined')module.exports=root.ScheduleMonthlyOverview;
 
 // Shared spreadsheet-like input surface. This file is injected into the app IIFE.
 const sheetRegistry=new Map();
-const sheetScope=()=>workspace?.key||'migration-preview';
+// While only the device copy of a repository is shown (no token), its own
+// scope is used so the usual tab, month and kept drafts appear, read-only.
+const sheetScope=()=>workspace?.key||(typeof heldCopyOnly==='function'&&heldCopyOnly()&&heldCopy.key)||'migration-preview';
 const sheetContext=id=>sheetScope()+':'+month+':'+id;
 const sheetEqual=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
 function sheetEditor(id){return sheetRegistry.get(sheetContext(id))}
@@ -6202,7 +6238,7 @@ function sheetApply(draft,latestRows,{validateRow,preferLocalFields,identityFiel
  for(const list of[draft.baseRows,draft.rows,latestRows]){const ids=list.map(r=>r.id);if(ids.some(id=>!id)||new Set(ids).size!==ids.length)throw Error('기록 ID가 누락되거나 중복되어 저장을 보류합니다.')}
  for(const id of deleted.keys())if(!draft.rows.some(r=>r.id===id))throw Error('삭제할 원래 기록을 찾지 못했습니다.');
  for(const value of draft.rows){const row=C.clone(value),original=base.get(row.id),now=current.get(row.id);if(same(row,original)&&!deleted.has(row.id))continue;
-  if(deleted.has(row.id)){if(!original){deleted.delete(row.id);continue}if(!now)continue;if(!String(deleted.get(row.id)||'').trim())errors.push({id:row.id,field:'',message:'삭제 사유를 입력해 주세요.'});if(!same(original,now))errors.push({id:row.id,field:'',message:'삭제할 기록이 다른 곳에서 변경되었습니다.'});continue}
+  if(deleted.has(row.id)){if(!original){deleted.delete(row.id);continue}if(!now)continue;if(!String(deleted.get(row.id)||'').trim())errors.push({id:row.id,field:'',message:'삭제 사유를 입력해 주세요.'});if(!same(original,now))errors.push({id:row.id,field:'',message:'삭제할 기록이 다른 곳에서 변경되었습니다.',stale:'delete'});continue}
   try{validateRow?.(row)}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message});continue}
   if(same(row,now))continue;
   if(original&&editable){
@@ -6215,13 +6251,20 @@ function sheetApply(draft,latestRows,{validateRow,preferLocalFields,identityFiel
    try{validateRow?.(merged)}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message});continue}
    if(!same(merged,now))desired.set(row.id,merged);continue;
   }
-  if(original&&!same(original,now)){errors.push({id:row.id,field:'',message:'편집 중 원장이 변경되었습니다. 최신 자료에서 다시 확인해 주세요.'});continue}
-  if(!original&&now){errors.push({id:row.id,field:'',message:'추가한 기록 ID가 이미 존재합니다.'});continue}
+  if(original&&!same(original,now)){errors.push({id:row.id,field:'',message:'편집 중 원장이 변경되었습니다. 최신 자료에서 다시 확인해 주세요.',stale:now?'changed':'removed'});continue}
+  if(!original&&now){errors.push({id:row.id,field:'',message:'추가한 기록 ID가 이미 존재합니다.',stale:'changed'});continue}
   desired.set(row.id,row);
  }
  if(errors.length){const e=Error(errors[0].message);e.errors=errors;throw e}
  const rows=latestRows.filter(r=>!deleted.has(r.id)).map(r=>desired.get(r.id)||C.clone(r));for(const r of draft.rows)if(!base.has(r.id)&&!current.has(r.id)&&!deleted.has(r.id)&&desired.has(r.id))rows.push(desired.get(r.id));return rows;
 }
+// What a save could not apply is never dropped: the typed values go to their
+// own device record before the draft follows the newer ledger.
+async function sheetKeepSkipped(g,skipped){await S.localSet(g.scope+':recovery:skipped-rows:'+Date.now()+':'+C.id(),{schema:1,kind:'skipped-rows',scope:g.scope,month:g.month,table:g.id,at:new Date().toISOString(),rows:C.clone(skipped)},{expected:undefined})}
+// The line names the rows (작업자 · 품명, two at most) so the user knows which input to check.
+function sheetRowNames(rows){const names=[...new Set(rows.map(row=>[row?.worker,row?.product].filter(Boolean).join(' · ')).filter(Boolean))].slice(0,2),rest=rows.length-names.length;return names.length?'('+names.join(', ')+(rest>0?' 외 '+rest+'건':'')+')':''}
+function sheetSkippedLine(saved,skipped,unfinished=false){const rows=[...new Map(skipped.map(item=>[item.id,item])).values()];return(saved?saved+'건 저장 · ':'')+rows.length+'건'+sheetRowNames(rows)+'은 최신 자료를 따랐습니다. 입력했던 값은 이 기기에 보관했습니다.'+(saved||unfinished?'':' 저장할 다른 변경은 없습니다.')}
+function sheetFollowingLine(rows){return rows.length+'건'+sheetRowNames(rows)+'은 저장하면 최신 자료를 따릅니다. 입력했던 값은 이 기기에 보관합니다.'}
 function sheetGrid(id,spec){
  const key=sheetContext(id);let g=sheetRegistry.get(key);
  if(!g){g=new SheetEditor(id,key,spec);sheetRegistry.set(key,g)}else{
@@ -6261,7 +6304,7 @@ class SheetEditor{
    if(changed)sheetResizeTextareas(host);
   });for(const target of targets)this._textareaResizeObserver.observe(target);
  }
- locked(){return !!(this.spec.readonly||sheetScope()!==this.scope||month!==this.month||this.loading||this.saving||busy||this.storageError||localReadError)}
+ locked(){return !!(this.spec.readonly||sheetScope()!==this.scope||month!==this.month||this.loading||this.saving||busy||this.storageError||localReadError||typeof heldCopyOnly==='function'&&heldCopyOnly())}
  canRetryDraftRecovery(){
   if(!this.storageError||!this.draftRecoveryNeeded||!this.dirty||!this.loaded||this.spec.readonly||this.closedDraft||this.loading||this.saving||busy||localReadError||sheetScope()!==this.scope||month!==this.month)return false;
   if(!workspace||workspace.key!==this.scope||workspace.closed||workspace.offline||workspace.pendingMigration||workspace.resolving||!workspace.envelope?.state||!this.validStoredDraft(this.persistedDraft)||!sheetEqual(this.persistedDraft.draft,this.draft)||typeof sheetExplicitSaveContextValid==='function'&&!sheetExplicitSaveContextValid(this,workspace))return false;
@@ -6308,6 +6351,8 @@ class SheetEditor{
  }
 
  status(){const info=this.inspect(),n=(info.counts.changed||0)+(info.counts.added||0)+(info.counts.deleted||0);return{info,n}}
+ // Row ids a save press settles by itself: they follow the newer ledger.
+ following(info=this.inspect()){return this.spec.settleDraft?[...new Set([...(info?.errors||[]).filter(e=>e.stale&&e.id).map(e=>e.id),...(info?.following||[])])]:[]}
  draftPointer(){return 'schedule.v1.sheet-tab:'+this.key}
  rememberDraftKey(){try{sessionStorage.setItem(this.draftPointer(),this.storageKey)}catch{}}
  validStoredDraft(saved){return saved&&saved.schema===1&&saved.scope===this.scope&&saved.month===this.month&&Array.isArray(saved.draft?.rows)&&Array.isArray(saved.draft?.baseRows)}
@@ -6359,20 +6404,20 @@ class SheetEditor{
  html(){this._renderInfo=this.inspect();const info=this._renderInfo,n=(info.counts.changed||0)+(info.counts.added||0)+(info.counts.deleted||0),cols=this.columns(),rows=this.visibleRows();return `<div class="sheetToolbar"><div><strong>${esc(this.spec.title||'일괄 입력')}</strong> <span data-sheet-status>${this.loading?'초안 확인 중…':this.spec.readonly?(this.spec.readonlyLabel||'마감 · 조회 전용'):`변경 ${n}건`}</span></div><div class="actions">${!this.spec.readonly?`${this.spec.grouping?this.groupCreateHTML():this.spec.addRow?'<button data-sheet-command="add">+ 행 추가</button>':''}<button data-sheet-command="pasteToggle">붙여넣기</button><button data-sheet-command="undo">변경 취소</button><button data-sheet-command="save" class="primary">${esc(this.spec.saveLabel||'변경 저장')}</button>`:''}</div></div>${this.spec.view?.html?.(this)||''}<div class="sheetFilters"><input data-sheet-search placeholder="이 표에서 찾기" aria-label="${esc(this.spec.title||'표')} 검색" value="${esc(this.search)}">${this.search?'<button type="button" data-sheet-search-clear>검색 해제</button>':''}${this.sortControl()}<span class="sheetSearchState" data-sheet-search-state role="status">${this.search?'검색 결과 '+rows.length+' / 전체 '+this.draft.rows.length+'행':this.draft.rows.length+'행 · Tab 옆 칸 / Enter 아래 칸'}</span>${this.spec.columns.some(c=>c.advanced)?`<label><input type="checkbox" data-sheet-advanced ${this.advanced?'checked':''}> ${esc(this.spec.advancedLabel||(this.spec.grouping?'상세 열 · 날짜 수정':'상세 열'))}</label>`:''}</div><div class="sheetMessage" role="status" data-sheet-message data-sheet-problem="${!!(this.storageError||this.error||(n&&info.errors.length))}">${esc(this.storageError||this.error||this.spec.hint||'흰 칸을 바로 수정하고 변경 저장을 누르세요. 계산 칸은 자동 갱신됩니다.')}</div><div data-sheet-drafts>${this.draftCopiesHTML()}</div><div class="sheetPaste" ${this.pasteOpen?'':'hidden'}><p>${this.spec.grouping?'월 전체 붙여넣기는 날짜 열부터 복사하세요. 선택한 행 또는 첫 빈 행에서 시작합니다.':'복사한 표를 붙여 넣으세요. 선택한 행의 첫 입력칸부터 적용합니다.'}</p><small>${this.pasteColumns(true).map(c=>esc(c.label)).join(' → ')}</small><textarea data-sheet-paste aria-label="${esc(this.spec.title||'표')} 붙여넣을 내용" placeholder="탭으로 구분한 여러 행"></textarea><button data-sheet-command="pasteApply">표에 적용</button></div><div class="sheetViewport"><table class="inputSheet ${this.spec.grouping?'groupedSheet':''}" style="--sheet-width:${42+cols.reduce((sum,c)=>sum+(c.width||100),0)+(!this.spec.readonly&&this.spec.allowDelete!==false?44:0)}px"><colgroup><col data-sheet-col="__rowNumber" style="width:42px">${cols.map(c=>`<col data-sheet-col="${esc(c.key)}" style="width:${c.width||100}px">`).join('')}${!this.spec.readonly&&this.spec.allowDelete!==false?'<col data-sheet-col="__rowAction" style="width:44px">':''}</colgroup><thead><tr><th data-sheet-col="__rowNumber">#</th>${cols.map(c=>`<th data-sheet-col="${esc(c.key)}">${esc(c.label)}${c.calc&&!c.hideCalcLabel?'<small>자동</small>':''}</th>`).join('')}${!this.spec.readonly&&this.spec.allowDelete!==false?'<th data-sheet-col="__rowAction">삭제</th>':''}</tr></thead><tbody>${this.rowsHTML(rows)||`<tr><td colspan="${cols.length+1+(!this.spec.readonly&&this.spec.allowDelete!==false?1:0)}" class="empty">${this.search?'검색어에 맞는 행이 없습니다.<br><button type="button" data-sheet-search-clear>검색 해제하고 다시 보기</button>':this.draft.rows.length?'현재 보기 조건에 맞는 행이 없습니다. 검색어·필터를 확인해 주세요.':this.spec.readonly?'저장된 기록이 없습니다.':'아직 기록이 없습니다. 행을 추가해 입력하세요.'}</td></tr>`}</tbody></table></div><div class="sheetBottom"><span data-sheet-summary>${esc(this.spec.summary?.(this.draft)||'')}</span>${this.spec.allowDelete!==false&&this.draft.deleted.some(d=>this.draft.baseRows.some(r=>r.id===d.id))?'<label>삭제 사유<input data-sheet-delete-reason value="'+esc(this.draft.deleted.find(d=>d.reason)?.reason||'')+'" placeholder="삭제할 기존 기록의 공통 사유"></label>':''}</div>${this.spec.columns.filter(c=>c.options&&c.type!=='select'&&typeof c.options!=='function').map(c=>`<datalist id="${esc(this.id+'-'+c.key)}">${c.options.map(v=>`<option value="${esc(v)}">`).join('')}</datalist>`).join('')}`}
  refresh(){const host=this.host();if(!host)return;const viewport=host.querySelector('.sheetViewport'),left=viewport?.scrollLeft||0,top=viewport?.scrollTop||0,paste=host.querySelector('[data-sheet-paste]')?.value||'';host.innerHTML=this.html();const nextPaste=host.querySelector('[data-sheet-paste]');if(nextPaste)nextPaste.value=paste;const next=host.querySelector('.sheetViewport');if(next){next.scrollLeft=left;next.scrollTop=top}this.bind();this.update()}
  update(){
-  const host=this.host();if(!host)return;const {info,n}=this.status(),locked=this.locked();
+  const host=this.host();if(!host)return;const {info,n}=this.status(),locked=this.locked(),problems=this.spec.settleDraft?info.errors.filter(e=>!e.stale):info.errors,following=this.following(info);
   // Indices live only for this synchronous paint: remote/draft edits are always reread.
   const firstIndex=(items,key)=>{const map=new Map();for(const item of items){const value=key(item);if(!map.has(value))map.set(value,item)}return map};
   const rowsById=firstIndex(this.draft.rows,r=>r.id),basesById=firstIndex(this.draft.baseRows,r=>r.id),columnsByKey=firstIndex(this.spec.columns,c=>c.key),errorsById=new Map();
-  for(const error of info.errors){if(!errorsById.has(error.id))errorsById.set(error.id,[]);errorsById.get(error.id).push(error)}
+  for(const error of problems){if(!errorsById.has(error.id))errorsById.set(error.id,[]);errorsById.get(error.id).push(error)}
   let visible;const visibleRows=()=>visible??=(this.visibleRows());
   const text=(node,value)=>{const next=String(value??'');if(node.textContent!==next)node.textContent=next};
   const attribute=(node,key,value)=>{const next=String(value);if(node.getAttribute(key)!==next)node.setAttribute(key,next)};
   const copies=host.querySelector('[data-sheet-drafts]'),copiesHTML=this.draftCopiesHTML();if(copies&&copies._draftCopiesHTML!==copiesHTML){const open=copies.querySelector('details')?.open;copies.innerHTML=copiesHTML;copies._draftCopiesHTML=copiesHTML;if(open&&copies.querySelector('details'))copies.querySelector('details').open=true}
-  const message=host.querySelector('[data-sheet-message]');attribute(message,'data-sheet-problem',!!(this.storageError||this.error||(n&&info.errors.length)));
+  const message=host.querySelector('[data-sheet-message]');attribute(message,'data-sheet-problem',!!(this.storageError||this.error||(n&&problems.length)));
   const saveButton=host.querySelector('[data-sheet-command="save"]');if(saveButton)text(saveButton,this.canRetryDraftRecovery()?'저장 확인 후 다시 저장':this.spec.saveLabel||'변경 저장');
   text(host.querySelector('[data-sheet-status]'),this.loading?'초안 확인 중…':this.saving?'저장 중…':this.spec.readonly?(this.spec.readonlyLabel||'마감 · 조회 전용'):`변경 ${n}건`);
   const numbered=this.spec.visibleNumbers||this.spec.grouping||this.spec.dateSort?()=>visibleRows():()=>this.draft.rows;
-  text(message,this.storageError||this.error||(n&&info.errors.length?info.errors.slice(0,3).map(e=>`${e.id?numbered().findIndex(r=>r.id===e.id)+1+'행 ':''}${e.message}`).join(' / '):this.spec.hint||'흰 칸을 바로 수정하고 변경 저장을 누르세요.'));
+  text(message,this.storageError||this.error||(n&&problems.length?problems.slice(0,3).map(e=>`${e.id?numbered().findIndex(r=>r.id===e.id)+1+'행 ':''}${e.message}`).join(' / '):following.length?sheetFollowingLine(following.map(id=>basesById.get(id)||rowsById.get(id)||{})):this.spec.hint||'흰 칸을 바로 수정하고 변경 저장을 누르세요.'));
   for(const el of host.querySelectorAll('[data-cell]')){
    const row=rowsById.get(el.dataset.row),column=columnsByKey.get(el.dataset.cell),err=errorsById.get(el.dataset.row)?.find(e=>e.field===el.dataset.cell||!e.field);
    el.disabled=locked||!this.editable(column,row);if(this.spec.syncInputs&&document.activeElement!==el&&row){const next=this.value(column,row)??'';if(el.value!==String(next))el.value=next}
@@ -6424,18 +6469,18 @@ class SheetEditor{
  }
  async save(options={}){
   const bulk=options.bulk===true,owner=workspace,contextOK=()=>workspace===owner&&sheetScope()===this.scope&&month===this.month&&(typeof sheetExplicitSaveContextValid!=='function'||sheetExplicitSaveContextValid(this,owner));
-  let committed=false,remote=false,error=null;const commitArchives=[],saveLease={owner,token:null};
-  const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||''});
+  let committed=false,remote=false,error=null,unsent=false,savedCount=0;const commitArchives=[],saveLease={owner,token:null},skipped=[],skippedRows=()=>new Set(skipped.map(item=>item.id)).size;
+  const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||'',...(skipped.length?{skipped:skippedRows()}:{})});
   if(!contextOK()){error='context';this.error='작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 저장해 주세요.';this.update();return result()}
   if(this.canRetryDraftRecovery()){
    if(!await this.retryDraftRecovery()){error='recovery';return result()}
    if(!contextOK()){error='context';return result()}
    if(!this.dirty&&!owner?.envelope?.queue?.length){remote=true;if(!bulk)toast(this.error||'입력 내용의 서버 반영을 확인했습니다.');return result()}
   }
-  if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
+  if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':typeof heldCopyOnly==='function'&&heldCopyOnly()?heldCopyMessage:'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
   const explicitOptions={preferLocalEdits:true};if(owner)owner.explicitSaveDiagnostic=null;this.explicitSaveLease=saveLease;this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
   try{
-   const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
+   let storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
    let snapshot;
    // One click settles by itself. If the request of this click cannot be
    // merged with a concurrent server change, it is set aside and the same
@@ -6446,9 +6491,16 @@ class SheetEditor{
    if(typeof sheetPrepareExplicitSave==='function')await sheetPrepareExplicitSave(this);
    if(!contextOK()){phase='context';throw Error('최신 자료 확인 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}
    if(this.spec.readonly){phase='locked';throw Error('조회 전용으로 바뀐 표는 저장할 수 없습니다. 입력 초안은 보관했습니다.')}
-   const check=this.inspect(explicitOptions);if(!check.ok){error='validation';this.error=check.errors.map(e=>`${this.rowNumber(e.id)}행: ${e.message}`).slice(0,5).join(' / ');if(!bulk&&check.errors[0])this.focus(check.errors[0].id,check.errors[0].field);return result()}
+   // A row that cannot be merged follows the newer ledger so the rest is saved
+   // in this same press. Its typed values are written to the device first.
+   const settled=this.spec.settleDraft?.(this.draft,explicitOptions);
+   if(settled?.skipped?.length){phase='draft-save';await sheetKeepSkipped(this,settled.skipped);if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}this.draft=settled.draft;skipped.push(...settled.skipped);this.refresh();this.spec.onChange?.(this);await this.queueDraft();storedDraft=C.clone(this.draft);if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}}
+   const check=this.inspect(explicitOptions);if(!check.ok){error='validation';this.error=check.errors.map(e=>`${this.rowNumber(e.id)}행: ${e.message}`).slice(0,5).join(' / ')+(skipped.length?' / '+sheetSkippedLine(0,skipped,true):'');if(!bulk&&check.errors[0])this.focus(check.errors[0].id,check.errors[0].field);return result()}
    snapshot=C.clone(this.draft);phase='draft-save';
    if(!sheetEqual(storedDraft,snapshot))await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}
+   savedCount=(check.counts.changed||0)+(check.counts.added||0)+(check.counts.deleted||0);
+   // Every change of this press followed the newer ledger: nothing is left to send.
+   if(skipped.length&&!savedCount&&!owner?.envelope?.queue?.length){unsent=true;break}
    phase='save';
    // No per-click proof copy of the whole device envelope is written: the
    // draft itself remains on the device until the server confirms the save.
@@ -6460,23 +6512,23 @@ class SheetEditor{
     if(contextOK()&&typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(e)&&await sheetReplayQueuedSave(this,owner,{valid:contextOK})){remote=true;break}
     if(attempt>=2||!contextOK()||typeof sheetQueueSeparable!=='function'||!sheetQueueSeparable(e)||typeof owner?.setAsideQueue!=='function'||!await owner.setAsideQueue({canApply:contextOK,reason:'explicit-save',flushRest:true}))throw e;
    }
-   }committed=true;
+   }committed=!unsent;
    if(remote&&typeof sheetConfirmExplicitCommit==='function')await sheetConfirmExplicitCommit(this,owner,commitArchives,contextOK);
    if(!contextOK()){phase='context';throw Error('서버 확인 중 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
-   this.error=options.successMessage||(remote?'변경 내용을 서버에 저장했습니다. 다른 기기에 자동 반영됩니다.':'변경 내용을 저장했습니다.');
+   this.error=skipped.length?sheetSkippedLine(savedCount,skipped):options.successMessage||(remote?'변경 내용을 서버에 저장했습니다. 다른 기기에 자동 반영됩니다.':'변경 내용을 저장했습니다.');
    phase='draft-save';await this.writeQueue;if(!contextOK()){phase='context';throw Error('초안 정리 전에 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}const remaining=this.spec.rebaseAfterCommit?.(snapshot);
    if(remaining){this.draft=remaining;this.dirty=true;try{await this.queueDraft();this.error+=' 입력 대기 행은 기기 초안에 남겼습니다.'}catch(e){error='draft-save';this.error='원장은 저장됐지만 남은 준비행의 기기 보관에 실패했습니다. 이 화면을 닫지 말고 다시 저장해 주세요. '+e.message}}
    else{this.dirty=false;try{let cleared;for(let attempt=0;attempt<2;attempt++){try{cleared=await this.clearStoredDraft({preserveSelection:true});break}catch(e){if(attempt||e?.code==='DEVICE_CONFLICT'||!contextOK())throw e}}if(!cleared){const conflict=Error('다른 창의 초안이 바뀌어 그대로 보관했습니다. 이 화면의 저장된 입력은 다시 열어 확인합니다.');conflict.code='DEVICE_CONFLICT';throw conflict}if(typeof sheetPruneExplicitCommit==='function')await sheetPruneExplicitCommit(this,owner,commitArchives,contextOK);}catch(e){error='draft-cleanup';this.error='원장 저장은 완료됐지만 초안 정리를 하지 못했습니다. '+e.message;if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK)}}
    if(!contextOK()){phase='context';throw Error('저장 완료 뒤 연결이 바뀌었습니다. 새 연결의 입력 상태는 변경하지 않았습니다.')}
-   this.saving=false;busy=false;
+   this.saving=false;busy=false;this.followedLine=skipped.length&&!error?this.error:'';
    if(!bulk){const pos=this.host()?.querySelector('.sheetViewport'),left=pos?.scrollLeft||0,top=pos?.scrollTop||0;render();const updated=this.host()?.querySelector('.sheetViewport');if(updated){updated.scrollLeft=left;updated.scrollTop=top}toast(this.error)}
-  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message+((e.conflicts?.length||e.code==='EXPLICIT_QUEUE_PROOF')&&typeof sheetSaveDiagnosticSuffix==='function'?sheetSaveDiagnosticSuffix(owner):'');if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(this.explicitSaveLease===saveLease)delete this.explicitSaveLease;if(saveLease.token)saveLease.owner.releaseExplicitRecovery(saveLease.token);if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
+  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message+((e.conflicts?.length||e.code==='EXPLICIT_QUEUE_PROOF')&&typeof sheetSaveDiagnosticSuffix==='function'?sheetSaveDiagnosticSuffix(owner):'')+(skipped.length?' '+sheetSkippedLine(0,skipped,true):'');if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(this.explicitSaveLease===saveLease)delete this.explicitSaveLease;if(saveLease.token)saveLease.owner.releaseExplicitRecovery(saveLease.token);if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
   return result();
  }
  async undo(){if(this.locked()||busy)return;if(!confirm('이 표에서 아직 저장하지 않은 변경을 취소할까요?'))return;this.saving=true;busy=true;this.update();try{await this.writeQueue.catch(()=>{});const cleared=await this.clearStoredDraft();this.draft=this.fresh();this.dirty=false;this.error='변경을 취소했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}catch(e){this.error=e.message}finally{this.saving=false;busy=false;this.refresh();this.spec.onChange?.(this)}}
 
  paste(text,startRow,startKey,options={}){if(this.locked()||!text.trim())return;const original=this.draft;this.draft=C.clone(original);try{const lines=text.replace(/\r/g,'').replace(/\n$/,'').split('\n').map(x=>x.split('\t')),full=options.full||!!(this.spec.pasteColumns?.includes(startKey)&&!this.columns().some(c=>c.key===startKey)),cols=this.pasteColumns(full),hasStart=this.draft.rows.some(r=>r.id===startRow&&!this.draft.deleted.some(d=>d.id===r.id)),initialTargets=(this.spec.grouping||this.spec.dateSort?this.visibleRows():this.draft.rows).filter(r=>!this.draft.deleted.some(d=>d.id===r.id)).filter(r=>!(this.spec.grouping&&full&&!hasStart&&this.spec.blank)||this.spec.blank(r)),targets=this.spec.view?.pasteTargets?.(initialTargets,startRow,{full,startKey,lines},this)||initialTargets;let ri=targets.findIndex(r=>r.id===startRow);if(ri<0){ri=!this.spec.addRow?0:this.spec.blank?targets.findIndex(r=>this.spec.blank(r)):-1;if(ri<0)ri=targets.length}const ci=Math.max(0,cols.findIndex(c=>c.key===startKey));for(let y=0;y<lines.length;y++){let row=targets[ri+y],previous=targets[ri+y-1];if(!row){if(!this.spec.addRow)throw Error('붙여넣을 행이 부족합니다.');row=this.spec.addRow(previous);row.id||=C.id();if(this.spec.add)row=this.spec.add(this.draft,row)||row;else this.draft.rows.push(row);targets.push(row)}for(let x=0;x<lines[y].length&&ci+x<cols.length;x++){const c=cols[ci+x];if(!this.editable(c,row))continue;let v=lines[y][x];if(c.type==='number')v=sheetInputNumber(v);if(this.spec.pasteValue)v=this.spec.pasteValue(row,c,v,previous);if(this.spec.grouping&&c.key===this.spec.grouping.key)this.spec.grouping.validate?.(v);if(this.spec.patch)this.spec.patch(this.draft,row.id,{[c.key]:v});else row[c.key]=v}}this.pasteOpen=false;this.changed();this.spec.view?.afterPaste?.(this);this.refresh()}catch(e){this.draft=original;this.error=e.message;this.update()}}
- bind(){const h=this.host();if(!h)return;this.watchTextareaWidth(h);if(h._sheetCompositionStart)h.removeEventListener('compositionstart',h._sheetCompositionStart);if(h._sheetCompositionEnd)h.removeEventListener('compositionend',h._sheetCompositionEnd);h._sheetCompositionStart=e=>{if(e.target.matches('[data-cell]'))this.cellComposing=e.target;if(e.target.matches('[data-sheet-search]'))this.searchComposing=e.target};h._sheetCompositionEnd=e=>{if(this.cellComposing===e.target)this.cellComposing=null;if(!e.target.matches('[data-sheet-search]'))return;if(this.searchComposing===e.target)this.searchComposing=null;this.applySearch(e.target)};h.addEventListener('compositionstart',h._sheetCompositionStart);h.addEventListener('compositionend',h._sheetCompositionEnd);if(h._sheetFocusOut)h.removeEventListener('focusout',h._sheetFocusOut);h._sheetFocusOut=e=>{if(this.cellComposing===e.target)this.cellComposing=null};h.addEventListener('focusout',h._sheetFocusOut);h.onfocusin=e=>{const el=e.target;if(el.matches('[data-cell]')&&this.selected!==el.dataset.row)this.select(el.dataset.row)};h.oninput=e=>{const el=e.target;if(el.matches('[data-sheet-new-date]')){this.groupDate=el.value;this.spec.view?.dateChange?.(this);return}if(el.matches('[data-sheet-search]')){if(e.isComposing||this.searchComposing===el)return;this.applySearch(el);return}if(el.matches('[data-sheet-delete-reason]')){this.draft.deleted.forEach(d=>d.reason=el.value);this.changed();return}if(!el.matches('[data-cell]'))return;const c=this.spec.columns.find(c=>c.key===el.dataset.cell);let v=el.value;if(c.type==='number')v=sheetInputNumber(v);this.set(el.dataset.row,el.dataset.cell,v);if(this.spec.grouping?.key===el.dataset.cell||this.spec.dateSort?.key===el.dataset.cell){this.refresh();this.focus(el.dataset.row,el.dataset.cell)}};h.onchange=e=>{if(e.target.matches('[data-sheet-sort]')){if(busy||this.loading||this.saving){e.target.value=this.sortMode();return}this.sortOrder=sheetDateSortMode(e.target.value);this.refresh();this.host()?.querySelector('[data-sheet-sort]')?.focus();return}if(e.target.matches('[data-sheet-view]')){this.spec.view?.change?.(e.target.dataset.sheetView,e.target.type==='checkbox'?e.target.checked:e.target.value,this);return}if(e.target.matches('[data-sheet-advanced]')){this.advanced=e.target.checked;this.refresh()}else if(e.target.matches('select[data-cell]'))h.oninput(e)};h.onclick=async e=>{if(e.target.closest("[data-sheet-search-clear]")?.dataset?.sheetSearchClear!==undefined){this.search="";this.revealId="";this.refresh();this.host()?.querySelector("[data-sheet-search]")?.focus({preventScroll:true});return}const view=e.target.closest('[data-sheet-view-command]');if(view?.dataset.sheetViewCommand){try{await this.spec.view?.command?.(view.dataset.sheetViewCommand,view.dataset,this)}catch(err){this.error=err.message;this.update()}return}const b=e.target.closest('[data-sheet-command]');if(!b)return;const cmd=b.dataset.sheetCommand,id=b.dataset.id;if(cmd==='select'){this.select(id);return}if(this.locked()&&!(cmd==='save'&&this.canRetryDraftRecovery())||this.spec.allowDelete===false&&['delete','restore'].includes(cmd))return;try{if(cmd==='draftLoad')await this.openStoredDraft(b.dataset.draftKey);if(cmd==='save')await this.save();if(cmd==='add')this.add();if(cmd==='groupAdd')this.addGroup(b.dataset.group,1);if(cmd==='groupCreate')this.addGroup(h.querySelector('[data-sheet-new-date]')?.value||this.groupDate);if(cmd==='delete'){if(!this.draft.deleted.some(d=>d.id===id))this.draft.deleted.push({id,reason:''});this.changed();this.refresh()}if(cmd==='restore'){this.draft.deleted=this.draft.deleted.filter(d=>d.id!==id);this.changed();this.refresh()}if(cmd==='undo')await this.undo();if(cmd==='pasteToggle'){this.pasteOpen=!this.pasteOpen;this.refresh()}if(cmd==='pasteApply'){this.paste(h.querySelector('[data-sheet-paste]').value,this.selected,this.pasteColumns(true)[0]?.key,{full:true})}await this.spec.onCommand?.(cmd,b.dataset,this)}catch(err){this.error=err.message;this.update()}};h.onpaste=e=>{const el=e.target;if(!el.matches('[data-cell]'))return;const value=e.clipboardData?.getData('text/plain')||'';if(value.includes('\t')||value.includes('\n')&&el.tagName!=='TEXTAREA'){e.preventDefault();this.paste(value,el.dataset.row,el.dataset.cell)}};h.onkeydown=e=>{const el=e.target;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.save();return}if(!el.matches('[data-cell]')||e.isComposing)return;if(this.navigateArrow(e))return;if(el.matches('[data-sheet-header-cell]')&&['Enter','Tab'].includes(e.key)){if(!e.shiftKey){e.preventDefault();const row=this.draft.rows.find(r=>r.id===el.dataset.row);if(row)this.focus(row.id,this.columns().find(c=>c.key!==el.dataset.cell&&this.editable(c,row))?.key)}return}const row=this.draft.rows.find(r=>r.id===el.dataset.row);if(!row)return;const cols=this.columns().filter(c=>this.editable(c,row)),ci=cols.findIndex(c=>c.key===el.dataset.cell),rows=this.visibleRows().filter(r=>!this.draft.deleted.some(d=>d.id===r.id)),ri=rows.findIndex(r=>r.id===row.id),grouped=!!this.spec.grouping,addSameDay=()=>{try{return this.spec.addNavigationRow?this.spec.addNavigationRow(row,this):this.addGroup(this.groupValue(row),1)[0]}catch(e){this.error=e.message;this.update()}};if(e.key==='Enter'&&el.tagName==='TEXTAREA'&&(e.shiftKey||sheetMobileTextInput()))return;if(e.key==='Enter'){e.preventDefault();const next=rows[ri+(e.shiftKey?-1:1)];if(next&&(e.shiftKey||!grouped||this.navigationGroup(next)===this.navigationGroup(row)))this.focus(next.id,el.dataset.cell);else if(!e.shiftKey){const added=grouped?addSameDay():this.add();if(added)this.focus(added.id,el.dataset.cell)}}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='d'&&ri>0){e.preventDefault();const col=this.spec.columns.find(c=>c.key===el.dataset.cell);this.set(row.id,el.dataset.cell,this.value(col,rows[ri-1]));el.value=this.value(col,row)??''}if(e.key==='Tab'&&grouped){const nextCol=cols[ci+(e.shiftKey?-1:1)];if(nextCol){e.preventDefault();this.focus(row.id,nextCol.key)}else{const next=rows[ri+(e.shiftKey?-1:1)];if(next&&(e.shiftKey||this.navigationGroup(next)===this.navigationGroup(row))){e.preventDefault();const nextCols=this.columns().filter(c=>this.editable(c,next));this.focus(next.id,(e.shiftKey?nextCols.at(-1):nextCols[0])?.key)}else if(!e.shiftKey&&!this.locked()){e.preventDefault();const added=addSameDay();if(added)this.focus(added.id,this.columns().find(c=>this.editable(c,added))?.key)}}}else if(e.key==='Tab'&&!e.shiftKey&&ci===cols.length-1&&ri===rows.length-1&&this.spec.addRow){e.preventDefault();this.add()}}}
+ bind(){const h=this.host();if(!h)return;this.watchTextareaWidth(h);if(h._sheetCompositionStart)h.removeEventListener('compositionstart',h._sheetCompositionStart);if(h._sheetCompositionEnd)h.removeEventListener('compositionend',h._sheetCompositionEnd);h._sheetCompositionStart=e=>{if(e.target.matches('[data-cell]'))this.cellComposing=e.target;if(e.target.matches('[data-sheet-search]'))this.searchComposing=e.target};h._sheetCompositionEnd=e=>{if(this.cellComposing===e.target)this.cellComposing=null;if(!e.target.matches('[data-sheet-search]'))return;if(this.searchComposing===e.target)this.searchComposing=null;this.applySearch(e.target)};h.addEventListener('compositionstart',h._sheetCompositionStart);h.addEventListener('compositionend',h._sheetCompositionEnd);if(h._sheetFocusOut)h.removeEventListener('focusout',h._sheetFocusOut);h._sheetFocusOut=e=>{if(this.cellComposing===e.target)this.cellComposing=null};h.addEventListener('focusout',h._sheetFocusOut);h.onfocusin=e=>{const el=e.target;if(el.matches('[data-cell]')&&this.selected!==el.dataset.row)this.select(el.dataset.row)};h.oninput=e=>{const el=e.target;if(el.matches('[data-sheet-new-date]')){this.groupDate=el.value;this.spec.view?.dateChange?.(this);return}if(el.matches('[data-sheet-search]')){if(e.isComposing||this.searchComposing===el)return;this.applySearch(el);return}if(el.matches('[data-sheet-delete-reason]')){this.draft.deleted.forEach(d=>d.reason=el.value);this.changed();return}if(!el.matches('[data-cell]'))return;const c=this.spec.columns.find(c=>c.key===el.dataset.cell);let v=el.value;if(c.type==='number')v=sheetInputNumber(v);this.set(el.dataset.row,el.dataset.cell,v);if(this.spec.grouping?.key===el.dataset.cell||this.spec.dateSort?.key===el.dataset.cell){this.refresh();this.focus(el.dataset.row,el.dataset.cell)}};h.onchange=e=>{if(e.target.matches('[data-sheet-sort]')){if(busy||this.loading||this.saving){e.target.value=this.sortMode();return}this.sortOrder=sheetDateSortMode(e.target.value);this.refresh();this.host()?.querySelector('[data-sheet-sort]')?.focus();return}if(e.target.matches('[data-sheet-view]')){this.spec.view?.change?.(e.target.dataset.sheetView,e.target.type==='checkbox'?e.target.checked:e.target.value,this);return}if(e.target.matches('[data-sheet-advanced]')){this.advanced=e.target.checked;this.refresh()}else if(e.target.matches('select[data-cell]'))h.oninput(e)};h.onclick=async e=>{if(e.target.closest("[data-sheet-search-clear]")?.dataset?.sheetSearchClear!==undefined){this.search="";this.revealId="";this.refresh();this.host()?.querySelector("[data-sheet-search]")?.focus({preventScroll:true});return}const view=e.target.closest('[data-sheet-view-command]');if(view?.dataset.sheetViewCommand){try{await this.spec.view?.command?.(view.dataset.sheetViewCommand,view.dataset,this)}catch(err){this.error=err.message;this.update()}return}const b=e.target.closest('[data-sheet-command]');if(!b)return;const cmd=b.dataset.sheetCommand,id=b.dataset.id;if(cmd==='select'){this.select(id);return}if(this.locked()&&!(cmd==='save'&&this.canRetryDraftRecovery())||this.spec.allowDelete===false&&['delete','restore'].includes(cmd))return;try{if(cmd==='draftLoad')await this.openStoredDraft(b.dataset.draftKey);if(cmd==='save')await this.save();if(cmd==='add')this.add();if(cmd==='groupAdd')this.addGroup(b.dataset.group,1);if(cmd==='groupCreate')this.addGroup(h.querySelector('[data-sheet-new-date]')?.value||this.groupDate);if(cmd==='delete'){const refused=this.spec.deleteRefusal?.(id,this.draft);if(refused)throw Error(refused);if(!this.draft.deleted.some(d=>d.id===id))this.draft.deleted.push({id,reason:''});this.changed();this.refresh()}if(cmd==='restore'){this.draft.deleted=this.draft.deleted.filter(d=>d.id!==id);this.changed();this.refresh()}if(cmd==='undo')await this.undo();if(cmd==='pasteToggle'){this.pasteOpen=!this.pasteOpen;this.refresh()}if(cmd==='pasteApply'){this.paste(h.querySelector('[data-sheet-paste]').value,this.selected,this.pasteColumns(true)[0]?.key,{full:true})}await this.spec.onCommand?.(cmd,b.dataset,this)}catch(err){this.error=err.message;this.update()}};h.onpaste=e=>{const el=e.target;if(!el.matches('[data-cell]'))return;const value=e.clipboardData?.getData('text/plain')||'';if(value.includes('\t')||value.includes('\n')&&el.tagName!=='TEXTAREA'){e.preventDefault();this.paste(value,el.dataset.row,el.dataset.cell)}};h.onkeydown=e=>{const el=e.target;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();this.save();return}if(!el.matches('[data-cell]')||e.isComposing)return;if(this.navigateArrow(e))return;if(el.matches('[data-sheet-header-cell]')&&['Enter','Tab'].includes(e.key)){if(!e.shiftKey){e.preventDefault();const row=this.draft.rows.find(r=>r.id===el.dataset.row);if(row)this.focus(row.id,this.columns().find(c=>c.key!==el.dataset.cell&&this.editable(c,row))?.key)}return}const row=this.draft.rows.find(r=>r.id===el.dataset.row);if(!row)return;const cols=this.columns().filter(c=>this.editable(c,row)),ci=cols.findIndex(c=>c.key===el.dataset.cell),rows=this.visibleRows().filter(r=>!this.draft.deleted.some(d=>d.id===r.id)),ri=rows.findIndex(r=>r.id===row.id),grouped=!!this.spec.grouping,addSameDay=()=>{try{return this.spec.addNavigationRow?this.spec.addNavigationRow(row,this):this.addGroup(this.groupValue(row),1)[0]}catch(e){this.error=e.message;this.update()}};if(e.key==='Enter'&&el.tagName==='TEXTAREA'&&(e.shiftKey||sheetMobileTextInput()))return;if(e.key==='Enter'){e.preventDefault();const next=rows[ri+(e.shiftKey?-1:1)];if(next&&(e.shiftKey||!grouped||this.navigationGroup(next)===this.navigationGroup(row)))this.focus(next.id,el.dataset.cell);else if(!e.shiftKey){const added=grouped?addSameDay():this.add();if(added)this.focus(added.id,el.dataset.cell)}}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='d'&&ri>0){e.preventDefault();const col=this.spec.columns.find(c=>c.key===el.dataset.cell);this.set(row.id,el.dataset.cell,this.value(col,rows[ri-1]));el.value=this.value(col,row)??''}if(e.key==='Tab'&&grouped){const nextCol=cols[ci+(e.shiftKey?-1:1)];if(nextCol){e.preventDefault();this.focus(row.id,nextCol.key)}else{const next=rows[ri+(e.shiftKey?-1:1)];if(next&&(e.shiftKey||this.navigationGroup(next)===this.navigationGroup(row))){e.preventDefault();const nextCols=this.columns().filter(c=>this.editable(c,next));this.focus(next.id,(e.shiftKey?nextCols.at(-1):nextCols[0])?.key)}else if(!e.shiftKey&&!this.locked()){e.preventDefault();const added=addSameDay();if(added)this.focus(added.id,this.columns().find(c=>this.editable(c,added))?.key)}}}else if(e.key==='Tab'&&!e.shiftKey&&ci===cols.length-1&&ri===rows.length-1&&this.spec.addRow){e.preventDefault();this.add()}}}
 }
 function heldScheduleNotice(){
  const held=workspace?.envelope?.heldSchedules||[],pending=held.filter(h=>h.status==='pending');if(!held.length)return'';
@@ -6998,9 +7050,11 @@ function pgRefreshDraft(source,draft,key=month,all=null){
  // are read-only on this surface. Older device drafts could still contain a
  // calculated bar date in those fields; discard only those protected dates so
  // valid daily, machine, routing and note edits can be saved normally.
+ // A date the user typed before the field started the work is set aside in
+ // draft.startedDates, never dropped: the next save press keeps it on the device.
  const refreshed=new Map(latest.map(r=>[r.id,r])),refreshedBase=new Map(d.baseRows.map(r=>[r.id,r]));
  for(const local of d.rows){const remote=refreshed.get(local.id),baseline=refreshedBase.get(local.id),owner=remote&&pgJobMonth(remote),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===local.id)?.job;if(!remote||!baseline)continue;
-  if(actual?.firstActual)for(const field of['start','end'])if(!pgEqual(local[field],remote[field])||!pgEqual(baseline[field],remote[field])){if(Object.hasOwn(remote,field)){local[field]=C.clone(remote[field]);baseline[field]=C.clone(remote[field])}else{delete local[field];delete baseline[field]}}
+  if(actual?.firstActual)for(const field of['start','end'])if(!pgEqual(local[field],remote[field])||!pgEqual(baseline[field],remote[field])){if(!pgEqual(local[field],baseline[field])&&!pgEqual(local[field],remote[field]))((d.startedDates??={})[local.id]??={})[field]=local[field]??null;if(Object.hasOwn(remote,field)){local[field]=C.clone(remote[field]);baseline[field]=C.clone(remote[field])}else{delete local[field];delete baseline[field]}}
   // A rate typed before an active handoff was received can survive in an old
   // device draft as job.daily. Move that pending value to the current assignee
   // event, which is the same edit the current UI performs, and keep base daily.
@@ -7125,10 +7179,10 @@ function pgManualDatePatch(row,fields,period=null,calendarState=pgView().preview
  if(startChanged)patch.manualStartMode='date';if(startChanged||endChanged)patch.manualEndMode='date';return patch;
 }
 function pgNumber(value){return sheetInputNumber(value)}
-function pgError(field,message){const e=Error(message);e.field=field;throw e}
+function pgError(field,message,stale){const e=Error(message);e.field=field;if(stale)e.stale=stale;throw e}
 function pgValidate(row,latest=pgRows(state,month),all=null,routingPeers=null){
  const old=latest.find(r=>r.id===row.id),owner=pgJobMonth(row),actual=all?all.find(x=>x.owner===owner&&x.job.id===row.id)?.job:state.months[owner]?P.jobs(state,owner).find(j=>j.id===row.id):null;
- if(pgManualSuccessor(state,row,owner,all))pgError('start','다음달로 이월된 계획입니다. 원래 초안을 보관하고 이월된 일정에서 다시 수정해 주세요.');
+ if(pgManualSuccessor(state,row,owner,all))pgError('start','다음달로 이월된 계획입니다. 원래 초안을 보관하고 이월된 일정에서 다시 수정해 주세요.','carried');
  if(!/^\d{4}-\d{2}$/.test(owner)||!C.iso(owner+'-01'))pgError('start','저장할 월을 확인해 주세요.');
  if(state.months[owner]?.closed)pgError('start','마감된 월의 작업조건은 수정할 수 없습니다.');
  if(old&&pgJobMonth(old)!==owner)pgError('start','기존 작업의 저장 월은 이동할 수 없습니다. 시작·종료 날짜를 수정해 주세요.');
@@ -7147,9 +7201,9 @@ function pgValidate(row,latest=pgRows(state,month),all=null,routingPeers=null){
  if(!(typeof row.plan==='number'&&Number.isFinite(row.plan)&&row.plan>0))pgError('plan','계획 조수는 0보다 큰 숫자로 입력해 주세요.');
  if(!actual?.complete&&!(typeof row.daily==='number'&&Number.isFinite(row.daily)&&row.daily>0)&&!(row.manual&&(row.end||row.duration)))pgError('daily','하루 조수를 입력해 주세요.');
  if(row.daily!=null&&!(typeof row.daily==='number'&&Number.isFinite(row.daily)&&row.daily>0))pgError('daily','하루 조수는 0보다 큰 숫자여야 합니다.');
- if(old&&(row.sourceRowId||actual?.firstActual))for(const key of['product','worker'])if(!pgEqual(row[key],old[key]))pgError(key,'생산기록과 연결된 품명·작업자는 생산 입력에서 수정해 주세요.');
- if(old&&(row.sourceRowId||actual?.firstActual)&&!pgEqual(row.plan,old.plan))pgError('plan','시작 계획수량은 생산 입력의 시작기록에서 수정해 주세요.');
- if(old&&actual?.firstActual&&!pgEqual(row.start,old.start))pgError('start','실적이 있는 작업의 시작일은 생산 입력에서 확인해 주세요.');
+ if(old&&(row.sourceRowId||actual?.firstActual))for(const key of['product','worker'])if(!pgEqual(row[key],old[key]))pgError(key,'생산기록과 연결된 품명·작업자는 생산 입력에서 수정해 주세요.','started');
+ if(old&&(row.sourceRowId||actual?.firstActual)&&!pgEqual(row.plan,old.plan))pgError('plan','시작 계획수량은 생산 입력의 시작기록에서 수정해 주세요.','started');
+ if(old&&actual?.firstActual&&!pgEqual(row.start,old.start))pgError('start','실적이 있는 작업의 시작일은 생산 입력에서 확인해 주세요.','started');
  if(row.group&&!String(row.group).startsWith('manual:')&&!/^[1-9]\d*$/.test(String(row.group)))pgError('group','동시 생산 묶음을 선택해 주세요.');
  if(!Array.isArray(row.machines)||!row.machines.length)pgError('machines','호기를 한 개 이상 추가해 주세요.');
  const names=row.machines.map(x=>String(x.name||'').trim());
@@ -7158,7 +7212,7 @@ function pgValidate(row,latest=pgRows(state,month),all=null,routingPeers=null){
  if(row.machines.some(x=>x.qty!=null&&!(typeof x.qty==='number'&&Number.isFinite(x.qty)&&x.qty>=0)))pgError('machines','호기별 배정 조수는 0 이상의 숫자 또는 빈칸으로 입력해 주세요.');
  if(row.machines.some(x=>x.daily!=null&&!(typeof x.daily==='number'&&Number.isFinite(x.daily)&&x.daily>0)))pgError('machines','호기별 하루 조수는 0보다 큰 숫자 또는 빈칸으로 입력해 주세요.');
  if(row.handoffs!=null&&typeof P.normalizedHandoffs==='function')try{P.normalizedHandoffs(row)}catch(e){pgError('daily',e.message)}
- if(old?.handoffs?.length){const shape=r=>({...r,barDisplay:undefined});if(!pgEqual(row.machines,old.machines)||!pgEqual(shape(row.routing||{}),shape(old.routing||{}))||!pgEqual(row.group,old.group))pgError('machines','작업을 넘긴 생산은 같은 호기와 순서를 유지합니다.');}
+ if(old?.handoffs?.length){const shape=r=>({...r,barDisplay:undefined});if(!pgEqual(row.machines,old.machines)||!pgEqual(shape(row.routing||{}),shape(old.routing||{}))||!pgEqual(row.group,old.group))pgError('machines','작업을 넘긴 생산은 같은 호기와 순서를 유지합니다.','structure');}
  if(row.routing!=null){
   const r=row.routing;if(r.schema!==1||!['sequential','parallel'].includes(r.mode)||typeof r.group!=='string'||r.group&&!String(r.group).startsWith('manual:')&&!/^[1-9]\d*$/.test(r.group)||!Number.isInteger(r.lane)||r.lane<1||r.lane>20||!Number.isInteger(r.order)||r.order<1||r.order>50)pgError('routing','품목이 같이 시작하는지, 앞 품목 뒤에 시작하는지 다시 확인해 주세요.');
   if(r.mode==='parallel'&&row.machines.some(x=>x.qty!==0&&!(typeof (x.daily??(row.machines.length===1?row.daily:null))==='number'&&Number.isFinite(x.daily??row.daily)&&(x.daily??row.daily)>0)))pgError('machines','여러 호기를 함께 사용하면 각 호기의 하루 조수를 입력해 주세요.');
@@ -7172,7 +7226,7 @@ function pgValidate(row,latest=pgRows(state,month),all=null,routingPeers=null){
   if(row.daily!=null&&!(typeof row.daily==='number'&&Number.isFinite(row.daily)&&row.daily>0))pgError('daily','하루 조는 0보다 큰 숫자 또는 빈칸으로 입력해 주세요.');
   if(row.end&&(!C.iso(row.end)||row.end<row.start))pgError('end','수기 종료일은 시작일 이후의 유효한 날짜여야 합니다.');
   if(!row.end&&!(Number.isInteger(row.duration)&&row.duration>0&&row.duration<=740))pgError('duration','수기 종료일 또는 작업일수 1~740일을 입력해 주세요.');
-  if(old&&actual?.firstActual&&!pgEqual(row.end,old.end))pgError('end','실적이 있는 작업의 종료일은 생산기록에서 확인해 주세요.');
+  if(old&&actual?.firstActual&&!pgEqual(row.end,old.end))pgError('end','실적이 있는 작업의 종료일은 생산기록에서 확인해 주세요.','started');
  }
  if(row.stoppedAt&&(!C.iso(row.stoppedAt)||row.stoppedAt.slice(0,7)!==owner||row.stoppedAt<row.start))pgError('stoppedAt','중단일은 작업의 저장 월이며 작업 시작일 이후여야 합니다.');
  if(row.stoppedAt&&!String(row.note||'').trim())pgError('note','중단 사유를 비고에 입력해 주세요.');
@@ -7181,19 +7235,79 @@ function pgCalendarChanges(base,next){
  const map=cal=>{const out=new Map();for(const r of cal.factory||[]){const date=typeof r==='string'?r:r.date;out.set('factory|'+date,{date,value:r})}for(const r of cal.workers||[])out.set('worker|'+r.worker+'|'+r.date,{date:r.date,value:r});return out};
  const a=map(base),b=map(next),changed=[];for(const key of new Set([...a.keys(),...b.keys()]))if(!pgEqual(a.get(key)?.value,b.get(key)?.value))changed.push({key,date:(a.get(key)||b.get(key)).date});return changed;
 }
+// Why a saved job cannot be deleted from the schedule ('' when it can).
+function pgDeleteReason(row,all=null){all??=pgAllJobs(state);const owner=pgJobMonth(row),actual=all.find(x=>x.owner===owner&&x.job.id===row.id)?.job;return typeof pgManualDeleteReason==='function'?pgManualDeleteReason(row,state,all):(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length?'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.':'')}
 function pgInspect(d){
  const draftBase=new Map(d.baseRows.map(row=>[row.id,row])),draftDeleted=new Set(d.deleted.map(row=>row.id)),hasRowChanges=!!d.deleted.length||d.rows.some(row=>!draftBase.has(row.id)||!draftDeleted.has(row.id)&&!pgEqual(row,draftBase.get(row.id))),all=hasRowChanges?pgAllJobs(state):null,prepared=hasRowChanges?pgPrepareCommitDraft(state,d,month,all):C.clone(d),errors=pgCalendarMerge(d.baseCalendar,d.calendar).conflicts.map(conflict=>({id:'',field:'calendar',message:pgCalendarConflictText(conflict)})),conflicts=[],base=new Map(prepared.baseRows.map(r=>[r.id,r])),deleted=new Set(prepared.deleted.map(r=>r.id)),changedRows=prepared.rows.filter(row=>!deleted.has(row.id)&&!pgEqual(row,base.get(row.id))),latest=all?pgRows(state,month,all):[];
  if(all)try{sheetApply(prepared,latest)}catch(e){conflicts.push(...(e.errors||[{id:'',field:'',message:e.message}]))}
- for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(prepared))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message})}}
+ for(const row of changedRows){try{pgValidate(row,latest,all,pgKeep(prepared))}catch(e){errors.push({id:row.id,field:e.field||'',message:e.message,...(e.stale?{stale:e.stale}:{})})}}
  errors.push(...conflicts);
- for(const entry of prepared.deleted){const row=base.get(entry.id),owner=row&&pgJobMonth(row),actual=owner&&all.find(x=>x.owner===owner&&x.job.id===entry.id)?.job;const reason=row&&(typeof pgManualDeleteReason==='function'?pgManualDeleteReason(row,state,all):(state.months[owner]?.closed||row.sourceRowId||actual?.records?.length?'마감 또는 생산기록에 연결된 작업은 삭제할 수 없습니다. 생산 입력에서 수정하거나 중단일을 입력해 주세요.':''));if(reason)errors.push({id:entry.id,field:'',message:reason})}
+ // Only a reservation that could be deleted when it was marked (the × itself
+ // refuses protected work, see deleteRefusal) can have become protected by
+ // newer data. A mark on work that was never deletable stays a plain error
+ // with its real reason.
+ for(const entry of prepared.deleted){const row=base.get(entry.id),reason=row&&pgDeleteReason(row,all);if(reason)errors.push({id:entry.id,field:'',message:reason,...(row.manual&&!row.sourceRowId?{stale:'delete'}:{})})}
  const calendarChanges=pgCalendarChanges(d.baseCalendar||{},d.calendar||{});
  for(const changed of calendarChanges)if(!C.iso(changed.date)||state.months[changed.date.slice(0,7)]?.closed)errors.push({id:'',field:'calendar',message:'마감월 또는 잘못된 날짜의 휴일은 변경할 수 없습니다.'});
  for(const [id,message]of Object.entries(d.manualRateErrors||{}))if(!deleted.has(id)&&d.rows.some(r=>r.id===id))errors.push({id,field:'daily',message});
  const counts=sheetCounts(d),calendarCount=calendarChanges.length;
  counts.changed+=calendarCount||(!pgEqual(d.baseCalendar,d.calendar)?1:0);
  if(!pgEqual(d.baseScheduleAsOf,d.scheduleAsOf)){counts.changed++;if(!C.iso(d.scheduleAsOf)||m().closed)errors.push({id:'',field:'scheduleAsOf',message:'계산 기준일을 확인해 주세요. 마감월은 변경할 수 없습니다.'})}
- return{ok:errors.length===0,errors,counts,conflicts};
+ return{ok:errors.length===0,errors,counts,conflicts,following:[...pgStartedDateEdits(d,all,all&&latest).keys()]};
+}
+// Start/end typed before the field started the work: still in the row, or
+// already set aside by a refresh (draft.startedDates). Read-only; the save
+// press keeps these values on the device and the dates follow the field.
+function pgStartedDateEdits(d,all=null,latest=null){
+ const out=new Map(Object.entries(d.startedDates||{}).filter(([,typed])=>typed&&Object.keys(typed).length).map(([id,typed])=>[id,{...typed}])),base=new Map(d.baseRows.map(r=>[r.id,r])),rows=d.rows.filter(r=>base.has(r.id)&&['start','end'].some(field=>!pgEqual(r[field],base.get(r.id)[field])));
+ if(!rows.length)return out;all??=pgAllJobs(state);const now=new Map((latest||pgRows(state,month,all)).map(r=>[r.id,r]));
+ for(const row of rows){const remote=now.get(row.id),original=base.get(row.id),owner=remote&&pgJobMonth(remote);if(!remote||!all.find(x=>x.owner===owner&&x.job.id===row.id)?.job?.firstActual)continue;
+  for(const field of['start','end'])if(!pgEqual(row[field],original[field])&&!pgEqual(row[field],remote[field]))out.set(row.id,{...out.get(row.id),[field]:row[field]??null})}
+ return out;
+}
+// One row that cannot be merged must not stop the whole table. On a save press
+// such a row follows the newer ledger: identity or structure changed under an
+// edit, a row marked for deletion that changed or became protected, a plan
+// carried to the next month, an earlier automatic job replaced by a linked
+// reservation, and the cells the production ledger owns once work has started
+// (the other edits of that row are still saved). Nothing is dropped: the typed
+// values are returned so the caller keeps them in a device recovery record.
+function pgSettleDraft(draft){
+ const d=C.clone(draft),skipped=[];let all=null,now=null;
+ // Dates typed before the field started the work never show up as an error
+ // (a refresh takes them out of the row first), so they are set aside here,
+ // together with the 'date' modes that only that date edit created.
+ for(const [id,typed]of pgStartedDateEdits(d)){
+  all??=pgAllJobs(state);now??=new Map(pgRows(state,month,all).map(row=>[row.id,row]));
+  const row=d.rows.find(r=>r.id===id),base=d.baseRows.find(r=>r.id===id),mark=d.deleted.find(r=>r.id===id),remote=now.get(id),source=base||row||remote||{},started=remote&&all.find(x=>x.owner===pgJobMonth(remote)&&x.job.id===id)?.job?.firstActual;
+  skipped.push({id,kind:'started',product:source.product||'',worker:source.worker||'',reason:'실적이 있는 작업의 시작일·종료일은 생산 입력에서 확인해 주세요.',row:{...(row?C.clone(row):{id}),...typed},base:base?C.clone(base):null,...(mark?{deleteReason:String(mark.reason||'')}:{}),server:remote?C.clone(remote):null,fields:Object.keys(typed)});
+  if(row&&base&&started)for(const field of['start','end','manualStartMode','manualEndMode'])if(field.startsWith('manual')?row[field]==='date'&&!pgEqual(row[field],remote[field]):!pgEqual(row[field],remote[field])||!pgEqual(base[field],remote[field]))for(const target of [row,base]){if(Object.hasOwn(remote,field))target[field]=C.clone(remote[field]);else delete target[field]}
+ }
+ delete d.startedDates;
+ for(let pass=0;pass<8;pass++){
+  const stale=new Map();for(const error of pgInspect(d).errors)if(error.id&&error.stale){if(!stale.has(error.id))stale.set(error.id,[]);stale.get(error.id).push(error)}
+  if(!stale.size)break;
+  all??=pgAllJobs(state);now??=new Map(pgRows(state,month,all).map(row=>[row.id,row]));
+  for(const [id,errors]of stale){
+   // A job whose identity or structure moved is never combined cell by cell.
+   const error=errors.find(e=>e.stale==='retired'||e.stale==='carried')||errors.find(e=>e.stale!=='started')||errors[0];
+   const row=d.rows.find(r=>r.id===id),base=d.baseRows.find(r=>r.id===id),mark=d.deleted.find(r=>r.id===id),remote=now.get(id),source=base||row||remote||{};
+   let entry=skipped.find(item=>item.id===id);if(!entry){entry={id,kind:error.stale,product:source.product||'',worker:source.worker||'',reason:error.message,row:row?C.clone(row):null,base:base?C.clone(base):null,...(mark?{deleteReason:String(mark.reason||'')}:{}),server:remote?C.clone(remote):null};skipped.push(entry)}
+   if(error.stale==='started'&&error.field&&!mark&&row&&base&&remote&&!entry.fields?.includes(error.field)){(entry.fields??=[]).push(error.field);for(const target of [row,base]){if(Object.hasOwn(remote,error.field))target[error.field]=C.clone(remote[error.field]);else delete target[error.field]}continue}
+   // 비고 is free text that no other cell depends on. When the same job (identity
+   // unchanged) moved in other cells only, those follow the server and the typed
+   // 비고 is still saved. Every other typed cell of such a row stays whole-row.
+   if(error.stale==='changed'&&!mark&&row&&base&&remote&&!entry.fields&&!pgEqual(row.note,base.note)&&pgEqual(remote.note,base.note)&&['product','worker','sourceRowId','originId','_ownerMonth'].every(key=>pgEqual(base[key],remote[key]))){
+    const next={...C.clone(remote),note:row.note};let valid=true;try{pgValidate(next,[...now.values()],all,pgKeep(d).map(r=>r.id===id?next:r))}catch{valid=false}
+    if(valid){entry.fields=[...new Set([...Object.keys(row),...Object.keys(base)])].filter(key=>key!=='note'&&!pgEqual(row[key],base[key]));if(d.manualRateErrors)delete d.manualRateErrors[id];d.rows[d.rows.indexOf(row)]=next;d.baseRows[d.baseRows.indexOf(base)]=C.clone(remote);continue}
+   }
+   entry.kind=error.stale;delete entry.fields;d.deleted=d.deleted.filter(r=>r.id!==id);if(d.manualRateErrors)delete d.manualRateErrors[id];
+   if(remote&&row){d.rows[d.rows.indexOf(row)]=C.clone(remote);if(base)d.baseRows[d.baseRows.indexOf(base)]=C.clone(remote);else d.baseRows.push(C.clone(remote))}
+   else{d.rows=d.rows.filter(r=>r.id!==id);d.baseRows=d.baseRows.filter(r=>r.id!==id)}
+  }
+ }
+ if(skipped.length)d.revision=(d.revision||0)+1;
+ return{draft:d,skipped};
 }
 function pgExplicitSaveDraft(d,options={}){
  if(!options.preferLocalEdits)return d;
@@ -7232,6 +7346,9 @@ function pgAcknowledgedDraft(d){
  try{
   if(typeof workspace==='undefined'||!workspace||workspace.offline||workspace.pendingMigration||workspace.envelope?.queue?.length||m().closed)return false;
   const prepared=pgPrepareCommitDraft(state,pgExplicitSaveDraft(C.clone(d),{preferLocalEdits:true}),month);
+  // Dates set aside for a started job are kept by the next save press, so
+  // their draft is not cleared as if every input had reached the server.
+  if(Object.keys(prepared.startedDates||{}).length)return false;
   if(!pgInspect(prepared).ok||!pgEqual(prepared.baseCalendar,prepared.calendar)||!pgEqual(prepared.baseScheduleAsOf,prepared.scheduleAsOf))return false;
   const latest=pgRows(state,month),merged=sheetApply(prepared,latest),current=new Map(latest.map(row=>[row.id,row]));
   return merged.length===latest.length&&merged.every(row=>pgEqual(row,current.get(row.id)));
@@ -7260,7 +7377,9 @@ function pgSpec(rows){return{
   {key:'kind',label:'일정 구분',width:90,calc:r=>r.manual?'수기 예약':'자동'},
   {key:'note',label:'비고',type:'text',width:220,advanced:true}
  ],
- inspect:(d,options)=>pgInspect(pgExplicitSaveDraft(d,options)),commit:pgCommit,reconcileDraft:d=>pgRefreshDraft(state,d,month),acknowledgedDraft:pgAcknowledgedDraft,rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
+ // The × of a saved job that can never be deleted here says why at once, as the period bar does.
+ deleteRefusal:(id,d)=>{const row=d.baseRows.find(r=>r.id===id);return row?pgDeleteReason(row):''},
+ inspect:(d,options)=>pgInspect(pgExplicitSaveDraft(d,options)),settleDraft:d=>pgSettleDraft(d),commit:pgCommit,reconcileDraft:d=>pgRefreshDraft(state,d,month),acknowledgedDraft:pgAcknowledgedDraft,rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
  summary:d=>`작업 ${pgKeep(d).length}건 · 휴일 변경 ${pgCalendarChanges(d.baseCalendar||{},d.calendar||{}).length}칸 · 누적·잔여·종료·건조일은 생산기록과 작업조건에서 계산`,
  onSelect:(row,g)=>{pgView().selected=row.id;pgView().selectionActive=true;pgView().timelineSelection=g._pgTimelineChoice||null;pgDetail(g);pgInlineManual(g);pgMarkSelection(g)},
  onChange:g=>pgRefresh(g)
@@ -7290,7 +7409,7 @@ function pgPreview(g){
  if(P.captureSourceBaseline)P.captureSourceBaseline(state);
  const draft=pgReconcileCalendarDraft(C.clone(g.draft)),base=new Map(draft.baseRows.map(r=>[r.id,r])),pending=pgCalendarMerge(draft.baseCalendar,draft.calendar).conflicts.map(conflict=>({id:'calendar:'+conflict.key,product:conflict.worker,type:'calendar-conflict',message:pgCalendarConflictText(conflict)}));let all,latest;
  draft.rows=pgKeep(draft).flatMap(row=>{
-  if(!pgEqual(row,base.get(row.id))){try{if(draft.manualRateErrors?.[row.id])pgError('daily',draft.manualRateErrors[row.id]);all??=pgAllJobs(state);latest??=pgRows(state,month,all);pgValidate(row,latest,all,pgKeep(draft))}catch(e){pending.push({id:row.id,product:row.product||'새 작업',message:e.message+(base.has(row.id)?' 입력을 마치기 전까지 저장된 작업조건으로 표시합니다.':' 입력을 마치면 일정에 표시됩니다.')});return base.has(row.id)?[pgClean(base.get(row.id))]:[]}}
+  if(!pgEqual(row,base.get(row.id))){try{if(draft.manualRateErrors?.[row.id])pgError('daily',draft.manualRateErrors[row.id]);all??=pgAllJobs(state);latest??=pgRows(state,month,all);pgValidate(row,latest,all,pgKeep(draft))}catch(e){pending.push({id:row.id,product:row.product||'새 작업',message:e.stale&&base.has(row.id)?'더 새로운 자료가 있어 저장하면 이 작업은 최신 자료를 따릅니다. 지금은 저장된 작업조건으로 표시합니다.':e.message+(base.has(row.id)?' 입력을 마치기 전까지 저장된 작업조건으로 표시합니다.':' 입력을 마치면 일정에 표시됩니다.')});return base.has(row.id)?[pgClean(base.get(row.id))]:[]}}
   return[pgClean(row)];
  });
  const next=pgDraftState(draft),result=pgDraftResult(next);
@@ -7728,16 +7847,19 @@ function pgMarkSelection(g){
  if(text){text.title=text.textContent;text.scrollTop=0}const clear=info?.querySelector('[data-pg-command="clear-selection"]');if(clear)clear.disabled=!v.selectionActive&&!choice;const mobileLabel=$('#pgMobileSelected');if(mobileLabel)mobileLabel.textContent=pgMobileSelectionText(row);pgSyncDryDateHint();
 }
 function pgSaveState(g){
- const {n:count,info}=g.status(),invalid=info?.ok===false,locked=g.locked(),retry=!!g.storageError&&!!g.canRetryDraftRecovery?.();
- let label=`변경 ${count}건${g.dirty&&count?' · 저장 전':''}`,reason='';
+ const {n:count,info}=g.status(),following=g.following?.(info)||[],invalid=info?.ok===false&&(info.errors||[]).some(e=>!e.stale),locked=g.locked(),retry=!!g.storageError&&!!g.canRetryDraftRecovery?.();
+ // The result line of a press that let rows follow the newer data stays here
+ // until the next edit: the toast is brief and the mobile dock can cover it.
+ let label=`변경 ${count}건${g.dirty&&count?' · 저장 전':''}`,reason=following.length&&!invalid?sheetFollowingLine(following.map(id=>g.draft.baseRows.find(r=>r.id===id)||g.draft.rows.find(r=>r.id===id)||{})):g.followedLine&&g.error===g.followedLine?g.followedLine:'';
  if(g.loading)label='초안 확인 중…';
  else if(g.saving)label='저장 중…';
  else if(g.spec.readonly){label='마감 · 조회 전용';reason='마감된 월의 일정은 조회만 가능합니다.'}
  else if(busy){label='다른 저장 처리 중…';reason='진행 중인 저장이 끝나면 일정 변경을 저장할 수 있습니다.'}
  else if(localReadError){label='기기 자료 확인 필요';reason=String(localReadError)}
  else if(g.storageError){label=`저장 확인 필요 · 변경 ${count}건`;reason=retry?'입력은 보관되어 있습니다. 저장 버튼을 누르면 저장 내역부터 다시 확인합니다.':String(g.storageError)}
+ else if(typeof heldCopyOnly==='function'&&heldCopyOnly()){label='조회 전용 · 토큰 입력 필요';reason=heldCopyMessage}
  else if(locked){label='작업 화면 확인 필요';reason='현재 작업 월과 저장소 연결을 확인해 주세요.'}
- else if(invalid)label='입력 확인 · '+(info.errors?.[0]?.message||'작업조건을 확인하세요.');
+ else if(invalid)label='입력 확인 · '+(info.errors.find(e=>!e.stale)?.message||'작업조건을 확인하세요.');
  return{count,disabled:locked&&!retry,retry,label,reason,detailReason:retry?String(g.storageError):reason,buttonLabel:g.saving?'저장 중…':retry?'저장 확인 후 다시 저장':'일정 변경 저장',buttonShort:g.saving?'저장 중…':retry?'확인 후 저장':'저장'};
 }
 function pgMobileSelectionText(row){
@@ -7892,9 +8014,9 @@ function pgRetiredDraftJobs(draft){
 const pgReservationDraftStateBefore=pgDraftState;
 pgDraftState=function(draft){const retired=pgRetiredDraftJobs(draft);if(!retired.length)return pgReservationDraftStateBefore(draft);const ids=new Set(retired.map(r=>r.id));return pgReservationDraftStateBefore({...draft,rows:draft.rows.filter(r=>!ids.has(r.id))})};
 const pgReservationInspectBefore=pgInspect;
-pgInspect=function(draft){const result=pgReservationInspectBefore(draft);for(const row of pgRetiredDraftJobs(draft))if(row.changed||row.deleted)result.errors.push({id:row.id,field:'',message:'이전 자동 작업의 수정 초안이 남아 있습니다. 초안을 별도 보관하고 현재 예약을 사용한 뒤 호기 조건을 다시 확인해 주세요.'});result.ok=result.errors.length===0;return result};
+pgInspect=function(draft){const result=pgReservationInspectBefore(draft);for(const row of pgRetiredDraftJobs(draft))if(row.changed||row.deleted)result.errors.push({id:row.id,field:'',message:'이전 자동 작업의 수정 초안이 남아 있습니다. 초안을 별도 보관하고 현재 예약을 사용한 뒤 호기 조건을 다시 확인해 주세요.',stale:'retired'});result.ok=result.errors.length===0;return result};
 const pgReservationPreviewBefore=pgPreview;
-pgPreview=function(g){const result=pgReservationPreviewBefore(g);for(const row of pgRetiredDraftJobs(g.draft))result.result.warnings.push({id:row.id,product:row.product,message:row.changed||row.deleted?'이전 자동 작업의 수정 초안을 보존 중입니다. 현재 예약으로 실적을 표시하며, 아래 초안 보관 후 전환으로 정리할 수 있습니다.':'이전 자동 작업 초안 대신 현재 연결된 예약으로 실적을 표시합니다. 초안 보관 후 전환으로 작업목록을 정리할 수 있습니다.'});return result};
+pgPreview=function(g){const result=pgReservationPreviewBefore(g);for(const row of pgRetiredDraftJobs(g.draft))result.result.warnings.push({id:row.id,product:row.product,message:row.changed||row.deleted?'이전 자동 작업의 수정 초안을 보존 중입니다. 현재 예약으로 실적을 표시하며, 저장하면 초안 값을 이 기기에 보관하고 현재 예약을 따릅니다.':'이전 자동 작업 초안 대신 현재 연결된 예약으로 실적을 표시합니다. 초안 보관 후 전환으로 작업목록을 정리할 수 있습니다.'});return result};
 async function pgReconcileReservationDraft(g){
  if(!g||g.locked()||g.loading||g.saving)throw Error('작업조건을 읽거나 저장하는 동안은 전환할 수 없습니다.');
  const retired=pgRetiredDraftJobs(g.draft);if(!retired.length)return false;
@@ -9778,7 +9900,7 @@ async function ilboMergeDrafts({automatic=false,revision='',ledgerRevision=''}={
   for(const entry of entries){entry.g.draft=entry.next;if(!automatic)entry.g.error='최신 원장을 합쳤습니다. 미저장 입력은 그대로 보관 중입니다.'}
   if(automatic){const writing=Promise.all(entries.map(entry=>ilboProtectDraftWrite(entry)));if(!entries.some(entry=>entry.audit))ilboRenderDraftLatest(entries);await writing}
   else for(const entry of entries){await ilboProtectDraftWrite(entry);if(!current())break}
-  if(current()&&!automatic){const conflicts=entries.reduce((n,{g})=>n+(g.inspect().conflicts?.length||0),0);toast('초안을 유지하고 최신자료를 합쳤습니다.'+(conflicts?' 동시 수정 '+conflicts+'건을 확인한 뒤 저장해 주세요.':' 입력 내용은 변경 저장을 눌러야 원장에 저장됩니다.'))}
+  if(current()&&!automatic){const conflicts=entries.reduce((n,{g})=>n+(g.spec?.settleDraft?0:g.inspect().conflicts?.length||0),0),following=entries.reduce((n,{g})=>n+(typeof g.following==='function'?g.following().length:0),0);toast('초안을 유지하고 최신자료를 합쳤습니다.'+(conflicts?' 동시 수정 '+conflicts+'건을 확인한 뒤 저장해 주세요.':following?' '+following+'건은 저장하면 최신 자료를 따릅니다.':' 입력 내용은 변경 저장을 눌러야 원장에 저장됩니다.'))}
  }catch(e){
   if(automatic&&!applied&&(e.message==='context-changed'||run.cancelled)){if(workspace===client&&ilboRefreshRun===run)ilboRefreshPending=true;return}
   if(workspace===client&&ilboRefreshRun===run){if(e.code==='DEVICE_CONFLICT')ilboRefreshPending=true;ilboStatusError=applied&&e.code==='DEVICE_CONFLICT'?'다른 창에도 저장 전 입력이 있어 두 내용을 자동으로 합치지 않았습니다. 현재 입력은 그대로입니다. 다른 창에서 먼저 변경 저장한 뒤 다시 확인해 주세요.':applied?'최신 원장은 불러왔지만 보완한 초안을 기기에 보관하지 못했습니다. 원래 초안은 보존되어 있으며 다시 열면 최신 원장과 함께 복원됩니다.':run.cancelled?'최신자료 합치기를 취소했습니다. 원장과 기존 초안은 그대로입니다.':e.message==='context-changed'?'불러오는 중 입력·연결·로그인 상태가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':e.code==='DEVICE_CONFLICT'?'다른 창에도 별도의 저장 전 입력이 있습니다. 현재 입력은 그대로 두었습니다. 다른 창에서 먼저 변경 저장한 뒤 다시 확인하면 이어서 반영됩니다.':'최신자료를 합치지 못했습니다. 기존 초안은 그대로 보존했습니다. '+(['CATALOG_UNIT_SYNC','AUDIT_LAYOUT'].includes(e.code)?e.message:'연결·기기 저장 상태와 마감 여부를 확인해 주세요.');if(!automatic&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion)toast(ilboStatusError)}
@@ -10138,6 +10260,11 @@ const viewPreferencePages=['daily','schedule','scheduleSummary','stock','audit',
 const viewPreferenceFocusPages=['daily','stock','audit','master','report'];
 const viewPreferenceDetails=['.pgViewOptions','.pgGuide','.pgPattern','.sheetHelp','.managementHelp','.moDefinitions','.ledgerMonthSummary','.top .mobileTools','.sheetToolbar .mobileTools','#ilboSyncStatus>.mobileTools'];
 const viewPreferenceScheduleFlags=['twoMonths','focus','fit','compact','overview','activeOnly','calendarExpanded','focusTools','warningsOpen','focusFit','pairsAll'];
+// The schedule summary choices and the stocktake place/item filter stay on this
+// device. Only listed values are kept; a typed search word is never stored.
+const viewPreferenceSummaryChoices={scope:['month','all'],status:['all','actual','plan'],sort:['dry-desc','dry-asc','start-desc','start-asc','worker'],layout:['cards','table'],mode:['auto','jobs','lots']};
+const viewPreferenceSummaryDefaults={scope:'month',status:'all',sort:'dry-desc',layout:'cards',mode:'auto'};
+const viewPreferenceAuditFilters=['all','blank','difference'];
 const viewPreferenceState={scope:null,records:new Map(),pending:new Map(),captures:new Set(),activePlan:null,timer:0,sharedTimer:0,sharedSaving:false,rendering:0,applying:false,grids:new WeakSet(),plans:new WeakSet(),stocks:new WeakSet(),forms:new WeakSet(),userNavigation:false,userMonth:false,warningShown:false};
 function viewPreferenceSharedClean(value){return typeof ScheduleNative!=='undefined'&&ScheduleNative.cleanScheduleView?ScheduleNative.cleanScheduleView(value):{}}
 function viewPreferenceSharedWritable(){return typeof workspace!=='undefined'&&workspace&&!workspace.offline&&!workspace.pendingMigration&&!workspace.closed&&typeof workspace.saveScheduleView==='function'&&viewPreferenceScope()===workspace.key&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)}
@@ -10149,6 +10276,8 @@ function viewPreferenceDate(value){if(typeof value!=='string'||!/^\d{4}-\d{2}-\d
 function viewPreferenceFields(value,strings=[],flags=[]){const out={};if(!viewPreferenceObject(value))return out;for(const key of strings)if(typeof value[key]==='string')out[key]=viewPreferenceText(value[key]);for(const key of flags)if(typeof value[key]==='boolean')out[key]=value[key];return out}
 function viewPreferenceGrid(value){const out=viewPreferenceFields(value,['search','productionWorker'],['advanced']);if(['original','date-asc','date-desc'].includes(value?.sortOrder))out.sortOrder=value.sortOrder;return out}
 function viewPreferenceSchedule(value){const out=viewPreferenceFields(value,['dryQuery'],viewPreferenceScheduleFlags);if(value?.workerSelection===null)out.workerSelection=null;else if(Array.isArray(value?.workerSelection))out.workerSelection=[...new Set(value.workerSelection.filter(x=>typeof x==='string'&&x.length<=200&&x.trim()))].slice(0,500);else if(typeof value?.worker==='string')out.worker=viewPreferenceText(value.worker);return out}
+function viewPreferenceSummary(value){const out={};if(!viewPreferenceObject(value))return out;for(const [key,list]of Object.entries(viewPreferenceSummaryChoices))if(list.includes(value[key]))out[key]=value[key];return out}
+function viewPreferenceAuditFocus(value){const out={};if(!viewPreferenceObject(value))return out;for(const [id,choice]of Object.entries(value).slice(-20)){if(!id||id.length>200||!viewPreferenceObject(choice))continue;const item={};if(choice.place==='all'||typeof choice.place==='string'&&/^\d{1,2}$/.test(choice.place))item.place=choice.place;if(viewPreferenceAuditFilters.includes(choice.filter))item.filter=choice.filter;if(Object.keys(item).length)out[id]=item}return out}
 function viewPreferenceClean(raw,scope){
  const out={schema:1,scope,nav:{},workspace:{density:{},focus:{},tools:{},panels:{},tables:{}},filters:{},grids:{},schedule:{},stock:{},details:{},months:{}};
  if(!viewPreferenceObject(raw)||raw.schema!==1||raw.scope!==scope)return out;
@@ -10162,6 +10291,7 @@ function viewPreferenceClean(raw,scope){
  for(const [key,value]of Object.entries(viewPreferenceObject(raw.grids)?raw.grids:{}).slice(0,100))if(/^(?:production|plan-jobs|issue-ledger|plaster-month|product-catalog|report-days|report-year|report-history|report-history-all|audit-items:[\w:-]+)$/.test(key))out.grids[key]=viewPreferenceGrid(value);
  out.schedule=viewPreferenceSchedule(raw.schedule);
  const schedulePending=viewPreferenceSharedClean(raw.schedulePending);if(Object.keys(schedulePending).length)out.schedulePending=schedulePending;
+ const summary=viewPreferenceSummary(raw.summary);if(Object.keys(summary).length)out.summary=summary;
  if(['ledger','stock'].includes(raw.stock?.tab))out.stock.tab=raw.stock.tab;if(['current','all','selected'].includes(raw.stock?.mode))out.stock.mode=raw.stock.mode;
  if(Array.isArray(raw.stock?.months))out.stock.months=[...new Set(raw.stock.months.filter(viewPreferenceMonth))].slice(0,120).sort();Object.assign(out.stock,viewPreferenceFields(raw.stock,['query'],['hideZeroStock']));if(['original','date-asc','date-desc'].includes(raw.stock?.sortOrder))out.stock.sortOrder=raw.stock.sortOrder;
  for(const key of viewPreferencePages)if(viewPreferenceObject(raw.details?.[key])){out.details[key]={};for(const selector of viewPreferenceDetails.concat(['workspaceMore']))if(typeof raw.details[key][selector]==='boolean')out.details[key][selector]=raw.details[key][selector]}
@@ -10173,6 +10303,7 @@ function viewPreferenceClean(raw,scope){
   if(value.schedule?.selectedDate===''||viewPreferenceDate(value.schedule?.selectedDate))mm.schedule.selectedDate=value.schedule.selectedDate;
   const holiday=value.holiday;if(viewPreferenceObject(holiday)){if(typeof holiday.target==='string')mm.holiday.target=viewPreferenceText(holiday.target);if(viewPreferenceDate(holiday.start)&&viewPreferenceDate(holiday.end)&&holiday.start<=holiday.end){mm.holiday.start=holiday.start;mm.holiday.end=holiday.end}if(['holiday','clear'].includes(holiday.mode))mm.holiday.mode=holiday.mode;if(Number.isInteger(holiday.weeks)&&holiday.weeks>=1&&holiday.weeks<=26)mm.holiday.weeks=holiday.weeks}
   if(typeof value.audit?.id==='string'&&typeof value.audit?.lastId==='string')mm.audit={id:viewPreferenceText(value.audit.id),lastId:viewPreferenceText(value.audit.lastId)};
+  const auditFocus=viewPreferenceAuditFocus(value.auditFocus);if(Object.keys(auditFocus).length)mm.auditFocus=auditFocus;
   out.months[key]=mm;
  }
  return out;
@@ -10190,6 +10321,7 @@ function viewPreferenceRecord(){
   workspaceScreen.compact=entry.data.workspace.compact??true;workspaceScreen.focusPage=null;
   workspaceScreen.panels.clear();for(const [key,value]of Object.entries(entry.data.workspace.panels))workspaceScreen.panels.set(key,value);
   workspaceFocusScreen.selected.clear();for(const [key,value]of Object.entries(entry.data.workspace.tables))workspaceFocusScreen.selected.set(key,value);
+  if(typeof scheduleSummaryControls!=='undefined')Object.assign(scheduleSummaryControls,viewPreferenceSummaryDefaults,viewPreferenceSummary(entry.data.summary));
  }
  viewPreferenceSharedRestore(entry);return entry;
 }
@@ -10247,6 +10379,11 @@ function viewPreferenceRestoreStock(v){
  if(viewPreferenceState.stocks.has(v))return v;viewPreferenceState.stocks.add(v);
  const values={...viewPreferenceRecord().data.stock};if(values.months)values.months=values.months.filter(k=>state?.months?.[k]);Object.assign(v,values);return v;
 }
+function viewPreferenceRestoreAuditFocus(choice,a){
+ const saved=viewPreferenceRecord().data.months[month]?.auditFocus?.[a?.id];if(!saved)return choice;
+ if(saved.place==='all'||a.locations?.[Number(saved.place)])choice.place=choice.countPlace=saved.place;
+ if(viewPreferenceAuditFilters.includes(saved.filter))choice.filter=saved.filter;return choice;
+}
 function viewPreferenceAfterRender(){
  const data=viewPreferenceRecord().data,main=document.querySelector('#main');if(!main||!state)return;
  const previous=viewPreferenceState.applying;viewPreferenceState.applying=true;
@@ -10285,7 +10422,9 @@ function viewPreferenceCapture({monthChoice=false,navigation=false,scheduleBefor
    const field=id=>document.querySelector('#'+id)?.value;if(field('pgCalTarget')!=null)mm.holiday={target:field('pgCalTarget'),start:field('pgCalStart'),end:field('pgCalEnd'),mode:field('pgCalMode'),weeks:Number(field('pgWeeks'))};
   }
   if(page==='stock')data.stock={...secondaryLedgerPrefs()};
+  if(page==='audit'&&typeof auditFocusChoices!=='undefined'){const prefix=sheetContext('audit-focus:'),focus={...mm.auditFocus};for(const [key,choice]of auditFocusChoices)if(key.startsWith(prefix)){const id=key.slice(prefix.length);delete focus[id];focus[id]={place:choice.countPlace,filter:choice.filter}}if(Object.keys(focus).length)mm.auditFocus=focus}
  }
+ if(page==='scheduleSummary'&&typeof scheduleSummaryControls!=='undefined')data.summary=viewPreferenceSummary(scheduleSummaryControls);
  data.details[page]??={};for(const selector of viewPreferenceDetails){const node=document.querySelector('#main '+selector);if(node)data.details[page][selector]=!!node.open}const more=document.querySelector('#main .workspaceMore');if(more)data.details[page].workspaceMore=more.classList.contains('open');
  if(scheduleBefore&&page==='schedule'&&viewPreferenceSharedWritable()){
   const values=viewPreferenceSharedClean(data.schedule),patch={};for(const [key,value]of Object.entries(values))if(JSON.stringify(scheduleBefore[key])!==JSON.stringify(value))patch[key]=value;
@@ -10305,13 +10444,14 @@ const viewPreferenceStockChangeBefore=secondaryLedgerChange;
 secondaryLedgerChange=async function(...args){const scope=viewPreferenceScope();const result=await viewPreferenceStockChangeBefore.apply(this,args);if(scope===viewPreferenceScope())viewPreferenceCapture();return result};
 const viewPreferenceLedgerOpenBefore=secondaryLedgerOpen;
 secondaryLedgerOpen=async function(...args){const scope=viewPreferenceScope();const result=await viewPreferenceLedgerOpenBefore.apply(this,args);if(scope===viewPreferenceScope())viewPreferenceCapture({monthChoice:true});return result};
+if(typeof auditFocusChoice==='function'){const viewPreferenceAuditChoiceBefore=auditFocusChoice;auditFocusChoice=function(a,...rest){const known=auditFocusChoices.has(sheetContext('audit-focus:'+a.id)),choice=viewPreferenceAuditChoiceBefore.call(this,a,...rest);return known?choice:viewPreferenceRestoreAuditFocus(choice,a)}}
 const viewPreferenceMobileBefore=mobileRefresh;
 mobileRefresh=function(...args){const result=viewPreferenceMobileBefore.apply(this,args);viewPreferenceAfterRender();return result};
 function viewPreferenceEvent(event){
  if(viewPreferenceState.applying||viewPreferenceState.rendering||typeof busy!=='undefined'&&busy||event.target?.closest?.('dialog')||event.target?.disabled)return;
  const node=event.target,click=event.type==='click',change=event.type==='change',input=event.type==='input',key=event.type==='keydown';let allowed=false;
- if(click)allowed=!!node.closest?.('[data-sheet-search-clear],[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers]')||['productionDay','productionReset','productionToday'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
- if(change)allowed=!!node.matches?.('#monthSel,[data-sheet-sort],#secondaryLedgerSort,[data-sheet-advanced],[data-sheet-view],[data-sheet-new-date],#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgPairsAll,#pgCalTarget,#pgCalStart,#pgCalEnd,#pgCalMode,#pgWeeks,#secondaryAuditSelect,[data-ledger-month],#secondaryStockHideZero,.workspaceFocusTableSelect');
+ if(click)allowed=!!node.closest?.('[data-sheet-search-clear],[data-page],[data-workspace-focus],[data-workspace-density],.workspaceTabs button,.workspaceFocusBar button,.workspaceMore>button,[data-ledger-tab],[data-ledger-mode],[data-ledger-months],[data-ledger-open],[data-pg-column-date],[data-pg-clear-date],[data-pg-date],[data-pg-workers],.summaryViewChoice [data-summary-layout],[data-summary-mode],[data-summary-lot-open],#summaryReset,[data-audit-place]')||['productionDay','productionReset','productionToday'].includes(node.closest?.('[data-sheet-view-command]')?.dataset.sheetViewCommand)||['focus-mode','focus-tools','fit-width','compact','overview','calendar-tools','focus-conditions'].includes(node.closest?.('[data-pg-command]')?.dataset.pgCommand)||viewPreferencePages.includes(node.closest?.('[data-action]')?.dataset.action);
+ if(change)allowed=!!node.matches?.('#monthSel,[data-sheet-sort],#secondaryLedgerSort,[data-sheet-advanced],[data-sheet-view],[data-sheet-new-date],#pgWorker,[data-pg-worker-choice],#pgSpan,#pgRangeStart,#pgRangeEnd,#pgActiveOnly,#pgPairsAll,#pgCalTarget,#pgCalStart,#pgCalEnd,#pgCalMode,#pgWeeks,#secondaryAuditSelect,[data-ledger-month],#secondaryStockHideZero,.workspaceFocusTableSelect,#summaryScope,#summaryStatus,#summarySort,[data-audit-filter]');
  if(input)allowed=!!node.matches?.('#pgDryQuery,[data-sheet-search],#search,#secondaryLedgerSearch');
  const summary=node.closest?.('summary');if((click||key&&['Enter',' '].includes(event.key))&&summary&&viewPreferenceDetails.some(selector=>summary.parentNode?.matches?.(selector)))allowed=true;
  if(click){const session=workspaceFocusScreen.session;if(session&&!session.options.hidden&&!session.options.contains?.(node)&&!session.toggle?.contains?.(node))allowed=true}
@@ -10517,7 +10657,7 @@ localNotice=function(){if(workspace?.offline)return '<div class="notice blue" ro
 // The whole settings tab is an administrator session. Automatic connection
 // restore and ordinary business writes never request this display gate.
 const managementConnectionGate=ScheduleConnectionGate.create();
-let managementSettingsPending=null,managementSettingsPage=page,managementSettingsSession=0;
+let managementSettingsPending=null,managementSettingsPage=page,managementSettingsSession=0,managementTokenFocus=false;
 function managementProtectedPage(value){return value==='settings'||value==='source'}
 function managementSettingsAllowed(){return managementProtectedPage(page)&&managementConnectionGate.unlocked&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)&&(typeof AppAccess==='undefined'||AppAccess.unlocked)}
 function managementSettingsLockedView(){return '<section class="card" data-management-settings-locked><h1>설정·연결·백업</h1><p>관리자 비밀번호를 확인한 뒤 이 탭을 열 수 있습니다.</p><button type="button" class="primary" data-management-settings-open>관리자 비밀번호로 열기</button></section>'}
@@ -10570,6 +10710,8 @@ workspaceSettings=function(main){
  }
  const summary=details.querySelector('summary');summary.textContent='GitHub 저장소 연결 설정';
  details.addEventListener('toggle',()=>{if(!details.open){const token=details.querySelector('#token');if(token)token.value=''}});
+ // The "토큰 입력" button of the device-copy notice lands on the token field.
+ if(managementTokenFocus){managementTokenFocus=false;details.open=true;details.querySelector('#token')?.focus?.()}
 };
 const connectionSettingsViewBefore=settingsView;
 settingsView=function(...args){return managementSettingsAllowed()?connectionSettingsViewBefore.apply(this,args):managementSettingsLockedView()};
@@ -10599,6 +10741,7 @@ const connectionBackupAllowedBefore=backupAllowed;
 backupAllowed=function(...args){managementSettingsRequire();return connectionBackupAllowedBefore.apply(this,args)};
 document.addEventListener('click',event=>{
  const target=event.target,nav=target.closest?.('[data-page]'),action=target.closest?.('[data-action]')?.dataset.action,destination=nav?.dataset.page||action;
+ if(target.closest?.('[data-token-entry]'))managementTokenFocus=true;
  if(target.closest?.('[data-management-settings-open]')||managementProtectedPage(destination)&&!managementSettingsAllowed()){
   event.preventDefault();event.stopImmediatePropagation();requestManagementSettings(managementProtectedPage(destination)?destination:'settings');return;
  }
@@ -10859,7 +11002,7 @@ if(new URLSearchParams(String(location.hash||'').replace(/^#/,'' )).has('shareSe
 // Save current-window drafts through each table's ordinary validation and ACK.
 // Merely visiting an unopened tab must not be required to recover its draft.
 const bulkSaveState={running:false,last:null,progress:'',deferred:false};
-function bulkSaveAllowed(){return !!state&&!booting&&!connectionOpening&&!connectionPreview&&!localReadError&&(!globalThis.AppAccess||AppAccess.unlocked)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)&&!workspace?.closed}
+function bulkSaveAllowed(){return !!state&&!booting&&!connectionOpening&&!connectionPreview&&!localReadError&&!(typeof heldCopyOnly==='function'&&heldCopyOnly())&&(!globalThis.AppAccess||AppAccess.unlocked)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)&&!workspace?.closed}
 function bulkSaveLabel(id){return ({production:'생산일보','plan-jobs':'생산일정','issue-ledger':'재고·불출','plaster-month':'석고 실사용량','product-catalog':'품목 기준정보','stock-memos':'재고 보관정보·공통메모'})[id]||(id.startsWith('audit-items:')?'몰드 실사':id.startsWith('period-common-memo:')?'품목 공통메모':'보관 입력')}
 function bulkSavePage(id){return ({production:'daily','plan-jobs':'schedule','issue-ledger':'stock','plaster-month':'report','product-catalog':'master','stock-memos':'stock'})[id]||(id.startsWith('audit-items:')?'audit':id.startsWith('period-common-memo:')?'schedule':'settings')}
 function bulkSaveDescriptor(key,saved,scope=sheetScope()){
@@ -10912,7 +11055,7 @@ function bulkSavePaint(){
 }
 function bulkSaveSummary(result){
  const saved=result.saved.length,confirmed=result.confirmed?.length||0,local=result.local.length,left=result.left.length,pending=result.pending.length;
- return [saved?'서버 저장 '+saved+'개 표':'',confirmed?'서버 반영 확인 '+confirmed+'개 표':'',local?'기기 저장 '+local+'개 표':'',left?'확인 필요 '+left+'개':'',pending?'생산 입력 대기 '+pending+'개 표':''].filter(Boolean).join(' · ')||(result.retried?'전송 대기 자료를 저장했습니다.':'저장할 변경 내용이 없습니다.');
+ return [saved?'서버 저장 '+saved+'개 표':'',confirmed?'서버 반영 확인 '+confirmed+'개 표':'',local?'기기 저장 '+local+'개 표':'',left?'확인 필요 '+left+'개':'',pending?'생산 입력 대기 '+pending+'개 표':'',result.skipped?'최신 자료 따름 '+result.skipped+'건(입력값 기기 보관)':''].filter(Boolean).join(' · ')||(result.retried?'전송 대기 자료를 저장했습니다.':'저장할 변경 내용이 없습니다.');
 }
 function bulkSaveResult(result){
  document.querySelector('#bulkSaveResult')?.remove();
@@ -10971,7 +11114,7 @@ async function bulkSaveRun(){
     g=bulkSaveFactory(target.id,target.key);const status=g.status();
     if(!status.n&&status.info.ok&&g.id==='production'&&g.spec.rebaseAfterCommit?.(g.draft)){result.pending.push(target);continue}
     if(!valid())throw Error('연결 또는 권한이 바뀌었습니다.');
-    const saved=await g.save({bulk:true});
+    const saved=await g.save({bulk:true});result.skipped=(result.skipped||0)+(saved?.skipped||0);
     if(saved?.committed)(saved.remote?result.saved:result.local).push(target);
     if(saved?.ok){if(saved.remaining)result.pending.push(target);continue}
     result.left.push({...target,message:saved?.message||g.error||'저장을 완료하지 못했습니다. 입력은 보존했습니다.'});

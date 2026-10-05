@@ -3470,23 +3470,32 @@ function validatePlannedProjection(value){
     return{date:ref.date,row:{...plannedSource(row),prod:null,hours:''},starts};
   });
 }
-function plannedKnownDays(){
+function plannedKnownDays(queued){
   const days={};
   if(driver.offline){for(const [path,file]of Object.entries(fieldOffline?.packet.files||{}))if(/^data\/\d{4}-\d{2}-\d{2}\.json$/.test(path)&&Array.isArray(file.rows))days[path.slice(5,15)]=file.rows;}
   else if(driver.mode==='local'){for(const key of LS.keys('ilbo.day.')){const date=key.slice(9),rows=LS.get(key,null)?.rows;if(plannedDate(date)&&Array.isArray(rows))days[date]=rows;}}
   if(S.rowsDate&&S.dayLoaded&&!S.rowsPartial)days[S.rowsDate]=S.rows;
-  for(const item of outboxAll()){const date=item.date;if(!days[date])days[date]=getCachedDay(date)||[];days[date]=pendingApply(date,days[date]);}
+  /* 예정 목록용(queued): 서버 연결에서 전송 대기만 걸린 다른 날짜는 기기 캐시로 그날 전체를 대신하지 않는다. 대기 기록 자체만 따로 돌려줘 서버 목록 위에 얹게 한다. */
+  const partial=new Set(),queue=outboxAll();
+  for(const item of queue){const date=item.date;if(queued&&driver.mode==='gh'&&!driver.offline&&!days[date]){partial.add(date);continue;}if(!days[date])days[date]=getCachedDay(date)||[];days[date]=pendingApply(date,days[date]);}
+  for(const date of partial){const items=queue.filter(item=>item.date===date),ids=new Set(items.flatMap(item=>(item.rows||[]).map(row=>row.id)));queued[date]={rows:pendingApply(date,getCachedDay(date)||[]).filter(row=>ids.has(row.id)),removed:new Set(items.flatMap(item=>item.removeIds||[]))};}
   return days;
 }
 function plannedWorkList({all=false}={}){
   const projection=S.productionProgress,complete=driver.mode!=='gh'||driver.offline||S.productionProgressMode==='ready'&&Array.isArray(projection?.plannedWorks),map=new Map((projection?.plannedWorks||[]).map(item=>[plannedKey(item),{...item,row:{...item.row},starts:[...item.starts]}]));
-  const days=plannedKnownDays();
+  const queued={},days=plannedKnownDays(queued);
   for(const [date,rows]of Object.entries(days)){
     for(const [key,item]of map)if(item.date===date&&!rows.some(row=>row.id===item.row.id))map.delete(key);
     for(const row of rows)if(isPlannedPreparation(row))map.set(date+'#'+row.id,{date,row,starts:map.get(date+'#'+row.id)?.starts||[]});
     for(const item of map.values())item.starts=item.starts.filter(start=>start.date!==date);
   }
-  for(const [date,rows]of Object.entries(days))for(const row of rows)if(row.plannedWorkRef&&Number(row.prod)>0){const item=map.get(plannedKey(row.plannedWorkRef));if(item)item.starts.push({date,...row});}
+  /* 전송 대기만 아는 날짜: 서버 목록의 그날 예정·착수는 그대로 두고, 대기 기록이 고치거나 지운 것만 바꾼다(모든 기기에서 같은 목록). */
+  for(const [date,{rows,removed}]of Object.entries(queued)){
+    for(const id of removed)map.delete(date+'#'+id);
+    for(const row of rows)if(isPlannedPreparation(row))map.set(date+'#'+row.id,{date,row,starts:map.get(date+'#'+row.id)?.starts||[]});
+    const ids=new Set([...removed,...rows.map(row=>row.id)]);for(const item of map.values())item.starts=item.starts.filter(start=>start.date!==date||!ids.has(start.id));
+  }
+  for(const [date,rows]of[...Object.entries(days),...Object.entries(queued).map(([date,item])=>[date,item.rows])])for(const row of rows)if(row.plannedWorkRef&&Number(row.prod)>0){const item=map.get(plannedKey(row.plannedWorkRef));if(item)item.starts.push({date,...row});}
   const items=[...map.values()].filter(item=>all||item.date<=S.date&&item.row.plannedWork.state==='waiting'&&!item.starts.some(start=>start.date<=S.date&&Number(start.prod)>0)).sort((a,b)=>a.date.localeCompare(b.date)||a.row.worker.localeCompare(b.row.worker,'ko')||a.row.product.localeCompare(b.row.product,'ko')||a.row.id.localeCompare(b.row.id));
   return{items,complete};
 }
@@ -3660,7 +3669,7 @@ function openPlannedWork(worker='',item=null){
 async function applyPlannedToBlock(item){
   if(!$('#entryOv').classList.contains('open')||$('#fWorker').value!==item.row.worker)return;
   const epoch=storeEpoch,date=S.date,worker=$('#fWorker').value,snapshot=formSnapshot(),drv=driver;
-  try{const rows=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||worker!==$('#fWorker').value||!$('#entryOv').classList.contains('open'))return;if(formSnapshot()!==snapshot){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}const row=pendingApply(item.date,rows).find(row=>row.id===item.row.id);if(!row||!isPlannedPreparation(row)||row.plannedWork.state!=='waiting')throw Error('예정 작업이 변경되었거나 취소되었습니다. 목록을 다시 확인해 주세요.');item={...item,row};}catch(e){if(epoch===storeEpoch)toast(e.message);return;}
+  try{const rows=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||worker!==$('#fWorker').value||!$('#entryOv').classList.contains('open'))return;if(!formSameSince(snapshot)){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}const row=pendingApply(item.date,rows).find(row=>row.id===item.row.id);if(!row||!isPlannedPreparation(row)||row.plannedWork.state!=='waiting')throw Error('예정 작업이 변경되었거나 취소되었습니다. 목록을 다시 확인해 주세요.');item={...item,row};}catch(e){if(epoch===storeEpoch)toast(e.message);return;}
   const same=[...$('#prodBlocks').children].find(el=>plannedKey(plannedStartForms.get(el)?.ref||{})===plannedKey(item));if(same){same.querySelector('.pb-prod').focus();return;}
   const el=[...$('#prodBlocks').children].find(el=>!el.querySelector('.pb-product').value.trim())||addBlock(null),row=item.row,progress=plannedGroupProgress(item),target=progress.target?.target||row.scheduleTarget;
   el.querySelector('.pb-product').value=row.product;el.querySelector('.pb-planmode').value=progress.started||target?'continue':'start';el.querySelector('.pb-plan').value=progress.started||target?'':row.plan;el.dataset.planModeChanged='1';
@@ -3670,7 +3679,7 @@ async function applyPlannedToBlock(item){
 }
 function plannedGroupItems(item){const route=item.row.scheduleConditions?.routing;if(!route?.group)return[item];return plannedWorkList({all:true}).items.filter(x=>x.date===item.date&&x.row.worker===item.row.worker&&x.row.plannedWork.state==='waiting'&&x.row.scheduleConditions?.routing?.group===route.group).sort((a,b)=>a.row.scheduleConditions.routing.lane-b.row.scheduleConditions.routing.lane||a.row.scheduleConditions.routing.order-b.row.scheduleConditions.routing.order);}
 function plannedGroupProgress(item,until=S.date){
- const rows=new Map((item.starts||[]).filter(r=>r.date<=until).map(r=>[r.date+'#'+r.id,r]));for(const [date,day]of Object.entries(plannedKnownDays()))if(date<=until)for(const row of day)if(row.plannedWorkRef&&plannedKey(row.plannedWorkRef)===plannedKey(item)&&!row.off){const key=date+'#'+row.id;if(Number(row.prod)>0||row.productionCompletion)rows.set(key,{...row,date});else rows.delete(key);}
+ const queued={},days=plannedKnownDays(queued),rows=new Map((item.starts||[]).filter(r=>r.date<=until).map(r=>[r.date+'#'+r.id,r]));for(const [date,day]of[...Object.entries(days),...Object.entries(queued).map(([date,pending])=>[date,pending.rows])])if(date<=until)for(const row of day)if(row.plannedWorkRef&&plannedKey(row.plannedWorkRef)===plannedKey(item)&&!row.off){const key=date+'#'+row.id;if(Number(row.prod)>0||row.productionCompletion)rows.set(key,{...row,date});else rows.delete(key);}
  const values=[...rows.values()].sort((a,b)=>(a.date+'#'+a.id).localeCompare(b.date+'#'+b.id)),made=values.reduce((sum,r)=>sum+(Number(r.prod)||0),0);let complete=made>=Number(item.row.plan)&&made>0,completedAt=complete?values.at(-1)?.date:null;
  for(const row of values)if(row.productionCompletion){complete=true;completedAt=row.date;}
  const keys=new Set(values.map(r=>'data/'+r.date+'.json#'+r.id)),entry=(S.productionProgress?.entries||[]).find(e=>keys.has(e.path+'#'+e.id)),target=entry&&(S.productionProgress?.targets||[]).find(t=>(t.target.originId||t.target.jobId)===(entry.originId||entry.jobId)&&t.target.worker===(entry.scheduleWorker||entry.scheduleTarget?.worker||entry.worker));
@@ -3684,7 +3693,7 @@ function plannedGroupHTML(items){
 }
 async function applyPlannedGroup(item){
  if(!$('#entryOv').classList.contains('open')||$('#fWorker').value!==item.row.worker)return;const epoch=storeEpoch,date=S.date,snapshot=formSnapshot(),drv=driver;
- try{const source=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||!$('#entryOv').classList.contains('open')||formSnapshot()!==snapshot){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}
+ try{const source=await drv.loadDay(item.date);assertContext(epoch);if(!AppAccess.unlocked||date!==S.date||!$('#entryOv').classList.contains('open')||!formSameSince(snapshot)){toast('작성 중인 내용은 유지했습니다. 예정 작업을 다시 선택해 주세요.');return;}
  const old=plannedGroupItems(item),items=old.map(x=>{const row=pendingApply(item.date,source).find(r=>r.id===x.row.id);if(!row||!isPlannedPreparation(row)||row.plannedWork.state!=='waiting'||row.worker!==item.row.worker||row.plannedWork.date!==item.date||progressStable(row.scheduleConditions?.routing)!==progressStable(x.row.scheduleConditions?.routing))throw Error('예정 작업이 변경되었습니다. 최신 흐름을 다시 확인하세요.');return{...x,row};}),ready=plannedGroupReady(items);if(!ready.length)throw Error('앞 품목이 완료되면 다음 날부터 이어서 불러올 수 있습니다.');
  for(const next of ready){if([...$('#prodBlocks').children].some(el=>plannedKey(plannedStartForms.get(el)?.ref||{})===plannedKey(next)))continue;
   const el=[...$('#prodBlocks').children].find(el=>!el.querySelector('.pb-product').value.trim())||addBlock(null),progress=plannedGroupProgress(next),row=next.row,target=progress.target?.target||row.scheduleTarget;
@@ -4232,12 +4241,16 @@ function renderGypsumLots(load=true){
 }
 function openFieldLots(){
  if(!AppAccess.unlocked)return;if(fieldLotSession&&fieldLotCurrent(fieldLotSession)){if(!fieldLotSession.dialog.open)fieldLotSession.dialog.showModal();return;}closeFieldLotDialog();
- const dialog=document.createElement('dialog');dialog.className='field-lot-dialog';dialog.setAttribute('aria-labelledby','fieldLotTitle');dialog.innerHTML='<h2 id="fieldLotTitle">'+esc(fmtMD(S.date))+' 석고 로트</h2><label>새로 사용할 로트<input class="f-input" name="lot" maxlength="120" disabled placeholder="로트 번호"></label><label><input type="checkbox" name="overlap" disabled> 이날은 이전 로트도 함께 사용</label><p>입력하지 않은 날은 이전 값을 사용합니다. 겹치는 날의 다음 날부터 새 로트만 사용합니다.</p><p class="field-lot-feedback" data-status role="status" aria-live="polite">최신 로트를 확인하고 있습니다…</p><p class="field-lot-error" role="alert"></p><div class="actions"><button type="button" data-close>닫기</button><button type="button" data-retry hidden>다시 불러오기</button><button type="button" data-save disabled>로트 저장</button></div>';
- const s={dialog,date:S.date,epoch:storeEpoch,drv:driver,auth:fieldLotsAuthVersion,events:[],base:null,ready:false,busy:false,dirty:false,read:0,parked:false};fieldLotSession=s;
+ const dialog=document.createElement('dialog');dialog.className='field-lot-dialog';dialog.setAttribute('aria-labelledby','fieldLotTitle');dialog.innerHTML='<h2 id="fieldLotTitle">'+esc(fmtMD(S.date))+' 석고 로트</h2><label>새로 사용할 로트<input class="f-input" name="lot" maxlength="120" placeholder="로트 번호"></label><label><input type="checkbox" name="overlap"> 이날은 이전 로트도 함께 사용</label><p>입력하지 않은 날은 이전 값을 사용합니다. 겹치는 날의 다음 날부터 새 로트만 사용합니다.</p><p class="field-lot-feedback" data-status role="status" aria-live="polite">최신 로트를 확인하고 있습니다…</p><p class="field-lot-error" role="alert"></p><div class="actions"><button type="button" data-close>닫기</button><button type="button" data-retry hidden>다시 불러오기</button><button type="button" data-save disabled>로트 저장</button></div>';
+ /* 누르면 바로 쓸 수 있게: 화면 카드에 이미 받아 둔 로트 값으로 먼저 채우고 입력칸을 연다. 저장만 최신 값 확인(ready) 뒤에 허용한다. */
+ const shown=fieldLots.epoch===storeEpoch?fieldLots.events.map(e=>({...e})):[];
+ const s={dialog,date:S.date,epoch:storeEpoch,drv:driver,auth:fieldLotsAuthVersion,events:shown,base:shown.find(e=>e.date===S.date)||null,ready:false,confirmed:false,touched:new Set(),busy:false,dirty:false,read:0,parked:false};fieldLotSession=s;
  const input=dialog.querySelector('[name=lot]'),overlap=dialog.querySelector('[name=overlap]'),save=dialog.querySelector('[data-save]'),close=dialog.querySelector('[data-close]'),retry=dialog.querySelector('[data-retry]'),status=dialog.querySelector('[data-status]'),error=dialog.querySelector('[role=alert]');
- const buttons=()=>{input.disabled=overlap.disabled=!s.ready||s.busy;save.disabled=!s.ready||s.busy||!s.dirty;save.textContent=s.busy?'저장 중…':'로트 저장';close.disabled=s.busy;retry.disabled=s.busy;dialog.setAttribute('aria-busy',String(s.busy||!s.ready&&retry.hidden))};
- const edited=()=>{if(!fieldLotCurrent(s)||!s.ready||s.busy)return;s.dirty=true;status.className='field-lot-feedback';status.textContent='변경한 내용을 저장해 주세요.';error.textContent='';buttons()};input.oninput=edited;overlap.onchange=edited;
- s.refresh=async()=>{if(!fieldLotCurrent(s)||s.busy)return;const read=++s.read;s.ready=false;retry.hidden=true;error.textContent='';status.className='field-lot-feedback';status.textContent='최신 로트를 확인하고 있습니다…';buttons();const ok=await loadFieldLots(true);if(!fieldLotCurrent(s)||read!==s.read)return;if(!ok){status.textContent='로트를 불러오지 못했습니다.';error.textContent=fieldLots.error||'연결을 확인하고 다시 불러와 주세요.';retry.hidden=false;buttons();return;}s.events=fieldLots.events.map(e=>({...e}));const base=s.events.find(e=>e.date===s.date)||null;if(!s.dirty){s.base=base;input.value=base?.lot||'';overlap.checked=base?.overlap||false;}s.ready=true;const current=GypsumLots.at(s.events,s.date);status.textContent=(s.drv.mode==='local'||s.drv.offline?'이 기기 기록':'현재 적용')+': '+(current.lots.join(' + ')||'미기록')+(s.dirty?' · 입력 내용은 유지했습니다.':'');buttons();};
+ input.value=s.base?.lot||'';overlap.checked=s.base?.overlap||false;
+ const buttons=()=>{input.disabled=overlap.disabled=s.busy||s.parked;save.disabled=!s.ready||s.busy||!s.dirty;save.textContent=s.busy?'저장 중…':'로트 저장';close.disabled=s.busy;retry.disabled=s.busy;dialog.setAttribute('aria-busy',String(s.busy||!s.ready&&retry.hidden))};
+ const edited=event=>{if(!fieldLotCurrent(s)||s.busy)return;s.dirty=true;if(!s.confirmed&&event?.target?.name)s.touched.add(event.target.name);if(s.ready){status.className='field-lot-feedback';status.textContent='변경한 내용을 저장해 주세요.';error.textContent='';}buttons()};input.oninput=edited;overlap.onchange=edited;
+ s.refresh=async()=>{if(!fieldLotCurrent(s)||s.busy)return;const read=++s.read;s.ready=false;retry.hidden=true;error.textContent='';status.className='field-lot-feedback';status.textContent='최신 로트를 확인하고 있습니다… 입력은 먼저 해도 됩니다.';buttons();const ok=await loadFieldLots(true);if(!fieldLotCurrent(s)||read!==s.read)return;if(!ok){status.textContent='로트를 불러오지 못했습니다.';error.textContent=fieldLots.error||'연결을 확인하고 다시 불러와 주세요.';retry.hidden=false;buttons();return;}s.events=fieldLots.events.map(e=>({...e}));const base=s.events.find(e=>e.date===s.date)||null;if(!s.dirty||!s.confirmed)s.base=base;   /* 최신 값을 처음 확인하기 전에 직접 고친 칸은 그대로 두고, 비교 기준은 방금 받은 최신 값으로 한다. 손대지 않은 칸은 최신 값으로 바꾼다 — 화면에 남아 있던 옛 값이 다른 기기의 수정을 되돌리지 않게 */
+  const keep=name=>s.dirty&&(s.confirmed||s.touched.has(name));if(!keep('lot'))input.value=base?.lot||'';if(!keep('overlap'))overlap.checked=base?.overlap||false;s.ready=s.confirmed=true;const current=GypsumLots.at(s.events,s.date);status.textContent=(s.drv.mode==='local'||s.drv.offline?'이 기기 기록':'현재 적용')+': '+(current.lots.join(' + ')||'미기록')+(s.dirty?' · 입력 내용은 유지했습니다.':'');buttons();};
  const requestClose=()=>{if(s.busy)return;if(s.dirty&&!confirm('저장하지 않은 로트 변경이 있습니다. 변경 내용을 버리고 닫을까요?'))return;closeFieldLotDialog()};retry.onclick=()=>void s.refresh();close.onclick=requestClose;dialog.oncancel=e=>{e.preventDefault();requestClose()};dialog.addEventListener('close',()=>{if(fieldLotSession===s&&AppAccess.unlocked&&!s.parked)closeFieldLotDialog()});dialog.addEventListener('keydown',e=>e.stopPropagation());
  save.onclick=async()=>{
   if(!fieldLotCurrent(s)||s.busy||!s.ready||!s.dirty)return;const auth=s.auth;let value;
@@ -4248,7 +4261,7 @@ function openFieldLots(){
   }catch(e){if(fieldLotCurrent(s)&&auth===s.auth){status.className='field-lot-feedback';status.textContent='입력 내용은 그대로 있습니다.';error.textContent=e.message;fieldLots.notice={date:s.date,kind:'error',text:'로트 저장 실패 · 입력창에서 다시 저장해 주세요.'};renderGypsumLots(false);}}
   finally{fieldWrites--;if(auth===s.auth){s.busy=false;if(fieldLotCurrent(s))buttons()}}
  };
- s.buttons=buttons;document.body.append(dialog);dialog.showModal();buttons();void s.refresh();
+ s.buttons=buttons;document.body.append(dialog);dialog.showModal();buttons();void s.refresh();input.focus();
 }
 window.addEventListener('production:lock',()=>{fieldLotsAuthVersion++;fieldLots.generation++;fieldLots.promise=null;fieldLots.loaded=0;if(fieldLots.notice?.kind==='pending')fieldLots.notice=null;const s=fieldLotSession;if(s){s.parked=true;s.ready=false;s.busy=false;s.read++;s.buttons()}});
 window.addEventListener('production:login',()=>{const s=fieldLotSession;if(!s)return;if(s.epoch!==storeEpoch||s.drv!==driver||s.date!==S.date){closeFieldLotDialog();return;}s.auth=fieldLotsAuthVersion;s.parked=false;void s.refresh()});
@@ -5289,7 +5302,7 @@ async function loadDayCached(date){
   try{ return await driver.loadDay(date); }                                /* gh는 loadDay→noteDay가 dayCache 갱신 */
   catch(e){ return driver.mode === 'gh' ? getCachedDay(date) : null; }
 }
-let recentSeq = 0, hoursSuggestionKey='',hoursSuggestionSeq=0;
+let recentSeq = 0, hoursSuggestionKey='',hoursSuggestionSeq=0,hoursSuggested=null,hoursTyped=false;   /* hoursTyped: 이 폼에서 사용자가 시간 칸을 직접 고침 → 추천으로 덮지 않음 */
 async function suggestWorkerHours(){
  const worker=$('#fWorker').value.trim(),date=S.date,epoch=storeEpoch,key=JSON.stringify([epoch,date,worker]);
  if(!worker||S.editId||S.entryMode==='case'||hoursSuggestionKey===key)return;hoursSuggestionKey=key;const seq=++hoursSuggestionSeq,initial=$('#fHours').value;
@@ -5298,9 +5311,14 @@ async function suggestWorkerHours(){
  let value=fromRows(S.rowsDate===date?S.rows:[]);
  if(value==null){await ensureProductHistory();if(epoch!==storeEpoch||seq!==hoursSuggestionSeq)return;const days={...productHistory.days,...S.progressDays,...dayCache},history=(S.productionProgress?.hoursHistory||[]).filter(r=>r.date<date&&r.worker===worker),dates=[...new Set([...Object.keys(days).filter(d=>d<date),...history.map(r=>r.date)])].sort().reverse();for(const ds of dates){value=Object.hasOwn(days,ds)?fromRows(mergePendingRowsForHistory(ds,days[ds])):history.find(r=>r.date===ds)?.hours;if(value!=null)break;}}
 
- if(epoch!==storeEpoch||seq!==hoursSuggestionSeq||S.date!==date||$('#fWorker').value.trim()!==worker||S.editId||S.entryMode==='case'||!$('#entryOv').classList.contains('open')||$('#fHours').value!==initial||$('#draftBar').hidden===false)return;
+ if(epoch!==storeEpoch||seq!==hoursSuggestionSeq||S.date!==date||$('#fWorker').value.trim()!==worker||S.editId||S.entryMode==='case'||!$('#entryOv').classList.contains('open')||$('#fHours').value!==initial||hoursTyped||$('#draftBar').hidden===false)return;
  if(value==null){const prior=(S.productionProgress?.history||[]).filter(r=>r.date<date&&r.people.some(p=>p.worker===worker&&valid(p.hours))).sort((a,b)=>b.date.localeCompare(a.date))[0];value=prior?.people.find(p=>p.worker===worker&&valid(p.hours))?.hours;}
- if(value!=null){const clean=!entryDirty();$('#fHours').value=value;if(clean)entrySnap=formSnapshot();}
+ if(value!=null){const clean=!entryDirty();$('#fHours').value=value;hoursSuggested={from:initial,to:$('#fHours').value};if(clean)entrySnap=formSnapshot();else if(S.draftOwn)saveDraft();}   /* 예정을 불러와 이미 임시저장한 폼이면 그 보관분에도 같은 시간을 남김 */
+}
+/* 조회 전후 폼 비교: 그 사이 작업시간 추천이 채운 시간은 사용자 입력이 아니므로 바뀐 것으로 보지 않는다. */
+function formSameSince(before){
+ const now=formSnapshot();if(now===before)return true;if(!hoursSuggested)return false;
+ try{const a=JSON.parse(before);if(a.h!==hoursSuggested.from||$('#fHours').value!==hoursSuggested.to)return false;a.h=hoursSuggested.to;return JSON.stringify(a)===JSON.stringify(JSON.parse(now));}catch{return false;}
 }
 
 function recentScheduleRowAvailable(row){
@@ -5331,7 +5349,7 @@ async function recentContinuationDay(date){
  return {raw:rows,rows:pendingApply(date,rows)};
 }
 async function updateRecentBtn(auto){
-  if(renderPlannedEntryChoices()){recentSeq++;return;}
+  if(renderPlannedEntryChoices()){recentSeq++;suggestWorkerHours();return;}   /* 예정 작업이 있거나 불러온 폼에서도 그 작업자의 최근 작업시간을 기본값으로 */
   $$('#prodBlocks .pb').forEach(updateProdProg);
   suggestWorkerHours();
   auto = auto === true;   /* change 이벤트 객체가 넘어오는 경우 방지 */
@@ -5438,7 +5456,7 @@ function openEntry(row, presetName, mode){
   $('#entryDel').style.display = row ? '' : 'none';
   $('#entrySave').textContent=entrySaveLabel();
   fillWorkerChips();
-  hoursSuggestionKey='';hoursSuggestionSeq++;
+  hoursSuggestionKey='';hoursSuggestionSeq++;hoursSuggested=null;hoursTyped=false;
   const me = S.me || {};
   $('#fWorker').value = row ? row.worker : (presetName || me.worker || '');
   $('#fHours').value = row ? (row.hours ?? '') : (me.hours ?? 10);
@@ -6608,8 +6626,9 @@ function init(){
     }catch(e){ toast(e.message); }
     finally{$('#entrySave').disabled=false;$('#entryDel').disabled=false;}
   };
-  $('#hrMinus').onclick = () => { $('#fHours').value = Math.max(0, (numOr($('#fHours').value,0)||0)-0.5); };
-  $('#hrPlus').onclick = () => { $('#fHours').value = Math.min(24,(numOr($('#fHours').value,0)||0)+0.5); };
+  $('#hrMinus').onclick = () => { hoursTyped=true; $('#fHours').value = Math.max(0, (numOr($('#fHours').value,0)||0)-0.5); };
+  $('#hrPlus').onclick = () => { hoursTyped=true; $('#fHours').value = Math.min(24,(numOr($('#fHours').value,0)||0)+0.5); };
+  $('#fHours').addEventListener('input', () => { hoursTyped=true; });   /* 직접 고친 작업시간은 이후 추천이 덮지 않음 */
   $('#addProdBlock').onclick = () => {
     const el = addBlock(null);
     el.scrollIntoView({behavior:'smooth', block:'start'});
