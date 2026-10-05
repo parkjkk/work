@@ -2959,9 +2959,10 @@ function mergeProductionMonth(base,local,remote){
   const netFields=productionDelta(b,l,extra);
   if(!netFields||netFields.some(f=>!intent.includes(f)))return null;
   for(const key of productionIdentity)if(!equal(recordField(first.before,key),recordField(b,key))||!equal(recordField(event.after,key),recordField(l,key))||!['date','worker','product',...extra].includes(key)&&!equal(recordField(b,key),recordField(l,key)))return{conflict:true,field:'rows:'+id+':'+key};
-  // Rebased follow-up queues retain the original event. Only its edited slots
-  // must match the new base (or an already accepted value), not unrelated cells.
-  for(const key of intent)if(!equal(productionCell(event.after,key),productionCell(l,key))||!equal(productionCell(first.before,key),productionCell(b,key))&&!equal(productionCell(event.after,key),productionCell(b,key)))return null;
+  // An explicit rebase can retain a received event whose original edited value
+  // differs from the rebased base. Exact receipt plus the proved desired slots
+  // permits adopting the server; an unreceived or partial chain stays strict.
+  for(const key of intent)if(!equal(productionCell(event.after,key),productionCell(l,key))||pending.length&&!equal(productionCell(first.before,key),productionCell(b,key))&&!equal(productionCell(event.after,key),productionCell(b,key)))return null;
   // An exact persisted event is the ACK proof even if later server work has
   // changed or deleted that row. Never replay its old quantity after receipt.
   if(!pending.length)continue;
@@ -3327,7 +3328,7 @@ class Workspace{
   this.loaded=true;this.catalogBlocked=problem;this.lastError=problem;if(applied&&e.state===state&&syncStatus?.data&&syncStatus.sha&&!problem)this.initialSyncStatus={state,result:syncStatus};
   const transfers=auditTransferIssues(e.state);this.status(problem?problem.message:transfers.length?auditError(transfers).message:e.queue.length?'기기 변경자료 · 전송 대기':'GitHub 최신자료');return e.state;
  }
- async save(next,monthKeys=[],catalog=false,archive=false){if(this.resolving)throw Error('충돌자료를 복구하는 동안 잠시 기다려 주세요.');if(!this.loaded||this.closed)throw Error('저장소 자료를 먼저 불러와 주세요.');if(this.catalogBlocked)throw this.catalogBlocked;next=clone(next);next.scheduleHistory=scheduleHistory(next);next.scheduleDryHistory=scheduleDryHistory(next);const baseline=sourceBaseline(next);if(baseline){next.scheduleSourceBaseline=baseline;const queued=[...this.envelope.queue].reverse().find(q=>q.path==='meta/catalog.json'),published=(queued?.local||this.envelope.baseline['meta/catalog.json']||[]).find(r=>r.id==='catalog')?.scheduleSourceBaseline;if(JSON.stringify(baseline)!==JSON.stringify(published))catalog=true}const invocation=clone(this.envelope.state);const groupId=C.id();const e=await this.mutate(e=>{
+ async save(next,monthKeys=[],catalog=false,archive=false){if(this.resolving)throw Error('충돌자료를 복구하는 동안 잠시 기다려 주세요.');if(!this.loaded||this.closed)throw Error('저장소 자료를 먼저 불러와 주세요.');if(this.catalogBlocked)throw this.catalogBlocked;next=clone(next);next.scheduleHistory=scheduleHistory(next);next.scheduleDryHistory=scheduleDryHistory(next);const baseline=sourceBaseline(next);if(baseline){next.scheduleSourceBaseline=baseline;const queued=[...this.envelope.queue].reverse().find(q=>q.path==='meta/catalog.json'),published=(queued?.local||this.envelope.baseline['meta/catalog.json']||[]).find(r=>r.id==='catalog')?.scheduleSourceBaseline;if(JSON.stringify(baseline)!==JSON.stringify(published))catalog=true}const invocation=clone(this.envelope.state);const groupId=C.id(),beforePublish=this.beforeExplicitSavePublish;const e=await this.mutate(async e=>{
  const problem=unitSyncError(e.state);if(problem)throw problem;
  if(!archive){if(e.state?.scheduleView)next.scheduleView=clone(e.state.scheduleView);else delete next.scheduleView}
  const auditOperations=acceptedAuditOperations(next,monthKeys),auditIssues=auditTransferIssues(e.state).filter(t=>monthKeys.some(key=>(key===t.sourceMonth||key===t.targetMonth)&&auditSensitive(e.state?.months[key],next.months[key]))&&!auditOperations.includes(t.operationId));if(auditIssues.length)throw auditError(auditIssues);
@@ -3338,7 +3339,7 @@ class Workspace{
  if(archive)for(const a of next.archive)add('archive/'+encodeURIComponent(a.name)+'.json',[{...a,id:a.name,kind:'sheet'}]);
  if(syncMonths.length){const prepared=clone(e.state);prepared.catalogUnitSync={id:groupId,months:syncMonths};add('meta/catalog.json',packCatalog(prepared),'prepare')}
  for(const key of monthKeys)add('months/'+key+'.json',packMonth(next.months[key]));if(catalog)add('meta/catalog.json',packCatalog(next),syncMonths.length?'finish':null);
- e.groups??=[];e.groups.push({id:groupId,ids,paths,acked:[],status:'pending',...(syncMonths.length?{unitSync:true}:{}),...(auditOperations.length?{auditOperations}:{})});e.state=clone(next);if(e.state.archive.length)e.state.archiveNames=e.state.archive.map(a=>a.name);e.state.archive=[]});this.status('전송 대기 '+e.queue.length+'건');this.flush();return next}
+ e.groups??=[];e.groups.push({id:groupId,ids,paths,acked:[],status:'pending',...(syncMonths.length?{unitSync:true}:{}),...(auditOperations.length?{auditOperations}:{})});e.state=clone(next);if(e.state.archive.length)e.state.archiveNames=e.state.archive.map(a=>a.name);e.state.archive=[];if(beforePublish)await beforePublish(e,groupId)});this.status('전송 대기 '+e.queue.length+'건');this.flush();return next}
  async holdSchedule(q){
   if(!/^months\//.test(q.path))return false;
   const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!Array.isArray(remote.data.records))return false;
@@ -3370,7 +3371,7 @@ class Workspace{
   }catch(err){
    // Only a business conflict is separable. Authentication, unit migration,
    // stocktake, device-CAS and network failures keep their original boundary.
-   if(err.conflicts?.length)try{if(await this.holdSchedule(q))continue}catch(holdError){err=holdError}
+   if(err.conflicts?.length&&!this.explicitSaveWaiters)try{if(await this.holdSchedule(q))continue}catch(holdError){err=holdError}
    this.lastError=err;if(err.code==='CATALOG_UNIT_SYNC')this.catalogBlocked=err;
    this.status(['CATALOG_UNIT_SYNC','AUDIT_TRANSFER_SYNC'].includes(err.code)?err.message:err.conflicts?'동시 수정 확인 필요':this.envelope.groups?.some(g=>g.status==='partial')?'일부 저장 완료 · 재전송 대기':'기기에 보관 · 재전송 대기');return;
   }}};this.flushing=run().finally(()=>{this.flushing=null});return this.flushing;
@@ -5731,8 +5732,11 @@ function sheetSaveFailureInfo(error){
  return{code:'SAVE_UNCONFIRMED',message:'서버 저장 결과를 확인하지 못했습니다.'};
 }
 async function sheetAwaitRemoteAck(client=typeof workspace==='undefined'?null:workspace){
- if(!client||client.pendingMigration||client.closed||typeof client.flush!=='function')return false;
- await client.flush();
+ if(!client||client.offline||client.pendingMigration||client.closed||typeof client.flush!=='function')return false;
+ // Explicit saves get a chance to replay the validated intent before the
+ // automatic outbox separates a schedule into a manual-review archive.
+ client.explicitSaveWaiters=(client.explicitSaveWaiters||0)+1;
+ try{await client.flush()}finally{client.explicitSaveWaiters--}
  const savingPlan=[...sheetRegistry.values()].find(g=>g.saving&&g.id==='plan-jobs'&&g.scope===client.key);
  if(savingPlan&&(client.envelope.heldSchedules||[]).some(h=>!savingPlan.heldOnSave?.includes(h.id)))throw Error('일정 변경은 최신 생산자료와 확인이 필요해 따로 보관했습니다. 상단의 보관한 일정 확인에서 비교해 주세요. 입력 초안은 유지됩니다.');
  if(client.envelope?.queue?.length){
@@ -5830,10 +5834,11 @@ function sheetGrid(id,spec){
  }
  return `<section class="sheetEditor" data-sheet-id="${esc(id)}" data-sheet-key="${esc(key)}">${g.html()}</section>`;
 }
+function sheetDraftVersion(value){const version=Number(value);return Number.isSafeInteger(version)&&version>=0?version:0}
 class SheetEditor{
  constructor(id,key,spec){this.id=id;this.key=key;this.scope=sheetScope();this.month=month;this.spec=spec;this.loading=true;this.loaded=false;this.dirty=false;this.saving=false;this.storageError='';this.error='';this.search='';this.selected='';this.revealId='';this.groupDate=spec.grouping?.defaultValue||'';this.pasteOpen=false;this.advanced=false;this.draft=this.fresh();this.writeQueue=Promise.resolve();this.revision=0;this.persistedDraft=undefined;this.storageKey='sheet.v1:'+this.key;this.draftCopies=[];}
  fresh(){const d=this.spec.createDraft?this.spec.createDraft():{baseRows:C.clone(this.spec.rows||[]),rows:C.clone(this.spec.rows||[]),deleted:[],revision:0};d.deleted??=[];d.revision??=0;return d}
- reconcileDraft(){if(!this.dirty||this.loading||this.saving||this.spec.readonly||!this.spec.reconcileDraft)return;try{this.draft=this.spec.reconcileDraft(this.draft)||this.draft;this.settleAcknowledgedDraft()}catch(e){this.error=e.message}}
+ reconcileDraft(){if(!this.dirty||this.loading||this.saving||this.storageError||this.spec.readonly||!this.spec.reconcileDraft)return;try{this.draft=this.spec.reconcileDraft(this.draft)||this.draft;this.settleAcknowledgedDraft()}catch(e){this.error=e.message}}
  settleAcknowledgedDraft(){
   if(this.ackCleanup||!this.spec.acknowledgedDraft?.(this.draft,this))return;
   const draft=this.draft,revision=this.revision,safe=()=>this.draft===draft&&this.revision===revision&&this.dirty&&!this.saving&&!this.loading&&!this.storageError&&!this.spec.readonly&&sheetScope()===this.scope&&month===this.month&&this.spec.acknowledgedDraft?.(draft,this);
@@ -5883,11 +5888,11 @@ class SheetEditor{
  validStoredDraft(saved){return saved&&saved.schema===1&&saved.scope===this.scope&&saved.month===this.month&&Array.isArray(saved.draft?.rows)&&Array.isArray(saved.draft?.baseRows)}
  async refreshDraftCopies(){if(!S.localEntries)return;const base='sheet.v1:'+this.key;this.draftCopies=(await S.localEntries(base)).filter(e=>(e.key===base||e.key.startsWith(base+':copy:'))&&e.key!==this.storageKey&&this.validStoredDraft(e.value))}
  draftCopiesHTML(){return this.draftCopies?.length?'<details><summary>다른 창의 보관 초안 '+this.draftCopies.length+'개</summary><p>현재 입력은 보관한 뒤 선택한 초안을 엽니다. 저장 전 내용을 확인해 주세요.</p>'+this.draftCopies.map(e=>{const counts=sheetCounts(e.value.draft),count=(counts.changed||0)+(counts.added||0)+(counts.deleted||0),at=e.value.updatedAt?new Date(e.value.updatedAt).toLocaleString('ko-KR'):'이전 입력';return '<button type="button" data-sheet-command="draftLoad" data-draft-key="'+esc(e.key)+'">'+esc(at)+' · 변경 '+count+'건 열기</button>'}).join('')+'</details>':''}
- async openStoredDraft(key){if(this.locked())return;const base='sheet.v1:'+this.key;if(key!==base&&!key.startsWith(base+':copy:'))throw Error('이 표의 초안이 아닙니다.');this.saving=true;this.update();try{if(this.dirty)await this.queueDraft();const saved=await S.localGet(key);if(sheetScope()!==this.scope||month!==this.month||this.spec.readonly)throw Error('작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 초안을 열어 주세요.');if(!this.validStoredDraft(saved))throw Error('선택한 초안이 변경되었거나 정리되었습니다. 표를 다시 열어 주세요.');this.storageKey=key;this.rememberDraftKey();this.persistedDraft=C.clone(saved);this.draft=C.clone(saved.draft);this.dirty=true;await this.refreshDraftCopies();this.error='선택한 보관 초안을 열었습니다. 내용을 확인한 뒤 변경 저장을 누르세요.'}finally{this.saving=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
+ async openStoredDraft(key){if(this.locked())return;const initialOwner=workspace;const base='sheet.v1:'+this.key;if(key!==base&&!key.startsWith(base+':copy:'))throw Error('이 표의 초안이 아닙니다.');this.saving=true;this.update();try{if(this.dirty)await this.queueDraft();const saved=await S.localGet(key);if(sheetScope()!==this.scope||month!==this.month||this.spec.readonly)throw Error('작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 초안을 열어 주세요.');if(!this.validStoredDraft(saved))throw Error('선택한 초안이 변경되었거나 정리되었습니다. 표를 다시 열어 주세요.');this.storageKey=key;this.rememberDraftKey();this.persistedDraft=C.clone(saved);this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.draft=C.clone(saved.draft);this.dirty=true;this.error='선택한 보관 초안을 열었습니다. 내용을 확인한 뒤 변경 저장을 누르세요.';try{if(typeof explicitQueuedDraftsRestoreOnLoad==='function')await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month)}catch(e){this.storageError='편집 초안의 저장 내역을 확인하지 못했습니다: '+e.message;throw e}await this.refreshDraftCopies()}finally{this.saving=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
 
- async load(){if(this.loaded)return;this.loaded=true;const initialDraft=this.draft;try{try{const base='sheet.v1:'+this.key,key=sessionStorage.getItem(this.draftPointer());if(key===base||key?.startsWith(base+':copy:'))this.storageKey=key}catch{}const saved=await S.localGet(this.storageKey);this.rememberDraftKey();this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(!this.validStoredDraft(saved))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=C.clone(saved.draft);this.error='저장 전 편집 내용을 복원했습니다.'}}await this.refreshDraftCopies()}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();if(this.draft===initialDraft)this.update();else this.refresh();this.spec.onChange?.(this)}}
- queueDraft({compare=false}={}){const snapshot=C.clone(this.draft),version=++this.revision;this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{const record={...(this.persistedDraft||{}),schema:1,scope:this.scope,month:this.month,version,updatedAt:new Date().toISOString(),draft:snapshot};try{await S.localSet(this.storageKey,record,{expected:this.persistedDraft})}catch(error){if(error.code!=='DEVICE_CONFLICT'||compare)throw error;const key='sheet.v1:'+this.key+':copy:'+C.id();await S.localSet(key,record,{expected:undefined});this.storageKey=key;this.rememberDraftKey();this.error='다른 창의 입력과 이 창의 입력을 각각 보관했습니다. 현재 입력을 계속 저장할 수 있습니다.';await this.refreshDraftCopies()}this.persistedDraft=C.clone(record);this.update()});this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
- async clearStoredDraft(){let cleared=true;try{await S.localSet(this.storageKey,null,{expected:this.persistedDraft});this.persistedDraft=null}catch(error){if(error.code!=='DEVICE_CONFLICT')throw error;cleared=false;this.storageKey='sheet.v1:'+this.key+':copy:'+C.id();this.persistedDraft=undefined;this.rememberDraftKey()}await this.refreshDraftCopies();return cleared}
+ async load(){if(this.loaded)return;this.loaded=true;const initialDraft=this.draft,initialOwner=workspace;try{try{const base='sheet.v1:'+this.key,key=sessionStorage.getItem(this.draftPointer());if(key===base||key?.startsWith(base+':copy:'))this.storageKey=key}catch{}const saved=await S.localGet(this.storageKey);this.rememberDraftKey();this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(!this.validStoredDraft(saved))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=C.clone(saved.draft);this.error='저장 전 편집 내용을 복원했습니다.';if(typeof explicitQueuedDraftsRestoreOnLoad==='function')await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month)}}await this.refreshDraftCopies()}catch(e){this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();if(this.draft===initialDraft)this.update();else this.refresh();this.spec.onChange?.(this)}}
+ queueDraft({compare=false}={}){const snapshot=C.clone(this.draft),version=this.revision=Math.max(sheetDraftVersion(this.revision),sheetDraftVersion(this.persistedDraft?.version))+1;this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{const record={...(this.persistedDraft||{}),schema:1,scope:this.scope,month:this.month,version,updatedAt:new Date().toISOString(),draft:snapshot};try{await S.localSet(this.storageKey,record,{expected:this.persistedDraft})}catch(error){if(error.code!=='DEVICE_CONFLICT'||compare)throw error;const key='sheet.v1:'+this.key+':copy:'+C.id();await S.localSet(key,record,{expected:undefined});this.storageKey=key;this.rememberDraftKey();this.error='다른 창의 입력과 이 창의 입력을 각각 보관했습니다. 현재 입력을 계속 저장할 수 있습니다.';await this.refreshDraftCopies()}this.persistedDraft=C.clone(record);this.update()});this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
+ async clearStoredDraft({preserveSelection=false}={}){let cleared=true;try{await S.localSet(this.storageKey,null,{expected:this.persistedDraft});this.persistedDraft=null}catch(error){if(error.code!=='DEVICE_CONFLICT')throw error;cleared=false;if(preserveSelection)return false;this.storageKey='sheet.v1:'+this.key+':copy:'+C.id();this.persistedDraft=undefined;this.rememberDraftKey()}await this.refreshDraftCopies();return cleared}
  changed(){this.draft.revision=(this.draft.revision||0)+1;this.dirty=true;this.error='';this.queueDraft();this.update();this.spec.onChange?.(this)}
  set(id,key,value){if(this.locked())return;const row=this.draft.rows.find(r=>r.id===id),column=this.spec.columns.find(c=>c.key===key);if(!row||column&&!this.editable(column,row))return;if(this.spec.patch)this.spec.patch(this.draft,id,{[key]:value});else row[key]=value;this.changed();if(this.spec.refreshOnFields?.includes(key)){this.revealId=id;this.refresh();this.focus(id,this.spec.focusAfterSet?.(key,row,this)||key)}}
  add(seed){if(this.locked()||!this.spec.addRow)return;const previous=this.draft.rows.filter(r=>!this.draft.deleted.some(d=>d.id===r.id)).at(-1);let row=seed||this.spec.addRow(previous);if(!row)return;row.id||=C.id();if(this.spec.add)row=this.spec.add(this.draft,row)||row;else this.draft.rows.push(row);this.selected=row.id;this.changed();this.refresh();this.focus(row.id,this.columns().find(c=>this.editable(c,row))?.key);return row}
@@ -5991,7 +5996,7 @@ class SheetEditor{
  }
  async save(options={}){
   const bulk=options.bulk===true,owner=workspace,contextOK=()=>workspace===owner&&sheetScope()===this.scope&&month===this.month&&(typeof sheetExplicitSaveContextValid!=='function'||sheetExplicitSaveContextValid(this,owner));
-  let committed=false,remote=false,error=null;
+  let committed=false,remote=false,error=null;const commitArchives=[];
   const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||''});
   if(!contextOK()){error='context';this.error='작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 저장해 주세요.';this.update();return result()}
   if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
@@ -6004,18 +6009,27 @@ class SheetEditor{
    const check=this.inspect(explicitOptions);if(!check.ok){error='validation';this.error=check.errors.map(e=>`${this.rowNumber(e.id)}행: ${e.message}`).slice(0,5).join(' / ');if(!bulk&&check.errors[0])this.focus(check.errors[0].id,check.errors[0].field);return result()}
    const snapshot=C.clone(this.draft);phase='draft-save';
    if(!sheetEqual(storedDraft,snapshot))await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}
-   phase='save';await this.spec.commit(snapshot,explicitOptions);
+   phase='save';
+   const previousPublish=owner?.beforeExplicitSavePublish,archivePublish=typeof sheetArchiveExplicitCommit==='function'&&owner&&!owner.offline&&!owner.pendingMigration?async (envelope,groupId)=>{if(previousPublish)await previousPublish(envelope,groupId);const archive=await sheetArchiveExplicitCommit(this,owner,envelope,contextOK,groupId);if(archive)commitArchives.push(archive)}:null;
+   if(archivePublish)owner.beforeExplicitSavePublish=archivePublish;
+   try{await this.spec.commit(snapshot,explicitOptions)}finally{if(archivePublish&&owner.beforeExplicitSavePublish===archivePublish){if(previousPublish===undefined)delete owner.beforeExplicitSavePublish;else owner.beforeExplicitSavePublish=previousPublish}}
    if(!contextOK()){phase='context';throw Error('원장 처리 중 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
-   remote=await sheetAwaitRemoteAck(owner);committed=true;
+   try{remote=await sheetAwaitRemoteAck(owner)}catch(e){
+    // Another device can write after the initial snapshot, too. The same
+    // proved replay must cover the outbox created by this very save click.
+    if(!contextOK()||typeof sheetQueuedRetryable!=='function'||!sheetQueuedRetryable(e)||!await sheetReplayQueuedSave(this,owner,{valid:contextOK}))throw e;
+    remote=true;
+   }committed=true;
+   if(remote&&typeof sheetConfirmExplicitCommit==='function')await sheetConfirmExplicitCommit(this,owner,commitArchives,contextOK);
    if(!contextOK()){phase='context';throw Error('서버 확인 중 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
    this.error=options.successMessage||(remote?'변경 내용을 서버에 저장했습니다. 다른 기기에 자동 반영됩니다.':'변경 내용을 저장했습니다.');
    phase='draft-save';await this.writeQueue;if(!contextOK()){phase='context';throw Error('초안 정리 전에 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}const remaining=this.spec.rebaseAfterCommit?.(snapshot);
    if(remaining){this.draft=remaining;this.dirty=true;try{await this.queueDraft();this.error+=' 입력 대기 행은 기기 초안에 남겼습니다.'}catch(e){error='draft-save';this.error='원장은 저장됐지만 남은 준비행의 기기 보관에 실패했습니다. 이 화면을 닫지 말고 다시 저장해 주세요. '+e.message}}
-   else{this.dirty=false;try{if(!await this.clearStoredDraft())this.error+=' 다른 창의 초안은 그대로 보관했습니다.'}catch(e){error='draft-cleanup';this.error='원장 저장은 완료됐지만 초안 정리를 하지 못했습니다. '+e.message}}
+   else{this.dirty=false;try{let cleared;for(let attempt=0;attempt<2;attempt++){try{cleared=await this.clearStoredDraft({preserveSelection:true});break}catch(e){if(attempt||e?.code==='DEVICE_CONFLICT'||!contextOK())throw e}}if(!cleared){const conflict=Error('다른 창의 초안이 바뀌어 그대로 보관했습니다. 이 화면의 저장된 입력은 다시 열어 확인합니다.');conflict.code='DEVICE_CONFLICT';throw conflict}if(typeof sheetPruneExplicitCommit==='function')await sheetPruneExplicitCommit(this,owner,commitArchives,contextOK);}catch(e){error='draft-cleanup';this.error='원장 저장은 완료됐지만 초안 정리를 하지 못했습니다. '+e.message;if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK)}}
    if(!contextOK()){phase='context';throw Error('저장 완료 뒤 연결이 바뀌었습니다. 새 연결의 입력 상태는 변경하지 않았습니다.')}
    this.saving=false;busy=false;
    if(!bulk){const pos=this.host()?.querySelector('.sheetViewport'),left=pos?.scrollLeft||0,top=pos?.scrollTop||0;render();const updated=this.host()?.querySelector('.sheetViewport');if(updated){updated.scrollLeft=left;updated.scrollTop=top}toast(this.error)}
-  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message;if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
+  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message;if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
   return result();
  }
  async undo(){if(this.locked()||busy)return;if(!confirm('이 표에서 아직 저장하지 않은 변경을 취소할까요?'))return;this.saving=true;busy=true;this.update();try{await this.writeQueue.catch(()=>{});const cleared=await this.clearStoredDraft();this.draft=this.fresh();this.dirty=false;this.error='변경을 취소했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}catch(e){this.error=e.message}finally{this.saving=false;busy=false;this.refresh();this.spec.onChange?.(this)}}
@@ -6722,7 +6736,7 @@ function pgExplicitSaveDraft(d,options={}){
  if(!merged.conflicts.some(c=>c.kind==='metadata')){result.calendar=merged.calendar;result.baseCalendar=C.clone(remote)}
  return result;
 }
-async function pgCommit(d,options={}){
+function pgApplyCommit(d,options={}){
  if(m().closed)throw Error('마감월은 수정할 수 없습니다.');
  // A save may follow automatic actuals refresh or a restored device draft
  // without another render. Apply explicit schedule edits over the newest job;
@@ -6743,8 +6757,9 @@ async function pgCommit(d,options={}){
  for(const row of removed)O.remove(n,pgJobMonth(row),'jobs',row.id,d.deleted.find(r=>r.id===row.id)?.reason||'');
  if(calChanged){n.calendar=C.clone(d.calendar);O.history(n.months[month],'작업일·휴일 일괄 수정',d.baseCalendar,d.calendar,'일정표 휴일 편집')}
  if(basisChanged){n.months[month].scheduleAsOf=d.scheduleAsOf;O.history(n.months[month],'일정 계산 기준일 변경',d.baseScheduleAsOf??null,d.scheduleAsOf,'사용자가 오늘 기준 재계산 선택')}
- if(calChanged||basisChanged)affected.add(month);await persist(n,[...affected],calChanged||created);
+ if(calChanged||basisChanged)affected.add(month);return{state:n,monthKeys:[...affected],catalog:calChanged||created};
 }
+async function pgCommit(d,options={}){const applied=pgApplyCommit(d,options);await persist(applied.state,applied.monthKeys,applied.catalog)}
 function pgNew(previous,manual=false){return{id:C.id(),originId:null,_ownerMonth:month,product:'',worker:previous?.worker||state.workers[0]||'',start:today().startsWith(month)?today():month+'-01',plan:null,daily:previous?.daily||null,group:'',machines:[{name:'',qty:null}],manual,end:null,duration:manual?1:null,note:''}}
 function pgPatchJob(d,id,patch){
  const row=d.rows.find(r=>r.id===id);if(!row)return;d.manualRateErrors??={};try{if('daily'in patch&&row.handoffs?.length&&typeof pgHandoffDailyPatch==='function'){const value=patch.daily;delete patch.daily;Object.assign(patch,pgHandoffDailyPatch(row,value));}patch=pgManualDatePatch(row,patch,null,{...state,calendar:d.calendar||state.calendar})}catch(e){d.manualRateErrors[id]=e.message;return}if(row.manual&&!pgStarted(row)&&!pgRouting(row)&&'daily'in patch&&!pgEqual(row.daily,patch.daily))patch.manualEndMode='daily';Object.assign(row,patch);if(['daily','handoffs','plan','start','worker','end'].some(key=>key in patch))delete d.manualRateErrors[id];
@@ -9211,8 +9226,11 @@ function ilboDraftMergeBlock(client){
 function ilboDraftComparable(draft){if(!draft||typeof draft!=='object')return null;const value=C.clone(draft);delete value.revision;return value}
 function ilboStoredDraftCompatible(record,g){return !!record&&record.schema===1&&record.scope===g.scope&&record.month===g.month&&Array.isArray(record.draft?.rows)&&Array.isArray(record.draft?.baseRows)&&sheetEqual(ilboDraftComparable(record.draft),ilboDraftComparable(g.draft))}
 async function ilboProtectDraftWrite(entry){
- const g=entry.g,key=g.storageKey||'sheet.v1:'+g.key,originalError=g.error,adopt=current=>{if(current==null||ilboStoredDraftCompatible(current,g)){g.persistedDraft=current==null?current:C.clone(current);return true}return false};
+ const g=entry.g,key=g.storageKey||'sheet.v1:'+g.key,originalError=g.error,adopt=current=>{if(current==null||ilboStoredDraftCompatible(current,g)){g.persistedDraft=current==null?current:C.clone(current);g.revision=Math.max(g.revision,sheetDraftVersion(current?.version));return true}return false};
  let current=await S.localGet(key);if(!sheetEqual(current,g.persistedDraft)&&!adopt(current)){const error=Error('다른 창에 별도의 저장 전 입력이 있습니다.');error.code='DEVICE_CONFLICT';throw error}
+ // A latest-ledger check is not a new edit. Preserve the existing version and
+ // time when that exact input is already durable, after checking its owner.
+ if(current&&sheetEqual(current.draft,g.draft)){entry.revision=g.revision;return}
  try{const writing=g.queueDraft({compare:true});entry.revision=g.revision;await writing;return}
  catch(error){if(error.code!=='DEVICE_CONFLICT')throw error;current=await S.localGet(key);if(!adopt(current))throw error;g.error=originalError;const retry=g.queueDraft({compare:true});entry.revision=g.revision;await retry;g.error=originalError}
 }
@@ -10380,6 +10398,7 @@ async function bulkSaveRun(){
    bulkSaveState.progress='전송 대기 자료를 최신 원장과 맞추는 중…';bulkSavePaint();
    try{await sheetAwaitRemoteAck(owner);result.retried=true}catch(error){
     if(!valid())throw error;
+    if(typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error)&&await sheetReplayQueuedSave(null,owner,{valid}))result.retried=true;
     // Try the owning table's current explicit draft before unrelated tables.
     const pending=sheetPendingLedgerOwner(owner);
     if(pending){if(!targets.some(t=>t.id===pending.id&&t.month===pending.month))targets.push({...pending,key:scope+':'+pending.month+':'+pending.id});targets.sort((a,b)=>Number(b.id===pending.id&&b.month===pending.month)-Number(a.id===pending.id&&a.month===pending.month))}
@@ -10410,7 +10429,7 @@ async function bulkSaveRun(){
    }catch(error){result.left.push({...target,message:error.message});if(owner?.envelope?.queue?.length||!valid()){for(const remaining of targets.slice(index+1))result.left.push({...remaining,label:remaining.month+' · '+bulkSaveLabel(remaining.id),message:'저장 대기 · 입력은 보존했습니다.'});break}}
   }
   if(owner?.envelope?.queue?.length&&!result.left.length)result.left.push({label:'전송 대기',message:'최신 자료와 연결을 확인한 뒤 재시도할 수 있도록 입력을 보관했습니다.'});
- }catch(error){result.left.push({label:'전체 저장',message:error.message});}
+ }catch(error){const waiting=!!owner?.envelope?.queue?.length&&typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error);result.left.push({label:waiting?'전송 대기':'전체 저장',message:waiting?'서버 응답을 확인하지 못해 입력을 기기에 보관했습니다. 연결이 회복되면 다시 전송합니다.':error.message});}
  finally{
   for(const list of ['saved','local','left','pending'])result[list]=result[list].map(({key,id,month,label,message})=>({key,id,month,label,message}));
   bulkSaveState.running=false;bulkSaveState.last=result;for(const {node,inert}of locked)node.inert=inert;
@@ -10498,13 +10517,103 @@ async function sheetSavePendingLedger(caller,owner,callerValid,enterMonth){
  }finally{g.saving=false;g.explicitSave=false;g.update()}
  }finally{leave()}
 }
+async function sheetAcknowledgementWrite(key,record,expected,valid){
+ for(let attempt=0;attempt<2;attempt++){
+  if(!valid())throw Error('저장 확인 중 연결 또는 입력이 바뀌었습니다. 새 입력은 보관했습니다.');
+  try{await S.localSet(key,record,{expected});return}catch(error){if(attempt||error?.code==='DEVICE_CONFLICT'||!valid())throw error}
+ }
+}
+async function sheetArchiveQueuedDrafts(captured,g,owner,valid){
+ const evidence=typeof explicitQueuedDraftsArchive==='function'?explicitQueuedDraftsArchive(captured,g,captured?.originalEnvelope?.state):null;if(!evidence)return null;
+ const key=owner.key+':recovery:acknowledged-draft:'+C.id(),at=new Date().toISOString(),draft=g.draft,signature=JSON.stringify(draft),storageKey=g.storageKey,persisted=JSON.stringify(g.persistedDraft),selected=typeof explicitQueuedDraftsSelected==='function'?explicitQueuedDraftsSelected(g):null;
+ // An already running outbox may receive its ACK during this write. Appending
+ // the evidence must preserve that newer envelope rather than losing the only
+ // durable link between the received request and its still-pending editor.
+ const current=()=>valid()&&workspace===owner&&g.draft===draft&&JSON.stringify(g.draft)===signature&&g.storageKey===storageKey&&JSON.stringify(g.persistedDraft)===persisted&&(!selected||explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===selected.pointer);
+ if(!current())throw Error('저장 전 연결 또는 입력이 바뀌었습니다. 입력은 보관했습니다.');
+ const record={...C.clone(captured.originalEnvelope),acknowledgedDrafts:evidence};
+ await sheetAcknowledgementWrite(key,record,undefined,current);if(!current())throw Error('저장 확인 자료를 보관하는 중 연결 또는 입력이 바뀌었습니다.');
+ let published=false;await owner.mutate(e=>{e.explicitSaveRecoveries??=[];e.explicitSaveRecoveries.push({key,at,kind:'acknowledged-draft',drafts:C.clone(evidence.index)});published=true},{canCommit:current});
+ if(!published||!valid())throw Error('저장 확인 자료를 기기에 보관하지 못했습니다. 입력은 그대로 유지했습니다.');
+ return{key,record};
+}
+// Native invokes this inside its serialized mutation, before publishing the
+// new outbox. An immediate ACK therefore cannot outrun its draft evidence.
+// Do not call owner.mutate here: the caller already holds that instance lock.
+async function sheetArchiveExplicitCommit(g,owner,envelope,valid,groupId){
+ if(!owner||owner.offline||owner.pendingMigration||!envelope?.queue?.length||typeof explicitQueuedDraftsCapture!=='function')return null;
+ const draft=g.draft,signature=JSON.stringify(draft),revision=g.revision,storageKey=g.storageKey,persisted=JSON.stringify(g.persistedDraft),writeQueue=g.writeQueue,selected=typeof explicitQueuedDraftsSelected==='function'?explicitQueuedDraftsSelected(g):null;
+ const current=()=>valid()&&workspace===owner&&g.draft===draft&&JSON.stringify(g.draft)===signature&&g.revision===revision&&g.storageKey===storageKey&&JSON.stringify(g.persistedDraft)===persisted&&g.writeQueue===writeQueue&&(!selected||explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===selected.pointer)&&!g.spec.readonly&&!g.closedDraft;
+ if(!current())throw Error('저장 전 입력 또는 연결이 바뀌었습니다. 입력은 보관했습니다.');
+ const captured=explicitQueuedDraftsCapture(g,owner,envelope);
+ // Only this editor submitted the newly created group. Other editors can
+ // project the same jobs without having edited them; associating their old
+ // values with this request would manufacture a later undo of this save.
+ captured.refs=[];
+ const evidence=explicitQueuedDraftsArchive(captured,g,envelope.state),group=envelope.groups?.find(group=>group.id===groupId);
+ if(!group||!Array.isArray(group.ids)||!group.ids.length||group.ids.length!==new Set(group.ids).size||!Array.isArray(group.paths)||group.paths.length!==group.ids.length||group.ids.some((id,i)=>!envelope.queue.some(q=>q.id===id&&q.groupId===group.id&&q.path===group.paths[i])))throw Error('이번 저장의 전송 묶음을 확인하지 못했습니다. 입력은 보관했습니다.');
+ // This witness belongs only to this ordinary commit invocation. It is not
+ // issued by queued replay and cannot consume a later, unsubmitted edit.
+ const fullSubmission={schema:1,scope:g.scope,month:g.month,id:g.id,storageKey,draft:C.clone(draft),groups:[{id:group.id,ids:C.clone(group.ids),paths:C.clone(group.paths)}],completed:false};
+ const key=owner.key+':recovery:acknowledged-draft:'+C.id(),at=new Date().toISOString(),record={...C.clone(captured.originalEnvelope),...(evidence?{acknowledgedDrafts:evidence}:{}),fullSubmission};
+ await sheetAcknowledgementWrite(key,record,undefined,current);
+ if(!current())throw Error('저장 확인 자료를 보관하는 중 입력 또는 연결이 바뀌었습니다.');
+ const index=C.clone(evidence?.index||[]);if(!index.some(entry=>entry.id===g.id&&entry.month===g.month&&entry.storageKey===storageKey))index.push({id:g.id,month:g.month,storageKey,revision:draft.revision??0});
+ envelope.explicitSaveRecoveries??=[];envelope.explicitSaveRecoveries.push({key,at,kind:'acknowledged-draft',drafts:index});
+ const clearedCurrent=()=>valid()&&workspace===owner&&g.draft===draft&&JSON.stringify(g.draft)===signature&&g.revision===revision&&g.storageKey===storageKey&&g.persistedDraft===null&&g.writeQueue===writeQueue&&!g.dirty&&(!selected||explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===selected.pointer)&&!g.spec.readonly&&!g.closedDraft;
+ return{key,record,captured,current,clearedCurrent,caller:true};
+}
+async function sheetConfirmExplicitCommit(g,owner,archives,valid){
+ if(!archives?.length)return;
+ const acknowledged=C.clone(owner.envelope.state);
+ const groups=archives.flatMap(archive=>archive.record.fullSubmission.groups),full={schema:1,scope:g.scope,groups},receipt=typeof sheetFullSubmissionReceipt==='function'?sheetFullSubmissionReceipt(full,owner):null;
+ if(!receipt&&!archives.every(archive=>archive.captured.caller?.intent))throw Error('이번 저장 묶음의 서버 반영을 확인하지 못했습니다. 입력 원문은 보관했습니다.');
+ for(const archive of archives){
+  if(!valid()||!archive.current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
+  const evidence=explicitQueuedDraftsArchive(archive.captured,g,acknowledged),record={...archive.record,...(evidence?{acknowledgedDrafts:evidence}:{}),fullSubmission:{...archive.record.fullSubmission,groups:C.clone(groups),completed:!!receipt,...(receipt?{receipt:C.clone(receipt)}:{})}};
+  await sheetAcknowledgementWrite(archive.key,record,archive.record,archive.current);archive.record=record;
+  if(!valid()||!archive.current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
+ }
+}
+function sheetProtectExplicitCommit(g,owner,archives,valid){
+ if(valid()&&workspace===owner&&!owner?.envelope?.queue?.length&&archives?.some(archive=>archive.caller&&archive.current())){
+  g.dirty=true;g.storageError='원장은 저장됐지만 기기 초안의 저장 확인을 마치지 못했습니다. 입력 원문은 보관했습니다. 화면을 새로 열면 저장 확인부터 다시 복원합니다.';
+ }
+}
+async function sheetPruneExplicitCommit(g,owner,archives,valid){
+ // Only this successfully removed caller can release its generated receipt.
+ // Other editors' evidence and every failed/CAS-changed draft are retained.
+ for(const archive of archives||[]){
+  const full=archive.record.fullSubmission,other=(archive.record.acknowledgedDrafts?.drafts||[]).some(ref=>ref.id!==g.id||ref.month!==g.month||ref.storageKey!==g.storageKey);
+  if(other||!full||full.id!==g.id||full.month!==g.month||full.storageKey!==g.storageKey)continue;
+  const current=()=>valid()&&archive.clearedCurrent?.()&&!owner.envelope?.queue?.length;
+  if(!current())continue;
+  let removed=null;
+  try{
+   if(await S.localGet(g.storageKey)!==null||!current())continue;
+   const stored=await S.localGet(archive.key);if(!sheetEqual(stored,archive.record)||!current())continue;
+   await owner.mutate(e=>{if(!current())return;const matching=(e.explicitSaveRecoveries||[]).filter(entry=>entry.key===archive.key);if(matching.length!==1)return;removed=C.clone(matching[0]);e.explicitSaveRecoveries=e.explicitSaveRecoveries.filter(entry=>entry.key!==archive.key)},{canCommit:current});
+   if(!removed||!current()||owner.envelope.explicitSaveRecoveries?.some(entry=>entry.key===archive.key))continue;
+   try{await S.localSet(archive.key,null,{expected:archive.record})}catch{
+    // A failed auxiliary cleanup does not change the successful save result.
+    // Keep the original proof reachable if its CAS deletion did not happen.
+    if(current()&&sheetEqual(await S.localGet(archive.key),archive.record))await owner.mutate(e=>{if(!e.explicitSaveRecoveries?.some(entry=>entry.key===archive.key)){e.explicitSaveRecoveries??=[];e.explicitSaveRecoveries.push(removed)}},{canCommit:current});
+   }
+  }catch{}
+ }
+}
 async function sheetPrepareExplicitSave(g){
  const owner=workspace,scope=sheetScope(),key=month;let revision=g.revision,contextMonth=key;
  const valid=()=>workspace===owner&&sheetScope()===scope&&month===contextMonth&&g.revision===revision&&bulkSaveAllowed();
  const enterMonth=next=>{if(!valid())return null;const previous=contextMonth;contextMonth=next;month=next;return()=>{if(workspace===owner&&sheetScope()===scope&&month===contextMonth)month=previous;contextMonth=previous}};
  if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');
- if(!owner||owner.pendingMigration)return;
+ if(!owner||owner.offline||owner.pendingMigration)return;
+ let acknowledged=null,requested=null;
+ try{
  if(owner.envelope?.queue?.length){
+  const captured=typeof explicitQueuedDraftsCapture==='function'?explicitQueuedDraftsCapture(g,owner):null;
+  const intent=g.id==='plan-jobs'?(typeof explicitPlanDraftAckIntent==='function'?explicitPlanDraftAckIntent(g,owner.envelope):null):(typeof explicitQueuedDraftsIntent==='function'?explicitQueuedDraftsIntent(g,owner.envelope):null);
+  if(intent)requested={intent,draft:g.draft,signature:JSON.stringify(g.draft),storageKey:g.storageKey,persistedSignature:JSON.stringify(g.persistedDraft),writeQueue:g.writeQueue,pointer:typeof explicitQueuedDraftsSelected==='function'?explicitQueuedDraftsSelected(g):null};
   const renewDraft=async value=>{
    if(!valid()||!g.explicitSave||!g.dirty||g.spec.readonly||g.closedDraft)return false;
    const renewed=C.clone(value),expectedRevision=revision+1;g.draft=renewed;
@@ -10512,12 +10621,25 @@ async function sheetPrepareExplicitSave(g){
    if(workspace!==owner||sheetScope()!==scope||month!==key||g.revision!==expectedRevision||g.draft!==renewed||!sheetEqual(g.persistedDraft?.draft,renewed)||!bulkSaveAllowed())return false;
    revision=expectedRevision;return valid();
   };
+  // Keep the original request before ACK can remove it from the outbox. The
+  // archived reader still requires matching server history before using it.
+  if(captured&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(captured,owner,valid);
+  const archived=captured?await sheetArchiveQueuedDrafts(captured,g,owner,valid):null;
   try{await sheetAwaitRemoteAck(owner)}catch(error){
    if(!valid()||typeof sheetRecoverExplicitQueue!=='function')throw error;
-   const pending=sheetPendingQueueDraft(g,owner);if(pending){g.dirty=true;if(!await renewDraft(pending))throw error}
-   if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft})&&!await sheetSavePendingLedger(g,owner,valid,enterMonth))throw error;
+   const replayed=typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error)&&await sheetReplayQueuedSave(g,owner,{valid});
+   if(!replayed){
+    const pending=sheetPendingQueueDraft(g,owner);if(pending){g.dirty=true;if(!await renewDraft(pending))throw error}
+    if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft})&&!await sheetSavePendingLedger(g,owner,valid,enterMonth))throw error;
+   }
   }
   if(!valid())throw Error('연결 또는 권한이 바뀌었습니다.');
+  acknowledged=C.clone(owner.envelope.state);
+  if(archived){
+   const evidence=explicitQueuedDraftsArchive(captured,g,acknowledged),record={...archived.record,acknowledgedDrafts:evidence};
+   await sheetAcknowledgementWrite(archived.key,record,archived.record,valid);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.');
+  }
+  if(captured){captured.acknowledgedState=acknowledged;await explicitQueuedDraftsClear(captured,valid,owner);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.')}
  }
  for(let attempt=0;attempt<2;attempt++){
   const snapshot=await owner.readSnapshot({canApply:valid});if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');if(!snapshot)continue;
@@ -10525,9 +10647,41 @@ async function sheetPrepareExplicitSave(g){
   state=next;
   if(!state.months[key])throw Error('입력하던 월이 삭제되어 초안을 보관했습니다.');
   if(!g.key.startsWith(scope+':catalog:')&&g.id!=='product-catalog'&&state.months[key].closed)throw Error('마감된 월의 입력은 보관했습니다. 마감 기록은 변경하지 않았습니다.');
+  let archivedDraft=null;
+  if(!requested&&typeof explicitQueuedDraftsArchivedRebase==='function'){
+   requested={draft:g.draft,signature:JSON.stringify(g.draft),storageKey:g.storageKey,persistedSignature:JSON.stringify(g.persistedDraft),writeQueue:g.writeQueue,pointer:typeof explicitQueuedDraftsSelected==='function'?explicitQueuedDraftsSelected(g):null};
+   archivedDraft=await explicitQueuedDraftsArchivedRebase(g,owner,state,valid);if(!archivedDraft)requested=null;
+  }
+  if(requested){
+   const selected=()=>!requested.pointer||typeof explicitQueuedDraftsSelected==='function'&&explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===requested.pointer.pointer;
+   const unchanged=()=>valid()&&g.draft===requested.draft&&JSON.stringify(g.draft)===requested.signature&&g.storageKey===requested.storageKey&&JSON.stringify(g.persistedDraft)===requested.persistedSignature&&g.writeQueue===requested.writeQueue&&selected()&&!g.spec.readonly&&!g.closedDraft&&!g.storageError;
+   if(!unchanged())throw Error('저장 중 입력 초안이 바뀌었습니다. 새 입력을 보관했습니다.');
+   const renewed=archivedDraft?.draft||(g.id==='plan-jobs'?explicitPlanDraftAckRebase(g,requested.intent,acknowledged,state):explicitQueuedDraftsRebase(g,requested.intent,acknowledged,state));
+   if(!renewed)throw Error('이전 저장의 반영 내역을 확인하지 못해 입력 초안을 보관했습니다.');
+   if(!sheetEqual(renewed,g.draft)){
+    // Persist the acknowledgement before allowing the caller to submit again.
+    // A failed CAS must never continue with its old, already received values.
+    const originalRecord=C.clone(g.persistedDraft),expectedRevision=revision+1,envelope=owner.envelope,latestSignature=JSON.stringify(owner.envelope.state),record={...C.clone(g.persistedDraft),version:expectedRevision,updatedAt:new Date().toISOString(),draft:C.clone(renewed)};
+    if(!unchanged())throw Error('저장 중 입력 초안이 바뀌었습니다. 새 입력을 보관했습니다.');
+    await sheetAcknowledgementWrite(requested.storageKey,record,originalRecord,unchanged);
+    if(!unchanged()||owner.envelope!==envelope||JSON.stringify(owner.envelope.state)!==latestSignature){
+     try{await S.localSet(requested.storageKey,originalRecord,{expected:record})}catch{}
+     throw Error('저장 중 연결 또는 입력이 바뀌었습니다. 입력 초안을 보관했습니다.');
+    }
+    g.draft=C.clone(renewed);g.persistedDraft=C.clone(record);g.revision=expectedRevision;revision=expectedRevision;
+   }
+  }
   return;
  }
  throw Error('최신 자료 확인 중 연결 상태가 바뀌었습니다. 입력은 보관했습니다.');
+ }catch(error){
+  // A still-unacknowledged editor must not acquire a new edit on top of stale
+  // received cells after local persistence/proof fails. Only this exact old
+  // draft is locked; a changed input, copy or replacement connection is not.
+  const selected=!requested?.pointer||typeof explicitQueuedDraftsSelected==='function'&&explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===requested.pointer.pointer;
+  if(requested&&!owner.envelope?.queue?.length&&valid()&&g.draft===requested.draft&&JSON.stringify(g.draft)===requested.signature&&g.storageKey===requested.storageKey&&JSON.stringify(g.persistedDraft)===requested.persistedSignature&&g.writeQueue===requested.writeQueue&&selected&&!g.spec.readonly&&!g.closedDraft)g.storageError='이전 저장의 확인 내역을 초안에 반영하지 못했습니다. 입력 원문은 보관했습니다. 화면을 새로 열면 저장 확인부터 다시 복원합니다.';
+  throw error;
+ }
 }
 
 // Reconcile overlapping local memo inputs before sequential table saves.
@@ -10798,6 +10952,817 @@ async function sheetRecoverExplicitQueue(g,owner,options={}){
  const next=await owner.mutate(e=>{e.state=C.clone(snapshot.state);e.baseline=C.clone(snapshot.baseline);e.queue=e.queue.filter(q=>!plan.ids.includes(q.id));e.groups=e.groups.filter(group=>!plan.groups.includes(group.id));e.explicitSaveRecoveries??=[];e.explicitSaveRecoveries.push({key:recoveryKey,at:recovery.explicitSaveRecovery.at,kind:plan.kind,month:plan.key,queueIds:plan.ids});adoptedSignature=JSON.stringify(e);applied=true},{canCommit:valid});
  if(!applied||next===before||JSON.stringify(next)!==adoptedSignature)return false;
  owner.loaded=true;owner.catalogBlocked=null;owner.lastError=null;owner.status('이전 저장 대기를 복구본에 보관 · 현재 입력으로 저장 계속');return true;
+}
+
+// Rebuild only an already submitted, independently proved ledger group. This
+// helper never reads or changes a live editor draft or the workspace envelope.
+function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,key){
+ try{
+  const queue=group?.queue,path='months/'+key+'.json',catalogPath='meta/catalog.json';
+  if(!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key)||!Array.isArray(queue)||!queue.length||new Set(queue.map(q=>q.path)).size!==queue.length||queue.some(q=>![path,catalogPath].includes(q.path)))return null;
+  const b=baseState?.months?.[key],l=localState?.months?.[key],latest=latestState?.months?.[key];
+  if(!b||!l||!latest||b.closed||l.closed||latest.closed||b.closeSnapshot||l.closeSnapshot||latest.closeSnapshot)return null;
+  const monthQueue=queue.find(q=>q.path===path);if(!monthQueue)return null;
+  for(const q of queue){
+   const before=q.path===catalogPath?ScheduleNative.packCatalog(baseState):ScheduleNative.packMonth(b),after=q.path===catalogPath?ScheduleNative.packCatalog(localState):ScheduleNative.packMonth(l);
+   let rawBase=q.base;
+   if(q.path===catalogPath&&!explicitRecoverySame(before,rawBase)){
+    // Native.packCatalog can supplement legacy source provenance from an older
+    // cache. Reuse its existing narrow ownership proof for that absent field;
+    // unknown catalog fields remain exact comparisons.
+    const meta=rawBase.find(record=>record.id==='catalog');if(!meta||Object.hasOwn(meta,'scheduleSourceBaseline'))return null;
+    if(!explicitProductionRecoveryCatalog(rawBase,before,before,{state:baseState}))return null;rawBase=before;
+   }
+   if(!explicitRecoverySame(before,rawBase)||!explicitRecoverySame(after,q.local))return null;
+  }
+  const packedBase=monthQueue.base[0],packedLocal=monthQueue.local[0],changed=[...new Set([...Object.keys(packedBase),...Object.keys(packedLocal)])].filter(field=>!['rev','history'].includes(field)&&!explicitRecoverySame(packedBase[field],packedLocal[field]));
+  const kind=changed.includes('rows')&&changed.every(field=>['rows','reservationBindings'].includes(field))?'production':changed.length===1&&['plaster','issues'].includes(changed[0])?changed[0]:null;
+  if(!kind||kind!=='production'&&queue.some(q=>q.path!==path))return null;
+  const baseline={'meta/catalog.json':C.clone(queue.find(q=>q.path===catalogPath)?.base||ScheduleNative.packCatalog(baseState))};
+  for(const [monthKey,value]of Object.entries(baseState.months||{}))baseline['months/'+monthKey+'.json']=ScheduleNative.packMonth(value);
+  const isolatedGroup=C.clone(group);delete isolatedGroup.queue;
+  const owner={envelope:{state:C.clone(localState),baseline,queue:C.clone(queue),groups:[isolatedGroup]}};
+  let draft,validate;
+  if(kind==='production'){
+   draft=ScheduleBatch.create(baseState,key,scope);draft.rows=C.clone(l.rows);
+  }else{
+   const project=kind==='plaster'?m=>secondaryPlasterRows(m,key):secondaryIssueRows;
+   draft={baseRows:project(b),rows:project(l),deleted:[]};
+   if(kind==='plaster')draft.plasterRecordIds=Object.fromEntries(draft.baseRows.map(row=>[row.date,b.plaster.find(record=>record.date===row.date)?.id??null]));
+   validate=row=>{
+    if(kind==='issues'){
+     // The same UI validator checks the latest product catalog. It is
+     // synchronous, and its surrounding application context is restored even
+     // when validation throws; no editor or pending draft is visited.
+     const original=state;try{state=latestState;secondaryValidateIssue(row,key)}finally{state=original}
+    }else{
+     if(!C.iso(row.date)||row.date.slice(0,7)!==key||row.duplicate)throw Error('Invalid daily usage identity');
+     secondaryNumber(row.actual,'actual','실사용 kg');
+    }
+   };
+  }
+  const g={id:kind==='production'?'production':kind==='plaster'?'plaster-month':'issue-ledger',month:key,scope,draft,explicitSave:true,dirty:true,spec:{readonly:false,...(validate?{inspect:d=>secondaryInspect(d,validate,kind==='plaster')}:{})}};
+  const plan=explicitRecoveryPlan(g,owner);
+  if(!plan||plan.renewDraft||!explicitRecoveryRemote(plan,{state:latestState,baseline:{[path]:ScheduleNative.packMonth(latest)}}))return null;
+  let next;
+  if(kind==='production')next=ScheduleBatch.apply(latestState,plan.draft,{scope,preferLocalEdits:true});
+  else{
+   next=C.clone(latestState);
+   const latestRows=kind==='plaster'?secondaryPlasterRows(latest,key):secondaryIssueRows(latest),byId=new Map(latestRows.map(row=>[row.id,row]));
+   const merged=sheetApply(draft,latestRows,{validateRow:validate,preferLocalFields:kind==='plaster'?['actual']:['machine','replacement','issued','reason'],identityFields:kind==='plaster'?['date','duplicate']:['date','product']});
+   for(const row of merged){
+    if(secondarySame(row,byId.get(row.id)))continue;validate(row);
+    if(kind==='plaster'){
+     const old=next.months[key].plaster.find(record=>record.date===row.date),original=l.plaster.find(record=>record.date===row.date),actual=secondaryNumber(row.actual,'actual','실사용 kg');
+     if(!old&&actual==null)continue;if(!old&&!original)return null;
+     O.upsert(next,key,'plaster',{...(old||{}),id:old?.id||original.id,date:row.date,actual},'월별 실사용량 표 입력');
+    }else{
+     const old=next.months[key].issues.find(record=>record.id===row.id);if(!old)return null;
+     O.upsert(next,key,'issues',{...old,id:row.id,date:row.date,product:secondaryText(row.product),machine:secondaryText(row.machine),replacement:secondaryNumber(row.replacement,'replacement','교체 조수'),issued:secondaryNumber(row.issued,'issued','불출 조수'),reason:secondaryText(row.reason),source:old.source||'웹 표 입력'},secondaryText(row.reason));
+    }
+   }
+  }
+  // The retried queue must itself pass the producer proof after a lost ACK.
+  // Keep the regenerated latest before/after values, retaining only the
+  // submitted event's identity and time. A no-op produces no artificial event.
+  const baseHistory=b.history||[],submitted=l.history||[],events=explicitRecoveryIndex(latest.history||[]);
+  if(!events||submitted.length<=baseHistory.length||!baseHistory.every((event,index)=>explicitRecoverySame(event,submitted[index])))return null;
+  const additions=submitted.slice(baseHistory.length),generated=(next.months[key].history||[]).slice((latest.history||[]).length),replacements=new Map();
+  const identity=event=>JSON.stringify([event.type,kind==='plaster'?(event.after||event.before)?.date:(event.after||event.before)?.id]);
+  for(const event of generated){
+   const matches=additions.filter(original=>identity(original)===identity(event));
+   if(matches.length!==1||events.has(matches[0].id))return null;
+   replacements.set(event.id,{...event,id:matches[0].id,at:matches[0].at});
+  }
+  next.months[key].history=(next.months[key].history||[]).map(event=>replacements.get(event.id)||event);
+  if(Array.isArray(next.changes))next.changes=next.changes.map(event=>replacements.get(event.id)||event);
+  return{state:next,monthKeys:[key],catalog:false};
+ }catch{return null}
+}
+
+// Prove a schedule save with the same synchronous producer used by the editor.
+// This helper performs no storage or network writes and restores app context.
+function explicitPlanQueueContext(source,key,run){
+ const previousState=state,previousMonth=month;
+ try{state=C.clone(source);month=key;return run()}finally{state=previousState;month=previousMonth}
+}
+function explicitPlanQueueReplay(baseState,localState,latestState,group,scope,viewMonth){
+ try{
+  const same=explicitRecoverySame,queue=group?.queue,validMonth=key=>/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key),catalog='meta/catalog.json';
+  if(!validMonth(viewMonth)||!baseState?.months?.[viewMonth]||!localState?.months?.[viewMonth]||!latestState?.months?.[viewMonth]||!Array.isArray(queue)||!queue.length||!group.id||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||['partial','complete'].includes(group.status)||!Array.isArray(group.ids)||!Array.isArray(group.paths))return null;
+  const ids=new Set(),paths=new Map();
+  for(const q of queue){if(!q?.id||ids.has(q.id)||q.groupId!==group.id||q.viewOnly||q.unitPhase||paths.has(q.path)||!Array.isArray(q.base)||!Array.isArray(q.local)||q.path!==catalog&&!/^months\/\d{4}-(?:0[1-9]|1[0-2])\.json$/.test(q.path))return null;ids.add(q.id);paths.set(q.path,q)}
+  if(!same(group.ids,queue.map(q=>q.id))||!same(group.paths,queue.map(q=>q.path)))return null;
+  const packed=(source,key)=>source.months[key]?ScheduleNative.packMonth(source.months[key]):[];
+  const keys=new Set([...Object.keys(baseState.months),...Object.keys(localState.months)]);
+  for(const key of keys){const q=paths.get('months/'+key+'.json'),before=packed(baseState,key),after=packed(localState,key);if(q?!same(q.base,before)||!same(q.local,after):!same(before,after))return null}
+  const beforeCatalog=ScheduleNative.packCatalog(baseState),afterCatalog=ScheduleNative.packCatalog(localState),catalogQueue=paths.get(catalog);
+  if(catalogQueue){
+   // packCatalog calculates the legacy source proof even before it has first
+   // been published. No other missing catalog field is treated as generated.
+   const published=catalogQueue.base.find(r=>r.id==='catalog'),expected=C.clone(beforeCatalog),meta=expected.find(r=>r.id==='catalog');
+   if(published&&!Object.hasOwn(published,'scheduleSourceBaseline'))delete meta.scheduleSourceBaseline;
+   if(!same(catalogQueue.base,expected)||!same(catalogQueue.local,afterCatalog))return null;
+  }else if(!same(beforeCatalog,afterCatalog))return null;
+  const draft=explicitPlanQueueContext(baseState,viewMonth,()=>({baseRows:pgRows(state,month),rows:[],deleted:[],revision:0,scope,calendar:pgCalendar(localState),baseCalendar:pgCalendar(state),scheduleAsOf:localState.months[month].scheduleAsOf||null,baseScheduleAsOf:state.months[month].scheduleAsOf||null}));
+  draft.rows=explicitPlanQueueContext(localState,viewMonth,()=>pgRows(state,month));
+  // New jobs can gain derived defaults in pgRows (for example originId).
+  // Reuse the producer's stored after image; the exact replay below proves it.
+  const editable=new Set([...pgCommitFields,'worker','product','barMemo']),newFields=new Set([...editable,'id','originId','manual','rev','_ownerMonth']);
+  for(const key of keys)for(const event of (localState.months[key]?.history||[]).slice(baseState.months[key]?.history?.length||0))if(event.type==='jobs'&&event.after){
+   const index=draft.rows.findIndex(row=>row.id===event.after.id&&(row._ownerMonth||viewMonth)===key),original=draft.baseRows.find(row=>row.id===event.after.id&&(row._ownerMonth||viewMonth)===key),row={...C.clone(event.after),_ownerMonth:key};if(index<0)return null;
+   if(original){for(const field of new Set([...Object.keys(original),...Object.keys(row)]))if(!['rev','fieldScheduleOverrides'].includes(field)&&!editable.has(field)&&!same(original[field],row[field]))return null}
+   else if(Object.keys(row).some(field=>!newFields.has(field)&&field!=='fieldScheduleOverrides'))return null;
+   // This provenance is generated by the producer from the current field
+   // source, not an editable schedule cell or a transferable queue override.
+   if(original?.fieldScheduleOverrides)row.fieldScheduleOverrides=C.clone(original.fieldScheduleOverrides);else delete row.fieldScheduleOverrides;
+   draft.rows[index]=row;
+  }
+  const currentIds=new Set(draft.rows.map(row=>row.id));if(currentIds.size!==draft.rows.length||new Set(draft.baseRows.map(row=>row.id)).size!==draft.baseRows.length)return null;
+  for(const row of draft.baseRows)if(!currentIds.has(row.id)){
+   const key=row._ownerMonth||viewMonth,before=baseState.months[key]?.history||[],events=(localState.months[key]?.history||[]).slice(before.length).filter(event=>event.type==='삭제:jobs'&&event.before?.id===row.id&&event.after===null);
+   if(events.length!==1||typeof events[0].reason!=='string'||!events[0].reason.trim())return null;draft.deleted.push({id:row.id,reason:events[0].reason});draft.rows.push(C.clone(row));
+  }
+  const proof=explicitPlanQueueContext(baseState,viewMonth,()=>pgApplyCommit(draft,{preferLocalEdits:true}));
+  const monthPaths=queue.filter(q=>q.path!==catalog).map(q=>q.path),expectedPaths=proof.monthKeys.map(key=>'months/'+key+'.json');
+  if(!same(monthPaths,expectedPaths)||proof.catalog&&!catalogQueue)return null;
+  for(const key of proof.monthKeys){
+   const before=baseState.months[key]?.history||[],events=localState.months[key]?.history,generated=proof.state.months[key]?.history,seen=new Set(before.map(event=>event.id));
+   if(!Array.isArray(events)||!Array.isArray(generated)||seen.size!==before.length||events.length!==generated.length||!before.every((event,i)=>same(event,events[i])))return null;
+   for(let i=before.length;i<events.length;i++){const event=events[i];if(typeof event?.id!=='string'||!event.id||seen.has(event.id)||typeof event.at!=='string'||!Number.isFinite(Date.parse(event.at)))return null;seen.add(event.id);generated[i]={...generated[i],id:event.id,at:event.at}}
+  }
+  // Include bindings, undo snapshots, extensions and all untouched ledgers.
+  // A calendar-only group is still proved through its actual history event.
+  for(const key of keys)if(!same(packed(proof.state,key),packed(localState,key)))return null;
+  if(!same(ScheduleNative.packCatalog(proof.state),afterCatalog))return null;
+  if(!proof.monthKeys.length&&!proof.catalog)return null;
+  const result=explicitPlanQueueContext(latestState,viewMonth,()=>pgApplyCommit(draft,{preferLocalEdits:true}));
+  for(const key of proof.monthKeys){
+   const before=baseState.months[key]?.history||[],events=localState.months[key].history.slice(before.length),current=latestState.months[key],history=current?.history||[],seen=new Set(history.map(event=>event.id));
+   if(history.some(event=>typeof event?.id!=='string'||!event.id)||seen.size!==history.length||events.some(event=>seen.has(event.id)))return null;
+   let previous=-1;for(const event of before){const index=history.findIndex(row=>row.id===event.id);if(index<=previous||!same(history[index],event))return null;previous=index}
+   // Keep the actual rebased before/after images so the durable queue can be
+   // proved again after a lost response. Only audit identities are reused.
+   // Already matching cells can produce no event; never invent a new revision.
+   const generated=result.state.months[key]?.history||[],eventKey=event=>event.type+'\0'+(event.after?.id||event.before?.id||''),submitted=new Map();
+   for(const event of events){const id=eventKey(event);if(submitted.has(id))return null;submitted.set(id,event)}
+   if(generated.length<history.length||!history.every((event,i)=>same(event,generated[i])))return null;
+   const matched=new Set();
+   for(let i=history.length;i<generated.length;i++){const id=eventKey(generated[i]),original=submitted.get(id);if(!original||matched.has(id))return null;matched.add(id);generated[i]={...generated[i],id:original.id,at:original.at}}
+  }
+  if(result.monthKeys.some(key=>!proof.monthKeys.includes(key)))return null;
+  return result;
+ }catch{return null}
+}
+
+// The outbox and the editor are separate durable records. A received outbox
+// must not leave its old schedule values looking like new, unsent edits.
+function explicitPlanDraftCalendarSlots(calendar){
+ const slots=new Map(),key=(kind,row)=>JSON.stringify(kind==='factory'?[kind,typeof row==='string'?row:row.date]:[kind,row.worker,row.date]);
+ for(const kind of ['factory','workers'])for(const row of calendar?.[kind]||[]){const id=key(kind,row),slot=slots.get(id)||{kind,id,value:[]};slot.value.push(C.clone(row));slots.set(id,slot)}
+ for(const field of Object.keys(calendar||{}))if(!['factory','workers'].includes(field))slots.set('meta:'+field,{kind:'meta',id:'meta:'+field,field,value:C.clone(calendar[field])});
+ return slots;
+}
+function explicitPlanDraftCalendarSet(calendar,slot,value){
+ if(slot.kind==='meta'){if(value===undefined)delete calendar[slot.field];else calendar[slot.field]=C.clone(value);return}
+ const key=row=>JSON.stringify(slot.kind==='factory'?[slot.kind,typeof row==='string'?row:row.date]:[slot.kind,row.worker,row.date]);
+ calendar[slot.kind]=(calendar[slot.kind]||[]).filter(row=>key(row)!==slot.id).concat(C.clone(value||[]));
+}
+function explicitPlanDraftAckIntent(g,envelope){
+ try{
+  if(g?.id!=='plan-jobs')return null;
+  const groups=explicitQueuedGroups(envelope);let current=explicitProductionRecoveryState(envelope);if(!groups||!current)return null;
+  const raw=C.clone(envelope.baseline),slots=new Map(),events=[],same=explicitRecoverySame,copy=value=>value===undefined?undefined:C.clone(value);
+  const add=(id,slot,before,after,event)=>{const previous=slots.get(id);slots.set(id,{...slot,before:previous?previous.before:copy(before),after:copy(after),bases:[...(previous?.bases||[]),copy(before),copy(after)],event:C.clone(event)})};
+  for(const group of groups){
+   const before=C.clone(current);for(const q of group.queue){if(!same(q.base,raw[q.path]||[]))return null;current=explicitQueuedApply(current,q.path,q.local);raw[q.path]=C.clone(q.local)}
+   const proof=explicitPlanQueueReplay(before,current,before,group,g.scope,g.month);if(!proof)continue;
+   for(const owner of proof.monthKeys)for(const event of current.months[owner].history.slice(before.months[owner]?.history?.length||0)){
+    events.push({owner,event:C.clone(event)});
+    if(event.type==='jobs'||event.type==='삭제:jobs'){
+     const b=event.before,a=event.after,id=a?.id||b?.id;
+     if(!b||!a){const beforeProjected=explicitPlanQueueContext(before,g.month,()=>pgRows(state,month)).find(row=>row.id===id&&(row._ownerMonth||g.month)===owner)||null;add('row:'+owner+':'+id,{kind:'row',owner,id,beforeProjected},b,a,event);continue}
+     const allowed=new Set([...pgCommitFields,'worker','product','barMemo']);
+     for(const field of allowed)if(!same(b[field],a[field]))add('job:'+owner+':'+id+':'+field,{kind:'job',owner,id,field,identity:{id:a.id,originId:a.originId,sourceRowId:a.sourceRowId,manual:a.manual}},b[field],a[field],event);
+    }else if(event.type==='작업일·휴일 일괄 수정'){
+     const b=explicitPlanDraftCalendarSlots(event.before),a=explicitPlanDraftCalendarSlots(event.after);
+     for(const id of new Set([...b.keys(),...a.keys()])){const slot=a.get(id)||b.get(id),bv=b.get(id)?.value??(slot.kind==='meta'?undefined:[]),av=a.get(id)?.value??(slot.kind==='meta'?undefined:[]);if(!same(bv,av))add('calendar:'+id,{kind:'calendar',owner,slot},bv,av,event)}
+    }else if(event.type==='일정 계산 기준일 변경')add('asOf:'+owner,{kind:'asOf',owner},event.before,event.after,event);
+    else return null;
+   }
+  }
+  if(!same(ScheduleNative.packCatalog(current),ScheduleNative.packCatalog(envelope.state))||Object.keys(current.months).some(key=>!same(ScheduleNative.packMonth(current.months[key]),ScheduleNative.packMonth(envelope.state.months[key]))))return null;
+  return slots.size?{scope:g.scope,month:g.month,slots:[...slots.values()],events}:null;
+ }catch{return null}
+}
+function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
+ try{
+  if(!intent||g.id!=='plan-jobs'||g.scope!==intent.scope||g.month!==intent.month||!latest.months[g.month]||latest.months[g.month].closed||latest.months[g.month].closeSnapshot)return null;
+  const same=explicitRecoverySame,d=C.clone(g.draft),rows=explicitPlanQueueContext(latest,g.month,()=>pgRows(state,month)),set=(obj,key,value)=>{if(value===undefined)delete obj[key];else obj[key]=C.clone(value)};
+  const received=new Map();
+  for(const owner of new Set(intent.events.map(item=>item.owner))){const history=latest.months[owner]?.history||[],seen=new Set();let position=-1;for(const event of acknowledged.months[owner]?.history||[]){const index=history.findIndex(value=>value.id===event.id);if(seen.has(event.id)||index<=position||!same(history[index],event))return null;seen.add(event.id);position=index}}
+  for(const {owner,event}of intent.events){const receipt=acknowledged.months[owner]?.history?.filter(e=>e.id===event.id)||[],current=latest.months[owner]?.history?.filter(e=>e.id===event.id)||[];if(receipt.length>1||current.length>1)return null;if(receipt.length){if(receipt[0].at!==event.at||receipt[0].type!==event.type||!same(receipt[0],current[0]))return null;received.set(event.id,receipt[0])}}
+  for(const slot of intent.slots){
+   // Other months' manual jobs and the shared calendar can be visible in
+   // this editor without participating in its input. A queued request from
+   // that month is not evidence that this unchanged projection is an undo.
+   if(slot.owner!==g.month){
+    const b=d.baseRows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner),l=d.rows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner),deleted=d.deleted.some(r=>r.id===slot.id);
+    if(slot.kind==='asOf')continue;
+    if(slot.kind==='job'&&!deleted&&(!b&&!l||b&&l&&same(b[slot.field],l[slot.field])&&!same(l[slot.field],slot.after)))continue;
+    if(slot.kind==='calendar'){
+     const value=calendar=>explicitPlanDraftCalendarSlots(calendar).get(slot.slot.id)?.value??(slot.slot.kind==='meta'?undefined:[]),b=value(d.baseCalendar),l=value(d.calendar);
+     if(same(b,l)&&!same(l,slot.after))continue;
+    }
+    if(slot.kind==='row'&&!deleted&&(!b&&!l||!slot.after&&b&&l&&same(b,l)))continue;
+   }
+   const owner=latest.months[slot.owner];if(!owner||owner.closed||owner.closeSnapshot)return null;
+   const receipt=received.get(slot.event.id),row=rows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner);
+   let accepted;
+   if(slot.kind==='job')accepted=receipt?receipt.after?.[slot.field]:acknowledged.months[slot.owner]?.jobs?.find(r=>r.id===slot.id)?.[slot.field];
+   else if(slot.kind==='calendar')accepted=explicitPlanDraftCalendarSlots(receipt?receipt.after:acknowledged.calendar).get(slot.slot.id)?.value??(slot.slot.kind==='meta'?undefined:[]);
+   else if(slot.kind==='asOf')accepted=receipt?receipt.after:acknowledged.months[slot.owner]?.scheduleAsOf;
+   else accepted=receipt?receipt.after:acknowledged.months[slot.owner]?.jobs?.find(r=>r.id===slot.id)||null;
+   if(!same(accepted,slot.after)){
+    const merged=slot.kind==='job'&&['machines','handoffs','routing'].includes(slot.field)?pgMergeConcurrentStructure(slot.field,slot.before,slot.after,accepted):null;
+    if(!merged||!same(merged.value,accepted))return null;
+   }
+   if(slot.kind==='job'){
+    const b=d.baseRows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner),l=d.rows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner);
+    if(!b||!l||d.deleted.some(r=>r.id===slot.id)||!row||!slot.bases.some(value=>same(value,b[slot.field]))||!Object.keys(slot.identity).every(field=>same(row[field],slot.identity[field])))return null;
+    // Only the already requested slot is acknowledged. A later typed value
+    // retains its intent against the requested value, including arrays.
+    const unchanged=same(l[slot.field],slot.after);set(b,slot.field,unchanged?row[slot.field]:slot.after);if(unchanged)set(l,slot.field,row[slot.field]);
+   }else if(slot.kind==='calendar'){
+    const b=explicitPlanDraftCalendarSlots(d.baseCalendar).get(slot.slot.id)?.value??(slot.slot.kind==='meta'?undefined:[]),l=explicitPlanDraftCalendarSlots(d.calendar).get(slot.slot.id)?.value??(slot.slot.kind==='meta'?undefined:[]),r=explicitPlanDraftCalendarSlots(latest.calendar).get(slot.slot.id)?.value??(slot.slot.kind==='meta'?undefined:[]);
+    if(!slot.bases.some(value=>same(value,b)))return null;const unchanged=same(l,slot.after);explicitPlanDraftCalendarSet(d.baseCalendar,slot.slot,unchanged?r:slot.after);if(unchanged)explicitPlanDraftCalendarSet(d.calendar,slot.slot,r);
+   }else if(slot.kind==='asOf'){
+    if(slot.owner!==g.month||!slot.bases.some(value=>same(value,d.baseScheduleAsOf)))return null;const unchanged=same(d.scheduleAsOf,slot.after);d.baseScheduleAsOf=C.clone(unchanged?(owner.scheduleAsOf||null):slot.after);if(unchanged)d.scheduleAsOf=owner.scheduleAsOf||null;
+   }else{
+    // Creation/deletion requires a whole-row identity proof. Do not turn an
+    // ambiguous stale structural operation into a new submission.
+    const b=d.baseRows.find(r=>r.id===slot.id),l=d.rows.find(r=>r.id===slot.id),deleted=d.deleted.find(r=>r.id===slot.id),clean=value=>{if(!value)return value;const out=pgClean(C.clone(value));delete out._ownerMonth;delete out.rev;return out};
+    if(!slot.after){if(!b||!l||!deleted||!same(clean(b),clean(slot.beforeProjected))||!same(clean(l),clean(b)))return null;d.deleted=d.deleted.filter(r=>r.id!==slot.id);d.baseRows=d.baseRows.filter(r=>r.id!==slot.id);d.rows=d.rows.filter(r=>r.id!==slot.id);if(row){d.baseRows.push(C.clone(row));d.rows.push(C.clone(row))}}
+    else {
+     if(b||!l||deleted||!row)return null;const expected=clean(slot.after),local=clean(l),next=C.clone(row),allowed=new Set([...pgCommitFields,'worker','product','barMemo']);
+     if(['id','worker','product','manual','sourceRowId'].some(field=>!same(row[field],expected[field]))||!same(row.originId||row.id,expected.originId||expected.id))return null;
+     for(const field of ['originId'])if(local[field]==null&&!same(local[field],expected[field]))local[field]=expected[field];
+     for(const field of new Set([...Object.keys(expected),...Object.keys(local)]))if(!same(expected[field],local[field])){if(!allowed.has(field))return null;set(next,field,local[field])}
+     d.baseRows.push(C.clone(row));d.rows[d.rows.indexOf(l)]=next;
+    }
+   }
+  }
+  return d;
+ }catch{return null}
+}
+
+// Receipt for a completed, newly invoked sheet commit. This does not grant
+// permission to replay an old queue or to prefer a device draft over the server.
+function sheetFullSubmissionReceipt(full,owner){
+ try{
+  if(full?.schema!==1||!full.scope||full.scope!==owner?.key||owner.closed||owner.offline||owner.pendingMigration||owner.resolving)return null;
+  const current=owner.envelope,durable=owner.persisted;
+  if(!current?.state||!durable?.state||!Array.isArray(current.queue)||current.queue.length||!Array.isArray(durable.queue)||durable.queue.length)return null;
+  const requested=full.groups;
+  if(!Array.isArray(requested)||!requested.length||new Set(requested.map(g=>g?.id)).size!==requested.length)return null;
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b),groups=[],paths=new Set(),seenIds=new Set();
+  if(!same(current.state,durable.state))return null;
+  for(const expected of requested){
+   if(!expected?.id||!Array.isArray(expected.ids)||!expected.ids.length||!Array.isArray(expected.paths)||expected.paths.length!==expected.ids.length)return null;
+   for(let i=0;i<expected.ids.length;i++){
+    const id=expected.ids[i],path=expected.paths[i];
+    if(typeof id!=='string'||!id||seenIds.has(id)||typeof path!=='string'||!(/^(?:meta\/catalog\.json|months\/\d{4}-(?:0[1-9]|1[0-2])\.json)$/.test(path)))return null;
+    seenIds.add(id);paths.add(path);
+   }
+   const matches=(current.groups||[]).filter(g=>g.id===expected.id),saved=(durable.groups||[]).filter(g=>g.id===expected.id);
+   if(matches.length!==1||saved.length!==1)return null;
+   const group=matches[0];
+   if(group.status!=='complete'||!same(group.ids,expected.ids)||!same(group.paths,expected.paths)||!Array.isArray(group.acked)||group.acked.length!==expected.ids.length||new Set(group.acked).size!==expected.ids.length||expected.ids.some(id=>!group.acked.includes(id))||!same(group,saved[0]))return null;
+   groups.push(C.clone(group));
+  }
+  const records=[];
+  for(const path of paths){
+   const rows=current.baseline?.[path];
+   if(!Array.isArray(rows)||!same(rows,durable.baseline?.[path]))return null;
+   records.push({path,records:C.clone(rows)});
+  }
+  return{schema:1,groups,paths:records,state:C.clone(current.state)};
+ }catch{return null}
+}
+
+// Clearing an acknowledged draft is separate from submitting it. Capture only
+// currently selected drafts; unselected copies and later edits are preserved.
+function explicitQueuedDraftsSelected(g){
+ try{const pointer=sessionStorage.getItem(g.draftPointer());return{pointer,ok:pointer===g.storageKey||!pointer&&g.storageKey==='sheet.v1:'+g.key}}catch{return{ok:false}}
+}
+function explicitQueuedDraftsCellSame(kind,field,a,b){
+ if(kind==='production')return explicitProductionRecoveryCellSame(field,a,b);
+ if(['actual','issued','replacement'].includes(field)){try{return secondaryNumber(a,field,field)===secondaryNumber(b,field,field)}catch{return false}}
+ return explicitRecoverySame(a,b);
+}
+// Identify submitted cells from genuine producer groups, independently of what
+// remains in an editor. A changed-back cell is still covered by its submission.
+function explicitQueuedDraftsIntent(g,envelope){
+ try{
+  const kind={production:'production','plaster-month':'plaster','issue-ledger':'issues'}[g?.id],key=g?.month,ledger=kind==='production'?'rows':kind;
+  if(!kind||!g.scope||!/^\d{4}-\d{2}$/.test(key)||typeof explicitQueuedGroups!=='function')return null;
+  const groups=explicitQueuedGroups(envelope);let original=explicitProductionRecoveryState(envelope);if(!groups||!original)return null;
+  const raw=C.clone(envelope.baseline),entries=new Map(),events=[];
+  for(const group of groups){
+   const before=C.clone(original);let local=C.clone(before);
+   for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return null;local=explicitQueuedApply(local,q.path,q.local);raw[q.path]=C.clone(q.local)}
+   const b=before.months[key],l=local.months[key];
+   if(b&&l&&!explicitRecoverySame(b[ledger],l[ledger])){
+    if(!explicitLedgerQueueReplay(before,local,before,group,g.scope,key))return null;
+    const prior=explicitRecoveryIndex(b[ledger]),next=explicitRecoveryIndex(l[ledger]);if(!prior||!next)return null;
+    for(const [id,row]of prior)if(!next.has(id))return null;
+    for(const [id,row]of next){
+     const old=prior.get(id);if(explicitRecoverySame(old,row))continue;if(!old&&kind!=='plaster')return null;
+     const fields=kind==='production'?explicitProductionRecoveryChanges(old,row):(kind==='plaster'?['actual']:['machine','replacement','issued','reason']).filter(field=>!explicitQueuedDraftsCellSame(kind,field,old?.[field],row[field]));if(!fields)return null;
+     const identity=kind==='plaster'?row.date:id,entry=entries.get(identity)||{id,date:row.date,first:C.clone(old??null),last:C.clone(row),fields:[]};
+     entry.last=C.clone(row);entry.fields=[...new Set([...entry.fields,...fields])];entries.set(identity,entry);
+    }
+    const bh=b.history||[],lh=l.history||[];if(lh.length<=bh.length||!bh.every((event,i)=>explicitRecoverySame(event,lh[i])))return null;
+    events.push(...C.clone(lh.slice(bh.length)));
+   }
+   original=local;
+  }
+  for(const path of new Set(envelope.queue.map(q=>q.path))){const pack=s=>path==='meta/catalog.json'?ScheduleNative.packCatalog(s):ScheduleNative.packMonth(s.months[path.slice(7,-5)]);if(!explicitRecoverySame(pack(original),pack(envelope.state)))return null}
+  if(!entries.size||new Set(events.map(event=>event.id)).size!==events.length)return null;
+  return{kind,key,scope:g.scope,entries:[...entries.values()].filter(entry=>entry.fields.length),events};
+ }catch{return null}
+}
+function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
+ try{
+  if(!intent||intent.scope!==g.scope||intent.key!==g.month)return null;
+  const {kind,key}=intent,ledger=kind==='production'?'rows':kind,receipt=acknowledgedState?.months?.[key],current=latest?.months?.[key];
+  if(!receipt||!current||receipt.closed||current.closed||receipt.closeSnapshot||current.closeSnapshot)return null;
+  const received=explicitRecoveryIndex(receipt.history||[]),history=explicitRecoveryIndex(current.history||[]);if(!received||!history)return null;
+  let position=-1;for(const event of receipt.history||[]){const index=(current.history||[]).findIndex(row=>row.id===event.id);if(index<=position||!explicitRecoverySame(history.get(event.id),event))return null;position=index}
+  const same=(field,a,b)=>explicitQueuedDraftsCellSame(kind,field,explicitProductionRecoveryCell(a,field),explicitProductionRecoveryCell(b,field));
+  for(const original of intent.events){
+   const event=received.get(original.id);
+   // The coordinator can acknowledge an independently identical value without
+   // creating an event. That narrow no-op is checked against every final slot.
+   if(!event){if(history.has(original.id))return null;continue}
+   if(event.at!==original.at||event.type!==original.type||!event.after||!original.after)return null;
+   const fields=kind==='production'?explicitProductionRecoveryChanges(original.before,original.after):kind==='plaster'?['actual']:['machine','replacement','issued','reason'].filter(field=>!same(field,original.before,original.after));
+   if(!fields||fields.some(field=>!same(field,event.after,original.after)))return null;
+  }
+  const draft=C.clone(g.draft),base=explicitRecoveryIndex(draft.baseRows),rows=explicitRecoveryIndex(draft.rows);if(!base||!rows)return null;let changed=false;
+  for(const entry of intent.entries){
+   const id=kind==='plaster'?'plaster-day:'+entry.date:entry.id,b=base.get(id),row=rows.get(id),ack=receipt[ledger]?.find(record=>kind==='plaster'?record.date===entry.date:record.id===entry.id),now=current[ledger]?.find(record=>record.id===ack?.id);
+   if(!b||!row||!ack||!now||draft.deleted?.some(deletion=>deletion.id===id))return null;
+   if(kind==='production'){
+    if(!explicitProductionRecoveryLocalIdentity(entry.first,b)||!explicitProductionRecoveryLocalIdentity(entry.first,row)||!explicitProductionRecoveryIdentity(entry.last,ack)||!explicitProductionRecoveryIdentity(ack,now))return null;
+   }else if(b.date!==entry.date||row.date!==entry.date||ack.date!==entry.date||now.date!==entry.date||kind==='issues'&&[b,row,ack,now].some(record=>record.product!==entry.last.product))return null;
+   if(kind==='plaster'&&(entry.first&&ack.id!==entry.first.id||draft.plasterRecordIds?.[entry.date]!=null&&draft.plasterRecordIds[entry.date]!==entry.first?.id&&draft.plasterRecordIds[entry.date]!==ack.id))return null;
+   for(const field of entry.fields){
+    // Missing submitted events only represent a no-op when the coherent ACK
+    // snapshot itself contains that requested final value.
+    if(intent.events.some(event=>!received.has(event.id))&&!same(field,ack,entry.last))return null;
+    if(same(field,row,entry.last)){explicitProductionRecoverySetCell(b,field,now);explicitProductionRecoverySetCell(row,field,now)}
+    else explicitProductionRecoverySetCell(b,field,entry.last);
+    changed=true;
+   }
+   if(kind==='plaster'){draft.plasterRecordIds??={};draft.plasterRecordIds[entry.date]=ack.id}
+  }
+  if(!changed)return null;draft.revision=(draft.revision||0)+1;return draft;
+ }catch{return null}
+}
+function explicitQueuedDraftsAnyIntent(g,envelope){return g?.id==='plan-jobs'?(typeof explicitPlanDraftAckIntent==='function'?explicitPlanDraftAckIntent(g,envelope):null):explicitQueuedDraftsIntent(g,envelope)}
+function explicitQueuedDraftsAnyRebase(g,intent,receipt,latest){return g?.id==='plan-jobs'?(typeof explicitPlanDraftAckRebase==='function'?explicitPlanDraftAckRebase(g,intent,receipt,latest):null):explicitQueuedDraftsRebase(g,intent,receipt,latest)}
+function explicitQueuedDraftsArchive(captured,caller,acknowledgedState){
+ if(!captured||!acknowledgedState)return null;
+ const drafts=(captured.refs||[]).filter(ref=>ref.intent).map(ref=>({id:ref.g.id,month:ref.month,scope:captured.scope,storageKey:ref.storageKey,draft:JSON.parse(ref.signature),intent:C.clone(ref.intent)}));
+ if(captured.caller?.intent&&captured.caller.g===caller){const ref=captured.caller;drafts.push({id:caller.id,month:ref.month,scope:captured.scope,storageKey:ref.storageKey,draft:C.clone(ref.draft),intent:C.clone(ref.intent)})}
+ if(!drafts.length)return null;
+ return{schema:1,scope:captured.scope,originalEnvelope:C.clone(captured.originalEnvelope),acknowledgedState:C.clone(acknowledgedState),drafts,index:drafts.map(({id,month,storageKey,draft})=>({id,month,storageKey,revision:draft.revision??0}))};
+}
+// A successful server write must remain acknowledged even if deleting or
+// rebasing its device draft fails. Only the exact selected draft recorded in
+// the original archive is eligible; a new edit/revision never inherits it.
+function explicitQueuedDraftsFullRebase(g,full,latest){
+ try{
+  if(full?.schema!==1||!full.completed||full.scope!==g.scope||full.month!==g.month||full.id!==g.id||full.storageKey!==g.storageKey||!explicitRecoverySame(full.draft,g.draft))return null;
+  const receipt=full.receipt;if(receipt?.schema!==1||!receipt.state||!Array.isArray(receipt.paths)||!Array.isArray(receipt.groups))return null;
+  const paths=new Set(full.groups?.flatMap(group=>group.paths)||[]),baseline=Object.fromEntries(receipt.paths.map(row=>[row.path,row.records]));
+  if(!paths.size||receipt.paths.length!==paths.size||Object.keys(baseline).length!==paths.size||receipt.paths.some(row=>!paths.has(row.path)))return null;
+  const envelope={state:receipt.state,baseline,queue:[],groups:receipt.groups},proved=typeof sheetFullSubmissionReceipt==='function'&&sheetFullSubmissionReceipt(full,{key:g.scope,envelope,persisted:C.clone(envelope)});
+  if(!proved||!explicitRecoverySame(proved.groups,receipt.groups))return null;
+  for(const {path,records}of receipt.paths){
+   if(path==='meta/catalog.json'){
+    // Native can derive provenance when packing old catalog records. Compare
+    // their interpreted forms, without demanding that later catalog edits
+    // still equal the already acknowledged catalog values.
+    const normalize=raw=>{const loaded=ScheduleNative.unpackCatalog(raw);loaded.state.months=Object.fromEntries(loaded.months.map(key=>[key,{}]));return ScheduleNative.packCatalog(loaded.state)};
+    if(!explicitRecoverySame(normalize(records),normalize(ScheduleNative.packCatalog(receipt.state))))return null;
+   }else if(!explicitRecoverySame(records,ScheduleNative.packMonth(receipt.state.months[path.slice(7,-5)])))return null;
+  }
+  const keys=new Set([...paths].filter(path=>path.startsWith('months/')).map(path=>path.slice(7,-5)));keys.add(g.month);
+  for(const key of keys){
+   const before=receipt.state.months?.[key],now=latest.months?.[key];if(!before||!now||before.closed||now.closed||before.closeSnapshot||now.closeSnapshot)return null;
+   const history=explicitRecoveryIndex(now.history||[]);if(!history||!explicitRecoveryIndex(before.history||[]))return null;
+   let position=-1;for(const event of before.history||[]){const index=(now.history||[]).findIndex(row=>row.id===event.id);if(index<=position||!explicitRecoverySame(event,history.get(event.id)))return null;position=index}
+  }
+  const priorState=state,priorMonth=month;
+  try{
+   state=C.clone(latest);month=g.month;const current=state.months[g.month];let fresh;
+   if(g.id==='production'){fresh=ScheduleBatch.create(state,g.month,g.scope);fresh.baseMemos=C.clone(state.memos||[])}
+   else if(g.id==='plan-jobs')fresh=pgFresh(pgRows(state,g.month));
+   else if(g.id==='issue-ledger'){const rows=secondaryIssueRows(current);fresh={baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0}}
+   else if(['plaster-month','product-catalog','stock-memos'].includes(g.id)&&g.spec.createDraft)fresh=g.spec.createDraft();
+   else if(g.id.startsWith('audit-items:')){const audit=current.auditSessions?.find(row=>row.id===g.id.slice(12));if(!audit||!explicitRecoverySame(audit.locations,g.spec.auditSession?.locations))return null;const rows=secondaryAuditRows(audit);fresh={baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0}}
+   else if(g.id.startsWith('period-common-memo:')&&g.spec.createDraft)fresh=g.spec.createDraft();
+   else return null;
+   const pending=g.spec.rebaseAfterCommit?.(C.clone(full.draft));
+   if(pending&&g.id==='production')pending.baseMemos=C.clone(state.memos||[]);
+   const draft=pending||fresh;draft.deleted??=[];draft.revision??=0;return{draft,matched:true,full:true,pending:!!pending};
+  }finally{state=priorState;month=priorMonth}
+ }catch{return null}
+}
+async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true){
+ if(!owner||workspace!==owner||owner.envelope?.queue?.length||g.scope!==owner.key||!explicitQueuedDraftsSelected(g).ok)return null;
+ const key=g.storageKey,draft=g.draft,signature=JSON.stringify(draft),revision=g.revision,scope=sheetScope(),matches=entry=>entry?.id===g.id&&entry.month===g.month&&entry.storageKey===key&&(entry.revision??0)===(draft.revision??0);
+ const candidates=(owner.envelope.explicitSaveRecoveries||[]).filter(entry=>entry.drafts?.some(matches)).slice().reverse();
+ const current=()=>valid()&&workspace===owner&&sheetScope()===scope&&g.scope===scope&&g.storageKey===key&&g.draft===draft&&g.revision===revision&&JSON.stringify(g.draft)===signature&&explicitQueuedDraftsSelected(g).ok&&!owner.envelope.queue.length;
+ for(const candidate of candidates){
+  if(!current())throw Error('저장 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
+  let archive;try{archive=await S.localGet(candidate.key)}catch{throw Error('이전에 저장한 입력의 확인 자료를 읽지 못했습니다. 입력을 보관했으며 다시 저장하면 확인합니다.')}
+  if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
+  const evidence=archive?.acknowledgedDrafts,full=archive?.fullSubmission;
+  const typed=evidence?.schema===1&&evidence.scope===scope&&Array.isArray(evidence.drafts)&&evidence.acknowledgedState;
+  const fullShape=full?.schema===1&&full.scope===scope&&full.id===g.id&&full.month===g.month&&full.storageKey===key&&full.draft;
+  if(!typed&&!fullShape)throw Error('이전에 저장한 입력의 확인 자료가 부족합니다. 현재 입력은 그대로 보관했습니다.');
+  const records=typed?evidence.drafts.filter(record=>record.id===g.id&&record.month===g.month&&record.scope===scope&&record.storageKey===key&&explicitRecoverySame(record.draft,draft)):[];
+  const fullMatch=full?.schema===1&&full.scope===scope&&full.id===g.id&&full.month===g.month&&full.storageKey===key&&explicitRecoverySame(full.draft,draft);
+  if(records.length>1)throw Error('보관한 입력의 저장 관계를 확인하지 못했습니다. 현재 입력은 보관했습니다.');
+  // A complete normal commit covers insertions, deletions and shared memos as
+  // one exact snapshot. Old queue recovery never creates this permission.
+  if(fullMatch){const recovered=explicitQueuedDraftsFullRebase(g,full,latest);if(recovered)return recovered}
+  if(records.length){
+   const intent=explicitQueuedDraftsAnyIntent(g,evidence.originalEnvelope||archive);
+   const rebased=intent&&explicitRecoverySame(intent,records[0].intent)&&explicitQueuedDraftsAnyRebase(g,intent,evidence.acknowledgedState,latest);
+   if(rebased)return{draft:rebased,matched:true};
+  }
+  if(fullMatch||records.length||!typed&&!full)throw Error('이전 입력의 서버 반영을 확인하지 못했습니다. 새 입력은 그대로 보관했습니다.');
+ }
+ return null;
+}
+function explicitQueuedDraftsCapture(caller,owner,envelope=owner?.envelope){
+ const scope=sheetScope(),refs=[];
+ if(workspace!==owner||scope!==owner?.key)return{owner,scope,viewMonth:month,refs};
+ for(const g of sheetRegistry.values()){
+  if(g===caller||!['production','plaster-month','issue-ledger','plan-jobs'].includes(g.id)||g.scope!==scope||!g.loaded||g.loading||g.saving||g.ackCleanup||!g.dirty||g.storageError||g.closedDraft||g.spec.readonly||!g.persistedDraft)continue;
+  const selected=explicitQueuedDraftsSelected(g);if(!selected.ok)continue;
+  refs.push({g,key:g.key,month:g.month,revision:g.revision,draft:g.draft,signature:JSON.stringify(g.draft),storageKey:g.storageKey,persisted:C.clone(g.persistedDraft),persistedSignature:JSON.stringify(g.persistedDraft),pointer:selected.pointer,writeQueue:g.writeQueue,intent:explicitQueuedDraftsAnyIntent(g,envelope)});
+ }
+ const callerRef=caller?.scope===scope&&explicitQueuedDraftsSelected(caller).ok?{g:caller,month:caller.month,storageKey:caller.storageKey,draft:C.clone(caller.draft),intent:explicitQueuedDraftsAnyIntent(caller,envelope)}:null;
+ return{owner,scope,viewMonth:month,refs,caller:callerRef,originalEnvelope:C.clone(envelope)};
+}
+async function explicitQueuedDraftsCaptureStored(captured,owner,valid=()=>true){
+ if(!captured?.originalEnvelope?.queue?.length||!S.localEntries)return captured;
+ const scope=captured.scope,prefix='sheet.v1:'+scope+':',safe=()=>valid()&&captured.owner===owner&&workspace===owner&&sheetScope()===scope&&month===captured.viewMonth;
+ if(!safe())throw Error('입력 보관 중 연결 또는 작업 월이 바뀌었습니다. 원래 입력은 유지했습니다.');
+ let entries;try{entries=await S.localEntries(prefix)}catch{throw Error('보관한 표 입력을 읽지 못했습니다. 기존 전송 대기는 그대로 보관했습니다.')}
+ if(!safe())throw Error('입력 보관 중 연결 또는 작업 월이 바뀌었습니다. 원래 입력은 유지했습니다.');
+ const seen=new Set(captured.refs.map(ref=>ref.key));if(captured.caller)seen.add(captured.caller.g.key);
+ for(const entry of entries){
+  if(!entry.key.startsWith(prefix)||!entry.value)continue;
+  const match=/^(\d{4}-(?:0[1-9]|1[0-2])):(production|plaster-month|issue-ledger|plan-jobs)(?::copy:.+)?$/.exec(entry.key.slice(prefix.length));if(!match)continue;
+  const key=scope+':'+match[1]+':'+match[2],canonical='sheet.v1:'+key;if(seen.has(key))continue;
+  let pointer;try{pointer=sessionStorage.getItem('schedule.v1.sheet-tab:'+key)}catch{throw Error('이 창에서 선택한 입력을 확인하지 못했습니다. 전송 대기는 보관했습니다.')}
+  const selected=pointer||canonical;if(entry.key!==selected)continue;
+  const saved=entry.value;if(saved.schema!==1||saved.scope!==scope||saved.month!==match[1]||!Array.isArray(saved.draft?.baseRows)||!Array.isArray(saved.draft?.rows))throw Error('보관한 표 입력의 형식을 확인하지 못했습니다. 전송 대기는 보관했습니다.');
+  const g={id:match[2],month:match[1],scope,key,storageKey:entry.key,draft:C.clone(saved.draft)},intent=explicitQueuedDraftsAnyIntent(g,captured.originalEnvelope);if(!intent)continue;
+  if(!safe()||sessionStorage.getItem('schedule.v1.sheet-tab:'+key)!==pointer)throw Error('보관한 입력의 선택이 바뀌었습니다. 새 선택은 유지했습니다.');
+  captured.refs.push({g,key,month:g.month,storageKey:entry.key,draft:g.draft,signature:JSON.stringify(g.draft),persisted:C.clone(saved),persistedSignature:JSON.stringify(saved),pointer,intent,stored:true});seen.add(key);
+ }
+ return captured;
+}
+// Read an unopened selected draft before normal display reconciliation can add
+// remote rows or advance its inner revision. The exact archived draft remains
+// the proof boundary; no automatically transformed draft is treated as equal.
+async function explicitQueuedDraftsRestoreOnLoad(g,owner,valid=()=>true){
+ if(!owner?.envelope?.state||workspace!==owner||!g.dirty||!g.persistedDraft||g.spec.readonly||g.closedDraft||g.storageError||!explicitRecoverySame(g.persistedDraft.draft,g.draft))return false;
+ const key=g.storageKey,draft=g.draft,signature=JSON.stringify(draft),persisted=C.clone(g.persistedDraft),revision=g.revision,envelope=owner?.envelope,latest=envelope?.state,latestSignature=JSON.stringify(latest),selected=explicitQueuedDraftsSelected(g);
+ const current=()=>valid()&&workspace===owner&&sheetScope()===g.scope&&month===g.month&&g.storageKey===key&&g.draft===draft&&JSON.stringify(g.draft)===signature&&g.revision===revision&&explicitRecoverySame(g.persistedDraft,persisted)&&!g.spec.readonly&&!g.closedDraft&&!g.storageError&&owner.envelope===envelope&&JSON.stringify(owner.envelope.state)===latestSignature&&explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===selected.pointer;
+ if(!current())return false;
+ const recovery=await explicitQueuedDraftsArchivedRebase(g,owner,latest,current);if(!recovery)return false;
+ if(!current())throw Error('보관한 입력 확인 중 화면 또는 자료가 바뀌었습니다. 원래 초안은 유지했습니다.');
+ const candidate={...g,draft:recovery.draft},fresh=recovery.full&&!recovery.pending?recovery.draft:g.id==='plan-jobs'?null:explicitQueuedDraftsFresh(candidate,latest),version=Math.max(revision,Number(persisted.version)||0)+1;
+ const record=fresh?null:{...C.clone(persisted),version,updatedAt:new Date().toISOString(),draft:C.clone(recovery.draft)};
+ await S.localSet(key,record,{expected:persisted});
+ if(!current()){
+  try{await S.localSet(key,persisted,{expected:record})}catch{}
+  throw Error('보관한 입력 적용 중 화면 또는 자료가 바뀌었습니다. 새 입력은 유지했습니다.');
+ }
+ g.persistedDraft=record===null?null:C.clone(record);g.draft=fresh||recovery.draft;g.revision=version;g.dirty=!fresh;
+ g.error=fresh?'입력 내용의 서버 반영을 확인했습니다.':'저장한 입력은 반영했습니다. 추가 입력은 아직 저장 전입니다.';return true;
+}
+function explicitQueuedDraftsFresh(g,latest){
+ const current=latest.months?.[g.month];if(!current||current.closed||current.closeSnapshot||g.draft.deleted?.length)return null;
+ if(g.id==='plan-jobs')return null;
+ const priorState=state,priorMonth=month;
+ try{
+  state=latest;month=g.month;
+  if(g.id==='production'){
+   const base=new Set(g.draft.baseRows.map(row=>row.id));
+   if(g.draft.rows.some(row=>!base.has(row.id)&&ScheduleBatch.blank(row))||g.draft.metadataEdits?.length)return null;
+   const production=ScheduleBatch.inspect(latest,g.draft,{scope:g.scope}),memo=ScheduleBatch.memoInspect(latest,g.draft,{scope:g.scope});
+   if(!production.ok||!memo.ok||production.changes.length||memo.counts.changed)return null;
+   const fresh=ScheduleBatch.create(latest,g.month,g.scope);fresh.baseMemos=C.clone(latest.memos||[]);return fresh;
+  }
+  if(!g.spec.inspect?.(g.draft)?.ok)return null;
+  const plaster=g.id==='plaster-month',rows=plaster?secondaryPlasterRows(current,g.month):secondaryIssueRows(current);
+  if(plaster){
+   const ids=g.draft.plasterRecordIds;
+   for(const before of g.draft.baseRows){const after=g.draft.rows.find(row=>row.id===before.id);if(!after||secondarySame(before.actual,after.actual))continue;const sourceId=ids?.[before.date];if(sourceId&&sourceId!==current.plaster.find(row=>row.date===before.date)?.id)return null}
+  }
+  const draft=secondaryInputDraft(g.draft,plaster?[]:['date','product','machine','reason'],plaster?['actual']:['replacement','issued']);
+  const merged=sheetApply(draft,rows,{validateRow:g.spec.validateRow,preferLocalFields:plaster?['actual']:['machine','replacement','issued','reason'],identityFields:plaster?['date','duplicate']:['date','product']});
+  if(!explicitRecoverySame(merged,rows))return null;
+  return{baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0,...(plaster?{plasterRecordIds:Object.fromEntries(rows.map(row=>[row.date,current.plaster.find(record=>record.date===row.date)?.id??null]))}:{})};
+ }catch{return null}finally{state=priorState;month=priorMonth}
+}
+async function explicitQueuedDraftsClear(captured,callerValid,owner){
+ let cleared=0;
+ const contextValid=()=>captured?.owner===owner&&workspace===owner&&sheetScope()===captured.scope&&month===captured.viewMonth&&!owner.closed&&!owner.pendingMigration&&!owner.offline&&!owner.envelope?.queue?.length&&bulkSaveAllowed()&&(!callerValid||callerValid());
+ if(!contextValid())return cleared;
+ for(const ref of captured.refs){
+  const g=ref.g;
+  const valid=()=>contextValid()&&sheetRegistry.get(ref.key)===g&&g.scope===captured.scope&&g.month===ref.month&&g.loaded&&!g.loading&&!g.saving&&!g.ackCleanup&&g.dirty&&!g.storageError&&!g.closedDraft&&!g.spec.readonly&&g.revision===ref.revision&&g.draft===ref.draft&&JSON.stringify(g.draft)===ref.signature&&g.storageKey===ref.storageKey&&JSON.stringify(g.persistedDraft)===ref.persistedSignature&&g.writeQueue===ref.writeQueue&&explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===ref.pointer;
+  if(!valid())continue;
+  try{await ref.writeQueue}catch{continue}if(!valid())continue;
+  const latest=owner.envelope.state,envelope=owner.envelope,signature=JSON.stringify(latest),rebased=explicitQueuedDraftsAnyRebase(g,ref.intent,captured.acknowledgedState,latest);
+  const exact=()=>valid()&&owner.envelope===envelope&&JSON.stringify(owner.envelope.state)===signature;
+  const protect=()=>{
+   if(!exact())return;
+   g.storageError='저장한 입력의 기기 정리를 완료하지 못했습니다. 입력은 보관했습니다. 이 표를 다시 열면 저장 내역을 확인합니다.';g.error=g.storageError;
+   const priorState=state,priorMonth=month;try{state=latest;month=g.month;g.update()}finally{state=priorState;month=priorMonth}
+  };
+  const durable=async action=>{
+   for(let attempt=0;attempt<2;attempt++)try{return await action()}catch(error){
+    if(!exact())throw error;
+    if(error?.code==='DEVICE_CONFLICT'){protect();throw error}
+    if(!attempt)continue;
+    // The server has already received these cells. Do not let a new edit on
+    // their stale basis make them an unintended second submission. The exact
+    // archived draft can be recovered on reopen after device storage returns.
+    protect();
+    throw error;
+   }
+  };
+  // A changed-back value can look clean against an old basis. Once submitted
+  // cells are known, a failed receipt proof cannot fall back to that old basis.
+  if(ref.intent&&!rebased){protect();continue}
+  const candidate=rebased?{...g,draft:rebased}:g,fresh=explicitQueuedDraftsFresh(candidate,latest);
+  if(!valid())continue;
+  if(!fresh){
+   if(!rebased||explicitRecoverySame(rebased,g.draft))continue;
+   const record={...C.clone(ref.persisted),version:ref.revision+1,updatedAt:new Date().toISOString(),draft:C.clone(rebased)};
+   try{await durable(()=>S.localSet(ref.storageKey,record,{expected:ref.persisted}))}catch{continue}
+   if(!valid()||owner.envelope!==envelope||JSON.stringify(owner.envelope.state)!==signature){try{await S.localSet(ref.storageKey,C.clone(ref.persisted),{expected:record})}catch{}continue}
+   g.persistedDraft=C.clone(record);g.draft=rebased;g.revision=record.version;g.dirty=true;g.error='저장한 입력은 반영했습니다. 추가 입력은 아직 저장 전입니다.';
+   const priorState=state,priorMonth=month;try{state=latest;month=g.month;g.update()}finally{state=priorState;month=priorMonth}
+   continue;
+  }
+  // clearStoredDraft can fork its receiver on a CAS conflict. Keep that
+  // bookkeeping isolated until the exact captured draft has been cleared.
+  const receiver=Object.create(g);Object.assign(receiver,{storageKey:ref.storageKey,persistedDraft:C.clone(ref.persisted),rememberDraftKey(){},async refreshDraftCopies(){}});
+  let removed=false;try{removed=await durable(()=>g.clearStoredDraft.call(receiver))}catch{continue}
+  if(!removed){protect();continue}
+  if(!valid()||owner.envelope!==envelope||JSON.stringify(owner.envelope.state)!==signature){
+   try{await S.localSet(ref.storageKey,C.clone(ref.persisted),{expected:null})}catch{}
+   continue;
+  }
+  g.persistedDraft=null;g.draft=fresh;g.dirty=false;g.error='입력 내용의 서버 반영을 확인했습니다.';cleared++;
+  // Rendering stays synchronous inside the owning table's month. The caller's
+  // visible month is restored before any subsequent await.
+  const priorState=state,priorMonth=month;try{state=latest;month=g.month;g.update()}finally{state=priorState;month=priorMonth}
+ }
+ return cleared;
+}
+
+// Rebuild already requested saves, in order, over one coherent server snapshot.
+// This path never reads another table's unsent draft. Replacement is one local
+// transaction containing BOTH the new outbox and a reference to the full original.
+function explicitQueuedApply(source,path,records){
+ if(path==='meta/catalog.json'){
+  const loaded=ScheduleNative.unpackCatalog(records).state;
+  return {...loaded,months:source.months,gypsumLots:C.clone(source.gypsumLots||[])};
+ }
+ const match=/^months\/(\d{4}-(?:0[1-9]|1[0-2]))\.json$/.exec(path);
+ if(!match)throw Error('Unsupported queued path');
+ const next=C.clone(source);next.months[match[1]]=ScheduleNative.unpackMonth(match[1],records);return next;
+}
+function explicitQueuedGroups(envelope){
+ const queue=envelope?.queue,groups=envelope?.groups;
+ if(!Array.isArray(queue)||!queue.length||!Array.isArray(groups))return null;
+ const ids=new Set(),seen=new Set(),ordered=[];
+ for(const q of queue){
+  if(!q?.id||ids.has(q.id)||!q.groupId||q.unitPhase||!Array.isArray(q.base)||!Array.isArray(q.local)||!(/^(?:meta\/catalog|months\/\d{4}-(?:0[1-9]|1[0-2]))\.json$/).test(q.path))return null;
+  ids.add(q.id);
+  if(ordered.at(-1)?.id!==q.groupId){
+   if(seen.has(q.groupId))return null;seen.add(q.groupId);
+   const matches=groups.filter(group=>group.id===q.groupId),group=matches[0];
+   if(matches.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||group.status!=='pending'||!Array.isArray(group.ids)||!Array.isArray(group.paths))return null;
+   ordered.push({...C.clone(group),queue:[]});
+  }
+  ordered.at(-1).queue.push(C.clone(q));
+ }
+ for(const group of ordered){
+  const paths=group.queue.map(q=>q.path);
+  if(new Set(paths).size!==paths.length||!explicitRecoverySame(group.ids,group.queue.map(q=>q.id))||!explicitRecoverySame(group.paths,paths))return null;
+ }
+ return ordered;
+}
+function explicitQueuedProducer(base,local,latest,group,scope,key){
+ // A schedule surface can edit a previous month's manual job and this month's
+ // automatic job together. Its view month is not necessarily the first path.
+ const candidates=[...new Set([key,...group.queue.filter(q=>q.path.startsWith('months/')).map(q=>q.path.slice(7,-5)),...Object.keys(base.months||{}).filter(month=>!base.months[month].closed)])];
+ for(const candidate of candidates){
+  const ledger=typeof explicitLedgerQueueReplay==='function'?explicitLedgerQueueReplay(base,local,latest,group,scope,candidate):null;
+  if(ledger)return ledger;
+  const plan=typeof explicitPlanQueueReplay==='function'?explicitPlanQueueReplay(base,local,latest,group,scope,candidate):null;
+  if(plan)return plan;
+ }
+ return null;
+}
+function explicitQueuedCatalogAcknowledged(q,latest,group){
+ const same=explicitRecoverySame,b=q.base.find(r=>r.id==='catalog'),l=q.local.find(r=>r.id==='catalog');
+ if(!b||!l)return false;
+ const strip=rows=>rows.map(row=>{const r=C.clone(row);if(r.id==='catalog'){delete r.scheduleSourceBaseline;delete r.calendar;delete r.months}return r});
+ if(!same(strip(q.base),strip(q.local))||!Array.isArray(b.months)||!Array.isArray(l.months)||b.months.some(k=>!l.months.includes(k))||l.months.some(k=>!b.months.includes(k)&&!latest.months[k]))return false;
+ if(same(b.calendar,l.calendar))return true;
+ if(typeof explicitPlanDraftCalendarSlots!=='function')return false;
+ const before=explicitPlanDraftCalendarSlots(b.calendar),wanted=explicitPlanDraftCalendarSlots(l.calendar),actual=explicitPlanDraftCalendarSlots(latest.calendar),value=(map,id,slot)=>map.get(id)?.value??(slot.kind==='meta'?undefined:[]);
+ for(const id of new Set([...before.keys(),...wanted.keys()])){
+  const slot=wanted.get(id)||before.get(id),bv=value(before,id,slot),lv=value(wanted,id,slot),rv=value(actual,id,slot);
+  if(same(bv,lv)||same(lv,rv))continue;
+  // A month PUT precedes its catalog PUT. Its receipt alone cannot prove that
+  // the calendar was received. A later exact before/after chain can prove the
+  // requested calendar slot has already been superseded by a newer edit.
+  let proved=false;
+  for(const item of group.queue.filter(item=>item.path.startsWith('months/'))){
+   const owner=item.path.slice(7,-5),old=item.base[0]?.history||[],sent=item.local[0]?.history||[],history=latest.months[owner]?.history||[];
+   for(const event of sent.slice(old.length).filter(event=>event.type==='작업일·휴일 일괄 수정')){
+    const eb=value(explicitPlanDraftCalendarSlots(event.before),id,slot),ea=value(explicitPlanDraftCalendarSlots(event.after),id,slot);
+    if(same(eb,ea)||!same(ea,lv))continue;
+    const at=history.findIndex(e=>same(e,event));if(at<0)continue;
+    let cursor=lv,linked=true,advanced=false;
+    for(const later of history.slice(at+1).filter(e=>e.type==='작업일·휴일 일괄 수정')){
+     const cb=value(explicitPlanDraftCalendarSlots(later.before),id,slot),ca=value(explicitPlanDraftCalendarSlots(later.after),id,slot);
+     if(same(cb,ca))continue;
+     if(!same(cursor,cb)){linked=false;break}cursor=ca;advanced=true;
+    }
+    if(linked&&advanced&&same(cursor,rv)){proved=true;break}
+   }
+   if(proved)break;
+  }
+  if(!proved)return false;
+ }
+ return true;
+}
+function explicitQueuedAcknowledged(base,local,latest,group,scope,key){
+ // A lost response is not permission to restore an old value after a later
+ // server edit. Exact accepted events prove the original intent was received.
+ // Catalog changes need their own value or later-history proof as well.
+ let count=0;
+ for(const q of group.queue){
+  if(q.path==='meta/catalog.json'){
+   if(!explicitQueuedCatalogAcknowledged(q,latest,group))return false;continue;
+  }
+  const b=q.base[0],l=q.local[0],remote=latest.months[l?.id];
+  if(!b||!l||!remote||!Array.isArray(b.history)||!Array.isArray(l.history)||l.history.length<=b.history.length||!b.history.every((h,i)=>explicitRecoverySame(h,l.history[i])))return false;
+  const received=explicitRecoveryIndex(remote.history||[]);if(!received)return false;
+  for(const event of l.history.slice(b.history.length)){if(!explicitRecoverySame(received.get(event.id),event))return false;count++}
+ }
+ return count>0&&!!explicitQueuedProducer(base,local,base,group,scope,key);
+}
+function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
+ const groups=explicitQueuedGroups(envelope);if(!groups)return null;
+ let original;try{original=explicitProductionRecoveryState(envelope)}catch{return null}if(!original)return null;
+ let current=C.clone(snapshot.state);const raw=C.clone(envelope.baseline),nextBase=C.clone(snapshot.baseline),queue=[],rebuiltGroups=[];
+ // Only this in-memory proof view uses the original predecessor events. The
+ // durable outbox always contains the newly generated, latest before/after
+ // images, so it can be independently proved again after a crash or lost ACK.
+ const proofHistory=Object.fromEntries(Object.entries(current.months).map(([key,m])=>[key,C.clone(m.history||[])]));
+ for(const group of groups){
+  const before=C.clone(original);let local=C.clone(before);
+  for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return null;try{local=explicitQueuedApply(local,q.path,q.local)}catch{return null}raw[q.path]=C.clone(q.local)}
+  const key=group.queue.find(q=>q.path.startsWith('months/'))?.path.slice(7,-5)||viewMonth;
+  const proofCurrent=C.clone(current);for(const [k,history]of Object.entries(proofHistory))if(proofCurrent.months[k])proofCurrent.months[k].history=C.clone(history);
+  let staged=C.clone(proofCurrent),records=[],accepted=false,replayed;
+  if(!group.queue.some(q=>q.viewOnly))try{accepted=explicitQueuedAcknowledged(before,local,current,group,scope,key);if(!accepted)replayed=explicitQueuedProducer(before,local,proofCurrent,group,scope,key)}catch{return null}
+  if(!accepted&&replayed){
+   if(!replayed.state||!Array.isArray(replayed.monthKeys))return null;
+   staged=replayed.state;records=[];
+   const originalPaths=new Set(group.paths);
+   for(const monthKey of [...new Set(replayed.monthKeys)]){
+    const path='months/'+monthKey+'.json';if(!originalPaths.has(path)||!staged.months[monthKey])return null;
+    records.push({path,base:C.clone(nextBase[path]||[]),local:ScheduleNative.packMonth(staged.months[monthKey])});
+   }
+   const catalog=ScheduleNative.packCatalog(staged),previous=ScheduleNative.packCatalog(current);
+   if(replayed.catalog||!explicitRecoverySame(catalog,previous)){
+    if(!originalPaths.has('meta/catalog.json')){
+     const strip=rows=>rows.map(row=>{const r=C.clone(row);if(r.id==='catalog')delete r.scheduleSourceBaseline;return r});
+     if(!explicitRecoverySame(strip(catalog),strip(previous)))return null;
+    }
+    records.push({path:'meta/catalog.json',base:C.clone(nextBase['meta/catalog.json']),local:catalog});
+   }
+  }else if(!accepted){
+   for(const q of group.queue){
+    const actual=nextBase[q.path]||[],remote=C.clone(actual),monthKey=q.path.startsWith('months/')?q.path.slice(7,-5):null;
+    if(monthKey&&remote[0]&&proofHistory[monthKey])remote[0].history=C.clone(proofHistory[monthKey]);
+    let merge;try{merge=S.mergeRecords(q.base,q.local,remote)}catch{return null}if(merge.conflicts.length)return null;
+    records.push({path:q.path,base:C.clone(actual),local:C.clone(merge.records),...(q.viewOnly?{viewOnly:true,viewKeys:C.clone(q.viewKeys)}:{})});
+    try{staged=explicitQueuedApply(staged,q.path,merge.records)}catch{return null}
+   }
+  }
+  // Restore actual predecessor history before persisting anything. Only the
+  // current group's newly generated events are written; original intent is
+  // retained in the recovery archive and the temporary next-group proof view.
+  if(!accepted)for(const k of Object.keys(staged.months)){
+   const prior=proofHistory[k]||[],history=staged.months[k]?.history;
+   if(!Array.isArray(history)||history.length<prior.length||!prior.every((event,i)=>explicitRecoverySame(event,history[i])))return null;
+   const additions=history.slice(prior.length),actual=current.months[k]?.history||[],seen=new Set(actual.map(event=>event.id));
+   if(additions.some(event=>!event.id||seen.has(event.id)))return null;
+   staged.months[k].history=C.clone(actual).concat(C.clone(additions));
+   staged.months[k].rev=(current.months[k]?.rev??ScheduleNative.newMonth(k).rev)+additions.length;
+   const record=records.find(q=>q.path==='months/'+k+'.json');
+   if(record)record.local=ScheduleNative.packMonth(staged.months[k]);else if(additions.length)return null;
+  }
+  for(const q of group.queue.filter(q=>q.path.startsWith('months/'))){
+   const k=q.path.slice(7,-5),originalHistory=q.base[0]?.history||[],submitted=q.local[0]?.history||[];
+   if(submitted.length<originalHistory.length||!originalHistory.every((event,i)=>explicitRecoverySame(event,submitted[i])))return null;
+   const history=C.clone(proofHistory[k]||[]),positions=new Map(history.map((event,i)=>[event.id,i]));
+   for(const event of submitted.slice(originalHistory.length)){if(positions.has(event.id))history[positions.get(event.id)]=C.clone(event);else{positions.set(event.id,history.length);history.push(C.clone(event))}}
+   proofHistory[k]=history;
+  }
+  if(accepted){original=local;continue}
+  // Every group is staged before any outbox is replaced. Unknown or dependent
+  // work failing later cannot erase the earlier pending values.
+  const groupId=C.id(),added=[];
+  for(const record of records){
+   nextBase[record.path]=C.clone(record.local);
+   if(explicitRecoverySame(record.base,record.local))continue;
+   const id=C.id();queue.push({...record,id,groupId});added.push({id,path:record.path});
+  }
+  if(added.length)rebuiltGroups.push({id:groupId,ids:added.map(q=>q.id),paths:added.map(q=>q.path),acked:[],status:'pending'});
+  current=C.clone(staged);original=local;
+ }
+ // The saved local projection must still be exactly the tail we proved.
+ for(const path of new Set(envelope.queue.map(q=>q.path))){
+  if(path==='meta/catalog.json'){
+   if(!explicitRecoverySame(ScheduleNative.packCatalog(original),ScheduleNative.packCatalog(envelope.state)))return null;
+  }else if(!explicitRecoverySame(ScheduleNative.packMonth(original.months[path.slice(7,-5)]),ScheduleNative.packMonth(envelope.state.months[path.slice(7,-5)])))return null;
+ }
+ if(ScheduleNative.catalogUnitIssues(current).length)return null;
+ return{state:current,baseline:C.clone(snapshot.baseline),queue,groups:rebuiltGroups,originalIds:envelope.queue.map(q=>q.id),originalGroups:groups.map(g=>g.id)};
+}
+function sheetQueuedRetryable(error){return !!error?.conflicts?.length||error?.status===409||error?.status>=500&&error?.status<=599||['NETWORK','REQUEST_INTERRUPTED'].includes(error?.code)}
+async function sheetReplayQueuedSave(g,owner,options={}){
+ if(!owner||owner.closed||owner.offline||owner.pendingMigration||owner.resolving||!owner.envelope?.queue?.length||!(g?.explicitSave||typeof bulkSaveState!=='undefined'&&bulkSaveState.running))return false;
+ const before=owner.envelope,signature=JSON.stringify(before),persisted=JSON.stringify(owner.persisted),scope=sheetScope(),key=month,revision=g?.revision,draft=g?.draft,draftSignature=JSON.stringify(draft),storageKey=g?.storageKey,draftVersion=JSON.stringify(g?.persistedDraft);
+ const acknowledgedDrafts=options.acknowledgedDrafts??(typeof explicitQueuedDraftsCapture==='function'?explicitQueuedDraftsCapture(g,owner):null);
+ let adopted=null;
+ const selected=()=>{if(!g)return true;try{const pointer=sessionStorage.getItem(g.draftPointer());return !pointer||pointer===storageKey}catch{return false}};
+ const callerValid=()=>workspace===owner&&sheetScope()===scope&&month===key&&!owner.closed&&!owner.offline&&!owner.pendingMigration&&!owner.resolving&&bulkSaveAllowed()&&(!g||g.explicitSave&&g.revision===revision&&g.draft===draft&&JSON.stringify(draft)===draftSignature&&g.storageKey===storageKey&&JSON.stringify(g.persistedDraft)===draftVersion&&selected())&&(!options.valid||options.valid());
+ const valid=()=>callerValid()&&owner.envelope===before&&JSON.stringify(before)===signature&&(JSON.stringify(owner.persisted)===persisted||adopted!==null&&JSON.stringify(owner.persisted)===adopted);
+ if(!valid()||!explicitQueuedGroups(before))return false;
+ if(acknowledgedDrafts&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(acknowledgedDrafts,owner,valid);
+ if(!valid())return false;
+ const reader=new ScheduleNative.Workspace(owner.config);let snapshot;
+ try{snapshot=await reader.readSnapshot({canApply:valid})}finally{reader.close()}
+ if(!snapshot||!valid())return false;
+ const plan=explicitQueuedBuild(before,snapshot,scope,key);if(!plan||!valid())return false;
+ if(acknowledgedDrafts)acknowledgedDrafts.acknowledgedState=C.clone(plan.state);
+ const recoveryKey=owner.key+':recovery:queued-save:'+C.id(),at=new Date().toISOString();
+ const draftAcknowledgements=typeof explicitQueuedDraftsArchive==='function'?explicitQueuedDraftsArchive(acknowledgedDrafts,g,plan.state):null;
+ await S.localSet(recoveryKey,{...C.clone(before),...(draftAcknowledgements?{acknowledgedDrafts:draftAcknowledgements}:{}),explicitSaveRecovery:{schema:2,kind:'ordered-queue',at,month:key,queueIds:plan.originalIds,...(g?{draft:C.clone(draft),draftStorageKey:storageKey,draftVersion:C.clone(g.persistedDraft??null)}:{})}},{expected:undefined});
+ if(!valid())return false;
+ let applied=false;
+ const next=await owner.mutate(e=>{
+  e.state=C.clone(plan.state);e.baseline=C.clone(plan.baseline);e.queue=C.clone(plan.queue);
+  e.groups=(e.groups||[]).filter(group=>!plan.originalGroups.includes(group.id)).concat(C.clone(plan.groups));
+  e.explicitSaveRecoveries??=[];e.explicitSaveRecoveries.push({key:recoveryKey,at,kind:'ordered-queue',queueIds:plan.originalIds,...(draftAcknowledgements?{drafts:C.clone(draftAcknowledgements.index)}:{})});
+  adopted=JSON.stringify(e);applied=true;
+ },{canCommit:valid});
+ if(!applied||next===before||JSON.stringify(next)!==adopted)return false;
+ owner.loaded=true;owner.catalogBlocked=null;owner.lastError=null;state=owner.envelope.state;
+ owner.status('저장 대기 내용을 최신 자료에 반영 중…');
+ try{
+  if(!await sheetAwaitRemoteAck(owner)||owner.envelope.queue.length)throw Error('서버의 저장 완료 응답을 아직 받지 못했습니다. 입력과 전송 대기는 기기에 보관했습니다.');
+ }catch(error){
+  if(sheetQueuedRetryable(error)&&(options.attempt||0)<2&&callerValid()&&await sheetReplayQueuedSave(g,owner,{...options,acknowledgedDrafts,attempt:(options.attempt||0)+1,valid:callerValid}))return true;
+  throw error;
+ }
+ if(!callerValid())throw Error('저장 중 연결 또는 입력이 바뀌었습니다. 입력은 보관했습니다.');
+ state=owner.envelope.state;
+ if(acknowledgedDrafts)await explicitQueuedDraftsClear(acknowledgedDrafts,callerValid,owner);
+ if(!callerValid())throw Error('저장 뒤 연결 또는 입력이 바뀌었습니다. 새 입력은 유지했습니다.');
+ return true;
 }
 
 AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);
