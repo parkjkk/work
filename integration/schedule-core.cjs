@@ -6,9 +6,14 @@ const fieldPreparation=r=>!!r?.sourceIntegration&&(r.pours==null||typeof r.pours
 const col=n=>{let s='';while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s};
 const ci=s=>[...s].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0);
 const val=(s,a)=>s?.cells?.[a]?.v??null;
-const date=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
+const dateUncached=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
+// Pure calendar checks run very often in schedule calculations. Their answers
+// never change, so they are remembered (bounded) instead of rebuilt each time.
+const dateMemo=new Map(),isoMemo=new Map(),remember=(memo,key,value)=>{if(memo.size>50000)memo.clear();memo.set(key,value);return value};
+const date=(y,m,d)=>{if(!Number.isInteger(y)||!Number.isInteger(m)||!Number.isInteger(d)||y<0||y>9999||m<-99||m>99||d<-999||d>999)return dateUncached(y,m,d);const key=y*1e6+(m+100)*1e3+(d+1000)/10;const known=dateMemo.get(key);return known!==undefined?known:remember(dateMemo,key,dateUncached(y,m,d))};
 const serial=n=>Number.isFinite(n)?new Date(Date.UTC(1899,11,30)+n*86400000).toISOString().slice(0,10):null;
-const iso=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+const isoUncached=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+const iso=x=>{if(typeof x!=='string')return isoUncached(x);const known=isoMemo.get(x);return known!==undefined?known:remember(isoMemo,x,isoUncached(x))};
 // Explicit field plans remain pending until a positive actual references their original row.
 function plannedWorkRefValue(value){
  if(value==null)return null;
@@ -96,14 +101,21 @@ function productNameIndex(products,extraAliases=[]){
 // Product indexes live only for one synchronous read calculation, never a saved state.
 const catalogReadScopes=new WeakMap();
 function withCatalogLookup(state,read){if(catalogReadScopes.has(state))return read();catalogReadScopes.set(state,{products:null,lookup:null});try{return read()}finally{catalogReadScopes.delete(state)}}
+// A screen draws from one unchanged ledger. Only inside such an explicit
+// screen read, derived read copies that share the very same product list also
+// share its index; nothing is kept once the screen read ends.
+let catalogShareDepth=0,catalogListLookups=new WeakMap();
+function withScreenRead(read){catalogShareDepth++;try{return read()}finally{if(--catalogShareDepth===0)catalogListLookups=new WeakMap()}}
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
 function catalogLookup(state){
  const scope=catalogReadScopes.get(state);if(scope?.lookup&&scope.products===state.products)return scope.lookup;
+ const list=state.products,shared=catalogShareDepth>0&&list&&typeof list==='object'?catalogListLookups.get(list):null;
+ if(shared&&shared.size===list.length){if(scope){scope.products=list;scope.lookup=shared.lookup}return shared.lookup}
  const ix=productNameIndex(state.products),current=ix.current;for(const [name,product]of current)if(!product)throw Error('현재 품명이 중복됩니다: '+name);
  const product=value=>ix.resolve(value)||null;
- const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}return lookup;
+ const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}if(catalogShareDepth>0&&list&&typeof list==='object')catalogListLookups.set(list,{size:list.length,lookup});return lookup;
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
@@ -332,6 +344,6 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventoryCurrent,memoInventories};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,withScreenRead,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventoryCurrent,memoInventories};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);

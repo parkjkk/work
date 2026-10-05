@@ -2367,9 +2367,14 @@ const fieldPreparation=r=>!!r?.sourceIntegration&&(r.pours==null||typeof r.pours
 const col=n=>{let s='';while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s};
 const ci=s=>[...s].reduce((n,c)=>n*26+c.charCodeAt(0)-64,0);
 const val=(s,a)=>s?.cells?.[a]?.v??null;
-const date=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
+const dateUncached=(y,m,d)=>{const x=new Date(Date.UTC(y,m-1,d));return x.getUTCFullYear()===y&&x.getUTCMonth()===m-1&&x.getUTCDate()===d?x.toISOString().slice(0,10):null};
+// Pure calendar checks run very often in schedule calculations. Their answers
+// never change, so they are remembered (bounded) instead of rebuilt each time.
+const dateMemo=new Map(),isoMemo=new Map(),remember=(memo,key,value)=>{if(memo.size>50000)memo.clear();memo.set(key,value);return value};
+const date=(y,m,d)=>{if(!Number.isInteger(y)||!Number.isInteger(m)||!Number.isInteger(d)||y<0||y>9999||m<-99||m>99||d<-999||d>999)return dateUncached(y,m,d);const key=y*1e6+(m+100)*1e3+(d+1000)/10;const known=dateMemo.get(key);return known!==undefined?known:remember(dateMemo,key,dateUncached(y,m,d))};
 const serial=n=>Number.isFinite(n)?new Date(Date.UTC(1899,11,30)+n*86400000).toISOString().slice(0,10):null;
-const iso=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+const isoUncached=x=>/^\d{4}-\d{2}-\d{2}$/.test(x)&&date(+x.slice(0,4),+x.slice(5,7),+x.slice(8))===x;
+const iso=x=>{if(typeof x!=='string')return isoUncached(x);const known=isoMemo.get(x);return known!==undefined?known:remember(isoMemo,x,isoUncached(x))};
 // Explicit field plans remain pending until a positive actual references their original row.
 function plannedWorkRefValue(value){
  if(value==null)return null;
@@ -2457,14 +2462,21 @@ function productNameIndex(products,extraAliases=[]){
 // Product indexes live only for one synchronous read calculation, never a saved state.
 const catalogReadScopes=new WeakMap();
 function withCatalogLookup(state,read){if(catalogReadScopes.has(state))return read();catalogReadScopes.set(state,{products:null,lookup:null});try{return read()}finally{catalogReadScopes.delete(state)}}
+// A screen draws from one unchanged ledger. Only inside such an explicit
+// screen read, derived read copies that share the very same product list also
+// share its index; nothing is kept once the screen read ends.
+let catalogShareDepth=0,catalogListLookups=new WeakMap();
+function withScreenRead(read){catalogShareDepth++;try{return read()}finally{if(--catalogShareDepth===0)catalogListLookups=new WeakMap()}}
 function catalogProduct(state,name){return catalogLookup(state).product(name)}
 function catalogName(state,name){return catalogLookup(state).name(name)}
 function catalogIdentity(state,name){return catalogLookup(state).identity(name)}
 function catalogLookup(state){
  const scope=catalogReadScopes.get(state);if(scope?.lookup&&scope.products===state.products)return scope.lookup;
+ const list=state.products,shared=catalogShareDepth>0&&list&&typeof list==='object'?catalogListLookups.get(list):null;
+ if(shared&&shared.size===list.length){if(scope){scope.products=list;scope.lookup=shared.lookup}return shared.lookup}
  const ix=productNameIndex(state.products),current=ix.current;for(const [name,product]of current)if(!product)throw Error('현재 품명이 중복됩니다: '+name);
  const product=value=>ix.resolve(value)||null;
- const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}return lookup;
+ const lookup={product,current:value=>current.get(text(value))||null,name:value=>text(product(value)?.name)||text(value),identity:value=>{const p=product(value);return p?text((p.renameFrom||[]).find(old=>text(old)&&product(old)===p))||text(p.name):text(value)}};if(scope){scope.products=state.products;scope.lookup=lookup}if(catalogShareDepth>0&&list&&typeof list==='object')catalogListLookups.set(list,{size:list.length,lookup});return lookup;
 }
 function renameCatalogReferences(state,renames,at=new Date().toISOString()){
  const mappings=new Map();for(const r of renames||[]){const from=text(r.from),to=text(r.to),p=(state.products||[]).find(p=>p.id===r.id);if(!from||!to||!p||text(p.name)!==to||catalogName(state,from)!==to)throw Error('품명 변경 연결을 다시 확인해 주세요.');if(from!==to){if(mappings.has(from)&&mappings.get(from)!==to)throw Error('같은 품명의 변경 대상이 중복됩니다.');mappings.set(from,to)}}
@@ -2693,7 +2705,7 @@ function productionTeamValue(value,owner=''){
   if(!worker||worker.length>80||seen.has(worker)||!(m.hours===''||typeof m.hours==='number'&&Number.isFinite(m.hours)&&m.hours>=0&&m.hours<=24))throw Error('함께 작업한 이름과 시간(0~24)을 확인해 주세요.');seen.add(worker);return{worker,hours:m.hours};});
  return members.length?{schema:1,members}:null;
 }
-root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventoryCurrent,memoInventories};
+root.ScheduleCore={fieldPreparation,plannedWorkValue,plannedWorkRefValue,productionTeamValue,scheduleTargetValue,PRODUCT_NAME_POLICY,productNameIndex,withCatalogLookup,withScreenRead,workerStats,text,num,col,ci,val,date,serial,iso,clone,id,catalogName,catalogIdentity,catalogLookup,renameCatalogReferences,daily,dailyQuality,dryDate,sum,managementProducts,catalogUnitSources,catalogUnitIssues,refreshCatalogUnits,scheduleSourceDate,savedSchedulePeriods,savedScheduleDryMarkers,normalize,inventory,inventoryHeadingFilter,completionValue,validateRecord,updateDaily,memoInventory,memoInventoryCurrent,memoInventories};
 if(typeof module!=='undefined')module.exports=root.ScheduleCore;
 })(globalThis);
 
@@ -2781,6 +2793,8 @@ async function localGet(key){return localRequest(key,undefined,false)}
 async function localSet(key,value,options){return localRequest(key,value,true,options)}
 // Enumerate only the caller's draft prefix; values remain in the app's private device storage.
 async function localEntries(prefix){const db=await database();return new Promise((resolve,reject)=>{const entries=[];let tx;try{tx=db.transaction('state');const request=tx.objectStore('state').openCursor();request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;if(typeof cursor.key==='string'&&cursor.key.startsWith(prefix)&&cursor.value!=null)entries.push({key:cursor.key,value:cursor.value});cursor.continue()};tx.oncomplete=()=>{db.close();resolve(entries)};tx.onerror=tx.onabort=()=>{db.close();reject(tx.error||Error('보관 초안을 읽지 못했습니다.'))}}catch(error){db.close();reject(error)}})}
+// Keys only: device housekeeping must not load every stored recovery copy.
+async function localKeys(prefix){const db=await database();return new Promise((resolve,reject)=>{let keys=[],tx;try{tx=db.transaction('state');const request=tx.objectStore('state').getAllKeys();request.onsuccess=()=>{keys=request.result.filter(key=>typeof key==='string'&&key.startsWith(prefix))};tx.oncomplete=()=>{db.close();resolve(keys)};tx.onerror=tx.onabort=()=>{db.close();reject(tx.error||Error('기기 저장소 목록을 읽지 못했습니다.'))}}catch(error){db.close();reject(error)}})}
 function equal(a,b){return JSON.stringify(a??null)===JSON.stringify(b??null)}
 const own=(value,key)=>Object.prototype.hasOwnProperty.call(value||{},key);
 function recordField(record,key){return own(record,key)?{present:true,value:record[key]}:{present:false}}
@@ -3010,14 +3024,198 @@ function mergeProductionMonth(base,local,remote){
  for(const row of local.rows)if(!current.has(row.id)&&updates.get(row.id))result.rows.push(updates.get(row.id));
  result.history=rh.concat(appended.map(clone));result.rev=Math.max(base.rev,remote.rev)+appended.length;return{record:result};
 }
-function mergeRecords(base,local,remote){
+// Last automatic step for an open month that both sides changed in a shape the
+// strict ledger merges above do not resolve (a schedule save while daily
+// reports arrive, or a queued correction of a row the field app also touched).
+// Priority: a cell this device edited keeps its value, everything it did not
+// touch follows the server, the same cell edited on both sides goes to the
+// later edit (audit time), and a request the server already holds is skipped.
+// Protected: closing/stocktake/carry/stock keys, catalog-unit and stocktake
+// events, identity and structure fields, deletions, unproved or rewritten
+// history, and any merged production row that fails its own validation.
+const monthRowKeys={jobs:'id',plans:'id',reservationBindings:'rowId',rows:'id',plaster:'id',issues:'id'};
+const monthRowIdentity={jobs:['product','worker','originId'],plans:['product'],reservationBindings:['jobId'],rows:productionIdentity.filter(field=>field!=='id'),plaster:['date'],issues:['date','product']};
+const monthRowStructure={jobs:['handoffs','routing','machines','group']},monthStrictEvents=['관리 기준값 연결 반영','실사 반영'];
+// Each changed row of these collections must be backed by its own audit event.
+const monthProvedKeys=['rows','plaster','issues','jobs'],monthLedgerKeys=['rows','plaster','issues'];
+const monthLocalKeys=['jobUndo','scheduleAsOf'],monthServerFields=['sourceIntegration','integrationOutbound'];
+const monthAllowedRemote=new Set(['rows','fieldAttendance','jobs','jobUndo','reservationBindings','scheduleAsOf','plans','plaster','issues','history','rev']);
+const plainObject=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
+function mergeMonthRows(key,base,local,remote,times){
+ const id=monthRowKeys[key],index=rows=>{if(!Array.isArray(rows))return null;const map=new Map();for(const row of rows){if(!row||typeof row!=='object'||typeof row[id]!=='string'||!row[id]||map.has(row[id]))return null;map.set(row[id],row)}return map};
+ const maps=[base,local,remote].map(index);if(maps.some(map=>!map))return{conflict:true,field:key};
+ const [before,desired,current]=maps,merged=new Map();
+ for(const rowId of new Set([...before.keys(),...desired.keys(),...current.keys()])){
+  const b=before.get(rowId),l=desired.get(rowId),r=current.get(rowId);
+  if(equal(l,b)){if(r)merged.set(rowId,r);continue}
+  if(equal(r,b)||equal(l,r)){if(l)merged.set(rowId,l);continue}
+  // Deleting a row the server has since edited, or editing a row the server
+  // deleted, is a real question: neither side is overwritten automatically.
+  if(!l||!r||!b)return{conflict:true,field:key+':'+rowId};
+  for(const field of monthRowIdentity[key]||[])if(!equal(recordField(b,field),recordField(r,field))||!equal(recordField(b,field),recordField(l,field)))return{conflict:true,field:key+':'+rowId+':'+field};
+  // Handoffs, routing and machine allocation are validated as one structure
+  // (a swap has two halves). They are never combined cell by cell here; the
+  // schedule table re-validates them against the newest job instead.
+  for(const field of monthRowStructure[key]||[])if(!equal(recordField(b,field),recordField(l,field))||!equal(recordField(b,field),recordField(r,field)))return{conflict:true,field:key+':'+rowId+':'+field};
+  if(key==='rows'&&!equal(b.sourceIntegration?.key,r.sourceIntegration?.key))return{conflict:true,field:key+':'+rowId+':sourceIntegration'};
+  // The same cell edited on both sides: the later edit stands. This device's
+  // edit wins unless the audit trail shows a strictly newer server edit, so a
+  // request that waited in an old outbox cannot undo more recent work.
+  // Part of this request already reached the server for this row: anything the
+  // server changed on the row since then is newer than the rest of it.
+  // A production row reported by the field app is the most accurate record:
+  // where the field changed a cell, its value stands over a management edit.
+  const mine=times?.local.get(rowId),theirs=times?.remote.get(rowId),serverLater=key==='rows'&&(!!r.sourceIntegration||!!times?.field?.has(rowId))||times?.received?.has(rowId)||Number.isFinite(mine)&&Number.isFinite(theirs)&&theirs>mine;
+  const take=(was,now,there)=>{if(equal(was,now))return{skip:true};if(serverLater&&!equal(there,was))return{skip:true};if(equal(there,now))return{skip:true};return{value:now}};
+  const row=clone(r);let taken=false;
+  for(const field of new Set([...Object.keys(b),...Object.keys(l)])){
+   if(field===id||field==='rev'||monthServerFields.includes(field))continue;
+   const was=recordField(b,field),now=recordField(l,field),there=recordField(r,field);
+   // One level of named slots (remarks, unit sources, explicit flags) merges
+   // per slot so a remote change of another slot is kept.
+   if(was.present&&now.present&&there.present&&plainObject(was.value)&&plainObject(now.value)&&plainObject(there.value)){
+    const slots={...there.value};let slotTaken=false;
+    for(const slot of new Set([...Object.keys(was.value),...Object.keys(now.value)])){const pick=take(recordField(was.value,slot),recordField(now.value,slot),recordField(there.value,slot));if(pick.skip)continue;if(pick.value.present)slots[slot]=clone(pick.value.value);else delete slots[slot];slotTaken=true}
+    if(slotTaken){row[field]=slots;taken=true}continue;
+   }
+   const pick=take(was,now,there);if(pick.skip)continue;
+   if(pick.value.present)row[field]=clone(pick.value.value);else delete row[field];taken=true;
+  }
+  if(!taken){merged.set(rowId,r);continue}
+  if(key==='rows'&&productionCoupling(b,l,r,productionCells.filter(cell=>!equal(productionCell(b,cell),productionCell(l,cell)))))return{conflict:true,field:key+':'+rowId};
+  if([b.rev,l.rev,r.rev].some(Number.isSafeInteger))row.rev=Math.max(0,...[b.rev,l.rev,r.rev].filter(Number.isSafeInteger))+1;
+  merged.set(rowId,row);
+ }
+ const rows=remote.filter(row=>merged.has(row[id])).map(row=>merged.get(row[id]));
+ for(const row of local)if(!current.has(row[id])&&merged.has(row[id]))rows.push(merged.get(row[id]));
+ return{rows};
+}
+function mergeMonthFields(base,local,remote){
+ if([base,local,remote].some(m=>!m||m.kind!=='month'||m.deleted||m.closed||m.closeSnapshot||!Array.isArray(m.history||[])))return null;
+ const baseEvents=new Map(),remoteEvents=new Map();
+ for(const event of base.history||[]){if(!event?.id)return null;baseEvents.set(event.id,event)}
+ for(const event of remote.history||[]){if(!event?.id||remoteEvents.has(event.id))return null;remoteEvents.set(event.id,event)}
+ // Both copies must still carry every audit event of the common basis unchanged.
+ const localIds=new Set();for(const event of local.history||[]){if(!event?.id||localIds.has(event.id))return null;localIds.add(event.id)}
+ for(const [eventId,event]of baseEvents){if(!localIds.has(eventId)||!equal(remoteEvents.get(eventId),event))return null}
+ {const order=new Map((remote.history||[]).map((event,index)=>[event.id,index]));let previous=-1;for(const eventId of baseEvents.keys()){const index=order.get(eventId);if(!(index>previous))return null;previous=index}}
+ const submitted=(local.history||[]).filter(event=>!baseEvents.has(event.id));
+ // A request only combines collections it may change. Closing, stocktake,
+ // carry, stock or unknown month keys keep the strict path.
+ const ordinary=new Set([...Object.keys(monthRowKeys),...monthLocalKeys,'history','rev']);
+ for(const key of new Set([...Object.keys(base),...Object.keys(local)]))if(!ordinary.has(key)&&!equal(recordField(base,key),recordField(local,key)))return null;
+ if(submitted.some(event=>monthStrictEvents.includes(event.type)))return null;
+ // A rewritten copy of this request's own event on the server is not proof.
+ for(const event of submitted)if(remoteEvents.has(event.id)&&!equal(remoteEvents.get(event.id),event))return null;
+ const ledger=monthLedgerKeys.some(key=>!equal(recordField(base,key),recordField(local,key)));
+ // A malformed server ledger is never repaired implicitly by a later merge.
+ if(!equal(recordField(base,'plaster'),recordField(local,'plaster'))&&Array.isArray(remote.plaster)&&plasterLedgerProblem(remote))return null;
+ if(ledger)for(const key of new Set([...Object.keys(base),...Object.keys(remote)]))if(!monthAllowedRemote.has(key)&&!equal(recordField(base,key),recordField(remote,key)))return null;
+ // Every changed ledger or schedule row is backed by an event of this request
+ // whose recorded result is exactly the requested row.
+ for(const key of monthProvedKeys){
+  const id=monthRowKeys[key],b=new Map((base[key]||[]).map(row=>[row?.[id],row])),l=new Map((local[key]||[]).map(row=>[row?.[id],row]));
+  for(const rowId of new Set([...b.keys(),...l.keys()])){if(equal(b.get(rowId),l.get(rowId)))continue;const target=l.get(rowId)||null;
+   // Only the integration service creates link baselines and receipts.
+   if(key==='rows'&&target&&!b.has(rowId)&&monthServerFields.some(field=>own(target,field)))return null;
+   // The row's own events form one unbroken chain from the common basis to the
+   // requested row; a forged or broken chain is not proof of intent.
+   const chain=submitted.filter(event=>(event.after?.[id]??event.before?.[id])===rowId);if(!chain.length||!equal(chain.at(-1).after??null,target))return null;
+   if(chain.some(event=>key==='rows'?!productionEventKind(event,base.id):event.type!==key&&event.type!=='삭제:'+key))return null;
+   const was=b.get(rowId);if(key==='rows'&&was&&target){
+    // Server-owned links stay untouched and only the known input cells change.
+    if(monthServerFields.some(field=>!equal(recordField(was,field),recordField(target,field))))return null;
+    // Identity corrections change which work receives a quantity; only the
+    // strict ledger merge with its dependency checks may accept them.
+    if(productionIdentity.some(field=>!equal(recordField(was,field),recordField(target,field))))return null;
+    // A first edit may stamp its origin; an established origin is never replaced.
+    for(const field of ['batchId','source'])if(String(was[field]??'').trim()&&!equal(recordField(was,field),recordField(target,field)))return null;
+    const allowed=new Set(['rev','batchId','source',...productionCells.map(cell=>cell.split('.')[0])]),slots=new Set(productionCells.filter(cell=>cell.includes('.')));
+    for(const field of new Set([...Object.keys(was),...Object.keys(target)])){if(equal(recordField(was,field),recordField(target,field)))continue;if(!allowed.has(field))return null;
+     if(['fieldDetails','unitSources','explicit'].includes(field))for(const slot of new Set([...Object.keys(was[field]||{}),...Object.keys(target[field]||{})]))if(!equal(recordField(was[field]||{},slot),recordField(target[field]||{},slot))&&!slots.has(field+'.'+slot))return null}
+   }
+   let cursor=b.get(rowId)??null;for(const event of chain){if(!equal(memoSemantic(event.before??null),memoSemantic(cursor)))return null;cursor=event.after??null}}
+ }
+ // Every audit event of this request is already on the server: it was
+ // received, even if later server work has changed those rows again.
+ if(submitted.length&&submitted.every(event=>remoteEvents.has(event.id)))return{record:remote};
+ const stamp=(events,skip)=>{const map=new Map();for(const event of events){if(skip.has(event.id))continue;const rowId=event.after?.id??event.before?.id,at=Date.parse(event.at);if(typeof rowId==='string'&&Number.isFinite(at)&&!(map.get(rowId)>=at))map.set(rowId,at)}return map};
+ const times={local:stamp(submitted,new Set(remoteEvents.keys())),remote:stamp(remote.history||[],new Set([...baseEvents.keys(),...submitted.map(event=>event.id)])),received:new Set(submitted.filter(event=>remoteEvents.has(event.id)).map(event=>event.after?.id??event.before?.id).filter(rowId=>typeof rowId==='string')),field:new Set((remote.history||[]).filter(event=>!baseEvents.has(event.id)&&event.type==='ilbo-sync').map(event=>event.after?.id??event.before?.id).filter(rowId=>typeof rowId==='string'))};
+ const result=clone(remote),applied=new Set();let changed=false;
+ for(const key of Object.keys(monthRowKeys)){
+  const b=recordField(base,key),l=recordField(local,key),r=recordField(remote,key);
+  if(equal(l,b)||equal(l,r))continue;
+  if(!b.present||!l.present||!r.present){if(!equal(r,b))return{conflict:true,field:key};if(l.present)result[key]=clone(l.value);else delete result[key];changed=true;applied.add('*');continue}
+  const rows=mergeMonthRows(key,b.value,l.value,r.value,times);if(rows.conflict)return rows;
+  if(equal(rows.rows,r.value))continue;
+  const id=monthRowKeys[key],now=new Map(r.value.map(row=>[row[id],row]));
+  for(const row of rows.rows)if(!equal(row,now.get(row[id])))applied.add(row[id]);
+  for(const rowId of now.keys())if(!rows.rows.some(row=>row[id]===rowId))applied.add(rowId);
+  result[key]=rows.rows;changed=true;
+ }
+ // Merged production rows must still satisfy their own record rules, and the
+ // daily plaster ledger keeps one valid row per date.
+ const mergedRows=new Set(result.rows||[]),remoteRows=new Set(remote.rows||[]);
+ for(const row of mergedRows)if(!remoteRows.has(row)&&productionRowProblem(row,result.id))return{conflict:true,field:'rows:'+row.id};
+ if(!equal(result.plaster,remote.plaster)&&Array.isArray(result.plaster)&&plasterLedgerProblem(result))return{conflict:true,field:'plaster'};
+ // Undo snapshot and calculation basis follow this request only when some of
+ // its edits actually reached the merged month.
+ for(const key of monthLocalKeys){
+  const b=recordField(base,key),l=recordField(local,key),r=recordField(remote,key);
+  if(equal(l,b)||equal(l,r)||key==='jobUndo'&&!changed)continue;
+  if(l.present)result[key]=clone(l.value);else delete result[key];changed=true;
+ }
+ // An audit event whose edit was entirely superseded by newer server work is
+ // not appended: the month history must describe the values it holds.
+ const tracked=event=>{const rowId=event.after?.id??event.before?.id;return typeof rowId==='string'&&times.local.has(rowId)};
+ const appended=submitted.filter(event=>!remoteEvents.has(event.id)&&(!tracked(event)||applied.has('*')||applied.has(event.after?.id??event.before?.id)));
+ if(!changed&&!appended.length)return{record:remote};
+ result.history=(remote.history||[]).concat(appended.map(clone));
+ result.rev=Math.max(0,...[base.rev,remote.rev].filter(Number.isSafeInteger))+Math.max(1,appended.length);
+ return{record:result};
+}// The shared catalog header holds the holiday calendar, the month list and a
+// few settings in one record. Two devices editing different holiday cells, or
+// one adding a month while another edits holidays, must not collide. Holiday
+// cells merge per date (and worker); this device's edit of the same cell wins.
+// A unit-transaction marker or any other setting changed on both sides stays
+// a conflict.
+function calendarCellKey(kind,row){return JSON.stringify(kind==='factory'?[typeof row==='string'?row:row?.date]:[row?.worker,row?.date])}
+function mergeCalendar(base,local,remote){
+ const result={...clone(remote)};
+ for(const kind of ['factory','workers']){
+  const group=list=>{const map=new Map();for(const row of Array.isArray(list)?list:[]){const key=calendarCellKey(kind,row);if(!map.has(key))map.set(key,[]);map.get(key).push(row)}return map};
+  const [b,l,r]=[base?.[kind],local?.[kind],remote?.[kind]].map(group),rows=new Map(r);
+  for(const key of new Set([...b.keys(),...l.keys()])){const before=b.get(key)||[],after=l.get(key)||[];if(equal(before,after))continue;if(after.length)rows.set(key,clone(after));else rows.delete(key)}
+  result[kind]=[...rows.values()].flat();
+ }
+ for(const key of new Set([...Object.keys(base||{}),...Object.keys(local||{})])){if(['factory','workers'].includes(key)||equal(base?.[key],local?.[key]))continue;if(!equal(remote?.[key],base?.[key])&&!equal(remote?.[key],local?.[key]))return null;if(local&&Object.hasOwn(local,key))result[key]=clone(local[key]);else delete result[key]}
+ return result;
+}
+function mergeCatalogMeta(base,local,remote){
+ if([base,local,remote].some(r=>r?.kind!=='catalog'||r.id!=='catalog'||r.deleted))return null;
+ const result=clone(remote);
+ for(const key of new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)])){
+  if(key==='rev')continue;
+  const b=recordField(base,key),l=recordField(local,key),r=recordField(remote,key);
+  if(equal(l,b)||equal(l,r))continue;
+  if(equal(r,b)){if(l.present)result[key]=clone(l.value);else delete result[key];continue}
+  if(key==='calendar'){const calendar=mergeCalendar(b.value,l.value,r.value);if(!calendar)return{conflict:true,field:'calendar'};result.calendar=calendar;continue}
+  if(key==='months'&&Array.isArray(l.value)&&Array.isArray(r.value)){const removed=new Set((Array.isArray(b.value)?b.value:[]).filter(k=>!l.value.includes(k)||!r.value.includes(k)));result.months=[...new Set([...r.value,...l.value])].filter(k=>!removed.has(k)).sort();continue}
+  return{conflict:true,field:key};
+ }
+ result.rev=Math.max(0,...[base.rev,local.rev,remote.rev].filter(Number.isSafeInteger))+1;
+ return{record:result};
+}
+// options.strict keeps the whole-month boundary for requests that carry their
+// own transaction rules: catalog unit transactions, stocktake and closing.
+function mergeRecords(base,local,remote,options={}){
  for(const xs of[base,local,remote]){if(!Array.isArray(xs))throw Error('저장자료 목록 형식 오류');const seen=new Set();for(const r of xs){if(!r||typeof r.id!=='string'||!r.id||seen.has(r.id))throw Error('중복 또는 누락된 기록 ID가 있어 저장을 보류합니다.');seen.add(r.id)}}
  const maps=[base,local,remote].map(xs=>new Map(xs.map(x=>[x.id,x]))),ids=new Set(maps.flatMap(m=>[...m.keys()])),result=[],conflicts=[];
  for(const id of ids){
   let[b,l,r]=maps.map(m=>m.get(id));if(b&&!l)l={id,deleted:true,rev:(b.rev||0)+1};
   const memo=mergeMemoRecord(b,l,r);if(memo){if(memo.conflict){conflicts.push({id,base:b,local:l,remote:r,field:memo.field});if(r)result.push(r)}else if(memo.record)result.push(memo.record);continue}
   if(equal(l,b)){if(r)result.push(r);continue}
-  const ledger=mergeIssueMonth(b,l,r)||mergePlasterMonth(b,l,r)||mergeProductionMonth(b,l,r);if(ledger){if(ledger.conflict){conflicts.push({id,base:b,local:l,remote:r,field:ledger.field});if(r)result.push(r)}else if(ledger.record)result.push(ledger.record);continue}
+  const ledger=mergeIssueMonth(b,l,r)||mergePlasterMonth(b,l,r)||mergeProductionMonth(b,l,r);if(ledger){if(ledger.conflict){const fields=options.strict?null:mergeMonthFields(b,l,r);if(fields?.record)result.push(fields.record);else{conflicts.push({id,base:b,local:l,remote:r,field:ledger.field});if(r)result.push(r)}}else if(ledger.record)result.push(ledger.record);continue}
   // Only the integration service owns link baselines and outgoing receipts.
   // Preserve the newest server value, including ACK removal. Other business
   // mutations still use the whole-month conflict boundary.
@@ -3026,7 +3224,7 @@ function mergeRecords(base,local,remote){
   if(guard.invalid){conflicts.push({...original,field:'sourceIntegration'});if(r)result.push(r)}
   else if(equal(l,b)){if(r)result.push(r)}
   else if(equal(r,b)||equal(l,r)){if(l)result.push(l)}
-  else{conflicts.push(original);if(r)result.push(r)}
+  else{const fields=options.strict?null:mergeMonthFields(b,l,r)||mergeCatalogMeta(b,l,r);if(fields?.record)result.push(fields.record);else{conflicts.push(original);if(r)result.push(r)}}
  }
  return{records:result,conflicts};
 }
@@ -3047,9 +3245,15 @@ class GithubStore{
   if(r.encoding!=='base64'||typeof r.content!=='string')throw Error('파일 크기 또는 데이터 형식을 확인해 주세요.');
   return{sha:r.sha,data:JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(r.content.replace(/\s/g,'')),c=>c.charCodeAt(0))))};
  }
- async saveRecords(path,base,local){base=clone(base);local=clone(local);const epoch=this.epoch;const task=async()=>{if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');for(let attempt=0;attempt<4;attempt++){const remote=await this.get(path,true),current=remote.data||{schema:1,records:[]};if(current.schema!==1||!Array.isArray(current.records))throw Error('지원하지 않는 저장자료입니다.');const merged=mergeRecords(base,local,current.records);if(merged.conflicts.length){const e=Error('같은 기록이 다른 기기에서도 수정되었습니다.');e.conflicts=merged.conflicts;throw e}const data={schema:1,records:merged.records},bytes=new TextEncoder().encode(JSON.stringify(data));let str='';for(let i=0;i<bytes.length;i+=8192)str+=String.fromCharCode(...bytes.subarray(i,i+8192));if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');try{const r=await this.api('/contents/'+path.split('/').map(encodeURIComponent).join('/'),{method:'PUT',body:JSON.stringify({message:'Update production records',branch:this.config.branch||'main',...(remote.sha?{sha:remote.sha}:{}),content:btoa(str)})});return{data,sha:r.content.sha,...(/^[a-f0-9]{40,64}$/i.test(r.commit?.sha||'')?{revision:r.commit.sha}:{})}}catch(e){if(e.status!==409||attempt===3)throw e}}};const p=this.running.then(task,task);this.running=p.catch(()=>{});return p}
+ async saveRecords(path,base,local,options={}){base=clone(base);local=clone(local);const epoch=this.epoch;const task=async()=>{if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');for(let attempt=0;attempt<4;attempt++){const remote=await this.get(path,true),current=remote.data||{schema:1,records:[]};if(current.schema!==1||!Array.isArray(current.records))throw Error('지원하지 않는 저장자료입니다.');const merged=mergeRecords(base,local,current.records,options);if(merged.conflicts.length){const e=Error('같은 기록이 다른 기기에서도 수정되었습니다.');e.conflicts=merged.conflicts;throw e}
+   // A request the server already holds needs no new commit. Re-sending the
+   // same file would only move the repository head for every other writer.
+   if(remote.sha&&equal(merged.records,current.records))return{data:current,sha:remote.sha,...(remote.revision?{revision:remote.revision}:{})};
+   const data={schema:1,records:merged.records},bytes=new TextEncoder().encode(JSON.stringify(data));let str='';for(let i=0;i<bytes.length;i+=8192)str+=String.fromCharCode(...bytes.subarray(i,i+8192));if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');try{const r=await this.api('/contents/'+path.split('/').map(encodeURIComponent).join('/'),{method:'PUT',body:JSON.stringify({message:'Update production records',branch:this.config.branch||'main',...(remote.sha?{sha:remote.sha}:{}),content:btoa(str)})});return{data,sha:r.content.sha,...(/^[a-f0-9]{40,64}$/i.test(r.commit?.sha||'')?{revision:r.commit.sha}:{})}}catch(e){if(e.status!==409||attempt===3)throw e;
+    // Another writer moved the branch. Wait briefly, then re-read and re-merge.
+    await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)+Math.floor(Math.random()*200)))}}};const p=this.running.then(task,task);this.running=p.catch(()=>{});return p}
 }
-root.ScheduleStorage={localGet,localSet,localEntries,mergeRecords,mergeIssueMonth,mergePlasterMonth,mergeProductionMonth,GithubStore,PREFIX};if(typeof module!=='undefined')module.exports=root.ScheduleStorage;
+root.ScheduleStorage={localGet,localSet,localEntries,localKeys,mergeRecords,mergeMonthFields,mergeCatalogMeta,mergeIssueMonth,mergePlasterMonth,mergeProductionMonth,GithubStore,PREFIX};if(typeof module!=='undefined')module.exports=root.ScheduleStorage;
 })(globalThis);
 </script><script>(function(root){'use strict';const C=ScheduleCore,S=ScheduleStorage;
 const clone=C.clone,scope=c=>[c.owner,c.repo,c.branch||'main'].map(encodeURIComponent).join('/'),snapshotOwners=new WeakMap();
@@ -3247,15 +3451,31 @@ class Workspace{
  async mutate(fn,{canCommit}={}){
   const task=async()=>{
    if(this.closed)throw Error('종료된 저장소 연결입니다.');if(canCommit&&!canCommit())return this.envelope;
-   const before=canCommit?clone(this.envelope):this.envelope,e=clone(before),persisted=this.persisted;await fn(e);if(canCommit&&!canCommit())return this.envelope;
+   let before=canCommit?clone(this.envelope):this.envelope,e=clone(before),persisted=this.persisted;await fn(e);if(canCommit&&!canCommit())return this.envelope;
    // The instance lock orders this tab; the transaction comparison protects other tabs.
-   await S.localSet(this.key,e,{expected:persisted});this.persisted=clone(e);
+   try{await S.localSet(this.key,e,{expected:persisted})}catch(error){
+    // Another window wrote first. Its envelope is the durable truth: adopt it
+    // and apply this change once more, instead of failing every later save
+    // in this window until it is reloaded.
+    if(error?.code!=='DEVICE_CONFLICT'||this.closed)throw error;
+    const stored=await S.localGet(this.key);if(!stored?.state||!Array.isArray(stored.queue))throw error;
+    // A caller whose own precondition no longer holds keeps the original
+    // rejection: its first attempt was never stored.
+    await this.cache();if(canCommit&&!canCommit())throw error;
+    before=canCommit?clone(this.envelope):this.envelope;e=clone(before);persisted=this.persisted;await fn(e);if(canCommit&&!canCommit())throw error;
+    await S.localSet(this.key,e,{expected:persisted});
+   }
+   this.persisted=clone(e);
    if(canCommit&&!canCommit()){await S.localSet(this.key,persisted,{expected:e});this.persisted=persisted;return this.envelope}
    if(this.closed)throw Error('종료된 저장소 연결입니다.');this.envelope=e;return e;
   };const p=this.lock.then(task,task);this.lock=p.catch(()=>{});return p;
  }
  async cache(){const c=await S.localGet(this.key);this.persisted=c===undefined?undefined:clone(c);if(c){if(c.state){c.state.scheduleHistory=scheduleHistory(c.state);c.state.scheduleDryHistory=scheduleDryHistory(c.state);const baseline=sourceBaseline(c.state);if(baseline)c.state.scheduleSourceBaseline=baseline}this.envelope=c;this.loaded=!!c.state;this.catalogBlocked=unitSyncError(c.state);if(this.catalogBlocked)this.lastError=this.catalogBlocked}return c?.state||null}
  ownsUnitSync(id){return !!id&&this.envelope.groups?.some(g=>g.id===id&&g.unitSync&&g.status!=='complete')}
+ // Catalog unit transactions, stocktake and closing writes carry their own
+ // transaction rules and keep the whole-month conflict boundary. Every other
+ // request may be combined cell by cell with a concurrent server change.
+ strictWrite(q,e=this.envelope){const group=e.groups?.find(g=>g.id===q.groupId);return !!(q.unitPhase||group?.unitSync||group?.auditOperations?.length||/^months\//.test(q.path)&&auditSensitive(q.base?.[0],q.local?.[0]))}
  async guardWrite(q){
   if(q.viewOnly){
    const patch=cleanScheduleView(Object.fromEntries((q.viewKeys||[]).map(key=>[key,unpackScheduleView(q.local)[key]])));
@@ -3356,7 +3576,7 @@ class Workspace{
  const problem=unitSyncError(e.state);if(problem)throw problem;
  if(!archive){if(e.state?.scheduleView)next.scheduleView=clone(e.state.scheduleView);else delete next.scheduleView}
  const auditOperations=acceptedAuditOperations(next,monthKeys),auditIssues=auditTransferIssues(e.state).filter(t=>monthKeys.some(key=>(key===t.sourceMonth||key===t.targetMonth)&&auditSensitive(e.state?.months[key],next.months[key]))&&!auditOperations.includes(t.operationId));if(auditIssues.length)throw auditError(auditIssues);
- if(e.state&&invocation&&!archive){const latest=clone(e.state);const rebase=(path,base,local,current)=>{const result=S.mergeRecords(base,local,current);if(result.conflicts.length){const error=Error('저장 중 자료가 바뀌었습니다. 입력을 다시 확인해 주세요.');error.conflicts=result.conflicts;throw error}applyRecords(latest,path,result.records)};for(const key of monthKeys)rebase('months/'+key+'.json',invocation.months[key]?packMonth(invocation.months[key]):[],packMonth(next.months[key]),e.state.months[key]?packMonth(e.state.months[key]):[]);if(catalog)rebase('meta/catalog.json',packCatalog(invocation),packCatalog(next),packCatalog(e.state));next=latest}
+ if(e.state&&invocation&&!archive){const latest=clone(e.state);const rebase=(path,base,local,current)=>{const result=S.mergeRecords(base,local,current,{strict:/^months\//.test(path)&&auditSensitive(base[0],local[0])});if(result.conflicts.length){const error=Error('저장 중 자료가 바뀌었습니다. 입력을 다시 확인해 주세요.');error.conflicts=result.conflicts;throw error}applyRecords(latest,path,result.records)};for(const key of monthKeys)rebase('months/'+key+'.json',invocation.months[key]?packMonth(invocation.months[key]):[],packMonth(next.months[key]),e.state.months[key]?packMonth(e.state.months[key]):[]);if(catalog)rebase('meta/catalog.json',packCatalog(invocation),packCatalog(next),packCatalog(e.state));next=latest}
  const nextProblem=unitSyncError(next);if(nextProblem)throw nextProblem;
  const ids=[],paths=[],syncMonths=catalog&&!archive?changedCatalogUnits(e.state,next,monthKeys):[];
  const add=(path,local,unitPhase)=>{const last=[...e.queue].reverse().find(q=>q.path===path);const id=C.id();e.queue.push({id,groupId,path,base:clone(last?.local||e.baseline[path]||[]),local:clone(local),...(unitPhase?{unitPhase}:{})});ids.push(id);paths.push(path)};
@@ -3385,21 +3605,87 @@ class Workspace{
   if(this.closed||this.resolving)return;if(this.flushing)return this.flushing;
   if(this.explicitRecoveryLease&&explicitRecoveryToken!==this.explicitRecoveryToken)return;
   const run=async()=>{while(this.envelope.queue.length&&!this.closed&&!this.resolving){const q=clone(this.envelope.queue[0]);try{
-   await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local)}catch(error){
+   await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local,{strict:this.strictWrite(q)})}catch(error){
     if(!error.conflicts?.length||!/^months\//.test(q.path)||!auditSensitive(q.base[0],q.local[0]))throw error;
     const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!acknowledgedAuditOnly(q,remote.data.records))throw error;
     result=remote;
    }if(this.closed)return;await this.guardWrite(q);
    const extra={};if(q.path==='meta/catalog.json')for(const key of unpackCatalog(result.data.records).months)if(!this.envelope.state.months[key]){const path='months/'+key+'.json';extra[path]=(await this.client.get(path,false,{ref:result.revision})).data.records}
-   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current);if(rebased.conflicts.length){const err=Error('후속 입력과 원격 변경을 함께 검토해 주세요.');err.conflicts=rebased.conflicts;throw err}later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
+   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current,{strict:this.strictWrite(later,e)});
+     // This request is already on the server, so it must leave the outbox even
+     // when a later one cannot be rebased. That one keeps its own basis and
+     // meets the ordinary conflict handling when it becomes the head.
+     if(rebased.conflicts.length)break;later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
    this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':'GitHub 저장 완료');
   }catch(err){
    // Only a business conflict is separable. Authentication, unit migration,
    // stocktake, device-CAS and network failures keep their original boundary.
-   if(err.conflicts?.length&&!this.explicitSaveWaiters)try{if(await this.holdSchedule(q))continue}catch(holdError){err=holdError}
+   if(err.conflicts?.length&&!this.explicitSaveWaiters)try{
+    if(await this.holdSchedule(q))continue;
+    // The same request failed to merge twice in a row with no save click in
+    // progress. Do not let it block every later save and refresh: keep it in
+    // its own device record and continue from the latest ledger.
+    const streak=this.conflictStreak?.id===q.id?this.conflictStreak.count+1:1;this.conflictStreak={id:q.id,count:streak};
+    if(streak>=2&&await this.setAsideQueue({reason:'automatic'}))continue;
+   }catch(holdError){err=holdError}
    this.lastError=err;if(err.code==='CATALOG_UNIT_SYNC')this.catalogBlocked=err;
    this.status(['CATALOG_UNIT_SYNC','AUDIT_TRANSFER_SYNC'].includes(err.code)?err.message:err.conflicts?'동시 수정 확인 필요':this.envelope.groups?.some(g=>g.status==='partial')?'일부 저장 완료 · 재전송 대기':'기기에 보관 · 재전송 대기');return;
   }}};this.flushing=run().finally(()=>{this.flushing=null});return this.flushing;
+ }
+ // A request that cannot be merged automatically must not block every later
+ // save. Only the conflicting request at the head of the outbox is moved to
+ // its own device record; the requests behind it are still sent. A table
+ // draft keeps the user's own input, so a save click resubmits it on the
+ // newest ledger. With flushRest the remaining outbox is sent at once (the
+ // caller holds the explicit-save lease); otherwise the next timer sends it.
+ async setAsideQueue({canApply,reason='conflict',flushRest=false}={}){
+  const valid=()=>!this.closed&&!this.resolving&&!this.pendingMigration&&!this.offline&&(!canApply||canApply());
+  let removed=0;
+  for(let round=0;round<50&&valid()&&this.envelope.queue.length;round++){
+   if(round&&!(this.lastError?.conflicts?.length))break;
+   const head=this.envelope.queue[0],group=(this.envelope.groups||[]).find(g=>g.id===head.groupId);
+   // A unit transaction the server has started must be finished, never dropped.
+   if(head.unitPhase||group?.unitSync)break;
+   const ids=new Set(this.envelope.queue.filter(q=>q.groupId===head.groupId).map(q=>q.id));
+   await S.localSet(this.key+':recovery:set-aside:'+C.id(),{schema:1,at:new Date().toISOString(),reason,queue:clone(this.envelope.queue.filter(q=>ids.has(q.id))),groups:clone(group?[group]:[])});
+   if(!valid())break;
+   let applied=false;
+   await this.mutate(e=>{if(e.queue[0]?.id!==head.id)return;e.queue=e.queue.filter(q=>!ids.has(q.id));e.groups=(e.groups||[]).filter(g=>g.id!==head.groupId);applied=true},{canCommit:valid});
+   if(!applied)break;removed+=ids.size;this.lastError=null;this.conflictStreak=null;
+   if(!flushRest||!this.envelope.queue.length)break;
+   this.explicitSaveWaiters=(this.explicitSaveWaiters||0)+1;
+   try{await this.flush({explicitRecoveryToken:this.explicitRecoveryToken})}finally{this.explicitSaveWaiters--}
+  }
+  if(!removed)return false;
+  // With nothing left to send, continue from the latest GitHub ledger.
+  if(!this.envelope.queue.length&&valid()){
+   const before=this.envelope,current=()=>valid()&&this.envelope===before&&!this.envelope.queue.length;
+   const reader=new Workspace(this.config);let snapshot=null;try{snapshot=await reader.readSnapshot({canApply:current})}catch{}finally{reader.close()}
+   if(snapshot&&current())await this.mutate(e=>{if(e.queue.length)return;e.state=clone(snapshot.state);e.baseline=clone(snapshot.baseline)},{canCommit:current});
+   this.loaded=true;this.catalogBlocked=null;this.onState(clone(this.envelope.state));
+  }
+  this.status('자동으로 합치지 못한 이전 저장 '+removed+'건은 기기에 따로 보관 · 저장 계속');
+  return !this.envelope.queue.length||!flushRest;
+ }
+ // Device housekeeping while idle. Proof copies of earlier saves are advisory
+ // and expire; the heavy original outbox of an already reviewed held schedule
+ // moves to its own record. A small envelope keeps every device write fast.
+ async housekeep(now=Date.now()){
+  if(this.closed||this.resolving||this.pendingMigration||this.offline||!this.loaded||this.explicitRecoveryLease||this.flushing)return false;
+  const before=this.envelope,expired=at=>!(now-Date.parse(at)<3600000),current=()=>!this.closed&&!this.resolving&&this.envelope===before&&!this.explicitRecoveryLease&&!this.flushing;
+  const detach=(before.heldSchedules||[]).filter(h=>h.status==='reviewed'&&Array.isArray(h.queue)&&h.queue.length),detached=new Set(detach.map(h=>h.id));
+  for(const h of detach){await S.localSet(this.key+':recovery:held-queue:'+h.id,{schema:1,at:h.createdAt,path:h.path,queue:clone(h.queue)});if(!current())return false}
+  const queued=new Set(before.queue.map(q=>q.id)),held=new Set((before.heldSchedules||[]).map(h=>h.id));
+  const stale=new Set((before.explicitSaveRecoveries||[]).filter(ref=>expired(ref.at)).map(ref=>ref.key));
+  const orphan=g=>g.status!=='complete'&&!(g.ids||[]).some(id=>queued.has(id))&&!(g.status==='held'&&held.has(g.heldSchedule));
+  if(detached.size||stale.size||(before.groups||[]).some(orphan)){
+   let applied=false;
+   await this.mutate(e=>{for(const h of e.heldSchedules||[])if(detached.has(h.id)){h.queue=[];h.queueKey=this.key+':recovery:held-queue:'+h.id}if(e.explicitSaveRecoveries)e.explicitSaveRecoveries=e.explicitSaveRecoveries.filter(ref=>!stale.has(ref.key));e.groups=(e.groups||[]).filter(g=>!orphan(g));applied=true},{canCommit:current});
+   if(!applied)return false;
+  }
+  const referenced=new Set((this.envelope.explicitSaveRecoveries||[]).map(ref=>ref.key));
+  for(const key of await S.localKeys(this.key+':recovery:'))if(/^:recovery:(?:acknowledged-draft|queued-save|explicit-save):/.test(key.slice(this.key.length))&&!referenced.has(key)){if(this.closed)return false;await S.localSet(key,null)}
+  return true;
  }
  async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error('GitHub 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status('GitHub 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
  async initialize(key){if(!this.empty)throw Error('자료가 이미 있는 저장소입니다.');const s=emptyState();s.months[key]=newMonth(key);await this.save(s,[key],true);return s}
@@ -5209,7 +5495,10 @@ function table(headers,rows){return`<div class="tableWrap"><table><thead><tr>${h
 const td=(s,cls='')=>`<td class="${cls}">${s}</td>`,tr=xs=>`<tr>${xs.join('')}</tr>`,metric=(label,n,unit,note)=>`<div class="stat"><div class="label">${label}</div><strong>${fmt(n)}<em>${unit}</em></strong><small>${note}</small></div>`;
 function head(title,sub,buttons=''){return`<div class="top"><div><h1>${title}</h1><div class="subtle">${sub}</div></div><div class="actions"><label><span class="mobileLabel">월 선택</span><select id="monthSel" aria-label="월 선택">${Object.keys(state.months).sort().reverse().map(k=>`<option ${month===k?'selected':''}>${k}</option>`).join('')}</select></label>${buttons}</div></div>`}
 function computed(){const rows=m().rows;return{kg:C.sum(rows,r=>C.daily(r).plaster),qty:C.sum(rows.filter(r=>!C.catalogIdentity(state,r.product).includes('부속')),r=>r.pours),defect:C.sum(rows,r=>C.daily(r).defect),stock:C.sum(C.inventory(state,month),r=>r.current),stockKg:C.sum(C.inventory(state,month),r=>r.kg)}}
-function render(){ if(typeof pgRememberTimeline==='function')pgRememberTimeline();document.body.classList.add('sheetWorkspace');$('#nav').innerHTML=tabs.filter(([id])=>id!=='source').map(([id,label],i)=>`<button data-page="${id}" class="${id===page?'active':''}" ${id===page?'aria-current="page"':''}><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span>${label}</button>`).join('');$('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(busy){toast('저장이 끝난 뒤 이동해 주세요.');return}if(page===b.dataset.page){window.scrollTo({top:0,left:0,behavior:'smooth'});return}page=b.dataset.page;filter='';render()});if((booting&&!connectionPreview)||!state){$('#main').innerHTML='<section class="card" role="status"><h1>보관자료 확인 중…</h1><p>선택한 메뉴는 자료를 확인한 뒤 열립니다.</p></section>';$('#saveState').textContent=connectionStatus;return}if(!month||!state.months[month])month=state.months[today().slice(0,7)]?today().slice(0,7):Object.keys(state.months).sort().at(-1);const views={home:homeView,daily:dailyView,schedule:scheduleView,scheduleSummary:scheduleSummaryView,stock:stockView,audit:auditView,report:reportView,master:masterView,source:sourceView,settings:settingsView};$('#main').innerHTML=localNotice()+views[page]();$('#monthSel')?.addEventListener('change',e=>{if(busy){e.target.value=month;toast('저장이 끝난 뒤 월을 바꿔 주세요.');return}month=e.target.value;filter='';render()});bindActions();bindPage();if(!connectionPreview)bindSheetGrids();if(typeof bindPlanGrid==='function')bindPlanGrid();if(typeof bindSecondaryGrids==='function')bindSecondaryGrids();if(typeof bindWorkspaceUI==='function')bindWorkspaceUI();if(typeof bindIlboIntegrationUI==='function')bindIlboIntegrationUI();$('#saveState').textContent=connectionStatus}
+// One screen pass reads one unchanged ledger: product names resolve through
+// one shared index for that pass only, never across an edit or reload.
+function render(){const s=state,draw=()=>s?C.withCatalogLookup(s,renderScreen):renderScreen();return typeof pgScreenPass==='function'?pgScreenPass(draw):draw()}
+function renderScreen(){ if(typeof pgRememberTimeline==='function')pgRememberTimeline();document.body.classList.add('sheetWorkspace');$('#nav').innerHTML=tabs.filter(([id])=>id!=='source').map(([id,label],i)=>`<button data-page="${id}" class="${id===page?'active':''}" ${id===page?'aria-current="page"':''}><span aria-hidden="true">${String(i+1).padStart(2,'0')}</span>${label}</button>`).join('');$('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(busy){toast('저장이 끝난 뒤 이동해 주세요.');return}if(page===b.dataset.page){window.scrollTo({top:0,left:0,behavior:'smooth'});return}page=b.dataset.page;filter='';render()});if((booting&&!connectionPreview)||!state){$('#main').innerHTML='<section class="card" role="status"><h1>보관자료 확인 중…</h1><p>선택한 메뉴는 자료를 확인한 뒤 열립니다.</p></section>';$('#saveState').textContent=connectionStatus;return}if(!month||!state.months[month])month=state.months[today().slice(0,7)]?today().slice(0,7):Object.keys(state.months).sort().at(-1);const views={home:homeView,daily:dailyView,schedule:scheduleView,scheduleSummary:scheduleSummaryView,stock:stockView,audit:auditView,report:reportView,master:masterView,source:sourceView,settings:settingsView};$('#main').innerHTML=localNotice()+views[page]();$('#monthSel')?.addEventListener('change',e=>{if(busy){e.target.value=month;toast('저장이 끝난 뒤 월을 바꿔 주세요.');return}month=e.target.value;filter='';render()});bindActions();bindPage();if(!connectionPreview)bindSheetGrids();if(typeof bindPlanGrid==='function')bindPlanGrid();if(typeof bindSecondaryGrids==='function')bindSecondaryGrids();if(typeof bindWorkspaceUI==='function')bindWorkspaceUI();if(typeof bindIlboIntegrationUI==='function')bindIlboIntegrationUI();$('#saveState').textContent=connectionStatus}
 function homeView(){const x=computed(),list=schedules().filter(r=>r.status!=='건조 완료'),workers=m().rows.reduce((a,r)=>{const w=a[r.worker]??={kg:0,qty:0};w.kg+=C.daily(r).plaster||0;w.qty+=C.catalogIdentity(state,r.product).includes('부속')?0:r.pours||0;return a},{});return head('선택월 요약','상단에서 고른 월의 생산·일정·재고를 확인합니다.',`<button class="primary" data-action="daily">생산 입력</button>`)+`${!state.products.length||!state.workers.length?'<div class="notice blue">관리에서 작업자와 품목을 등록하면 생산 입력을 시작할 수 있습니다.</div>':''}<div class="stats">${metric('월 생산',x.qty,'조','부속 품목 제외 · 주입횟수')}${metric('월 생산 석고',x.kg,'kg','단위 석고량 × 주입횟수')}${metric('월 불량 석고',x.defect,'kg','현장일보 총불량 kg · 직접입력은 단위 × 개수')}${metric('현재고',x.stock,'조','이월 + 생산 − 교체')}</div><div class="grid2"><section class="card"><div class="toolbar"><h2>생산·건조 일정</h2><button data-action="schedule">전체 일정</button></div>${list.slice(0,5).map(r=>`<div class="planItem"><div class="topline"><b>${esc(r.product)}</b><span class="badge">${esc(r.status)}</span></div><div class="details"><span>${esc(r.worker)} · ${esc(r.machine)}</span><span>${esc(r.qty)}</span><span>${r.projected?'예상 종료':r.actualOnly?'최근 생산':'생산 종료'} ${esc(r.end||'미확인')}</span><span>${r.projected?'예상 건조':'건조'} ${esc(r.dry||'미확인')}</span></div></div>`).join('')||'<p class="empty">해당 월의 진행 일정이 없습니다.</p>'}<div class="source">생산 원장과 작업 설정으로 계산한 일정 · 미완료 작업의 날짜는 예상입니다.</div></section><section class="card"><h2>작업자별 월 생산</h2>${Object.entries(workers).map(([w,v])=>`<div class="metricLine"><span>${esc(w)}</span><strong>${fmt(v.qty)}조 <small>· ${fmt(v.kg)} kg</small></strong></div>`).join('')}<p class="footerNote">한 번 입력한 작업자와 LOT가 함께 저장된 품목에 연결됩니다.</p></section></div><section class="card"><h2>월 전환 준비</h2><div class="workflow"><button data-action="daily">1 생산기록 확인</button><button data-action="stock">2 불출·재고 확인</button><button data-action="audit">3 실사 차이 확인</button><button data-action="report">4 마감 보고서</button></div><p class="subtle">${m().closed?'마감 보관월입니다.':'입력 가능한 작업 월입니다.'} 실사와 보고서를 확인하고 다음달을 준비하세요.</p></section>`}
 function dailyView(){const rows=m().rows.filter(r=>!filter||[r.worker,r.product,r.date,r.lot].join(' ').includes(filter));return head('생산일보','날짜·작업자·근무시간·LOT는 한 번, 품목은 여러 개 입력합니다.',`<button class="primary" data-action="newEntry" ${m().closed?'disabled':''}>+ 생산기록 입력</button><button data-action="dailyPrint">수기일보 인쇄</button>`)+`<div class="toolbar"><div class="actions"><input id="search" class="search" value="${esc(filter)}" placeholder="품명 · 작업자 · LOT 찾기" aria-label="생산기록 검색"><span class="badge ${m().closed?'amber':'blue'}">${m().closed?'마감 보관월':'작업월'} · ${rows.length}행</span></div><button data-action="csvDaily">표 내려받기</button></div><section class="card" id="dailyRecords">${table(['날짜','작업자','품명','작업 구분','주입/생산 조','석고 kg','불량 kg','LOT',''],rows.map(r=>{const d=C.daily(r);return tr([td(esc(r.date?.slice(5))),td(esc(r.worker)),td(esc(r.product),'product'),td(r.plan===0?'<span class="badge amber">종료·중단</span>':r.plan>0?`<span class="badge blue">시작 ${fmt(r.plan)}조</span>`:'계속'),td(fmt(r.pours),'num'),td(fmt(d.plaster),'num'),td(fmt(d.defect),'num'),td(esc(r.lot)),td(`<button data-edit="${esc(r.id)}" ${m().closed?'disabled':''}>수정</button>${btn('deleteDaily','삭제',r.id,m().closed)}`)])}))}<p class="footerNote">생산 조수는 주입횟수입니다. 탈형 개수는 주입횟수×케이스 수로 구분합니다. 기존값과 구별하기 위해 입력 변경 이력을 남깁니다.</p></section>`}
 function sourceView(){
@@ -5238,6 +5527,16 @@ function dryDialog(){const d=$('#dialog');d.oninput=null;d.innerHTML=`<h2>건조
 $('#file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(localReadError)throw Error('기존 기기자료를 읽지 못해 이전을 보류했습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');$('#saveState').textContent='엑셀 자료 읽는 중…';const next=await ScheduleWorkbook.read(file);if(hasBusinessData(state)){const ok=confirm('현재 기기자료를 먼저 전체 내려받은 뒤 새 파일로 바꾸시겠습니까?');if(!ok)return;download(JSON.stringify(state),'조형_교체전_백업_'+today()+'.json','application/json')}await S.localSet('migration-preview',next);state=next;month='';page='settings';setStatus('최초 이전자료 · GitHub 반영 전');render();toast('최초 이전자료를 준비했습니다. GitHub에 저장하려면 이전자료 저장을 누르세요.')}catch(err){toast(err.message);$('#saveState').textContent='불러오기 실패 · 기존자료 유지'}finally{e.target.value=''}};
 function setStatus(message){connectionStatus=message;$('#saveState').textContent=message}
 async function persist(next,keys=[],catalog=false){if(connectionOpening)throw Error('최신자료를 확인하는 동안 조회만 가능합니다. 불러오기가 끝난 뒤 저장해 주세요.');if(localReadError)throw Error('기존 기기자료를 읽지 못해 저장을 보류했습니다. 저장 허용 설정을 확인하고 새로고침해 주세요.');const owner=workspace;let message='';if(owner?.pendingMigration){await S.localSet('migration-preview',next);message='연결 전 기기자료 · 최초 이전 저장 필요'}else if(owner){next=await owner.save(next,keys,catalog)}else{await S.localSet('migration-preview',next);message='기기에 보관 · GitHub 반영 전'}if(workspace!==owner)throw Error('저장 중 연결이 바뀌었습니다. 원래 연결의 입력은 보관했습니다.');state=next;if(message)setStatus(message)}
+// Device housekeeping runs only while nothing is loading or saving, so it can
+// never compete with a save. It retries later instead of interrupting work.
+function scheduleHousekeeping(owner,attempt=0){
+ if(typeof owner?.housekeep!=='function'||attempt>20)return;
+ setTimeout(()=>{
+  if(workspace!==owner||owner.closed)return;
+  if(busy||owner.envelope?.queue?.length||[...sheetRegistry.values()].some(g=>g.saving||g.loading)){scheduleHousekeeping(owner,attempt+1);return}
+  owner.housekeep().catch(()=>{});
+ },4000);
+}
 async function connect(config,initialMonth,{keepPage=false}={}){
  if(localReadError)throw Error('기기 보관자료를 먼저 복원한 뒤 연결해 주세요. 저장 허용 설정을 확인하고 새로고침해 주세요.');
  const previous=workspace,beforeState=state,prepared=previous&&!previous.pendingMigration?null:state,beforeMonth=month;
@@ -5251,6 +5550,7 @@ async function connect(config,initialMonth,{keepPage=false}={}){
   if(loaded){state=loaded;await next.flush()}else state=await next.initialize(initialMonth||today().slice(0,7));
   if(hasBusinessData(prepared)&&!hasBusinessData(state)){state=prepared;next.pendingMigration=true;setStatus('기기자료 준비됨 · 연결·백업에서 최초 이전 저장')}
   previous?.close();if(!state.months[month])month='';if(!keepPage)page=next.pendingMigration?'settings':'daily';
+  scheduleHousekeeping(next);
  }catch(e){
   if(workspace!==next)return;
   if(cached){previous?.close();state=cached;setStatus('기기 보관자료 · 연결 재시도 필요')}
@@ -5957,9 +6257,12 @@ class SheetEditor{
  validStoredDraft(saved){return saved&&saved.schema===1&&saved.scope===this.scope&&saved.month===this.month&&Array.isArray(saved.draft?.rows)&&Array.isArray(saved.draft?.baseRows)}
  async refreshDraftCopies(){if(!S.localEntries)return;const base='sheet.v1:'+this.key;this.draftCopies=(await S.localEntries(base)).filter(e=>(e.key===base||e.key.startsWith(base+':copy:'))&&e.key!==this.storageKey&&this.validStoredDraft(e.value))}
  draftCopiesHTML(){return this.draftCopies?.length?'<details><summary>다른 창의 보관 초안 '+this.draftCopies.length+'개</summary><p>현재 입력은 보관한 뒤 선택한 초안을 엽니다. 저장 전 내용을 확인해 주세요.</p>'+this.draftCopies.map(e=>{const counts=sheetCounts(e.value.draft),count=(counts.changed||0)+(counts.added||0)+(counts.deleted||0),at=e.value.updatedAt?new Date(e.value.updatedAt).toLocaleString('ko-KR'):'이전 입력';return '<button type="button" data-sheet-command="draftLoad" data-draft-key="'+esc(e.key)+'">'+esc(at)+' · 변경 '+count+'건 열기</button>'}).join('')+'</details>':''}
- async openStoredDraft(key){if(this.locked())return;const initialOwner=workspace;const base='sheet.v1:'+this.key;if(key!==base&&!key.startsWith(base+':copy:'))throw Error('이 표의 초안이 아닙니다.');this.saving=true;this.update();try{if(this.dirty)await this.queueDraft();const saved=await S.localGet(key);if(sheetScope()!==this.scope||month!==this.month||this.spec.readonly)throw Error('작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 초안을 열어 주세요.');if(!this.validStoredDraft(saved))throw Error('선택한 초안이 변경되었거나 정리되었습니다. 표를 다시 열어 주세요.');this.storageKey=key;this.rememberDraftKey();this.persistedDraft=C.clone(saved);this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.draft=C.clone(saved.draft);this.dirty=true;this.error='선택한 보관 초안을 열었습니다. 내용을 확인한 뒤 변경 저장을 누르세요.';try{if(typeof explicitQueuedDraftsRestoreOnLoad==='function')await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month)}catch(e){this.draftRecoveryNeeded=true;this.storageError='편집 초안의 저장 내역을 확인하지 못했습니다: '+e.message;throw e}await this.refreshDraftCopies()}finally{this.saving=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
+ async openStoredDraft(key){if(this.locked())return;const initialOwner=workspace;const base='sheet.v1:'+this.key;if(key!==base&&!key.startsWith(base+':copy:'))throw Error('이 표의 초안이 아닙니다.');this.saving=true;this.update();try{if(this.dirty)await this.queueDraft();const saved=await S.localGet(key);if(sheetScope()!==this.scope||month!==this.month||this.spec.readonly)throw Error('작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 초안을 열어 주세요.');if(!this.validStoredDraft(saved))throw Error('선택한 초안이 변경되었거나 정리되었습니다. 표를 다시 열어 주세요.');this.storageKey=key;this.rememberDraftKey();this.persistedDraft=C.clone(saved);this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.draft=C.clone(saved.draft);this.dirty=true;this.error='선택한 보관 초안을 열었습니다. 내용을 확인한 뒤 변경 저장을 누르세요.';try{if(typeof explicitQueuedDraftsRestoreOnLoad==='function')await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month)}catch{}await this.refreshDraftCopies()}finally{this.saving=false;this.reconcileDraft();this.refresh();this.spec.onChange?.(this)}}
 
- async load(){if(this.loaded)return;this.loaded=true;const initialDraft=this.draft,initialOwner=workspace;let recoveryChecking=false;try{try{const base='sheet.v1:'+this.key,key=sessionStorage.getItem(this.draftPointer());if(key===base||key?.startsWith(base+':copy:'))this.storageKey=key}catch{}const saved=await S.localGet(this.storageKey);this.rememberDraftKey();this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(!this.validStoredDraft(saved))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=C.clone(saved.draft);this.error='저장 전 편집 내용을 복원했습니다.';if(typeof explicitQueuedDraftsRestoreOnLoad==='function'){recoveryChecking=true;await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month);recoveryChecking=false}}}await this.refreshDraftCopies()}catch(e){this.draftRecoveryNeeded=recoveryChecking;this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();if(this.draft===initialDraft)this.update();else this.refresh();this.spec.onChange?.(this)}}
+ async load(){if(this.loaded)return;this.loaded=true;const initialDraft=this.draft,initialOwner=workspace;let recoveryChecking=false;try{try{const base='sheet.v1:'+this.key,key=sessionStorage.getItem(this.draftPointer());if(key===base||key?.startsWith(base+':copy:'))this.storageKey=key}catch{}const saved=await S.localGet(this.storageKey);this.rememberDraftKey();this.persistedDraft=saved===undefined?undefined:C.clone(saved);if(saved){if(!this.validStoredDraft(saved))throw Error('이 표의 보관 초안 형식을 확인해 주세요.');this.revision=Math.max(this.revision,sheetDraftVersion(saved.version));this.dirty=true;if(this.spec.readonly){this.closedDraft??=C.clone(saved.draft);this.draft=this.fresh();this.error='마감 전 미저장 초안을 별도로 보존 중입니다. 이 표에는 마감 원장만 표시합니다.'}else{this.draft=C.clone(saved.draft);this.error='저장 전 편집 내용을 복원했습니다.';
+   // Checking an earlier save is optional. If it cannot be completed the
+   // restored draft stays editable and savable like any unsaved input.
+   if(typeof explicitQueuedDraftsRestoreOnLoad==='function'){try{await explicitQueuedDraftsRestoreOnLoad(this,initialOwner,()=>workspace===initialOwner&&sheetScope()===this.scope&&month===this.month)}catch{}}}}await this.refreshDraftCopies()}catch(e){this.draftRecoveryNeeded=recoveryChecking;this.storageError='편집 초안을 읽지 못했습니다: '+e.message}finally{this.loading=false;this.reconcileDraft();if(this.draft===initialDraft)this.update();else this.refresh();this.spec.onChange?.(this)}}
  queueDraft({compare=false}={}){const snapshot=C.clone(this.draft),version=this.revision=Math.max(sheetDraftVersion(this.revision),sheetDraftVersion(this.persistedDraft?.version))+1;this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{const record={...(this.persistedDraft||{}),schema:1,scope:this.scope,month:this.month,version,updatedAt:new Date().toISOString(),draft:snapshot};try{await S.localSet(this.storageKey,record,{expected:this.persistedDraft})}catch(error){if(error.code!=='DEVICE_CONFLICT'||compare)throw error;const key='sheet.v1:'+this.key+':copy:'+C.id();await S.localSet(key,record,{expected:undefined});this.storageKey=key;this.rememberDraftKey();this.error='다른 창의 입력과 이 창의 입력을 각각 보관했습니다. 현재 입력을 계속 저장할 수 있습니다.';await this.refreshDraftCopies()}this.persistedDraft=C.clone(record);this.update()});this.writeQueue.catch(e=>{this.error='초안을 기기에 보관하지 못했습니다. 이 화면을 닫지 말고 저장 공간을 확인해 주세요. '+e.message;this.update()});return this.writeQueue}
  async clearStoredDraft({preserveSelection=false}={}){let cleared=true;try{await S.localSet(this.storageKey,null,{expected:this.persistedDraft});this.persistedDraft=null}catch(error){if(error.code!=='DEVICE_CONFLICT')throw error;cleared=false;if(preserveSelection)return false;this.storageKey='sheet.v1:'+this.key+':copy:'+C.id();this.persistedDraft=undefined;this.rememberDraftKey()}await this.refreshDraftCopies();return cleared}
  changed(){this.draft.revision=(this.draft.revision||0)+1;this.dirty=true;this.error='';this.queueDraft();this.update();this.spec.onChange?.(this)}
@@ -6076,23 +6379,31 @@ class SheetEditor{
   if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
   const explicitOptions={preferLocalEdits:true};if(owner)owner.explicitSaveDiagnostic=null;this.explicitSaveLease=saveLease;this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
   try{
-   const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}phase='refresh';
+   const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
+   let snapshot;
+   // One click settles by itself. If the request of this click cannot be
+   // merged with a concurrent server change, it is set aside and the same
+   // draft is submitted again on the newest ledger: edited cells keep the
+   // user's value, every other cell follows the server.
+   for(let attempt=0;;attempt++){
+   phase='refresh';
    if(typeof sheetPrepareExplicitSave==='function')await sheetPrepareExplicitSave(this);
    if(!contextOK()){phase='context';throw Error('최신 자료 확인 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}
    if(this.spec.readonly){phase='locked';throw Error('조회 전용으로 바뀐 표는 저장할 수 없습니다. 입력 초안은 보관했습니다.')}
    const check=this.inspect(explicitOptions);if(!check.ok){error='validation';this.error=check.errors.map(e=>`${this.rowNumber(e.id)}행: ${e.message}`).slice(0,5).join(' / ');if(!bulk&&check.errors[0])this.focus(check.errors[0].id,check.errors[0].field);return result()}
-   const snapshot=C.clone(this.draft);phase='draft-save';
+   snapshot=C.clone(this.draft);phase='draft-save';
    if(!sheetEqual(storedDraft,snapshot))await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 다시 저장해 주세요.')}
    phase='save';
-   const previousPublish=owner?.beforeExplicitSavePublish,archivePublish=typeof sheetArchiveExplicitCommit==='function'&&owner&&!owner.offline&&!owner.pendingMigration?async (envelope,groupId)=>{if(previousPublish)await previousPublish(envelope,groupId);const archive=await sheetArchiveExplicitCommit(this,owner,envelope,contextOK,groupId);if(archive)commitArchives.push(archive)}:null;
-   if(archivePublish)owner.beforeExplicitSavePublish=archivePublish;
-   try{await this.spec.commit(snapshot,explicitOptions)}finally{if(archivePublish&&owner.beforeExplicitSavePublish===archivePublish){if(previousPublish===undefined)delete owner.beforeExplicitSavePublish;else owner.beforeExplicitSavePublish=previousPublish}}
+   // No per-click proof copy of the whole device envelope is written: the
+   // draft itself remains on the device until the server confirms the save.
+   await this.spec.commit(snapshot,explicitOptions);
    if(!contextOK()){phase='context';throw Error('원장 처리 중 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
-   try{remote=await sheetAwaitRemoteAck(owner)}catch(e){
+   try{remote=await sheetAwaitRemoteAck(owner);break}catch(e){
     // Another device can write after the initial snapshot, too. The same
     // proved replay must cover the outbox created by this very save click.
-    if(!contextOK()||typeof sheetQueuedRetryable!=='function'||!sheetQueuedRetryable(e)||!await sheetReplayQueuedSave(this,owner,{valid:contextOK}))throw e;
-    remote=true;
+    if(contextOK()&&typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(e)&&await sheetReplayQueuedSave(this,owner,{valid:contextOK})){remote=true;break}
+    if(attempt>=2||!contextOK()||typeof sheetQueueSeparable!=='function'||!sheetQueueSeparable(e)||typeof owner?.setAsideQueue!=='function'||!await owner.setAsideQueue({canApply:contextOK,reason:'explicit-save',flushRest:true}))throw e;
+   }
    }committed=true;
    if(remote&&typeof sheetConfirmExplicitCommit==='function')await sheetConfirmExplicitCommit(this,owner,commitArchives,contextOK);
    if(!contextOK()){phase='context';throw Error('서버 확인 중 연결이나 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}
@@ -6541,7 +6852,21 @@ function pgPersistJob(row,cachedJobs=null,baseRow=null){
 }
 // A caller may share this read-only list while inspecting one unchanged snapshot.
 // Never retain it across a draft edit, source reload, month switch or calendar change.
-function pgAllJobs(s){return Object.keys(s.months).sort().flatMap(owner=>P.jobs(s,owner).map(job=>({owner,job})))}
+function pgAllJobs(s){return Object.keys(s.months).sort().flatMap(owner=>(s===state?pgPassJobs(owner).list:P.jobs(s,owner)).map(job=>({owner,job})))}
+// Planning reads of one unchanged ledger are shared only inside one explicit
+// screen pass (render or schedule refresh) and dropped when it ends, so an
+// edit, reload or month switch always recalculates. Callers only read these.
+let pgPass=null,pgPassDepth=0;
+function pgScreenPass(read){pgPassDepth++;try{return C.withScreenRead(read)}finally{if(--pgPassDepth===0){pgPass=null;if(typeof pgDirectPassEnd==='function')pgDirectPassEnd()}}}
+function pgPassJobs(owner){
+ if(!pgPassDepth){const list=P.jobs(state,owner),byId=new Map();for(const j of list)if(!byId.has(j.id))byId.set(j.id,j);return{list,byId}}
+ if(!pgPass||pgPass.state!==state)pgPass={state,context:{jobs:new Map()},owners:new Map()};
+ let entry=pgPass.owners.get(owner);
+ if(!entry){const list=P.jobs(state,owner,pgPass.context),byId=new Map();for(const j of list)if(!byId.has(j.id))byId.set(j.id,j);entry={list,byId};pgPass.owners.set(owner,entry)}
+ return entry;
+}
+const pgResultIndex=new WeakMap();
+function pgResultJob(result,id){const jobs=result?.jobs;if(!Array.isArray(jobs))return null;let index=pgResultIndex.get(jobs);if(!index||index.size!==jobs.length){index={size:jobs.length,byId:new Map()};for(const j of jobs)if(!index.byId.has(j.id))index.byId.set(j.id,j);pgResultIndex.set(jobs,index)}return index.byId.get(id)||null}
 function pgManualSuccessor(s,row,owner=pgJobMonth(row),all=null){
  if(!row?.manual)return null;all??=pgAllJobs(s);const actual=all.find(x=>x.owner===owner&&x.job.id===row.id)?.job||row;
  if(actual.firstActual||actual.produced>0||actual.previousProduced>0)return null;const origin=actual.originId||actual.id;
@@ -6575,6 +6900,16 @@ function pgCalendarMerge(base,local,remote=pgCalendar(state)){
  for(const kind of ['factory','workers']){const maps=[base,local,remote].map(cal=>groups(cal,kind));for(const k of new Set([...maps[0].keys(),...maps[1].keys()])){const [b,l,r]=maps.map(map=>map.get(k)||[]);if(pgEqual(l,b))continue;replace(calendar,kind,k,l);if(pgEqual(r,b)||pgEqual(l,r)){replace(preview,kind,k,l);continue}replace(baseline,kind,k,b);const parts=JSON.parse(k);conflicts.push({kind,key:k,date:parts.at(-1),worker:kind==='factory'?'공장 전체':parts[1],base:C.clone(b),local:C.clone(l),remote:C.clone(r)})}}
  for(const k of new Set([...Object.keys(base),...Object.keys(local)])){if(['factory','workers'].includes(k)||pgEqual(local[k],base[k]))continue;const set=(cal,value)=>{if(value===undefined)delete cal[k];else cal[k]=C.clone(value)};set(calendar,local[k]);if(pgEqual(remote[k],base[k])||pgEqual(local[k],remote[k]))set(preview,local[k]);else{set(baseline,base[k]);conflicts.push({kind:'metadata',key:k,date:'',worker:'휴일 설정',base:base[k],local:local[k],remote:remote[k]})}}
  return{calendar,baseline,preview,conflicts,remoteChanged:!pgEqual(base,remote)};
+}
+// The audit event records only the holiday cells this save changed (all rows
+// of each changed date/worker cell) instead of two copies of the whole
+// calendar, which made every holiday save grow the month file by ~90 KB.
+function pgCalendarDelta(before,after){
+ const key=(kind,r)=>JSON.stringify(kind==='factory'?[kind,typeof r==='string'?r:r?.date]:[kind,r?.worker,r?.date]),out={before:{factory:[],workers:[]},after:{factory:[],workers:[]}};
+ for(const kind of ['factory','workers']){const group=cal=>{const map=new Map();for(const r of cal?.[kind]||[]){const k=key(kind,r);if(!map.has(k))map.set(k,[]);map.get(k).push(r)}return map},b=group(before),a=group(after);
+  for(const k of new Set([...b.keys(),...a.keys()])){const bv=b.get(k)||[],av=a.get(k)||[];if(pgEqual(bv,av))continue;out.before[kind].push(...C.clone(bv));out.after[kind].push(...C.clone(av))}}
+ for(const k of new Set([...Object.keys(before||{}),...Object.keys(after||{})])){if(['factory','workers'].includes(k)||pgEqual(before?.[k],after?.[k]))continue;if(before&&Object.hasOwn(before,k))out.before[k]=C.clone(before[k]);if(after&&Object.hasOwn(after,k))out.after[k]=C.clone(after[k])}
+ return out;
 }
 function pgCalendarConflictText(conflict){return(conflict.date?conflict.worker+' '+conflict.date+' · ':'')+'다른 기기에서도 같은 휴일을 수정했습니다. 입력 초안은 보존하며, 표에는 저장된 휴일을 표시합니다. 최신 휴일을 확인한 뒤 저장해 주세요.'}
 function pgReconcileCalendarDraft(d){
@@ -6655,7 +6990,7 @@ function pgPrepareCommitDraft(source,draft,key=month,all=null){
 }
 function pgFresh(rows){if(P.captureSourceBaseline)P.captureSourceBaseline(state);return{baseRows:C.clone(rows),rows:C.clone(rows),deleted:[],revision:0,calendar:pgCalendar(state),baseCalendar:pgCalendar(state),scheduleAsOf:m().scheduleAsOf||null,baseScheduleAsOf:m().scheduleAsOf||null}}
 function pgKeep(d){const deleted=new Set(d.deleted.map(r=>r.id));return d.rows.filter(r=>!deleted.has(r.id))}
-function pgMeta(row){return pgView().result?.jobs?.find(j=>j.id===row.id)||P.jobs(state,pgJobMonth(row)).find(j=>j.id===row.id)||row}
+function pgMeta(row){return pgResultJob(pgView().result,row.id)||pgPassJobs(pgJobMonth(row)).byId.get(row.id)||row}
 function pgFieldPlanNoteHTML(row){
  const source=pgMeta(row).fieldPlanNotes,notes=(Array.isArray(source)?source:[]).filter(n=>n&&C.iso(n.date)&&(Number.isFinite(n.sourcePlan)&&n.sourcePlan>0||n.kind==='reservation-start'&&n.sourcePlan==null)&&Number.isFinite(n.originalPlan)&&n.originalPlan>0);if(!notes.length)return'';
  const reservations=notes.every(n=>n.kind==='reservation-start'),summary=reservations?(notes.some(n=>n.explicit)?'선택한 예약에 연결':'기존 예약에 자동 연결'):'현장계획 '+pgFmt(notes[0].sourcePlan)+'조 · 원본의 계속 작업에 연결';
@@ -6829,11 +7164,23 @@ function pgApplyCommit(d,options={}){
  for(const key of affected){if(!n.months[key]){n.months[key]=ScheduleNative.newMonth(key);created=true}n.months[key].jobUndo={year:key.slice(0,4),jobs:C.clone(n.months[key].jobs||[])}}
  for(const row of changed)O.upsert(n,pgJobMonth(row),'jobs',pgPersistJob(row),'일정표에서 작업조건 일괄 수정');
  for(const row of removed)O.remove(n,pgJobMonth(row),'jobs',row.id,d.deleted.find(r=>r.id===row.id)?.reason||'');
- if(calChanged){n.calendar=C.clone(d.calendar);O.history(n.months[month],'작업일·휴일 일괄 수정',d.baseCalendar,d.calendar,'일정표 휴일 편집')}
+ if(calChanged){n.calendar=C.clone(d.calendar);const delta=pgCalendarDelta(d.baseCalendar,d.calendar);O.history(n.months[month],'작업일·휴일 일괄 수정',delta.before,delta.after,'일정표 휴일 편집')}
  if(basisChanged){n.months[month].scheduleAsOf=d.scheduleAsOf;O.history(n.months[month],'일정 계산 기준일 변경',d.baseScheduleAsOf??null,d.scheduleAsOf,'사용자가 오늘 기준 재계산 선택')}
  if(calChanged||basisChanged)affected.add(month);return{state:n,monthKeys:[...affected],catalog:calChanged||created};
 }
 async function pgCommit(d,options={}){const applied=pgApplyCommit(d,options);await persist(applied.state,applied.monthKeys,applied.catalog)}
+// A kept draft whose every edit already equals the latest ledger has nothing
+// left to save: its earlier save was received (or the same values arrived
+// from another device). It is then cleared instead of asking for a new save.
+function pgAcknowledgedDraft(d){
+ try{
+  if(typeof workspace==='undefined'||!workspace||workspace.offline||workspace.pendingMigration||workspace.envelope?.queue?.length||m().closed)return false;
+  const prepared=pgPrepareCommitDraft(state,pgExplicitSaveDraft(C.clone(d),{preferLocalEdits:true}),month);
+  if(!pgInspect(prepared).ok||!pgEqual(prepared.baseCalendar,prepared.calendar)||!pgEqual(prepared.baseScheduleAsOf,prepared.scheduleAsOf))return false;
+  const latest=pgRows(state,month),merged=sheetApply(prepared,latest),current=new Map(latest.map(row=>[row.id,row]));
+  return merged.length===latest.length&&merged.every(row=>pgEqual(row,current.get(row.id)));
+ }catch{return false}
+}
 function pgNew(previous,manual=false){return{id:C.id(),originId:null,_ownerMonth:month,product:'',worker:previous?.worker||state.workers[0]||'',start:today().startsWith(month)?today():month+'-01',plan:null,daily:previous?.daily||null,group:'',machines:[{name:'',qty:null}],manual,end:null,duration:manual?1:null,note:''}}
 function pgPatchJob(d,id,patch){
  const row=d.rows.find(r=>r.id===id);if(!row)return;d.manualRateErrors??={};try{if('daily'in patch&&row.handoffs?.length&&typeof pgHandoffDailyPatch==='function'){const value=patch.daily;delete patch.daily;Object.assign(patch,pgHandoffDailyPatch(row,value));}patch=pgManualDatePatch(row,patch,null,{...state,calendar:d.calendar||state.calendar})}catch(e){d.manualRateErrors[id]=e.message;return}if(row.manual&&!pgStarted(row)&&!pgRouting(row)&&'daily'in patch&&!pgEqual(row.daily,patch.daily))patch.manualEndMode='daily';Object.assign(row,patch);if(['daily','handoffs','plan','start','worker','end'].some(key=>key in patch))delete d.manualRateErrors[id];
@@ -6857,7 +7204,7 @@ function pgSpec(rows){return{
   {key:'kind',label:'일정 구분',width:90,calc:r=>r.manual?'수기 예약':'자동'},
   {key:'note',label:'비고',type:'text',width:220,advanced:true}
  ],
- inspect:(d,options)=>pgInspect(pgExplicitSaveDraft(d,options)),commit:pgCommit,reconcileDraft:d=>pgRefreshDraft(state,d,month),rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
+ inspect:(d,options)=>pgInspect(pgExplicitSaveDraft(d,options)),commit:pgCommit,reconcileDraft:d=>pgRefreshDraft(state,d,month),acknowledgedDraft:pgAcknowledgedDraft,rowNote:pgFieldPlanNoteHTML,patch:pgPatchJob,syncInputs:true,
  summary:d=>`작업 ${pgKeep(d).length}건 · 휴일 변경 ${pgCalendarChanges(d.baseCalendar||{},d.calendar||{}).length}칸 · 누적·잔여·종료·건조일은 생산기록과 작업조건에서 계산`,
  onSelect:(row,g)=>{pgView().selected=row.id;pgView().selectionActive=true;pgView().timelineSelection=g._pgTimelineChoice||null;pgDetail(g);pgInlineManual(g);pgMarkSelection(g)},
  onChange:g=>pgRefresh(g)
@@ -6898,6 +7245,9 @@ function pgPreview(g){
 }
 function pgRefresh(g){
  if(!g||page!=='schedule'||!$('#planGridSurface'))return;
+ const s=state;return pgScreenPass(()=>s?C.withCatalogLookup(s,()=>pgRefreshScreen(g)):pgRefreshScreen(g));
+}
+function pgRefreshScreen(g){
  const viewport={x:window.scrollX||0,y:window.scrollY||0};
  try{pgSyncWorkerFilter();const preview=pgPreview(g);pgView().result=preview.result;pgTimeline(g,preview);pgWarnings(preview.result);g.update();
   const selected=pgView().selected||g.selected;if(!pgKeep(g.draft).some(r=>r.id===selected))pgView().selected=pgView().timelineSelection?'':pgKeep(g.draft)[0]?.id||'';
@@ -7387,7 +7737,9 @@ function pgSyncSave(g,status=pgSaveState(g)){
  if(reason){reason.textContent=status.reason;reason.hidden=!status.reason}
  for(const button of buttons){button.disabled=status.disabled;button.title=status.detailReason;button.setAttribute('aria-describedby','pgSaveReason');pgButtonLabel(button,status.buttonLabel,status.buttonShort)}
 }
-function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs);const root=$('#planGridSurface');if(!root)return;const locked=g.locked(),saveStatus=pgSaveState(g);pgSyncSave(g,saveStatus);for(const input of g.host()?.querySelectorAll('[data-cell="start"],[data-cell="daily"]')||[]){const row=g.draft.rows.find(r=>r.id===input.dataset.row);if(input.dataset.cell==='start'&&pgRoutingFollower(row)&&C.iso(pgDates(row,'start'))){input.disabled=true;input.value=pgDates(row,'start')}if(input.dataset.cell==='daily'&&pgRouting(row)?.mode==='parallel'){input.disabled=true;input.value='호기별 입력'}}const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-routing],[data-pg-manual-mode],[data-pg-inline-date],[data-pg-inline-rate]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date')||el.hasAttribute('data-pg-inline-rate'))&&row&&(pgStarted(row)||!!pgRouting(row)))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;if(row?.handoffs?.length&&(el.hasAttribute('data-pg-machine')||el.hasAttribute('data-pg-routing')&&el.dataset.pgRouting!=='barDisplay'||el.dataset.pgJobField==='group'))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','mobile-view-tools','dry-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected','job-conditions','dry-find','dry-newer','dry-older','scroll-left','scroll-right'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=saveStatus.disabled;if(row?.handoffs?.length&&(b.dataset.pgCommand.startsWith('machine-')||['new-group','routing-group'].includes(b.dataset.pgCommand)))disabled=true;if(b.dataset.pgCommand==='handoff'&&typeof pgHandoffAccess==='function')disabled=!pgHandoffAccess(g,row).ok;b.disabled=disabled});pgSyncScrollDock()}
+// Without fresh jobs, the latest computed result for this draft is used: every
+// draft change refreshes it first, so DOM updates never recalculate a schedule.
+function pgLock(g,cachedJobs=null){pgMobileSelection(g,cachedJobs||pgView().result?.jobs||null);const root=$('#planGridSurface');if(!root)return;const locked=g.locked(),saveStatus=pgSaveState(g);pgSyncSave(g,saveStatus);for(const input of g.host()?.querySelectorAll('[data-cell="start"],[data-cell="daily"]')||[]){const row=g.draft.rows.find(r=>r.id===input.dataset.row);if(input.dataset.cell==='start'&&pgRoutingFollower(row)&&C.iso(pgDates(row,'start'))){input.disabled=true;input.value=pgDates(row,'start')}if(input.dataset.cell==='daily'&&pgRouting(row)?.mode==='parallel'){input.disabled=true;input.value='호기별 입력'}}const undo=document.querySelector('[data-action=undoJobs]');if(undo){undo.disabled=locked||g.dirty;undo.title=g.dirty?'미저장 변경을 먼저 저장하거나 취소해 주세요.':''}root.querySelectorAll('[data-pg-date],.pgCalendarControls input,.pgCalendarControls select,#pgWeeks,[data-pg-job-field],[data-pg-machine],[data-pg-routing],[data-pg-manual-mode],[data-pg-inline-date],[data-pg-inline-rate]').forEach(el=>{let disabled=locked;if(el.dataset.pgDate&&state.months[el.dataset.pgDate.slice(0,7)]?.closed)disabled=true;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if((el.hasAttribute('data-pg-manual-mode')||el.hasAttribute('data-pg-inline-date')||el.hasAttribute('data-pg-inline-rate'))&&row&&(pgStarted(row)||!!pgRouting(row)))disabled=true;if(el.dataset.pgJobField==='duration'&&row&&(pgStarted(row)||row.end))disabled=true;if(row?.handoffs?.length&&(el.hasAttribute('data-pg-machine')||el.hasAttribute('data-pg-routing')&&el.dataset.pgRouting!=='barDisplay'||el.dataset.pgJobField==='group'))disabled=true;el.disabled=disabled});root.querySelectorAll('[data-pg-command]').forEach(b=>{if(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','mobile-view-tools','dry-tools','fit-width','compact','overview','calendar-tools','clear-selection','edit-selected','job-conditions','dry-find','dry-newer','dry-older','scroll-left','scroll-right'].includes(b.dataset.pgCommand))return;let disabled=locked;const row=pgKeep(g.draft).find(r=>r.id===pgView().selected);if(b.dataset.pgCommand==='machine-up'&&Number(b.dataset.index)===0)disabled=true;if(b.dataset.pgCommand==='machine-down'&&Number(b.dataset.index)===(row?.machines.length||0)-1)disabled=true;if(b.dataset.pgCommand==='calendar-undo'&&!g.draft.calendarEditUndo)disabled=true;if(b.dataset.pgCommand==='save')disabled=saveStatus.disabled;if(row?.handoffs?.length&&(b.dataset.pgCommand.startsWith('machine-')||['new-group','routing-group'].includes(b.dataset.pgCommand)))disabled=true;if(b.dataset.pgCommand==='handoff'&&typeof pgHandoffAccess==='function')disabled=!pgHandoffAccess(g,row).ok;b.disabled=disabled});pgSyncScrollDock()}
 function pgCalendarEdit(g,mutate){
  if(g.locked())return;g.draft=pgReconcileCalendarDraft(g.draft);const before=C.clone(g.draft.calendar),next=C.clone(before);mutate(next);
  for(const changed of pgCalendarChanges(before,next))if(state.months[changed.date.slice(0,7)]?.closed)throw Error('마감월의 휴일은 변경할 수 없습니다.');
@@ -7525,17 +7877,27 @@ function pgDirectMembers(g,id,computed=null,displayed=false){
  const group=pgRoutingGroup(row),grouped=(Number(group)>0||String(group).startsWith('manual:'))&&(!pgRouting(row)||pgBarDisplay(row)!=='separate');
  const members=grouped?rows.filter(r=>pgJobMonth(r)===pgJobMonth(row)&&r.worker===row.worker&&(displayed?P.productionGroupKey(r)===P.productionGroupKey(row):!!pgRouting(r)===!!pgRouting(row)&&pgRoutingGroup(r)===group)&&(!pgRouting(r)||pgBarDisplay(r)!=='separate')):[row];
  if(displayed)return members;
- if(grouped&&!computed)computed=pgDraftResult(pgDirectSnapshot(g)).jobs;
+ if(grouped&&!computed)computed=pgDirectResult(g).jobs;
  const actual=r=>computed?.find(j=>j.id===r.id&&(!j._ownerMonth||j._ownerMonth===pgJobMonth(r)))||r;
  return grouped&&computed&&!pgDirectHistory(actual(row))?members.filter(r=>!pgDirectHistory(actual(r))):members;
 }
+// The schedule of one unchanged draft is shared inside one synchronous pass;
+// any change of draft, ledger, month or day calculates it again.
+let pgDirectPass=null;
+function pgDirectPassEnd(){pgDirectPass=null}
+function pgDirectResult(g){
+ if(typeof pgPassDepth==='undefined'||!pgPassDepth)return pgDraftResult(pgDirectSnapshot(g));
+ const key=month+'\0'+today()+'\0'+JSON.stringify(g.draft);
+ if(pgDirectPass&&pgDirectPass.state===state&&pgDirectPass.key===key)return pgDirectPass.result;
+ const result=pgDraftResult(pgDirectSnapshot(g));pgDirectPass={state,key,result};return result;
+}
 function pgDirectAccess(g,id,sourceMonth,cachedJobs=null,allowHistory=false){
  if(g.locked()||m().closed)return{ok:false,reason:'자료를 읽거나 저장하는 중 또는 마감월에는 일정표를 수정할 수 없습니다.'};
- try{const computed=cachedJobs||pgDraftResult(pgDirectSnapshot(g)).jobs,members=pgDirectMembers(g,id,computed),owner=pgJobMonth(members[0]);if(sourceMonth&&sourceMonth!==owner)return{ok:false,reason:'작업의 저장 월이 달라졌습니다. 표를 다시 확인해 주세요.'};if(state.months[owner]?.closed)return{ok:false,reason:'마감된 월의 일정은 수정할 수 없습니다.'};const history=members.some(r=>pgDirectHistory(computed.find(j=>j.id===r.id)||r)),machines=members.reduce((n,r)=>n+(r.machines?.length||0),0);
+ try{const computed=cachedJobs||pgDirectResult(g).jobs,members=pgDirectMembers(g,id,computed),owner=pgJobMonth(members[0]);if(sourceMonth&&sourceMonth!==owner)return{ok:false,reason:'작업의 저장 월이 달라졌습니다. 표를 다시 확인해 주세요.'};if(state.months[owner]?.closed)return{ok:false,reason:'마감된 월의 일정은 수정할 수 없습니다.'};const history=members.some(r=>pgDirectHistory(computed.find(j=>j.id===r.id)||r)),machines=members.reduce((n,r)=>n+(r.machines?.length||0),0);
    const selected=members.find(r=>r.id===id),actual=computed.find(j=>j.id===id)||selected,editable=history&&!actual.complete&&!actual.stopped;return{ok:!history||allowHistory&&editable,history,editable,reason:history?'생산·이월 실적이 있는 기간입니다. 실제 날짜는 생산 입력에서 확인해 주세요.':'',members:history&&allowHistory?[selected]:members,groupMembers:pgDirectMembers(g,id,computed,true),notice:(members.length>1?'생산 묶음 '+members.length+'품목 · ':'')+'호기 '+machines+'개가 함께 움직입니다.'};
  }catch(e){return{ok:false,reason:e.message}}
 }
-function pgDirectPeriod(g,members,cachedRows=null){const rows=cachedRows||pgDraftResult(pgDirectSnapshot(g)).rows,ids=new Set(members.map(r=>r.id)),bars=rows.filter(r=>ids.has(r.jobId));const starts=(bars.length?bars.map(r=>r.explicitRouting?r.start:r.groupStart||r.start):members.map(r=>r.start)).filter(C.iso).sort(),ends=(bars.length?bars.map(r=>r.explicitRouting?r.end:r.groupEnd||r.end):members.map(r=>r.end)).filter(C.iso).sort();return{start:starts[0],end:ends.at(-1),requestedStart:bars.find(r=>C.iso(r.requestedStart))?.requestedStart||members[0]?.start,bars}}
+function pgDirectPeriod(g,members,cachedRows=null){const rows=cachedRows||pgDirectResult(g).rows,ids=new Set(members.map(r=>r.id)),bars=rows.filter(r=>ids.has(r.jobId));const starts=(bars.length?bars.map(r=>r.explicitRouting?r.start:r.groupStart||r.start):members.map(r=>r.start)).filter(C.iso).sort(),ends=(bars.length?bars.map(r=>r.explicitRouting?r.end:r.groupEnd||r.end):members.map(r=>r.end)).filter(C.iso).sort();return{start:starts[0],end:ends.at(-1),requestedStart:bars.find(r=>C.iso(r.requestedStart))?.requestedStart||members[0]?.start,bars}}
 function pgDirectPrepare(g,command,baseResult=null){
  if(g.locked()||m().closed)throw Error('읽기·저장 중이거나 마감된 일정은 수정할 수 없습니다.');
  const type=command.type;let changes=[],selectedId=command.id,notice='',conversionRequired=false,movePeriod=null;
@@ -9999,7 +10361,11 @@ const ScheduleBackup=(()=>{
   b.coverage={primary,repository:repository?'all-json-at-commit':'device-only',missingArchives:missing,warnings:[...(primary==='github'?['기본으로 GitHub 최신 원장을 엽니다. 기기 원장·초안·전송대기는 별도 보관하며 자동 적용하지 않습니다.']:[]),...(!repository?['기기에 없는 원본 시트·원격 추가 파일은 포함되지 않습니다. 완전한 원격 보관은 GitHub 전체 JSON 백업을 사용하세요.']:[]),...(missing.length?['기기에 없는 원본 시트 '+missing.length+'개는 포함되지 않았습니다.']:[]),'Git 이력·Actions 비밀값·앱 로그인·접근 토큰은 포함하지 않습니다. 다른 기기의 미전송 자료는 그 기기에서 따로 백업해야 합니다.']};return validate(b);
  }
  async function db(){return new Promise((resolve,reject)=>{if(typeof indexedDB==='undefined'){reject(Error('기기 저장소를 사용할 수 없습니다.'));return}const q=indexedDB.open('schedule.v1.local',1);let settled=false;const timer=setTimeout(()=>{settled=true;reject(Error('기기 저장소 응답을 기다리다 중단했습니다.'))},8000);q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains('state'))q.result.createObjectStore('state')};q.onblocked=()=>{clearTimeout(timer);settled=true;reject(Error('다른 창의 저장 작업을 마친 뒤 다시 시도해 주세요.'))};q.onerror=()=>{clearTimeout(timer);settled=true;reject(Error('기기 저장소를 열지 못했습니다.'))};q.onsuccess=()=>{clearTimeout(timer);if(settled){q.result.close();return}q.result.onversionchange=()=>q.result.close();resolve(q.result)}})}
- async function entries(scope,{recovery=false}={}){const d=await db();return new Promise((resolve,reject)=>{const result=[],t=d.transaction('state'),q=t.objectStore('state').openCursor();q.onsuccess=()=>{const c=q.result;if(c){const k=String(c.key);if(c.value!=null&&(recovery?k.startsWith(scope+':recovery:'):k.startsWith('sheet.v1:'+scope+':')||k.startsWith('draft:'+scope+':')))result.push({key:k,value:c.value});c.continue()}};t.oncomplete=()=>{d.close();resolve(result)};t.onerror=t.onabort=()=>{d.close();reject(Error('기기 초안을 모두 읽지 못했습니다.'))}})}
+ async function entries(scope,{recovery=false}={}){const d=await db();return new Promise((resolve,reject)=>{const result=[],t=d.transaction('state'),q=t.objectStore('state').openCursor();q.onsuccess=()=>{const c=q.result;if(c){const k=String(c.key);
+   // Proof copies of earlier saves duplicate the whole ledger and expire on
+   // the device; they are not user input and stay out of the package.
+   const wanted=recovery?k.startsWith(scope+':recovery:')&&!/^:recovery:(?:acknowledged-draft|queued-save|explicit-save):/.test(k.slice(scope.length)):k.startsWith('sheet.v1:'+scope+':')||k.startsWith('draft:'+scope+':');
+   if(wanted&&c.value!=null)result.push({key:k,value:c.value});c.continue()}};t.oncomplete=()=>{d.close();resolve(result)};t.onerror=t.onabort=()=>{d.close();reject(Error('기기 초안을 모두 읽지 못했습니다.'))}})}
  async function atomic(pairs){const d=await db();return new Promise((resolve,reject)=>{let t;try{t=d.transaction('state','readwrite');const store=t.objectStore('state');for(const [key,value]of pairs)store.put(value,key)}catch(e){try{t?.abort()}catch{}d.close();reject(Error('기기 저장에 실패했습니다. 기존 작업공간을 유지합니다.'));return}t.oncomplete=()=>{d.close();resolve()};t.onabort=t.onerror=()=>{d.close();reject(Error('기기 저장을 완료하지 못했습니다. 기존 작업공간을 유지합니다.'))}})}
  async function saveOffline(key,before,next,canWrite){
   const d=await db();return new Promise((resolve,reject)=>{
@@ -10703,11 +11069,14 @@ async function sheetConfirmExplicitCommit(g,owner,archives,valid){
   if(!valid()||!archive.current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
  }
 }
-function sheetProtectExplicitCommit(g,owner,archives,valid){
- if(valid()&&workspace===owner&&!owner?.envelope?.queue?.length&&archives?.some(archive=>archive.caller&&archive.current())){
-  g.dirty=true;g.draftRecoveryNeeded=true;g.storageError='원장은 저장됐지만 기기 초안의 저장 확인을 마치지 못했습니다. 입력 원문은 보관했습니다. 화면을 새로 열면 저장 확인부터 다시 복원합니다.';
- }
-}
+// Unfinished device bookkeeping after a successful ledger write never locks
+// the table. A draft that could not be cleared stays an ordinary input; its
+// cells already equal the ledger, so the next save or refresh settles it.
+function sheetProtectExplicitCommit(g,owner,archives,valid){}
+// A queue error caused by concurrent business edits can be separated from the
+// user's current input. Network, permission, unit-transaction and stocktake
+// errors are not separable: those keep the outbox and report as before.
+function sheetQueueSeparable(error){return !!(error?.conflicts?.length||error?.code==='EXPLICIT_QUEUE_PROOF')}
 async function sheetPruneExplicitCommit(g,owner,archives,valid){
  // Only this successfully removed caller can release its generated receipt.
  // Other editors' evidence and every failed/CAS-changed draft are retained.
@@ -10752,7 +11121,7 @@ async function sheetPrepareExplicitSave(g){
  const enterMonth=next=>{if(!valid())return null;const previous=contextMonth;contextMonth=next;month=next;return()=>{if(workspace===owner&&sheetScope()===scope&&month===contextMonth)month=previous;contextMonth=previous}};
  if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');
  if(!owner||owner.offline||owner.pendingMigration)return;
- let acknowledged=null,requested=null;
+ let acknowledged=null,requested=null,setAside=false;
  // Keep a deferred view write behind the entire explicit save, including its
  // final snapshot, commit and draft cleanup. Capture the original intent first
  // so a pre-existing flush cannot erase its receipt while this lease waits.
@@ -10773,13 +11142,21 @@ async function sheetPrepareExplicitSave(g){
   // archived reader still requires matching server history before using it.
   await hold();
   if(captured&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(captured,owner,valid);
-  const archived=captured?await sheetArchiveQueuedDrafts(captured,g,owner,valid):null;
+  // No full-envelope proof copy is written any more: each one duplicated the
+  // whole ledger on the device, and a missing proof must not block a save.
+  const archived=null;
   try{if(!await sheetPreflightCatalogQueue(g,owner,{valid,acknowledgedDrafts:captured}))await sheetAwaitRemoteAck(owner)}catch(error){
    if(!valid()||typeof sheetRecoverExplicitQueue!=='function')throw error;
    const replayed=typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error)&&await sheetReplayQueuedSave(g,owner,{valid});
    if(!replayed){
     const pending=sheetPendingQueueDraft(g,owner);if(pending){g.dirty=true;if(!await renewDraft(pending))throw error}
-    if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft})&&!await sheetSavePendingLedger(g,owner,valid,enterMonth))throw error;
+    if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft})&&!await sheetSavePendingLedger(g,owner,valid,enterMonth)){
+     // The earlier outbox cannot be merged automatically. Move it to its own
+     // device record and continue: this table's draft is submitted on the
+     // latest ledger, and other tables keep their drafts untouched.
+     if(!valid()||!sheetQueueSeparable(error)||!await owner.setAsideQueue({canApply:valid,reason:'explicit-save',flushRest:true}))throw error;
+     setAside=true;requested=null;
+    }
    }
   }
   if(!valid())throw Error('연결 또는 권한이 바뀌었습니다.');
@@ -10788,7 +11165,7 @@ async function sheetPrepareExplicitSave(g){
    const evidence=explicitQueuedDraftsArchive(captured,g,acknowledged),record={...archived.record,acknowledgedDrafts:evidence};
    await sheetAcknowledgementWrite(archived.key,record,archived.record,valid);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.');
   }
-  if(captured){captured.acknowledgedState=acknowledged;await explicitQueuedDraftsClear(captured,valid,owner);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.')}
+  if(captured&&!setAside){captured.acknowledgedState=acknowledged;await explicitQueuedDraftsClear(captured,valid,owner);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.')}
  }
  await hold();
  for(let attempt=0;attempt<2;attempt++){
@@ -10807,8 +11184,10 @@ async function sheetPrepareExplicitSave(g){
    const unchanged=()=>valid()&&g.draft===requested.draft&&JSON.stringify(g.draft)===requested.signature&&g.storageKey===requested.storageKey&&JSON.stringify(g.persistedDraft)===requested.persistedSignature&&g.writeQueue===requested.writeQueue&&selected()&&!g.spec.readonly&&!g.closedDraft&&!g.storageError;
    if(!unchanged())throw Error('저장 중 입력 초안이 바뀌었습니다. 새 입력을 보관했습니다.');
    const renewed=archivedDraft?.draft||(g.id==='plan-jobs'?explicitPlanDraftAckRebase(g,requested.intent,acknowledged,state):explicitQueuedDraftsRebase(g,requested.intent,acknowledged,state));
-   if(!renewed)throw Error('이전 저장의 반영 내역을 확인하지 못해 입력 초안을 보관했습니다.');
-   if(!sheetEqual(renewed,g.draft)){
+   // Without a proved receipt the draft is submitted as it is. Its edited
+   // cells are applied onto the latest ledger; cells the server already
+   // holds produce no change, so nothing is sent twice.
+   if(renewed&&!sheetEqual(renewed,g.draft)){
     // Persist the acknowledgement before allowing the caller to submit again.
     // A failed CAS must never continue with its old, already received values.
     const originalRecord=C.clone(g.persistedDraft),expectedRevision=revision+1,envelope=owner.envelope,latestSignature=JSON.stringify(owner.envelope.state),record={...C.clone(g.persistedDraft),version:expectedRevision,updatedAt:new Date().toISOString(),draft:C.clone(renewed)};
@@ -10825,11 +11204,8 @@ async function sheetPrepareExplicitSave(g){
  }
  throw Error('최신 자료 확인 중 연결 상태가 바뀌었습니다. 입력은 보관했습니다.');
  }catch(error){
-  // A still-unacknowledged editor must not acquire a new edit on top of stale
-  // received cells after local persistence/proof fails. Only this exact old
-  // draft is locked; a changed input, copy or replacement connection is not.
-  const selected=!requested?.pointer||typeof explicitQueuedDraftsSelected==='function'&&explicitQueuedDraftsSelected(g).ok&&explicitQueuedDraftsSelected(g).pointer===requested.pointer.pointer;
-  if(requested&&!owner.envelope?.queue?.length&&valid()&&g.draft===requested.draft&&JSON.stringify(g.draft)===requested.signature&&g.storageKey===requested.storageKey&&JSON.stringify(g.persistedDraft)===requested.persistedSignature&&g.writeQueue===requested.writeQueue&&selected&&!g.spec.readonly&&!g.closedDraft){g.draftRecoveryNeeded=true;g.storageError='이전 저장의 확인 내역을 초안에 반영하지 못했습니다. 입력 원문은 보관했습니다. 화면을 새로 열면 저장 확인부터 다시 복원합니다.';}
+  // The draft is kept and the same Save button stays usable: a failed check
+  // of an earlier save is never a reason to lock this table.
   throw error;
  }
 }
@@ -11741,29 +12117,33 @@ async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true)
  const key=g.storageKey,draft=g.draft,signature=JSON.stringify(draft),revision=g.revision,scope=sheetScope(),matches=entry=>entry?.id===g.id&&entry.month===g.month&&entry.storageKey===key&&(entry.revision??0)===(draft.revision??0);
  const candidates=(owner.envelope.explicitSaveRecoveries||[]).filter(entry=>entry.drafts?.some(matches)).slice().reverse();
  const current=()=>valid()&&workspace===owner&&sheetScope()===scope&&g.scope===scope&&g.storageKey===key&&g.draft===draft&&g.revision===revision&&JSON.stringify(g.draft)===signature&&explicitQueuedDraftsSelected(g).ok&&!owner.envelope.queue.length;
+ // A stored proof of an earlier save is advisory. When it proves the receipt,
+ // the draft is renewed exactly. When it is missing, unreadable or does not
+ // prove anything, the draft simply stays an ordinary unsaved input: saving
+ // re-applies only its edited cells onto the latest ledger, which is a no-op
+ // for values the server already holds. A failed proof never locks a table.
  for(const candidate of candidates){
   if(!current())throw Error('저장 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
-  let archive;try{archive=await S.localGet(candidate.key)}catch{throw Error('이전에 저장한 입력의 확인 자료를 읽지 못했습니다. 입력을 보관했으며 다시 저장하면 확인합니다.')}
+  let archive;try{archive=await S.localGet(candidate.key)}catch{continue}
   if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
   const evidence=archive?.acknowledgedDrafts,full=archive?.fullSubmission;
   const typed=evidence?.schema===1&&evidence.scope===scope&&Array.isArray(evidence.drafts)&&evidence.acknowledgedState;
   const fullShape=full?.schema===1&&full.scope===scope&&full.id===g.id&&full.month===g.month&&full.storageKey===key&&full.draft;
-  if(!typed&&!fullShape)throw Error('이전에 저장한 입력의 확인 자료가 부족합니다. 현재 입력은 그대로 보관했습니다.');
+  if(!typed&&!fullShape)continue;
   const records=typed?evidence.drafts.filter(record=>record.id===g.id&&record.month===g.month&&record.scope===scope&&record.storageKey===key&&explicitRecoverySame(record.draft,draft)):[];
   const fullMatch=full?.schema===1&&full.scope===scope&&full.id===g.id&&full.month===g.month&&full.storageKey===key&&explicitRecoverySame(full.draft,draft);
-  if(records.length>1)throw Error('보관한 입력의 저장 관계를 확인하지 못했습니다. 현재 입력은 보관했습니다.');
+  if(records.length>1)continue;
   // A complete normal commit covers insertions, deletions and shared memos as
   // one exact snapshot. Old queue recovery never creates this permission.
   if(fullMatch){const confirmed=full.completed?full:(g.id==='plan-jobs'?explicitQueuedPlanSubmissionReceipt(g,full,archive,owner):explicitQueuedCatalogSubmissionReceipt(g,full,archive,owner)),recovered=confirmed&&explicitQueuedDraftsFullRebase(g,confirmed,latest);if(recovered)return recovered;const historical=!full.completed&&g.id==='plan-jobs'&&explicitQueuedPlanHistoricalRebase(g,full,archive,owner,latest);if(historical)return historical}
   if(records.length){
    const original=evidence.originalEnvelope||archive;
-   if(typeof explicitUnitPrefixResolve==='function')await explicitUnitPrefixResolve(owner,original,current);
+   if(typeof explicitUnitPrefixResolve==='function')try{await explicitUnitPrefixResolve(owner,original,current)}catch{if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');continue}
    if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
    const intent=explicitQueuedDraftsAnyIntent(g,original);
    const rebased=intent&&explicitQueuedDraftsIntentCompatible(g,intent,records[0].intent)&&explicitQueuedDraftsAnyRebase(g,intent,evidence.acknowledgedState,latest);
    if(rebased)return{draft:rebased,matched:true};
   }
-  if(fullMatch||records.length||!typed&&!full)throw Error('이전 입력의 서버 반영을 확인하지 못했습니다. 새 입력은 그대로 보관했습니다.');
  }
  return null;
 }
@@ -11871,12 +12251,10 @@ async function explicitQueuedDraftsClear(captured,callerValid,owner){
   try{await ref.writeQueue}catch{continue}if(!valid())continue;
   const latest=owner.envelope.state,envelope=owner.envelope,signature=JSON.stringify(latest),rebased=explicitQueuedDraftsAnyRebase(g,ref.intent,captured.acknowledgedState,latest);
   const exact=()=>valid()&&owner.envelope===envelope&&JSON.stringify(owner.envelope.state)===signature;
-  const protect=()=>{
-   if(!exact())return;
-   g.storageError='저장한 입력의 기기 정리를 완료하지 못했습니다. 입력은 보관했습니다. 이 표를 다시 열면 저장 내역을 확인합니다.';g.error=g.storageError;
-   g.draftRecoveryNeeded=true;
-   const priorState=state,priorMonth=month;try{state=latest;month=g.month;g.update()}finally{state=priorState;month=priorMonth}
-  };
+  // Bookkeeping for another table could not be completed. Its draft stays as
+  // an ordinary unsaved input and is settled against the ledger when that
+  // table is next shown or saved; the table is never locked for it.
+  const protect=()=>{};
   const durable=async action=>{
    for(let attempt=0;attempt<2;attempt++)try{return await action()}catch(error){
     if(!exact())throw error;

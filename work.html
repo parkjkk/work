@@ -2349,10 +2349,14 @@ function ensureEntryEdits(date,rows,edits={}){
   for(const row of rows)if(!row.plannedWork&&!row.plannedWorkRef&&!isBulkRestRow(row)&&!next[row.id]?.rowBefore){const prior=!driver.offline&&outboxAll().filter(item=>item.date===date&&item.rows?.some(r=>r.id===row.id)).at(-1)?.scheduleEdits?.[row.id]?.rowBefore;next[row.id]={schema:1,fields:[],before:null,...next[row.id],rowBefore:entryCopy(prior||entryRowBefore(S.rowsDate===date?S.rows.find(r=>r.id===row.id):null,date))};}
   return next;
 }
-// Explicit saving may prefer only the cells the user actually changed. This
-// permission is call-local; stored queues and automatic retries stay strict.
+// Saving prefers only the cells the user actually changed. A stored request
+// sent later from the outbox follows "the later edit stands": it wins only
+// over another phone's save made between opening the form and this save.
+// A correction after this save (newer row time, this device's own lost-ACK
+// row changed afterwards, or a management correction) stays protected.
 function entryPreferExplicit(guard,row,current,key,options){
   if(options?.preferLocalEdits!==true||!guard?.present||guard.unverified||guard.restore||!current||row.id!==current.id)return false;
+  if(Number.isFinite(options.queuedAt)){const now=Number(current.t),opened=Number(guard.value?.t);if(!(now>opened)||now>options.queuedAt||now===Number(row.t)||progressStable(current.managementReceipt)!==progressStable(guard.value?.managementReceipt))return false}
   if(!['hours','prod','scrapKg','defQty','defPart','gasa','cs','gap','inlet','face','bubble','remark'].includes(key))return false;
   const same=field=>progressStable(ownFieldState(current,field))===progressStable(ownFieldState(guard.value,field));
   if(['worker','product','productId','off','offKind','plannedWork','plannedWorkRef','scheduleTarget','productionTeam'].some(field=>!same(field)))return false;
@@ -2507,7 +2511,8 @@ async function outboxFlush(){
         sentItem=entryCopy(cur);
         sent = cur.rows || [];
         if(sent.some(row=>!row.plannedWork&&!row.plannedWorkRef&&!isBulkRestRow(row)&&!cur.scheduleEdits?.[row.id]?.rowBefore))throw entryRowConflict(sent.find(row=>!cur.scheduleEdits?.[row.id]?.rowBefore),'기준본');
-        const merged=mergeScheduleChanges(rows,sent,cur.scheduleEdits);let out = mergeRows(rows,merged,entryAlignedHours(plannedAlignedHours(cur.align,merged),rows,sent,cur.scheduleEdits));
+        const options={preferLocalEdits:true,queuedAt:Number(cur.t)||Number(item.t)||0};
+        const merged=mergeScheduleChanges(rows,sent,cur.scheduleEdits,true,options);let out = mergeRows(rows,merged,entryAlignedHours(plannedAlignedHours(cur.align,merged),rows,sent,cur.scheduleEdits,true,options));
         out=mergeEntryDeletes(out,cur.removeIds,cur.scheduleEdits);
         return out;
       });
