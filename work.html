@@ -1129,7 +1129,7 @@ table.sh td.num{font-variant-numeric:tabular-nums}
 // Login is independent of repository credentials. Offline verification cannot
 // learn a remote password change until this device reconnects.
 const INITIAL=/*ACCESS_DEFAULT*/{"schema":1,"salt":"17aa3bb56e955aa428da8d5303e825b7","iterations":100000,"digest":"60ff1375529f5f6125b169d261fa54874f0e99beed0dd2c76f326e15ec307177","revision":"initial"}/*ACCESS_DEFAULT_END*/;
-const SERVER='https://parkjkk-production-view.pjk3742.chatgpt.site',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
+const SERVER='https://production-view.pjk3742.workers.dev',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
 let parkedDialogs=[],adminGate=null,adminAllowed=()=>true,unsubscribeAdmin=null,adminVersion=0;const sensitiveClosers=new Set();
 let verifier=INITIAL,cacheError='',unlocked=false,session='',pendingResolve=null,first=true,checking=false,lockVersion=0;
 function valid(v){return v&&v.schema===1&&typeof v.salt==='string'&&v.salt.length>=16&&v.salt.length<=100&&v.iterations===100000&&/^[a-f0-9]{64}$/.test(v.digest)&&typeof v.revision==='string'&&v.revision.length<=80}
@@ -1645,7 +1645,7 @@ function resolveFieldProduct(catalog,input,previous){
 /* PRODUCT_CATALOG_END */
 
 /* ================= 저장 드라이버 ================= */
-const FIELD_BRIDGE = 'https://parkjkk-production-view.pjk3742.chatgpt.site';
+const FIELD_BRIDGE = 'https://production-view.pjk3742.workers.dev';
 const fieldTarget = c => !!(c && String(c.owner).toLowerCase()==='parkjkk' && String(c.repo).toLowerCase()==='ilbo-data' && (c.branch||'main')==='main');
 const bridgeConfig = c => !!(fieldTarget(c) && c.transport==='bridge' && typeof c.bridgeKey==='string' && /^[A-Za-z0-9_-]{43}$/.test(c.bridgeKey));
 const connectedConfig = c => !!(c && c.owner && c.repo && (bridgeConfig(c) || (c.transport!=='bridge' && c.token)));

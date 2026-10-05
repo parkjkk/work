@@ -2333,7 +2333,7 @@ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboMore{display:none}
 // Login is independent of repository credentials. Offline verification cannot
 // learn a remote password change until this device reconnects.
 const INITIAL=/*ACCESS_DEFAULT*/{"schema":1,"salt":"17aa3bb56e955aa428da8d5303e825b7","iterations":100000,"digest":"60ff1375529f5f6125b169d261fa54874f0e99beed0dd2c76f326e15ec307177","revision":"initial"}/*ACCESS_DEFAULT_END*/;
-const SERVER='https://parkjkk-production-view.pjk3742.chatgpt.site',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
+const SERVER='https://production-view.pjk3742.workers.dev',KEY='production.access.verifier.v1',originalFetch=root.fetch.bind(root);
 let parkedDialogs=[],adminGate=null,adminAllowed=()=>true,unsubscribeAdmin=null,adminVersion=0;const sensitiveClosers=new Set();
 let verifier=INITIAL,cacheError='',unlocked=false,session='',pendingResolve=null,first=true,checking=false,lockVersion=0;
 function valid(v){return v&&v.schema===1&&typeof v.salt==='string'&&v.salt.length>=16&&v.salt.length<=100&&v.iterations===100000&&/^[a-f0-9]{64}$/.test(v.digest)&&typeof v.revision==='string'&&v.revision.length<=80}
@@ -5768,7 +5768,7 @@ function gypsumLotsDialog(initial=today().startsWith(month)?today():month+'-01')
  ui.Save.onclick=async()=>{if(busy||!current())return;try{
   if(!AppAccess.unlocked)throw Error('로그인한 뒤 다시 저장해 주세요.');const date=ui.Date.value,value={date,lot:ui.Value.value,overlap:ui.Overlap.checked};if(!state.months[date.slice(0,7)]||state.months[date.slice(0,7)].closed)throw Error('입력 가능한 월을 선택해 주세요.');const edit=GypsumLots.edit(state.gypsumLots||[],{date,base,value});
   busy=true;pendingControls=[...root.querySelectorAll('button,input')].map(el=>({el,disabled:el.disabled}));for(const {el}of pendingControls)el.disabled=true;root.setAttribute('aria-busy','true');ui.Error.hidden=true;ui.Status.textContent='로트를 저장 중입니다…';ui.Status.hidden=false;
-  const owner=workspace;if(owner){if(twoWayClient()!==owner)throw Error('공용 석고 로트는 생산관리 연결에서 저장해 주세요.');const response=await fetch('https://parkjkk-production-view.pjk3742.chatgpt.site/api/management-lots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:owner.config.token,date,base,value}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});const result=await response.json();if(!response.ok)throw Error(result.error||'로트를 저장하지 못했습니다.');if(workspace!==owner||owner.closed||!AppAccess.unlocked)throw Error('연결이 바뀌었습니다. 다시 불러와 주세요.');const rows=result.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'}));await owner.mutate(e=>{e.state.gypsumLots=rows});state.gypsumLots=rows}else{const n=C.clone(state);n.gypsumLots=edit.records;await persist(n,[],false)}
+  const owner=workspace;if(owner){if(twoWayClient()!==owner)throw Error('공용 석고 로트는 생산관리 연결에서 저장해 주세요.');const response=await fetch('https://production-view.pjk3742.workers.dev/api/management-lots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:owner.config.token,date,base,value}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});const result=await response.json();if(!response.ok)throw Error(result.error||'로트를 저장하지 못했습니다.');if(workspace!==owner||owner.closed||!AppAccess.unlocked)throw Error('연결이 바뀌었습니다. 다시 불러와 주세요.');const rows=result.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'}));await owner.mutate(e=>{e.state.gypsumLots=rows});state.gypsumLots=rows}else{const n=C.clone(state);n.gypsumLots=edit.records;await persist(n,[],false)}
   if(current()&&AppAccess.unlocked){refresh();ui.Status.textContent='저장 완료 · '+date+' · '+value.lot.trim();ui.Status.hidden=false;toast('석고 로트를 저장했습니다.');render()}
  }catch(e){error(e.message)}finally{busy=false;for(const {el,disabled}of pendingControls)el.disabled=disabled;pendingControls=[];root.removeAttribute('aria-busy');if(!current())cleanup()}};
  refresh();d.showModal();
@@ -10005,7 +10005,7 @@ async function twoWayRequest(action='request',attempt=0){
  const generation=twoWayState.generation,intent={...twoWayState.intent},current=()=>twoWayState.client===client&&workspace===client&&twoWayState.generation===generation&&twoWayClient()===client&&(typeof AppAccess==='undefined'||AppAccess.unlocked);
  twoWayState.running=true;twoWayState.last=Date.now();twoWayState.message=twoWayMessages.pending;twoWayState.status='pending';twoWayRender();let retry=true,delay;
  try{
-  const r=await fetch('https://parkjkk-production-view.pjk3742.chatgpt.site/api/management-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:intent.stage,token:client.config.token}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(12000)});
+  const r=await fetch('https://production-view.pjk3742.workers.dev/api/management-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:intent.stage,token:client.config.token}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(12000)});
   const result=await r.json();if(!current())return;
   if(!r.ok){const status=[401,403].includes(r.status)?'permission':[400,413].includes(r.status)?'configuration':r.status===409?'conflict':'retry';twoWayState.status=status;twoWayState.message=twoWayMessages[status];delay=['permission','configuration'].includes(status)?60000:30000;return}
   if(!Object.hasOwn(twoWayMessages,result?.status))throw Error('sync-unavailable');
@@ -10756,7 +10756,7 @@ for(const type of ['pagehide','hashchange'])window.addEventListener(type,()=>man
 // The server enforces read-only authorization. These guards also keep shared
 // data away from this device's manager connection, cache and editor drafts.
 class ShareViewReadError extends Error{}
-const shareViewOrigin='https://parkjkk-production-view.pjk3742.chatgpt.site';
+const shareViewOrigin='https://production-view.pjk3742.workers.dev';
 const shareViewPages=new Set(['daily','schedule','scheduleSummary','stock','audit','report','master','home']);
 const shareViewActions=new Set([...shareViewPages,'lotSummary','csvScheduleSummary','csvDaily','csvStock','csvSchedule','csvReport','reportPrint','history','dryCalc']);
 const shareViewPlanCommands=new Set(['focus-conditions','focus-selected','today','open-daily','focus-mode','focus-tools','mobile-view-tools','dry-tools','fit-width','compact','overview','calendar-tools','clear-selection','job-conditions','edit-selected','dry-find','dry-newer','dry-older']);
@@ -10909,7 +10909,7 @@ if(shareViewSession.active){
 
 // One-time, explicitly password-approved handoff from this manager device to
 // the fixed sharing administrator. No token is added to markup or a URL.
-const shareSetupOrigin='https://parkjkk-production-view.pjk3742.chatgpt.site';
+const shareSetupOrigin='https://production-view.pjk3742.workers.dev';
 function shareSetupParse(hash){
  const params=new URLSearchParams(String(hash||'').replace(/^#/,''));if(!params.has('shareSetup'))return null;
  if(params.has('view')||params.getAll('shareSetup').length!==1)throw Error('공유 설정 링크를 다시 열어 주세요.');
