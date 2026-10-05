@@ -2869,17 +2869,33 @@ function mergePlasterMonth(base,local,remote){return mergeMonthLedger(base,local
 // month. The immutable Batch audit delta proves that intent during a queued
 // retry; attendance, other rows and integration receipts remain server-owned.
 const productionNumbers=['hours','plan','pours','waterRatio','defectUnit','defectCount','plaster','cases','fieldScrapKg','fieldDefQty'];
-const productionCells=[...productionNumbers,'defectPart','lot','productionCompletion','productionPlanQty','machineActuals','fieldDetails.remark','unitSources.plaster','unitSources.cases','explicit.day','explicit.worker','explicit.hours','explicit.pours','explicit.lot'];
+const productionCells=[...productionNumbers,'date','worker','product','defectPart','lot','productionCompletion','productionPlanQty','machineActuals','fieldDetails.remark','unitSources.plaster','unitSources.cases','explicit.day','explicit.worker','explicit.hours','explicit.pours','explicit.lot'];
 const productionIdentity=['id','date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow','templateSource'];
 function productionCell(row,key){const [field,slot]=key.split('.');return slot?recordField(row?.[field],slot):recordField(row,field)}
 function productionSet(row,key,value){const [field,slot]=key.split('.');if(slot){row[field]={...(row[field]||{})};if(value.present)row[field][slot]=clone(value.value);else delete row[field][slot]}else if(value.present)row[field]=clone(value.value);else delete row[field]}
-function productionDelta(before,after){
- const fields=productionCells.filter(key=>!equal(productionCell(before,key),productionCell(after,key))),masked=clone(after);
+function productionDelta(before,after,extra=[]){
+ const fields=[...productionCells,...extra].filter(key=>!equal(productionCell(before,key),productionCell(after,key))),masked=clone(after);
  for(const key of fields)productionSet(masked,key,productionCell(before,key));
  // Adding the first remark, explicit flag or unit slot creates its container.
  for(const key of ['fieldDetails','unitSources','explicit'])if(before[key]==null&&masked[key]&&Object.keys(masked[key]).length===0){if(own(before,key))masked[key]=before[key];else delete masked[key]}
  delete masked.rev;const original=clone(before);delete original.rev;
  return equal(masked,original)?fields:null;
+}
+function productionEventKind(event,month){
+ if(!event?.id||typeof event.id!=='string'||!Number.isFinite(Date.parse(event.at)))return null;
+ if(event.type==='삭제:rows'&&!own(event,'kind')&&!own(event,'month')&&!own(event,'source')&&event.before&&event.after==null&&typeof event.reason==='string'&&event.reason.trim())return'delete';
+ if(event.kind!=='daily'||event.month!==month||event.type!==(event.after?'생산 입력':'생산 삭제'))return null;
+ if(event.source==='월 전체 입력')return'batch';
+ return event.after&&!own(event,'source')&&!own(event,'reason')?'core':null;
+}
+function productionEventExtra(event,kind){
+ if(kind!=='core'||!event.before||!event.after)return[];
+ const extra=[];
+ // The existing single-worker dialog supplies these display/origin defaults
+ // on its first edit. Replacing an established value is not that operation.
+ if(!event.before.batchId&&typeof event.after.batchId==='string'&&event.after.batchId.trim())extra.push('batchId');
+ if(!event.before.source&&event.after.source==='웹 입력')extra.push('source');
+ return extra;
 }
 function productionRowProblem(row,month){
  try{if(!root.ScheduleCore?.validateRecord(row)||row.date.slice(0,7)!==month)return true;if(own(row,'machineActuals')){if(!root.SchedulePlanning?.machineActualValues)return true;root.SchedulePlanning.machineActualValues(row.machineActuals,row.pours)}return false}catch{return true}
@@ -2910,44 +2926,65 @@ function mergeProductionMonth(base,local,remote){
  const [before,desired,current]=maps,oldOrder=local.rows.filter(row=>before.has(row.id)).map(row=>row.id);
  if(!equal(oldOrder,base.rows.filter(row=>desired.has(row.id)).map(row=>row.id)))return{conflict:true,field:'rows'};
  const byEvent=new Map(),eventIds=new Set();
- for(const event of events){const id=event?.after?.id||event?.before?.id;
-  const inputEvent=event?.source==='월 전체 입력'||event?.after&&!own(event,'source')&&!own(event,'reason');
-  if(!event?.id||eventIds.has(event.id)||baseIds.has(event.id)||byEvent.has(id)||!id||event.kind!=='daily'||event.month!==base.id||!inputEvent||event.type!==(event.after?'생산 입력':'생산 삭제'))return null;
+ for(const event of events){const id=event?.after?.id||event?.before?.id,kind=productionEventKind(event,base.id),chain=byEvent.get(id)||[];
+  if(!kind||eventIds.has(event.id)||baseIds.has(event.id)||!id||event.before&&event.before.id!==id||event.after&&event.after.id!==id)return null;
+  if(chain.length&&!equal(chain.at(-1).event.after,event.before))return null;
+  const extra=productionEventExtra(event,kind),fields=event.before&&event.after?productionDelta(event.before,event.after,extra):[];
+  if(fields==null||event.after&&(productionRowProblem(event.after,base.id)||event.after.rev!==(Number(event.before?.rev)||0)+1)||!event.after&&!(typeof event.reason==='string'&&event.reason.trim()))return null;
   if(histories.has(event.id)&&!equal(histories.get(event.id).event,event))return{conflict:true,field:'history'};
-  eventIds.add(event.id);byEvent.set(id,event);
+  if(histories.has(event.id)&&chain.some(item=>!histories.has(item.event.id)))return{conflict:true,field:'history'};
+  eventIds.add(event.id);chain.push({event,kind,extra,fields});byEvent.set(id,chain);
  }
  const updates=new Map();
  for(const id of new Set([...before.keys(),...desired.keys()])){
-  const b=before.get(id),l=desired.get(id),r=current.get(id),event=byEvent.get(id);
-  if(equal(b,l)&&!event)continue;
-  if(!event)return null;
+  const b=before.get(id),l=desired.get(id),r=current.get(id),chain=byEvent.get(id);
+  if(equal(b,l)&&!chain)continue;
+  if(!chain)return null;
+  const first=chain[0].event,event=chain.at(-1).event,pending=chain.filter(item=>!histories.has(item.event.id)),extra=[...new Set(chain.flatMap(item=>item.extra))],intent=[...new Set(chain.flatMap(item=>item.fields))];
   if(!b){
-   if(event.before!=null||!equal(event.after,l)||productionRowProblem(l,base.id)||own(l,'sourceIntegration')||own(l,'integrationOutbound'))return null;
-   if(histories.has(event.id))continue;
+   if(first.before!=null||!equal(event.after,l)||productionRowProblem(l,base.id)||own(l,'sourceIntegration')||own(l,'integrationOutbound'))return null;
+   if(!pending.length)continue;
+   if(pending.length!==chain.length)return{conflict:true,field:'rows:'+id};
    if(r&&!equal(memoSemantic(r),memoSemantic(preserveServerIntegration({...local,rows:[l]},remote).record.rows[0])))return{conflict:true,field:'rows:'+id};
    if(!r)updates.set(id,clone(l));continue;
   }
   if(!l){
-   if(event.after!=null||!equal(event.before,b)||!event.reason?.trim())return null;
-   if(histories.has(event.id))continue;
+   if(event.after!=null||!equal(first.before,b)||!event.reason?.trim())return null;
+   if(!pending.length)continue;
+   if(pending.length!==chain.length)return{conflict:true,field:'rows:'+id};
    if(r&&!equal(memoSemantic(r),memoSemantic(b)))return{conflict:true,field:'rows:'+id};
    if(r)updates.set(id,null);continue;
   }
-  if(!event.before||!event.after||event.before.id!==id||event.after.id!==id)return null;
-  const fields=productionDelta(b,l),intent=productionDelta(event.before,event.after);
-  if(!fields||!intent||!intent.length||fields.some(f=>!intent.includes(f)))return null;
-  for(const key of productionIdentity)if(!equal(recordField(b,key),recordField(l,key))||!equal(recordField(event.before,key),recordField(b,key))||!equal(recordField(event.after,key),recordField(l,key)))return{conflict:true,field:'rows:'+id+':'+key};
+  if(!first.before||!event.after)return null;
+  const netFields=productionDelta(b,l,extra);
+  if(!netFields||netFields.some(f=>!intent.includes(f)))return null;
+  for(const key of productionIdentity)if(!equal(recordField(first.before,key),recordField(b,key))||!equal(recordField(event.after,key),recordField(l,key))||!['date','worker','product',...extra].includes(key)&&!equal(recordField(b,key),recordField(l,key)))return{conflict:true,field:'rows:'+id+':'+key};
   // Rebased follow-up queues retain the original event. Only its edited slots
   // must match the new base (or an already accepted value), not unrelated cells.
-  for(const key of intent)if(!equal(productionCell(event.after,key),productionCell(l,key))||!equal(productionCell(event.before,key),productionCell(b,key))&&!equal(productionCell(event.after,key),productionCell(b,key)))return null;
+  for(const key of intent)if(!equal(productionCell(event.after,key),productionCell(l,key))||!equal(productionCell(first.before,key),productionCell(b,key))&&!equal(productionCell(event.after,key),productionCell(b,key)))return null;
   // An exact persisted event is the ACK proof even if later server work has
   // changed or deleted that row. Never replay its old quantity after receipt.
-  if(histories.has(event.id))continue;
+  if(!pending.length)continue;
   if(!r)return{conflict:true,field:'rows:'+id};
+  // A received prefix is the new baseline. Apply only later proved events,
+  // never the already received value over a subsequent server correction.
+  const basis=pending.length===chain.length?b:chain[chain.length-pending.length-1].event.after,fields=productionDelta(basis,l,extra);
+  if(!basis||!fields)return null;
   if(['fieldDetails','unitSources','explicit'].some(key=>r[key]!=null&&(typeof r[key]!=='object'||Array.isArray(r[key]))))return{conflict:true,field:'rows:'+id};
-  for(const key of productionIdentity)if(!equal(recordField(b,key),recordField(r,key)))return{conflict:true,field:'rows:'+id+':'+key};
-  if(!equal(b.sourceIntegration?.key,r.sourceIntegration?.key))return{conflict:true,field:'rows:'+id+':sourceIntegration'};
-  const coupling=productionCoupling(b,l,r,fields);if(coupling)return{conflict:true,field:'rows:'+id+':'+coupling};
+  for(const key of productionIdentity)if(!equal(recordField(basis,key),recordField(r,key)))return{conflict:true,field:'rows:'+id+':'+key};
+  if(!equal(basis.sourceIntegration?.key,r.sourceIntegration?.key))return{conflict:true,field:'rows:'+id+':sourceIntegration'};
+  const coupling=productionCoupling(basis,l,r,fields);if(coupling)return{conflict:true,field:'rows:'+id+':'+coupling};
+  const corrected=fields.some(f=>['date','worker','product'].includes(f));
+  if(corrected){
+   // Identity correction can change which work receives this quantity. Its
+   // row/work basis must still be the one validated by the producer.
+   const dependencies=['date','worker','product','jobId','scheduleTarget','plan','pours','plaster','cases','unitSources','machineActuals','productionCompletion','productionPlanQty'];
+   if(dependencies.some(key=>!sameField(basis,r,key)))return{conflict:true,field:'rows:'+id+':scheduleTarget'};
+   if(['jobs','reservationBindings','plans'].some(key=>!sameField(base,remote,key)))return{conflict:true,field:'rows:'+id+':scheduleTarget'};
+   const related=row=>[b,l].some(target=>row.worker===target.worker&&row.product===target.product);
+   for(const row of base.rows.filter(row=>row.id!==id&&related(row))){const now=current.get(row.id);if(!now||dependencies.some(key=>!sameField(row,now,key)))return{conflict:true,field:'rows:'+id+':scheduleTarget'}}
+   if(remote.rows.some(row=>!before.has(row.id)&&related(row)))return{conflict:true,field:'rows:'+id+':scheduleTarget'};
+  }
   if((l.jobId||l.scheduleTarget)&&(!sameField(base,remote,'jobs')||!sameField(base,remote,'reservationBindings')))return{conflict:true,field:'rows:'+id+':scheduleTarget'};
   if(fields.some(f=>['productionCompletion','productionPlanQty'].includes(f))||fields.includes('plan')&&l.plan===0){
    const basis=['date','worker','product','jobId','scheduleTarget','plan','pours','productionCompletion','productionPlanQty'];
@@ -2955,9 +2992,9 @@ function mergeProductionMonth(base,local,remote){
    if(remote.rows.some(row=>!before.has(row.id)&&row.worker===b.worker&&row.product===b.product))return{conflict:true,field:'rows:'+id+':productionCompletion'};
   }
   const merged=clone(r);
-  for(const key of fields){const value=mergeField(productionCell(b,key),productionCell(l,key),productionCell(r,key));if(value.conflict)return{conflict:true,field:'rows:'+id+':'+key};productionSet(merged,key,value.value)}
+  for(const key of fields){const value=mergeField(productionCell(basis,key),productionCell(l,key),productionCell(r,key));if(value.conflict)return{conflict:true,field:'rows:'+id+':'+key};productionSet(merged,key,value.value)}
   if(productionRowProblem(merged,base.id))return{conflict:true,field:'rows:'+id};
-  if(!equal(memoSemantic(merged),memoSemantic(r))){merged.rev=Math.max(0,...[b.rev,r.rev].map(v=>Number.isSafeInteger(v)?v:0))+1;updates.set(id,merged)}
+  merged.rev=Math.max(0,...[basis.rev,r.rev].map(v=>Number.isSafeInteger(v)?v:0))+pending.length;updates.set(id,merged);
  }
  if([...byEvent.keys()].some(id=>!before.has(id)&&!desired.has(id)))return null;
  const appended=events.filter(event=>!histories.has(event.id));if(!updates.size&&!appended.length)return{record:remote};
@@ -4408,6 +4445,18 @@ const canonical=x=>{
 };
 const equal=(a,b)=>same(canonical(a),canonical(b));
 const comparable=r=>{const n=clone(r);delete n.rev;return n};
+// The daily ledger month and the physical job owner can differ. Use the same
+// proven target/carry owner as the schedule instead of guessing by item name.
+function jobLookup(state,month){
+ const P=root.SchedulePlanning,cache=new Map();
+ return row=>{
+  const owner=row.scheduleTarget?P?.scheduleTargetOwnerMonth?.(state,row):month;
+  if(!owner||!state.months?.[owner]||state.months[owner].closed||state.months[owner].closeSnapshot)return[];
+  if(!cache.has(owner))cache.set(owner,P?P.jobs(state,owner):[...(state.months[owner].jobs||[]),...(state.months[owner].rows||[]).filter(r=>r.plan>0&&!r.jobId).map(r=>({...r,id:'job:'+r.id}))]);
+  return cache.get(owner);
+ };
+}
+function jobsContaining(jobs,row){return jobs.filter(job=>job.records?.some(record=>record.id===row.id&&record.date===row.date))}
 function number(value){
  if(empty(value))return{value:null};
  if(typeof value!=='number'&&typeof value!=='string')return{error:true};
@@ -4558,13 +4607,13 @@ function inspect(state,draft,options={}){
   if(!fields.length&&!sourceFields.length)continue;
   if(!remote){counts.changed++;conflict(row.id,'deleted','수정한 행이 다른 곳에서 삭제되었습니다.');continue}
   const r=values(remote),remoteFields=changedFields(b,r),merged=clone(remote);
-  const identityChanged=['date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow'].some(f=>!equal(b[f],r[f]))||!equal(old.sourceIntegration?.key,remote.sourceIntegration?.key);
+  const identityChanged=['date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow','templateSource'].some(f=>!equal(b[f],r[f]))||!equal(old.sourceIntegration?.key,remote.sourceIntegration?.key);
   if(options.preferLocalEdits===true&&identityChanged)conflict(row.id,'scheduleTarget','입력하던 생산기록의 날짜·작업자·품목 또는 작업 연결이 변경되었습니다. 최신 작업을 확인해 주세요.');
   const completionFields=['productionCompletion','productionPlanQty'],basisFields=['date','worker','product','jobId','scheduleTarget','plan','pours'];
   if(fields.some(f=>completionFields.includes(f))&&remoteFields.some(f=>basisFields.includes(f)&&!equal(r[f],n[f]))||remoteFields.some(f=>completionFields.includes(f)&&!equal(r[f],n[f]))&&fields.some(f=>basisFields.includes(f)))conflict(row.id,'productionCompletion','완료 기록과 생산·계획 기준이 동시에 변경되었습니다. 최신 누적을 확인해 주세요.');
   const actualBasis=['date','worker','product','jobId','scheduleTarget','pours'];
-  const targetBasis=['date','worker','product','jobId','plan','pours','machineActuals','productionCompletion'];
-  if(fields.includes('scheduleTarget')&&remoteFields.some(f=>targetBasis.includes(f)&&!equal(r[f],n[f]))||remoteFields.includes('scheduleTarget')&&!equal(r.scheduleTarget,n.scheduleTarget)&&fields.some(f=>targetBasis.includes(f)))conflict(row.id,'scheduleTarget','반영할 작업과 생산기록이 동시에 변경되었습니다. 최신 작업 연결을 확인해 주세요.');
+  const targetFields=['jobId','scheduleTarget'],targetBasis=['date','worker','product',...targetFields,'plan','pours','machineActuals','productionCompletion','productionPlanQty'];
+  if(fields.some(f=>targetFields.includes(f))&&remoteFields.some(f=>targetBasis.includes(f)&&!equal(r[f],n[f]))||remoteFields.some(f=>targetFields.includes(f)&&!equal(r[f],n[f]))&&fields.some(f=>targetBasis.includes(f)))conflict(row.id,'scheduleTarget','반영할 작업과 생산기록이 동시에 변경되었습니다. 최신 작업 연결을 확인해 주세요.');
   if(fields.includes('machineActuals')&&remoteFields.some(f=>actualBasis.includes(f)&&!equal(r[f],n[f]))||remoteFields.includes('machineActuals')&&!equal(r.machineActuals,n.machineActuals)&&fields.some(f=>actualBasis.includes(f)))conflict(row.id,'machineActuals','호기별 생산량과 날짜·작업자·품목·연결 작업 또는 총생산 조수가 동시에 변경되었습니다. 최신 실적을 확인해 주세요.');
   for(const f of fields){
    if(f==='fieldDetails.remark'&&!remarkContainer(remote)){conflict(row.id,f,'현장 메모의 저장 형식이 다른 곳에서 변경되었습니다. 최신 기록을 확인해 주세요.');continue}
@@ -4607,12 +4656,11 @@ function inspect(state,draft,options={}){
  }
  if(!errors.length&&result.rows.some(r=>r.jobId||r.scheduleTarget)){
   const staged=clone(state);staged.months[draft.month].rows=clone(result.rows);
-  let jobs;
-  try{jobs=root.SchedulePlanning?root.SchedulePlanning.jobs(staged,draft.month):[...(month.jobs||[]),...result.rows.filter(r=>r.plan>0&&!r.jobId).map(r=>({...r,id:'job:'+r.id}))]}
-  catch(e){fail('','jobId','연결 작업을 확인해 주세요: '+e.message);jobs=[]}
+  const lookup=jobLookup(staged,draft.month);
   for(const row of result.rows.filter(r=>r.jobId||r.scheduleTarget)){
-   const matches=row.scheduleTarget?jobs.filter(j=>j.records?.some(r=>r.id===row.id)):jobs.filter(j=>j.id===row.jobId);const j=matches.length===1?matches[0]:null;
-   if(!j||!root.SchedulePlanning?.recordMatchesJob(j,row,state))fail(row.id,row.scheduleTarget?'scheduleTarget':'jobId','반영할 작업의 담당자·품명·생산기간을 확인해 주세요.');
+   let jobs;try{jobs=lookup(row)}catch(e){fail(row.id,'jobId','연결 작업을 확인해 주세요: '+e.message);continue}
+   const matches=row.scheduleTarget?jobsContaining(jobs,row):jobs.filter(j=>j.id===row.jobId);const j=matches.length===1?matches[0]:null;
+   if(!j||!root.SchedulePlanning?.recordMatchesJob(j,row,staged))fail(row.id,row.scheduleTarget?'scheduleTarget':'jobId','반영할 작업의 담당자·품명·생산기간을 확인해 주세요.');
   }
  }
  if(!errors.length&&root.SchedulePlanning?.reservationLinkOptions){
@@ -4627,10 +4675,10 @@ function inspect(state,draft,options={}){
  }
  if(root.SchedulePlanning){
   const declared=result.rows.filter(r=>r.productionCompletion!=null&&(!base.has(r.id)||!equal(base.get(r.id).productionCompletion,r.productionCompletion)));
-  if(declared.length){const staged={...state,months:{...state.months,[draft.month]:{...month,rows:result.rows}}},jobs=root.SchedulePlanning.jobs(staged,draft.month);for(const row of declared)if(jobs.filter(j=>j.records?.some(r=>r.id===row.id)).length!==1)fail(row.id,'productionCompletion','완료할 작업이 하나로 연결되어야 합니다. 시작 계획 또는 작업 연결을 확인해 주세요.')}
+  if(declared.length){const staged={...state,months:{...state.months,[draft.month]:{...month,rows:result.rows}}},lookup=jobLookup(staged,draft.month);for(const row of declared)if(jobsContaining(lookup(row),row).length!==1)fail(row.id,'productionCompletion','완료할 작업이 하나로 연결되어야 합니다. 시작 계획 또는 작업 연결을 확인해 주세요.')}
   const endings=draft.rows.filter(r=>base.has(r.id)&&(!equal(base.get(r.id).productionCompletion,r.productionCompletion)||base.get(r.id).plan!==0&&r.plan===0));
-  if(endings.length){const prior={...state,months:{...state.months,[draft.month]:{...month,rows:clone(draft.baseRows)}}},priorJobs=root.SchedulePlanning.jobs(prior,draft.month),currentJobs=root.SchedulePlanning.jobs(state,draft.month),basis=['date','worker','product','jobId','scheduleTarget','plan','pours','productionCompletion','productionPlanQty'];
-   for(const row of endings){const linked=priorJobs.filter(j=>j.records?.some(r=>r.id===row.id));for(const j of linked){const remote=currentJobs.find(x=>x.id===j.id);if(!remote||!equal(j.records.map(r=>r.id),remote.records.map(r=>r.id)))conflict(row.id,'productionCompletion','같은 작업의 실적 연결이 변경되었습니다. 최신 누적을 확인한 뒤 완료해 주세요.')}for(const r of linked.flatMap(j=>j.records||[])){if(r.id===row.id)continue;const remote=current.get(r.id);if(!remote||basis.some(f=>!equal(r[f],remote[f]))) {conflict(row.id,'productionCompletion','같은 작업의 다른 실적이 변경되었습니다. 최신 누적을 확인한 뒤 완료해 주세요.');break}}}
+  if(endings.length){const prior={...state,months:{...state.months,[draft.month]:{...month,rows:clone(draft.baseRows)}}},priorLookup=jobLookup(prior,draft.month),currentLookup=jobLookup(state,draft.month),basis=['date','worker','product','jobId','scheduleTarget','plan','pours','productionCompletion','productionPlanQty'];
+   for(const row of endings){const original=base.get(row.id),linked=jobsContaining(priorLookup(original),original),latest=current.get(row.id),currentJobs=latest?currentLookup(latest):[];for(const j of linked){const remote=currentJobs.find(x=>x.id===j.id);if(!remote||!equal(j.records.map(r=>[r.id,r.date]),remote.records.map(r=>[r.id,r.date])))conflict(row.id,'productionCompletion','같은 작업의 실적 연결이 변경되었습니다. 최신 누적을 확인한 뒤 완료해 주세요.')}for(const r of linked.flatMap(j=>j.records||[])){if(r.id===row.id&&r.date===row.date)continue;const matches=(state.months[r.date?.slice(0,7)]?.rows||[]).filter(x=>x.id===r.id),remote=matches.length===1?matches[0]:null;if(!remote||basis.some(f=>!equal(r[f],remote[f]))) {conflict(row.id,'productionCompletion','같은 작업의 다른 실적이 변경되었습니다. 최신 누적을 확인한 뒤 완료해 주세요.');break}}}
   }
  }
  for(const row of result.rows){
@@ -5947,7 +5995,7 @@ class SheetEditor{
   const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||''});
   if(!contextOK()){error='context';this.error='작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 저장해 주세요.';this.update();return result()}
   if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
-  const explicitOptions={preferLocalEdits:true};this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
+  const explicitOptions={preferLocalEdits:true};this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
   try{
    const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}phase='refresh';
    if(typeof sheetPrepareExplicitSave==='function')await sheetPrepareExplicitSave(this);
@@ -5967,7 +6015,7 @@ class SheetEditor{
    if(!contextOK()){phase='context';throw Error('저장 완료 뒤 연결이 바뀌었습니다. 새 연결의 입력 상태는 변경하지 않았습니다.')}
    this.saving=false;busy=false;
    if(!bulk){const pos=this.host()?.querySelector('.sheetViewport'),left=pos?.scrollLeft||0,top=pos?.scrollTop||0;render();const updated=this.host()?.querySelector('.sheetViewport');if(updated){updated.scrollLeft=left;updated.scrollTop=top}toast(this.error)}
-  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message;if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
+  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message;if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
   return result();
  }
  async undo(){if(this.locked()||busy)return;if(!confirm('이 표에서 아직 저장하지 않은 변경을 취소할까요?'))return;this.saving=true;busy=true;this.update();try{await this.writeQueue.catch(()=>{});const cleared=await this.clearStoredDraft();this.draft=this.fresh();this.dirty=false;this.error='변경을 취소했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}catch(e){this.error=e.message}finally{this.saving=false;busy=false;this.refresh();this.spec.onChange?.(this)}}
@@ -10333,10 +10381,8 @@ async function bulkSaveRun(){
    try{await sheetAwaitRemoteAck(owner);result.retried=true}catch(error){
     if(!valid())throw error;
     // Try the owning table's current explicit draft before unrelated tables.
-    const q=owner.envelope.queue[0],base=q?.base?.find(r=>r.kind==='month'),local=q?.local?.find(r=>r.kind==='month');
-    const changed=base&&local?Object.keys({...base,...local}).filter(k=>!['rev','history'].includes(k)&&!sheetEqual(base[k],local[k])):[];
-    const id=changed.length===1?({rows:'production',plaster:'plaster-month',issues:'issue-ledger'})[changed[0]]:null;
-    if(id)targets.sort((a,b)=>Number(b.id===id&&b.month===base.id)-Number(a.id===id&&a.month===base.id));
+    const pending=sheetPendingLedgerOwner(owner);
+    if(pending){if(!targets.some(t=>t.id===pending.id&&t.month===pending.month))targets.push({...pending,key:scope+':'+pending.month+':'+pending.id});targets.sort((a,b)=>Number(b.id===pending.id&&b.month===pending.month)-Number(a.id===pending.id&&a.month===pending.month))}
    }
    if(!valid())throw Error('연결 또는 권한이 바뀌었습니다.');
   }
@@ -10350,7 +10396,7 @@ async function bulkSaveRun(){
    let g;
    try{
     g=bulkSaveFactory(target.id,target.key);await bulkSaveReady(g,valid);
-    if(!g.dirty)continue;
+    if(!g.dirty){const draft=sheetPendingQueueDraft(g,owner);if(draft){g.draft=draft;g.dirty=true;await g.queueDraft({compare:true})}else continue}
     if(g.spec.readonly||g.closedDraft){result.left.push({...target,message:'마감되었거나 조회 전용인 표입니다. 입력은 보존했습니다.'});continue}
     // Refresh the spec after load/ACK and use the newest state for every table.
     g=bulkSaveFactory(target.id,target.key);const status=g.status();
@@ -10381,9 +10427,81 @@ document.addEventListener('click',event=>{if(bulkSaveState.running&&!event.targe
 // An explicit click reads a coherent latest snapshot. The edit baseline stays
 // intact so identity/deletion/domain checks still know what the user saw.
 function sheetExplicitSaveContextValid(g,owner){return workspace===owner&&sheetScope()===g.scope&&month===g.month&&bulkSaveAllowed()}
+function sheetPendingLedgerOwner(owner){
+ const queue=owner.envelope?.queue||[],paths=[...new Set(queue.map(q=>q.path).filter(path=>path!=='meta/catalog.json'))];
+ if(paths.length!==1)return null;const match=/^months\/(\d{4}-(?:0[1-9]|1[0-2]))\.json$/.exec(paths[0]);if(!match)return null;
+ const q=queue.find(q=>q.path===paths[0]),base=q?.base?.find(r=>r.kind==='month'),local=q?.local?.find(r=>r.kind==='month');
+ const changed=base&&local?Object.keys({...base,...local}).filter(k=>!['rev','history'].includes(k)&&!sheetEqual(base[k],local[k])):[];
+ const id=changed.includes('rows')&&changed.every(k=>['rows','reservationBindings'].includes(k))?'production':changed.length===1?({plaster:'plaster-month',issues:'issue-ledger'})[changed[0]]:null;
+ return id&&base.id===match[1]&&local.id===match[1]?{id,month:match[1]}:null;
+}
+function sheetPendingQueueDraft(g,owner){
+ if(g.dirty||g.spec.readonly||g.closedDraft||g.storageError||g.loading||g.persistedDraft&&g.explicitHadDraft!==false||!sheetEqual(g.draft,g.fresh()))return null;
+ const target=sheetPendingLedgerOwner(owner);if(!target||target.id!==g.id||target.month!==g.month)return null;
+ const path='months/'+g.month+'.json',records=owner.envelope.baseline?.[path];if(!Array.isArray(records))return null;
+ const base=ScheduleNative.unpackMonth(g.month,records),draft=C.clone(g.draft);
+ if(g.id==='issue-ledger')draft.baseRows=secondaryIssueRows(base);
+ if(g.id==='plaster-month'){draft.baseRows=secondaryPlasterRows(base,g.month);draft.plasterRecordIds=Object.fromEntries(draft.baseRows.map(row=>[row.date,base.plaster.find(r=>r.date===row.date)?.id??null]))}
+ const plan=explicitRecoveryPlan({...g,draft,dirty:true,explicitSave:true},owner);return plan?C.clone(plan.draft||draft):null;
+}
+function sheetPendingDraftMatchesQueue(g,owner){
+ const plan=explicitRecoveryPlan(g,owner);if(!plan)return false;
+ const last=owner.envelope.queue.filter(q=>q.path===plan.path).at(-1)?.local?.[0];if(!last)return false;
+ if(plan.kind==='production'){
+  if((g.draft.memoEdits||[]).length||Object.keys(g.draft.metadataEdits||{}).length||g.draft.deleted?.length)return false;
+  let check;try{check=ScheduleBatch.inspect(plan.baseState,plan.draft,{scope:g.scope});if(!check.ok)return false}catch{return false}
+  const rows=check.rows.filter(row=>!ScheduleBatch.blank(row)),queued=explicitRecoveryIndex(last.rows);if(!queued||rows.length!==queued.size)return false;
+  return rows.every(row=>{const before=queued.get(row.id),fields=before&&explicitProductionRecoveryChanges(before,row);return fields&&fields.every(field=>explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(before,field),explicitProductionRecoveryCell(row,field)))})
+ }
+ const projected=plan.kind==='plaster'?secondaryPlasterRows(last,plan.key):secondaryIssueRows(last),queued=explicitRecoveryIndex(projected);
+ if(!queued||g.draft.rows.length!==queued.size)return false;
+ const fields=plan.kind==='plaster'?['date','actual']:['date','product','machine','replacement','issued','reason'],numeric=new Set(['actual','replacement','issued']);
+ const normalized=(field,value)=>numeric.has(field)?value==null||String(value).trim()===''?null:Number.isFinite(Number(value))?Number(value):value:value;
+ return g.draft.rows.every(row=>{const expected=queued.get(row.id);return expected&&fields.every(field=>explicitRecoverySame(normalized(field,row[field]),normalized(field,expected[field])))})
+}
+async function sheetSavePendingLedger(caller,owner,callerValid,enterMonth){
+ if(!callerValid()||typeof sheetRecoverExplicitQueue!=='function')return false;
+ const target=sheetPendingLedgerOwner(owner);if(!target||target.id===caller.id&&target.month===caller.month)return false;
+ if(!state.months[target.month]||state.months[target.month].closed)return false;
+ const leave=enterMonth(target.month);if(!leave)return false;let g;
+ try{
+ // Keep the visible table and its draft mounted. Only the selected draft of
+ // the queue's owning table can complete this already requested save.
+ g=bulkSaveFactory(target.id,sheetContext(target.id));await bulkSaveReady(g,callerValid);
+ if(!callerValid()||g===caller||g.saving||g.spec.readonly||g.closedDraft)return false;
+ if(!g.dirty){const candidate=sheetPendingQueueDraft(g,owner);if(!candidate)return false;g.draft=candidate;g.dirty=true}
+ let revision=g.revision,draft=g.draft,signature=JSON.stringify(draft),storageKey=g.storageKey;
+ const selected=()=>{try{return !sessionStorage.getItem(g.draftPointer())||sessionStorage.getItem(g.draftPointer())===storageKey}catch{return true}};
+ const valid=()=>callerValid()&&sheetExplicitSaveContextValid(g,owner)&&sheetRegistry.get(g.key)===g&&g.revision===revision&&g.draft===draft&&JSON.stringify(g.draft)===signature&&g.storageKey===storageKey&&selected()&&!g.spec.readonly&&!g.closedDraft&&!g.storageError;
+ const requireValid=()=>{if(!valid())throw Error('저장 중 연결 또는 입력이 바뀌었습니다. 입력 초안은 보관했습니다.')};
+ const remember=()=>{revision=g.revision;draft=g.draft;signature=JSON.stringify(draft);storageKey=g.storageKey};
+ g.saving=true;g.explicitSave=true;g.update();
+ try{
+  if(!bulkSaveState.running&&!sheetPendingDraftMatchesQueue(g,owner))return false;
+  requireValid();const pending=g.queueDraft({compare:true});revision=g.revision;await pending;requireValid();
+  const renewDraft=async value=>{
+   if(!valid()||!g.dirty)return false;const renewed=C.clone(value),expected=revision+1;g.draft=renewed;
+   await g.queueDraft({compare:true});
+   if(!callerValid()||!sheetExplicitSaveContextValid(g,owner)||g.revision!==expected||g.draft!==renewed||g.storageKey!==storageKey||!sheetEqual(g.persistedDraft?.draft,renewed)||!selected())return false;
+   remember();return valid();
+  };
+  if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft}))return false;
+  requireValid();state=owner.envelope.state;
+  const options={preferLocalEdits:true},check=g.inspect(options);if(!check.ok)throw Error(check.errors.map(e=>e.message).slice(0,3).join(' / '));
+  const snapshot=C.clone(g.draft);await g.spec.commit(snapshot,options);requireValid();
+  if(!await sheetAwaitRemoteAck(owner))throw Error('대기 입력의 서버 저장을 아직 확인하지 못했습니다. 입력은 보관했습니다.');
+  requireValid();await g.writeQueue;requireValid();
+  const remaining=g.spec.rebaseAfterCommit?.(snapshot);
+  if(remaining){g.draft=remaining;g.dirty=true;remember();const pending=g.queueDraft({compare:true});revision=g.revision;await pending;requireValid()}
+  else{const cleared=await g.clearStoredDraft();if(!callerValid()||!sheetExplicitSaveContextValid(g,owner)||g.revision!==revision||g.draft!==draft||JSON.stringify(g.draft)!==signature)throw Error('저장 완료 뒤 연결 또는 입력이 바뀌었습니다. 새 입력은 유지했습니다.');remember();g.draft=g.fresh();g.dirty=false;remember();g.error=bulkSaveLabel(g.id)+' 변경 내용을 서버에 저장했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}
+  return true;
+ }finally{g.saving=false;g.explicitSave=false;g.update()}
+ }finally{leave()}
+}
 async function sheetPrepareExplicitSave(g){
- const owner=workspace,scope=sheetScope(),key=month;let revision=g.revision;
- const valid=()=>workspace===owner&&sheetScope()===scope&&month===key&&g.revision===revision&&bulkSaveAllowed();
+ const owner=workspace,scope=sheetScope(),key=month;let revision=g.revision,contextMonth=key;
+ const valid=()=>workspace===owner&&sheetScope()===scope&&month===contextMonth&&g.revision===revision&&bulkSaveAllowed();
+ const enterMonth=next=>{if(!valid())return null;const previous=contextMonth;contextMonth=next;month=next;return()=>{if(workspace===owner&&sheetScope()===scope&&month===contextMonth)month=previous;contextMonth=previous}};
  if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');
  if(!owner||owner.pendingMigration)return;
  if(owner.envelope?.queue?.length){
@@ -10394,7 +10512,11 @@ async function sheetPrepareExplicitSave(g){
    if(workspace!==owner||sheetScope()!==scope||month!==key||g.revision!==expectedRevision||g.draft!==renewed||!sheetEqual(g.persistedDraft?.draft,renewed)||!bulkSaveAllowed())return false;
    revision=expectedRevision;return valid();
   };
-  try{await sheetAwaitRemoteAck(owner)}catch(error){if(!valid()||typeof sheetRecoverExplicitQueue!=='function'||!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft}))throw error}
+  try{await sheetAwaitRemoteAck(owner)}catch(error){
+   if(!valid()||typeof sheetRecoverExplicitQueue!=='function')throw error;
+   const pending=sheetPendingQueueDraft(g,owner);if(pending){g.dirty=true;if(!await renewDraft(pending))throw error}
+   if(!await sheetRecoverExplicitQueue(g,owner,{valid,renewDraft})&&!await sheetSavePendingLedger(g,owner,valid,enterMonth))throw error;
+  }
   if(!valid())throw Error('연결 또는 권한이 바뀌었습니다.');
  }
  for(let attempt=0;attempt<2;attempt++){
@@ -10487,10 +10609,18 @@ function explicitProductionRecoveryState(envelope){
  return next;
 }
 function explicitProductionRecoveryIdentity(before,after){
- return !!before&&!!after&&['id','date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow'].every(field=>explicitRecoverySame(before[field],after[field]))&&explicitRecoverySame(before.sourceIntegration?.key,after.sourceIntegration?.key);
+ return !!before&&!!after&&['id','date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow','templateSource'].every(field=>explicitRecoverySame(before[field],after[field]))&&explicitRecoverySame(before.sourceIntegration?.key,after.sourceIntegration?.key);
+}
+function explicitProductionRecoveryLocalIdentity(before,after){
+ // Date, worker and product are genuine correction cells. Their current
+ // catalog, unit and target dependencies are checked by Batch.inspect below.
+ // Work-link corrections require an exact Batch replay, followed by latest
+ // target validation. The originating row and source identity remain fixed.
+ return !!before&&!!after&&['id','sourceTarget','sourceRow','templateSource'].every(field=>explicitRecoverySame(before[field],after[field]))&&explicitRecoverySame(before.sourceIntegration?.key,after.sourceIntegration?.key)&&(explicitRecoverySame(before.source,after.source)||!before.source&&after.source==='웹 입력');
 }
 function explicitProductionRecoveryChanges(before,after){
  const omit=new Set(['rev','explicit','header','batchId','missingPlan']);
+ if(!before?.source&&after?.source==='웹 입력')omit.add('source');
  const fields=[...new Set([...Object.keys(before||{}),...Object.keys(after||{})])].filter(field=>!omit.has(field)&&!explicitRecoverySame(before?.[field],after?.[field]));
  if(fields.includes('fieldDetails')){const a=C.clone(before?.fieldDetails||{}),b=C.clone(after?.fieldDetails||{});delete a.remark;delete b.remark;if(!explicitRecoverySame(a,b))return null;fields.splice(fields.indexOf('fieldDetails'),1,'fieldDetails.remark')}
  if(fields.includes('unitSources')){const a=before?.unitSources||{},b=after?.unitSources||{},changed=[...new Set([...Object.keys(a),...Object.keys(b)])].filter(key=>!explicitRecoverySame(a[key],b[key]));if(changed.some(key=>!['plaster','cases'].includes(key)))return null;fields.splice(fields.indexOf('unitSources'),1,...changed.map(key=>'unitSources.'+key))}
@@ -10525,34 +10655,41 @@ function explicitProductionRecoveryPlan(g,owner){
  for(const groupId of groupIds){const matching=e.groups.filter(group=>group.id===groupId),group=matching[0];if(matching.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||['partial','complete'].includes(group.status)||!Array.isArray(group.ids)||new Set(group.ids).size!==group.ids.length||!Array.isArray(group.paths)||new Set(group.paths).size!==group.paths.length||!group.paths.includes(path)||group.paths.some(p=>![path,catalog].includes(p))||group.ids.some(id=>!ids.has(id)||queue.find(q=>q.id===id)?.groupId!==groupId)||queue.filter(q=>q.groupId===groupId).some(q=>!group.ids.includes(q.id))||!explicitRecoverySame([...new Set(queue.filter(q=>q.groupId===groupId).map(q=>q.path))].sort(),[...group.paths].sort()))return null}
  let proofState;try{proofState=explicitProductionRecoveryState(e)}catch{return null}if(!proofState||proofState.months[key]?.closed||proofState.months[key]?.closeSnapshot)return null;
  const original=C.clone(proofState),originalRows=explicitRecoveryIndex(original.months[key].rows),draftBase=explicitRecoveryIndex(d.baseRows),draftRows=explicitRecoveryIndex(d.rows),finalRows=explicitRecoveryIndex(queue.filter(q=>q.path===path).at(-1)?.local?.[0]?.rows),renewed=C.clone(d);if(!originalRows||!draftBase||!draftRows||!finalRows)return null;
- const direct=new Map();for(const[id,b]of draftBase){const l=draftRows.get(id);if(!l||!explicitProductionRecoveryIdentity(b,l))return null;const fields=explicitProductionRecoveryChanges(b,l);if(!fields)return null;const meaningful=fields.filter(field=>!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(b,field),explicitProductionRecoveryCell(l,field)));if(meaningful.length)direct.set(id,new Set(meaningful))}
+ const direct=new Map();for(const[id,b]of draftBase){const l=draftRows.get(id);if(!l||!explicitProductionRecoveryLocalIdentity(b,l))return null;const fields=explicitProductionRecoveryChanges(b,l);if(!fields)return null;const meaningful=fields.filter(field=>!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(b,field),explicitProductionRecoveryCell(l,field)));if(meaningful.length)direct.set(id,new Set(meaningful))}
+ let normalizedDraft;try{const check=ScheduleBatch.inspect(original,d,{scope:g.scope});if(check.ok)normalizedDraft=explicitRecoveryIndex(check.rows)}catch{}
  const covered=new Set();
  for(const q of queue){
   const previous=byPath.get(q.path)||e.baseline[q.path];if(!explicitRecoverySame(q.base,previous)||!Array.isArray(q.local))return null;
   if(q.path===catalog){try{if(!explicitProductionRecoveryCatalog(q.base,q.local,ScheduleNative.packCatalog(proofState),e))return null;const loaded=ScheduleNative.unpackCatalog(q.local);proofState={...loaded.state,months:proofState.months}}catch{return null}}
   else{
    const b=q.base?.[0],l=q.local?.[0];if(q.base.length!==1||q.local.length!==1||b?.id!==key||l?.id!==key||b.closed||l.closed||b.closeSnapshot||l.closeSnapshot)return null;
-   for(const field of new Set([...Object.keys(b),...Object.keys(l)]))if(!['rows','history','rev'].includes(field)&&!explicitRecoverySame(b[field],l[field]))return null;
+   for(const field of new Set([...Object.keys(b),...Object.keys(l)]))if(!['rows','history','rev','reservationBindings'].includes(field)&&!explicitRecoverySame(b[field],l[field]))return null;
    const before=explicitRecoveryIndex(b.rows),after=explicitRecoveryIndex(l.rows);if(!before||!after||before.size!==after.size||!explicitRecoverySame([...before.keys()],[...after.keys()]))return null;
    const candidate=ScheduleBatch.create(proofState,key,g.scope);candidate.rows=C.clone(l.rows);
-   let expected;try{const check=ScheduleBatch.inspect(proofState,candidate,{scope:g.scope});if(!check.ok||!check.changes.length||check.changes.some(change=>change.kind!=='changed'))return null;expected=ScheduleBatch.apply(proofState,candidate,{scope:g.scope})}catch{return null}
-   const history=l.history||[],baseHistory=b.history||[],appended=history.slice(baseHistory.length),expectedHistory=expected.months[key].history.slice(baseHistory.length);
-   if(history.length!==baseHistory.length+expectedHistory.length||!baseHistory.every((event,i)=>explicitRecoverySame(event,history[i])))return null;
-   const eventIds=new Set(baseHistory.map(event=>event.id));
-   let batchEvents=true;for(let i=0;i<appended.length;i++){const event=appended[i],generated=expectedHistory[i];if(!event?.id||eventIds.has(event.id)||!Number.isFinite(Date.parse(event.at)))return null;eventIds.add(event.id);const same={...generated,id:event.id,at:event.at};if(!explicitRecoverySame(same,event))batchEvents=false}
-   expected.months[key].history=C.clone(history);
-   if(!batchEvents||!explicitRecoverySame(ScheduleNative.packMonth(expected.months[key]),q.local)){
-    // The single-worker input dialog used Core.updateDaily before the grid
-    // saved this same row. Its genuine events have neither source nor reason.
-    if(appended.some(event=>event.type!=='생산 입력'||event.kind!=='daily'||event.month!==key||!event.before||!event.after||Object.hasOwn(event,'source')||Object.hasOwn(event,'reason'))||typeof S.mergeProductionMonth!=='function')return null;
-    const proof=S.mergeProductionMonth(b,l,b);if(!proof||proof.conflict||!explicitRecoverySame(proof.record,l))return null;expected.months[key]=ScheduleNative.unpackMonth(key,q.local);
-   }
-   for(const[id,beforeRow]of before){const afterRow=after.get(id);if(explicitRecoverySame(beforeRow,afterRow))continue;if(!explicitProductionRecoveryIdentity(beforeRow,afterRow))return null;const fields=explicitProductionRecoveryChanges(beforeRow,afterRow),input=direct.get(id);if(!fields)return null;
+   let expected;try{
+    const check=ScheduleBatch.inspect(proofState,candidate,{scope:g.scope});if(!check.ok||!check.changes.length||check.changes.some(change=>change.kind!=='changed'))return null;
+    // Share the outbox's complete event-chain proof. Re-generating a single
+    // Batch event rejects legitimate dialog metadata and consecutive edits.
+    const proof=S.mergeProductionMonth?.(b,l,b);
+    if(!proof||proof.conflict||!explicitRecoverySame(proof.record,l)){
+     // Explicit work-link edits require the full state which the raw month
+     // merger does not have. Reproduce every row, binding and event exactly.
+     const generated=ScheduleBatch.apply(proofState,candidate,{scope:g.scope}),baseHistory=b.history||[],events=l.history||[],expected=generated.months[key].history||[],seen=new Set(baseHistory.map(event=>event.id));
+     if(events.length!==expected.length||!baseHistory.every((event,i)=>explicitRecoverySame(event,events[i])))return null;
+     for(let i=baseHistory.length;i<events.length;i++){const event=events[i];if(!event?.id||seen.has(event.id)||!Number.isFinite(Date.parse(event.at)))return null;seen.add(event.id);expected[i]={...expected[i],id:event.id,at:event.at}}
+     if(!explicitRecoverySame(ScheduleNative.packMonth(generated.months[key]),q.local))return null;
+    }
+    expected=C.clone(proofState);expected.months[key]=ScheduleNative.unpackMonth(key,q.local);
+   }catch{return null}
+   for(const[id,beforeRow]of before){const afterRow=after.get(id);if(explicitRecoverySame(beforeRow,afterRow))continue;if(!explicitProductionRecoveryLocalIdentity(beforeRow,afterRow))return null;const fields=explicitProductionRecoveryChanges(beforeRow,afterRow),input=direct.get(id);if(!fields)return null;
     for(const field of fields)if(!input?.has(field)){
+     // A product correction deliberately reloads its catalog unit snapshot.
+     // The raw draft has blanks until normalization fills those derived cells.
+     if(input?.has('product')&&['plaster','cases','unitSources.plaster','unitSources.cases'].includes(field)&&normalizedDraft?.has(id)&&explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(normalizedDraft.get(id),field),explicitProductionRecoveryCell(finalRows.get(id),field)))continue;
      const first=originalRows.get(id),basis=draftBase.get(id),local=draftRows.get(id),last=finalRows.get(id),target=renewed.baseRows.find(row=>row.id===id);
      // An old renderer advanced the draft baseline to its own unacknowledged
      // local value. Restore only the proved queue slot, never an unrelated cell.
-     if(!first||!basis||!local||!last||!target||!explicitProductionRecoveryIdentity(first,basis)||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(basis,field),explicitProductionRecoveryCell(last,field))||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(local,field),explicitProductionRecoveryCell(last,field)))return null;
+     if(!first||!basis||!local||!last||!target||!explicitProductionRecoveryLocalIdentity(first,basis)||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(basis,field),explicitProductionRecoveryCell(last,field))||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(local,field),explicitProductionRecoveryCell(last,field)))return null;
      explicitProductionRecoverySetCell(target,field,first);
     }
     covered.add(id)
@@ -10603,7 +10740,11 @@ function explicitRecoveryPlan(g,owner){
    if(old.date!==next.date||kind==='issues'&&old.product!==next.product)return null;
    const edit=direct.get(kind==='plaster'?old.date:id);if(!edit)return null;
    const changed=[...new Set([...Object.keys(old),...Object.keys(next)])].filter(f=>!explicitRecoverySame(old[f],next[f]));
-   if(changed.some(f=>f!=='rev'&&(!fields.includes(f)||!edit.fields.has(f))))return null;
+   // The real issue grid stamps a previously unstamped row on first edit.
+   // The exact upsert/history was already proved above; this is not permission
+   // to rewrite an existing source or accept arbitrary row metadata.
+   const generatedSource=kind==='issues'&&(old.source==null||old.source==='')&&next.source==='웹 표 입력';
+   if(changed.some(f=>f!=='rev'&&!(f==='source'&&generatedSource)&&(!fields.includes(f)||!edit.fields.has(f))))return null;
    if(kind==='plaster'&&d.plasterRecordIds?.[old.date]!=null&&d.plasterRecordIds[old.date]!==id)return null;
    covered.set(id,covered.get(id)||{id,date:old.date,product:old.product});
   }
