@@ -20,8 +20,11 @@ function inside(root,relative){
  }
  return p;
 }
+// Field devices download the progress projection repeatedly, so only that file is written without indentation.
+// Unchanged detection compares parsed content: a file that differs only in formatting is never rewritten.
+const COMPACT=new Set(['meta/production-progress.json']);
 function write(root,relative,data){
- const p=inside(root,relative),body=JSON.stringify(data,null,2)+'\n';if(fs.existsSync(p)&&stable(read(p))===stable(data))return false;
+ const p=inside(root,relative),body=JSON.stringify(data,null,COMPACT.has(relative)?0:2)+'\n';if(fs.existsSync(p)&&stable(read(p))===stable(data))return false;
  fs.mkdirSync(path.dirname(p),{recursive:true});inside(root,relative);
  // Exclusive regular temporary file + rename prevents following existing hard links.
  const tempRelative=path.relative(path.resolve(root),path.join(path.dirname(p),'.sync-'+crypto.randomBytes(12).toString('hex')+'.tmp')),temp=inside(root,tempRelative);let fd;
