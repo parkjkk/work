@@ -2267,6 +2267,58 @@ body.sheetWorkspace .auditReviewDialog>.actions>.dialogFeedback{flex:1 0 100%;bo
  body.sheetWorkspace #auditPrintForm .formGrid{grid-template-columns:minmax(0,1fr)}
 }
 
+/* Two-app status: one slim line on every tab. Details open below on demand,
+   so the table starts near the top of the screen. */
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard{display:flex;flex-wrap:wrap;align-items:center;gap:2px 12px;padding:4px 10px;margin:4px 0 8px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.toolbar:first-child{flex:1 1 320px;min-width:0;margin:0;gap:8px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard .ilboStatusLead{flex:1 1 auto;gap:2px 10px;min-width:0}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard .ilboStatusLead small{flex-basis:auto}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard button{min-height:34px;padding:4px 10px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>p{flex:1 1 100%;margin:0;font-size:.7rem;opacity:.9}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>p.ilboStatusProblem{font-size:.78rem;opacity:1}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>details,body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.ilboQualityNotice{flex:0 1 auto;margin:0;padding:0;border:0}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.ilboQualityNotice{display:flex;align-items:center;gap:6px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard details>summary{min-height:30px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>details[open],body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.ilboQualityNotice:has(details[open]){flex:1 1 100%;order:5;border-top:1px solid var(--line);padding-top:3px;margin-top:3px}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.ilboQualityNotice:has(details[open]){align-items:flex-start}
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.toolbar:not(:first-child){flex:1 1 100%;margin:2px 0 0}
+@media(max-width:700px){body.sheetWorkspace #ilboSyncStatus.ilboSyncCard{padding:5px 8px}body.sheetWorkspace #ilboSyncStatus.ilboSyncCard button{min-height:44px}body.sheetWorkspace #ilboSyncStatus.ilboSyncCard details>summary{min-height:36px}body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.toolbar:first-child{flex-basis:100%;align-items:center}}
+/* PC with a mouse: the status fits one line and the tools above the schedule
+   chart take less height, so more workers are visible without scrolling.
+   Touch screens keep the larger tap targets. */
+@media(min-width:901px) and (hover:hover) and (pointer:fine){
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.toolbar:first-child{display:contents}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard .ilboStatusLead{flex:0 1 auto}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboRefreshNow{order:9;margin-left:auto}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>p:not(.ilboStatusProblem){flex:1 1 80px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ body.sheetWorkspace #planGridSurface .pgTopActions{padding:4px 10px;margin-bottom:6px}
+ body.sheetWorkspace #planGridSurface .pgTopActions button{min-height:34px;padding-top:4px;padding-bottom:4px}
+ body.sheetWorkspace #planGridSurface .pgCalendarPanel{padding-top:8px}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar{margin-bottom:4px;align-items:center}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar .actions{align-items:center}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar label{display:flex;align-items:center;gap:6px;flex:0 1 auto;white-space:nowrap}
+ body.sheetWorkspace #planGridSurface .pgTimelineToolbar button,body.sheetWorkspace #planGridSurface .pgTimelineToolbar select,body.sheetWorkspace #planGridSurface .pgTimelineToolbar summary{min-height:34px;padding-top:4px;padding-bottom:4px}
+ body.sheetWorkspace #planGridSurface .pgDisplayTools button,body.sheetWorkspace #planGridSurface .pgDisplayTools summary{min-height:32px;padding-top:4px;padding-bottom:4px}
+ body.sheetWorkspace #planGridSurface .pgLegend{margin:5px 0}
+ body.sheetWorkspace #planGridSurface .pgDrySearch{margin:4px 0;padding-top:2px;padding-bottom:2px}
+ body.sheetWorkspace #planGridSurface .pgDrySearch input,body.sheetWorkspace #planGridSurface .pgDrySearch button{min-height:30px;padding-top:3px;padding-bottom:3px}
+ body.sheetWorkspace #planGridSurface .pgSelectionInfo{padding-top:4px;padding-bottom:4px;margin-bottom:4px}
+ body.sheetWorkspace #planGridSurface .pgSelectionInfo button{min-height:30px;padding-top:3px;padding-bottom:3px}
+}
+/* Small screens: one status line. Notes, source checks and the guide open
+   with the small button; problems and unsynced records always stay visible. */
+body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboMore{display:none}
+@media(max-width:900px),(hover:none),(pointer:coarse){
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboMore{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:44px;white-space:nowrap}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboMore[aria-expanded=true]{background:#e4e9f8}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard>.toolbar:first-child{display:flex;flex:1 1 100%;flex-wrap:nowrap;align-items:center;gap:6px}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard .ilboStatusLead{flex:1 1 auto;min-width:0}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard #ilboRefreshNow{flex:0 0 auto;width:auto;white-space:nowrap;order:0;margin-left:0}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard:not(.ilboExpanded)>p:not(.ilboStatusProblem),
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard:not(.ilboExpanded)>.ilboQualityNotice,
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard:not(.ilboExpanded)>details[data-ilbo-detail=guide]{display:none}
+ body.sheetWorkspace #ilboSyncStatus.ilboSyncCard.ilboExpanded>p:not(.ilboStatusProblem){flex:1 1 100%;white-space:normal;overflow:visible}
+}
 #saveAllChanges{white-space:nowrap;background:#fff;color:#243b78;border-color:#bbc7e1;font-weight:700;min-height:34px;padding:7px 12px}
 #saveAllChanges:disabled{opacity:.65}
 #bulkSaveProgress{position:fixed;z-index:15000;left:50%;top:18px;transform:translateX(-50%);padding:13px 20px;border:1px solid #bcc9e0;border-radius:10px;box-shadow:0 4px 24px #22334d26;background:#fff;color:#203957;max-width:calc(100vw - 28px);font-size:14px;pointer-events:none}
@@ -9745,7 +9797,7 @@ function ilboRenderStatus(){
  const report=ilboStatus,issues=report?.issues||[],quality=ilboQualityVisible(),stamp=report?.updatedAt&&new Date(report.updatedAt),when=stamp&&Number.isFinite(stamp.getTime())?stamp.toLocaleString('ko-KR'):'',index=issues.length?ilboSourceLookup():null;
  const queued=workspace?.envelope?.queue?.length||0,dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty),headline=queued?'GitHub 전송 대기 '+queued+'건':dirty?'저장 전 입력이 있습니다':ilboStatusError?'연결 확인 필요':issues.length?'미반영 '+issues.length+'건':ilboRefreshPending?'새 자료 확인 대기':when?'최근 연동 결과 확인':'연동 결과 확인 중';
  const guide='<div class="ilboSyncSteps"><span>① 일보·예약 입력</span><span>② 변경 저장</span><span>③ 두 앱에 자동 반영</span></div><p>생산량·계획·호기별 생산량·근무시간·불량·현장 메모가 서로 반영됩니다. 같은 항목을 다르게 고친 경우만 확인이 필요합니다. 화면을 보는 동안 5초마다 확인하며 작성 중인 입력은 유지합니다.</p>';
- let html='<div class="toolbar"><div class="ilboStatusLead"><b>두 앱 연동</b><span class="ilboStatusHeadline">'+esc(headline)+'</span><small>'+(workspace?(when?'마지막 연동 '+esc(when):'입력을 다시 저장하지 않아도 됩니다.'):'관리 저장소 연결 후 자동 반영됩니다.')+'</small></div>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>'+(ilboRefreshRun?'확인 중…':'최신자료 확인')+'</button>':'')+'</div>'+(ilboStatusError?'<p class="ilboStatusProblem" role="status">'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>입력한 내용은 그대로입니다. 입력창이나 드래그 조작을 마치면 새 자료를 이어서 반영합니다.</p>':'');
+ let html='<div class="toolbar"><div class="ilboStatusLead"><b>두 앱 연동</b><span class="ilboStatusHeadline">'+esc(headline)+'</span><small>'+(workspace?(when?'마지막 연동 '+esc(when):'입력을 다시 저장하지 않아도 됩니다.'):'관리 저장소 연결 후 자동 반영됩니다.')+'</small></div>'+(workspace?'<button id="ilboRefreshNow" '+(ilboRefreshRun?'disabled':'')+'>'+(ilboRefreshRun?'확인 중…':'최신자료 확인')+'</button>':'')+'<button type="button" id="ilboMore" aria-controls="ilboSyncStatus">안내</button></div>'+(ilboStatusError?'<p class="ilboStatusProblem" role="status">'+esc(ilboStatusError)+'</p>':'')+(ilboRefreshPending?'<p>입력한 내용은 그대로입니다. 입력창이나 드래그 조작을 마치면 새 자료를 이어서 반영합니다.</p>':'');
  if(issues.length)html+='<details data-ilbo-detail="issues"><summary>미반영 기록 확인 · '+issues.length+'건</summary>'+table(['날짜','작업자','품명','내용'],issues.map(issue=>{const i=ilboIssueInfo(issue,index);return tr([td(esc(i.date)),td(esc(i.worker)),td(esc(i.product)),td(esc(i.message))])}))+'</details>';
  if(quality.length)html+='<div class="ilboQualityNotice"><details data-ilbo-detail="quality"><summary>원자료 확인 '+quality.length+'건 · 생산실적 우선 반영</summary><p>휴무 표시가 있어도 저장한 양수 생산량이 있으면 생산한 날입니다. 두 원본 기록을 보존하고 일정에는 실제 생산을 우선합니다.</p>'+table(['날짜','작업자','품명','생산 조수'],quality.map(q=>tr([td(esc(C.iso(q.date)?q.date:'확인 필요')),td(esc(q.worker||'—')),td(esc(Array.isArray(q.products)?q.products.join(' · '):'—')),td(esc(Number.isFinite(q.pours)?q.pours+'조':'확인 필요'))])))+'<p>확인하면 이 기기에서 같은 안내만 숨깁니다. 저장 오류나 미반영 기록은 숨기지 않습니다.</p></details><button type="button" id="ilboQualityConfirm" aria-label="원자료 안내 확인하고 숨기기">확인</button></div>';
  html+='<details data-ilbo-detail="guide"><summary>저장·자동 반영 안내</summary>'+guide+'</details>';
@@ -9755,6 +9807,8 @@ function ilboRenderStatus(){
  }
  if(ilboRefreshRun?.merge&&!ilboRefreshRun.automatic&&!ilboRefreshRun.adopted)html+='<button id="ilboMergeCancel" '+(ilboRefreshRun.cancelled?'disabled':'')+'>'+(ilboRefreshRun.cancelled?'취소 중…':'불러오기 취소')+'</button>';
  if(box._ilboMarkup!==html){const opened=new Set([...(box.querySelectorAll?.('details[data-ilbo-detail][open]')||[])].map(el=>el.dataset.ilboDetail)),focused=document.activeElement,focusId=box.contains?.(focused)?focused?.id:'';box.innerHTML=html;box._ilboMarkup=html;for(const el of box.querySelectorAll?.('details[data-ilbo-detail]')||[])if(opened.has(el.dataset.ilboDetail))el.open=true;if(focusId)document.getElementById?.(focusId)?.focus?.({preventScroll:true})}
+ // Small screens show one status line; the notes open on demand and stay as chosen.
+ const more=$('#ilboMore');box.classList?.toggle('ilboExpanded',ilboStatusExpanded);if(more){more.setAttribute('aria-expanded',String(ilboStatusExpanded));more.onclick=()=>{ilboStatusExpanded=!ilboStatusExpanded;box.classList.toggle('ilboExpanded',ilboStatusExpanded);more.setAttribute('aria-expanded',String(ilboStatusExpanded))}}
  const button=$('#ilboRefreshNow');if(button)button.onclick=()=>['daily','schedule'].includes(page)?ilboReceiveLatest():ilboCheck(true);
  const confirm=$('#ilboQualityConfirm'),ackClient=workspace,ackScope=ilboStatusScope,ackKeys=quality.map(ilboQualityKey);if(confirm)confirm.onclick=()=>ilboAcknowledgeQuality(ackClient,ackScope,ackKeys);
  const merge=$('#ilboMergeDrafts');if(merge)merge.onclick=()=>ilboMergeDrafts();const cancel=$('#ilboMergeCancel');if(cancel)cancel.onclick=()=>{if(ilboRefreshRun?.merge&&!ilboRefreshRun.adopted){ilboRefreshRun.cancelled=true;ilboRenderStatus()}};
@@ -9794,7 +9848,7 @@ function bindIlboIntegrationUI(){
 setInterval(()=>ilboCheck(),5000);
 document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)ilboCheck()});
 window.addEventListener('online',()=>ilboCheck());
-let ilboIdleTimer=null;
+let ilboIdleTimer=null,ilboStatusExpanded=false;
 for(const event of ['focusout','pointerup','pointercancel','close'])document.addEventListener?.(event,()=>{if(!ilboRefreshPending)return;clearTimeout(ilboIdleTimer);ilboIdleTimer=setTimeout(()=>ilboCheck(),400)},true);
 window.addEventListener('focus',()=>ilboCheck());
 window.addEventListener('production:lock',()=>{ilboAccessVersion++});
