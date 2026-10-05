@@ -10415,7 +10415,7 @@ async function bulkSaveRun(){
   if(typeof bulkSavePrioritize==='function'){const priority=await bulkSavePrioritize(targets,{valid});targets=priority.items;result.copies+=priority.recoveryCount||0}
   if(owner?.envelope?.queue?.length){
    bulkSaveState.progress='전송 대기 자료를 최신 원장과 맞추는 중…';bulkSavePaint();
-   try{await sheetAwaitRemoteAck(owner);result.retried=true}catch(error){
+   try{if(!await sheetPreflightCatalogQueue(null,owner,{valid}))await sheetAwaitRemoteAck(owner);result.retried=true}catch(error){
     if(!valid())throw error;
     if(typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error)&&await sheetReplayQueuedSave(null,owner,{valid}))result.retried=true;
     // Try the owning table's current explicit draft before unrelated tables.
@@ -10621,6 +10621,17 @@ async function sheetPruneExplicitCommit(g,owner,archives,valid){
   }catch{}
  }
 }
+async function sheetPreflightCatalogQueue(g,owner,options){
+ // A stale Native catalog prepare can be accepted before its month write is
+ // found to conflict. Prove/rebuild the entire still-unreceived transaction
+ // first; never manufacture a partial transaction just by clicking Save.
+ const pending=(owner.envelope?.groups||[]).some(group=>group.unitSync===true&&group.status==='pending'&&Array.isArray(group.acked)&&!group.acked.length&&owner.envelope.queue.some(q=>q.groupId===group.id&&q.unitPhase==='prepare'));
+ if(!pending)return false;
+ if(await sheetReplayQueuedSave(g,owner,options))return true;
+ const error=Error('저장 대기 자료를 최신 원장과 대조하지 못했습니다. 입력 원문과 전송 대기는 기기에 보관했습니다.');
+ if(owner.lastError?.conflicts?.length)error.conflicts=owner.lastError.conflicts;
+ throw error;
+}
 async function sheetPrepareExplicitSave(g){
  const owner=workspace,scope=sheetScope(),key=month;let revision=g.revision,contextMonth=key;
  const valid=()=>workspace===owner&&sheetScope()===scope&&month===contextMonth&&g.revision===revision&&bulkSaveAllowed();
@@ -10644,7 +10655,7 @@ async function sheetPrepareExplicitSave(g){
   // archived reader still requires matching server history before using it.
   if(captured&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(captured,owner,valid);
   const archived=captured?await sheetArchiveQueuedDrafts(captured,g,owner,valid):null;
-  try{await sheetAwaitRemoteAck(owner)}catch(error){
+  try{if(!await sheetPreflightCatalogQueue(g,owner,{valid,acknowledgedDrafts:captured}))await sheetAwaitRemoteAck(owner)}catch(error){
    if(!valid()||typeof sheetRecoverExplicitQueue!=='function')throw error;
    const replayed=typeof sheetQueuedRetryable==='function'&&sheetQueuedRetryable(error)&&await sheetReplayQueuedSave(g,owner,{valid});
    if(!replayed){
@@ -11312,7 +11323,7 @@ function explicitQueuedDraftsIntent(g,envelope){
    // A proved catalog transaction can sit after this table's submission. It
    // updates dependent units, but does not turn those values into production
    // inputs or invalidate the earlier table's acknowledgement proof.
-   if(group.unitSync){if(!explicitQueuedUnitReplay(before,local,before,group))return null;original=local;continue}
+   if(group.unitSync){if(!explicitQueuedUnitReplay(before,local,before,group,{envelope}))return null;original=local;continue}
    const b=before.months[key],l=local.months[key];
    if(b&&l&&!explicitRecoverySame(b[ledger],l[ledger])){
     if(!explicitLedgerQueueReplay(before,local,before,group,g.scope,key))return null;
@@ -11640,14 +11651,55 @@ function explicitQueuedUnitShape(group){
  if(group.unitSync!==true||qs.length<3||qs.some(q=>q.viewOnly)||first.path!=='meta/catalog.json'||last.path!==first.path||first.unitPhase!=='prepare'||last.unitPhase!=='finish'||middle.some(q=>q.unitPhase||!/^months\//.test(q.path))||new Set(middle.map(q=>q.path)).size!==middle.length)return false;
  const prepared=C.clone(first.base),meta=prepared.find(r=>r.id==='catalog'),marker=first.local.find(r=>r.id==='catalog')?.catalogUnitSync;
  if(!meta||meta.catalogUnitSync||last.local.find(r=>r.id==='catalog')?.catalogUnitSync||!marker||marker.id!==group.id||!Array.isArray(marker.months)||!marker.months.length||new Set(marker.months).size!==marker.months.length||marker.months.some(k=>!middle.some(q=>q.path==='months/'+k+'.json'))||Object.keys(marker).some(k=>!['id','months'].includes(k)))return false;
- meta.catalogUnitSync=C.clone(marker);return same(prepared,first.local)&&same(first.local,last.base);
+ // Native packs the interpreted state, whereas the baseline is the exact wire
+ // record list. Reordering, defaulted fields and retained deletion receipts are
+ // normal. Content proof needs the full before-state and is done below.
+ return explicitQueuedCatalogSame(first.local,last.base);
+}
+function explicitQueuedCatalogSame(a,b){
+ const left=explicitRecoveryIndex(a),right=explicitRecoveryIndex(b);
+ return !!left&&!!right&&left.size===right.size&&[...left].every(([id,row])=>explicitRecoverySame(row,right.get(id)));
+}
+function explicitQueuedCatalogKnown(records){
+ const index=explicitRecoveryIndex(records);if(!index)return false;
+ const kinds=new Set(['catalog','products','memos','counts','workers','scheduleRows','scheduleHistory','scheduleDryHistory','scheduleView']),metaKeys=new Set(['id','kind','rev','app','schema','months','locations','calendar','migrationWarnings','source','sourceHash','archiveNames','scheduleSourceBaseline','catalogUnitSync']);
+ if(!records.every(row=>row.deleted===true||(!row.deleted&&kinds.has(row.kind)&&(row.id!=='catalog'||Object.keys(row).every(key=>metaKeys.has(key))))))return false;
+ // Known kinds can still contain future fields or identities which the current
+ // reader cannot represent (workers and view settings are not spread records).
+ // Admit default additions, but never normalize away any existing business field.
+ // Record revision is storage concurrency metadata; Native packs it afresh.
+ try{
+  const loaded=ScheduleNative.unpackCatalog(records);loaded.state.months=Object.fromEntries(loaded.months.map(key=>[key,{}]));
+  const interpreted=explicitRecoveryIndex(ScheduleNative.packCatalog(loaded.state));if(!interpreted)return false;
+  return records.every(row=>row.deleted===true||interpreted.has(row.id)&&Object.keys(row).every(key=>key==='rev'||explicitRecoverySame(row[key],interpreted.get(row.id)[key])));
+ }catch{return false}
+}
+function explicitQueuedCatalogLive(records){return records.filter(row=>row.deleted!==true)}
+function explicitQueuedCatalogRetainDeleted(records,raw){
+ const ids=new Set(records.map(row=>row.id));return C.clone(records).concat(C.clone(raw.filter(row=>row.deleted===true&&!ids.has(row.id))));
+}
+function explicitQueuedUnitPrepared(base,group,envelope){
+ const first=group.queue[0],marker=first.local.find(r=>r.id==='catalog').catalogUnitSync,expected=ScheduleNative.packCatalog({...C.clone(base),catalogUnitSync:C.clone(marker)});
+ if(!explicitQueuedCatalogKnown(first.base)||!explicitQueuedCatalogKnown(first.local))return false;
+ const raw=explicitRecoveryIndex(first.base);if(!raw)return false;
+ for(const row of first.local.filter(row=>row.deleted===true)){
+  const old=raw.get(row.id);if(!old?.deleted||!explicitRecoverySame(old,row))return false;
+ }
+ if(explicitQueuedCatalogSame(expected,explicitQueuedCatalogLive(first.local)))return true;
+ // Old caches may have a proved source-baseline supplement which was not yet
+ // published. Reuse its existing ownership check; never accept arbitrary data.
+ if(!envelope)return false;
+ const strip=rows=>explicitQueuedCatalogLive(rows).map(row=>{const next=C.clone(row);if(next.id==='catalog')delete next.catalogUnitSync;return next}).sort((a,b)=>a.id.localeCompare(b.id));
+ return explicitProductionRecoveryCatalog(strip(expected),strip(first.local),strip(expected),envelope);
 }
 // Catalog updates are a Native three-phase transaction, not three unrelated
 // edits. Prove their month effects with the same producer before replaying them.
 // No quantity or stale whole-month overwrite is granted by this proof.
-function explicitQueuedUnitReplay(base,local,current,group){
+function explicitQueuedUnitReplay(base,local,current,group,options={}){
  const same=explicitRecoverySame,first=group.queue[0],last=group.queue.at(-1),paths=new Set(group.paths),keys=group.queue.slice(1,-1).map(q=>q.path.slice(7,-5));
- if(!explicitQueuedUnitShape(group)||base.catalogUnitSync||current.catalogUnitSync)return null;
+ if(!explicitQueuedUnitShape(group)||base.catalogUnitSync||current.catalogUnitSync||!explicitQueuedUnitPrepared(base,group,options.envelope))return null;
+ const rawCurrent=options.rawCatalog||ScheduleNative.packCatalog(current);
+ if(!explicitQueuedCatalogKnown(rawCurrent)||!explicitQueuedCatalogKnown(last.local))return null;
  const derive=(source,catalog)=>{
   const next=explicitQueuedApply(C.clone(source),'meta/catalog.json',catalog),renames=next.products.flatMap(p=>{const old=source.products.find(b=>b.id===p.id);return old&&old.name!==p.name?[{id:p.id,from:old.name,to:p.name}]:[]});
   C.renameCatalogReferences(next,renames);C.refreshCatalogUnits(next);return next;
@@ -11676,7 +11728,9 @@ function explicitQueuedUnitReplay(base,local,current,group){
    if(found.length!==1||['id','date','worker','product','source','sourceRow','templateSource'].some(k=>!same(row[k],found[0][k]))||!same(row.sourceIntegration?.key,found[0].sourceIntegration?.key))return null;
   }
  }
- let merged;try{merged=S.mergeRecords(first.base,last.local,ScheduleNative.packCatalog(current))}catch{return null}
+ // Compare the same interpreted representation on all three sides. Emit exact
+ // wire predecessors below, so subsequent ACK/retry never changes its basis.
+ let merged;try{merged=S.mergeRecords(ScheduleNative.packCatalog(base),ScheduleNative.packCatalog(local),ScheduleNative.packCatalog(current))}catch{return null}
  if(merged.conflicts.length)return null;
  let next;try{next=derive(current,merged.records)}catch{return null}
  const changed=[];
@@ -11689,9 +11743,9 @@ function explicitQueuedUnitReplay(base,local,current,group){
   if(!same(ScheduleNative.packMonth(old),ScheduleNative.packMonth(m)))changed.push(key);
  }
  if(ScheduleNative.catalogUnitIssues(next).length)return null;
- const months=[...new Set([...keys,...changed])],baseCatalog=ScheduleNative.packCatalog(current),prepared=C.clone(baseCatalog);
+ const months=[...new Set([...keys,...changed])],baseCatalog=C.clone(rawCurrent),prepared=explicitQueuedCatalogRetainDeleted(ScheduleNative.packCatalog(current),rawCurrent);
  prepared.find(r=>r.id==='catalog').catalogUnitSync={id:group.id,months};
- const records=[{path:'meta/catalog.json',base:baseCatalog,local:prepared,unitPhase:'prepare'},...months.map(k=>({path:'months/'+k+'.json',base:ScheduleNative.packMonth(current.months[k]),local:ScheduleNative.packMonth(next.months[k])})),{path:'meta/catalog.json',base:C.clone(prepared),local:ScheduleNative.packCatalog(next),unitPhase:'finish'}];
+ const records=[{path:'meta/catalog.json',base:baseCatalog,local:prepared,unitPhase:'prepare'},...months.map(k=>({path:'months/'+k+'.json',base:ScheduleNative.packMonth(current.months[k]),local:ScheduleNative.packMonth(next.months[k])})),{path:'meta/catalog.json',base:C.clone(prepared),local:explicitQueuedCatalogRetainDeleted(ScheduleNative.packCatalog(next),rawCurrent),unitPhase:'finish'}];
  return{state:next,records};
 }
 function explicitQueuedProducer(base,local,latest,group,scope,key){
@@ -11771,7 +11825,7 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
   for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return rejectSaveProof('QB04');try{local=explicitQueuedApply(local,q.path,q.local)}catch{return rejectSaveProof('QB05')}raw[q.path]=C.clone(q.local)}
   const key=group.queue.find(q=>q.path.startsWith('months/'))?.path.slice(7,-5)||viewMonth;
   if(group.unitSync){
-   const unit=explicitQueuedUnitReplay(before,local,current,group);if(!unit)return rejectSaveProof('QB20');
+   const unit=explicitQueuedUnitReplay(before,local,current,group,{envelope,rawCatalog:nextBase['meta/catalog.json']});if(!unit)return rejectSaveProof('QB20');
    const added=[];for(const record of unit.records){const id=C.id();queue.push({...record,id,groupId:group.id});added.push({id,path:record.path});nextBase[record.path]=C.clone(record.local)}
    rebuiltGroups.push({id:group.id,ids:added.map(q=>q.id),paths:added.map(q=>q.path),acked:[],status:'pending',unitSync:true});
    for(const k of Object.keys(unit.state.months)){
