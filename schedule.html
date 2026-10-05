@@ -3227,7 +3227,16 @@ function separateScheduleQueue(envelope,path,remote){
  return {queue:clone(queue),base:clone(base),local:clone(queue.at(-1).local),current,replacements};
 }
 class Workspace{
- constructor(config,onStatus=()=>{},onState=()=>{}){this.config={...config};this.key='connected:'+scope(config);this.client=new S.GithubStore(config);this.status=onStatus;this.onState=onState;this.envelope={state:null,baseline:{},queue:[],groups:[]};this.persisted=undefined;this.flushing=null;this.lock=Promise.resolve();this.loaded=false;this.closed=false}
+ constructor(config,onStatus=()=>{},onState=()=>{}){this.config={...config};this.key='connected:'+scope(config);this.client=new S.GithubStore(config);this.status=onStatus;this.onState=onState;this.envelope={state:null,baseline:{},queue:[],groups:[]};this.persisted=undefined;this.flushing=null;this.lock=Promise.resolve();this.loaded=false;this.closed=false;this.explicitRecoveryToken=null;this.explicitRecoveryLease=null;this.explicitRecoveryRevision=0}
+ async acquireExplicitRecovery(){
+  while(this.explicitRecoveryLease)await this.explicitRecoveryLease.done;
+  if(this.closed||this.resolving)throw Error('저장소 연결 또는 복구 상태가 바뀌었습니다.');
+  const token=Object.freeze({}),lease={token};lease.done=new Promise(resolve=>{lease.release=resolve});this.explicitRecoveryLease=lease;this.explicitRecoveryToken=token;this.explicitRecoveryRevision++;
+  // A PUT already in flight must finish its ordinary ACK bookkeeping. Only
+  // new automatic runs are suppressed; never interrupt a unit transaction.
+  try{if(this.flushing)await this.flushing;await this.lock;if(this.closed||this.resolving||this.explicitRecoveryLease!==lease)throw Error('저장소 연결 또는 복구 상태가 바뀌었습니다.');return token}catch(error){this.releaseExplicitRecovery(token);throw error}
+ }
+ releaseExplicitRecovery(token){const lease=this.explicitRecoveryLease;if(!lease||lease.token!==token)return false;this.explicitRecoveryLease=null;this.explicitRecoveryToken=null;lease.release();return true}
  async mutate(fn,{canCommit}={}){
   const task=async()=>{
    if(this.closed)throw Error('종료된 저장소 연결입니다.');if(canCommit&&!canCommit())return this.envelope;
@@ -3279,8 +3288,9 @@ class Workspace{
   }
  }
  async saveScheduleView(raw){
+  const patch=cleanScheduleView(raw);while(this.explicitRecoveryLease)await this.explicitRecoveryLease.done;
   if(!this.loaded||this.closed||this.pendingMigration||this.offline||this.resolving)throw Error('저장소 연결 후 보기 설정을 공유할 수 있습니다.');
-  const patch=cleanScheduleView(raw);if(!Object.keys(patch).length)return cleanScheduleView(this.envelope.state?.scheduleView);
+  if(!Object.keys(patch).length)return cleanScheduleView(this.envelope.state?.scheduleView);
   const e=await this.mutate(e=>{const path='meta/catalog.json',last=[...e.queue].reverse().find(q=>q.path===path),base=clone(last?.local||e.baseline[path]||[]);if(!base.some(r=>r.id==='catalog'))throw Error('저장소 기준자료를 먼저 불러와 주세요.');
    const local=patchScheduleView(base,patch);if(JSON.stringify(local)===JSON.stringify(base))return;
    const id=C.id(),groupId=C.id();e.queue.push({id,groupId,path,base,local,viewOnly:true,viewKeys:Object.keys(patch)});e.groups??=[];e.groups.push({id:groupId,ids:[id],paths:[path],acked:[],status:'pending'});e.state.scheduleView={...cleanScheduleView(e.state.scheduleView),...patch};
@@ -3294,7 +3304,7 @@ class Workspace{
    try{return await this.client.saveRecords(q.path,remote.data.records,local)}catch(error){if(attempt===2||!error.conflicts?.length||error.conflicts.some(c=>!q.viewKeys.includes(String(c.id).replace(/^schedule-view:/,''))))throw error}
   }
  }
- async readSnapshot({canApply}={}){
+ async readSnapshot({canApply,ownedUnitSync}={}){
   if(this.closed||this.pendingMigration||this.resolving||this.envelope.queue.length)throw Error('전송·복구를 마친 뒤 최신자료를 확인해 주세요.');
   const before=this.envelope,signature=JSON.stringify(before),current=()=>!this.closed&&this.envelope===before&&JSON.stringify(this.envelope)===signature&&(!canApply||canApply());
   if(!current())return null;await this.client.check();if(!current())return null;
@@ -3303,7 +3313,11 @@ class Workspace{
   const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':clone(cat.data.records)};
   const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
   for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=clone(result.records)}
-  if(!current())return null;const problem=unitSyncError(state);if(problem)throw problem;
+  // The explicit recovery reader may inspect its exact received prepare,
+  // including a dependent month whose response was lost. Whole-producer proof
+  // validates this mixed snapshot before any write; adoptSnapshot still blocks it.
+  const owned=ownedUnitSync&&JSON.stringify(state.catalogUnitSync)===JSON.stringify(ownedUnitSync)&&Object.keys(ownedUnitSync).every(k=>['id','months'].includes(k))&&typeof ownedUnitSync.id==='string'&&Array.isArray(ownedUnitSync.months)&&ownedUnitSync.months.length&&new Set(ownedUnitSync.months).size===ownedUnitSync.months.length&&ownedUnitSync.months.every(k=>months.includes(k));
+  if(!current())return null;const problem=owned?null:unitSyncError(state);if(problem)throw problem;
   const snapshot={state,baseline};snapshotOwners.set(snapshot,{owner:this,before,signature});return snapshot;
  }
  async adoptSnapshot(snapshot,{canApply}={}){
@@ -3314,17 +3328,20 @@ class Workspace{
   if(!applied||e.state!==state)return null;snapshotOwners.delete(snapshot);this.loaded=true;this.empty=false;this.catalogBlocked=null;this.lastError=null;this.initialSyncStatus=null;this.status('GitHub 최신자료 · 입력 초안 유지');return e.state;
  }
  async open({canApply,includeSyncStatus=false}={}){
+  if(this.explicitRecoveryLease)return this.envelope.state;
+  const recoveryRevision=this.explicitRecoveryRevision;
   this.initialSyncStatus=null;
   // Pin catalog, months, LOTs and the optional receipt to the same immutable commit.
   const check=this.client.check(),catalogRead=check.then(()=>this.client.get('meta/catalog.json',true,{snapshot:true}));
   const statusRead=includeSyncStatus?optionalStatus(catalogRead.then(cat=>this.client.get('meta/ilbo-sync.json',true,{ref:cat.revision})).catch(()=>null)):null;
   const [,cat]=await Promise.all([check,catalogRead]),syncStatus=statusRead?await statusRead:null;
+  if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;
   if(!cat.data){if(this.envelope.queue.length&&this.envelope.state){this.loaded=true;return this.envelope.state}if(this.envelope.state)throw Error('기존 저장소의 기준자료가 없어졌습니다. 신규자료로 덮어쓰지 않습니다.');this.loaded=true;this.empty=true;return null}
   if(cat.data.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':cat.data.records};
   const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
   for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=result.records}
-  if(this.closed)throw Error('저장소 연결이 변경되었습니다.');const problem=this.ownsUnitSync(state.catalogUnitSync?.id)?null:unitSyncError(state);if(canApply&&!canApply())return null;let applied=false;
-  const e=await this.mutate(e=>{if(e.queue.length)return;e.state=state;e.baseline=baseline;applied=true},{canCommit:canApply});if(canApply&&(!applied||e.state!==state))return null;
+  if(this.closed)throw Error('저장소 연결이 변경되었습니다.');if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;const problem=this.ownsUnitSync(state.catalogUnitSync?.id)?null:unitSyncError(state);if(canApply&&!canApply())return null;let applied=false;
+  const e=await this.mutate(e=>{if(e.queue.length)return;e.state=state;e.baseline=baseline;applied=true},{canCommit:()=>!this.explicitRecoveryLease&&this.explicitRecoveryRevision===recoveryRevision&&(!canApply||canApply())});if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;if(canApply&&(!applied||e.state!==state))return null;
   this.loaded=true;this.catalogBlocked=problem;this.lastError=problem;if(applied&&e.state===state&&syncStatus?.data&&syncStatus.sha&&!problem)this.initialSyncStatus={state,result:syncStatus};
   const transfers=auditTransferIssues(e.state);this.status(problem?problem.message:transfers.length?auditError(transfers).message:e.queue.length?'기기 변경자료 · 전송 대기':'GitHub 최신자료');return e.state;
  }
@@ -3357,8 +3374,9 @@ class Workspace{
   if(held){this.lastError=null;this.onState(clone(e.state));this.status('일정 변경은 확인용으로 보관 · 다른 입력 저장 계속')}
   return held;
  }
- async flush(){
+ async flush({explicitRecoveryToken}={}){
   if(this.closed||this.resolving)return;if(this.flushing)return this.flushing;
+  if(this.explicitRecoveryLease&&explicitRecoveryToken!==this.explicitRecoveryToken)return;
   const run=async()=>{while(this.envelope.queue.length&&!this.closed&&!this.resolving){const q=clone(this.envelope.queue[0]);try{
    await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local)}catch(error){
     if(!error.conflicts?.length||!/^months\//.test(q.path)||!auditSensitive(q.base[0],q.local[0]))throw error;
@@ -3378,7 +3396,7 @@ class Workspace{
  }
  async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error('GitHub 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status('GitHub 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
  async initialize(key){if(!this.empty)throw Error('자료가 이미 있는 저장소입니다.');const s=emptyState();s.months[key]=newMonth(key);await this.save(s,[key],true);return s}
- close(){this.closed=true;this.initialSyncStatus=null;this.client.invalidate()}
+ close(){this.closed=true;this.initialSyncStatus=null;this.releaseExplicitRecovery(this.explicitRecoveryToken);this.client.invalidate()}
 }
 root.ScheduleNative={cleanScheduleView,emptyState,newMonth,packMonth,unpackMonth,packCatalog,unpackCatalog,catalogUnitIssues,auditTransferIssues,Workspace};if(typeof module!=='undefined')module.exports=root.ScheduleNative;
 })(globalThis);
@@ -5755,7 +5773,7 @@ async function sheetAwaitRemoteAck(client=typeof workspace==='undefined'?null:wo
  // Explicit saves get a chance to replay the validated intent before the
  // automatic outbox separates a schedule into a manual-review archive.
  client.explicitSaveWaiters=(client.explicitSaveWaiters||0)+1;
- try{await client.flush()}finally{client.explicitSaveWaiters--}
+ try{await client.flush({explicitRecoveryToken:client.explicitRecoveryToken})}finally{client.explicitSaveWaiters--}
  const savingPlan=[...sheetRegistry.values()].find(g=>g.saving&&g.id==='plan-jobs'&&g.scope===client.key);
  if(savingPlan&&(client.envelope.heldSchedules||[]).some(h=>!savingPlan.heldOnSave?.includes(h.id)))throw Error('일정 변경은 최신 생산자료와 확인이 필요해 따로 보관했습니다. 상단의 보관한 일정 확인에서 비교해 주세요. 입력 초안은 유지됩니다.');
  if(client.envelope?.queue?.length){
@@ -6015,11 +6033,11 @@ class SheetEditor{
  }
  async save(options={}){
   const bulk=options.bulk===true,owner=workspace,contextOK=()=>workspace===owner&&sheetScope()===this.scope&&month===this.month&&(typeof sheetExplicitSaveContextValid!=='function'||sheetExplicitSaveContextValid(this,owner));
-  let committed=false,remote=false,error=null;const commitArchives=[];
+  let committed=false,remote=false,error=null;const commitArchives=[],saveLease={owner,token:null};
   const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||''});
   if(!contextOK()){error='context';this.error='작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 저장해 주세요.';this.update();return result()}
   if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
-  const explicitOptions={preferLocalEdits:true};if(owner)owner.explicitSaveDiagnostic=null;this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
+  const explicitOptions={preferLocalEdits:true};if(owner)owner.explicitSaveDiagnostic=null;this.explicitSaveLease=saveLease;this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
   try{
    const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}phase='refresh';
    if(typeof sheetPrepareExplicitSave==='function')await sheetPrepareExplicitSave(this);
@@ -6048,7 +6066,7 @@ class SheetEditor{
    if(!contextOK()){phase='context';throw Error('저장 완료 뒤 연결이 바뀌었습니다. 새 연결의 입력 상태는 변경하지 않았습니다.')}
    this.saving=false;busy=false;
    if(!bulk){const pos=this.host()?.querySelector('.sheetViewport'),left=pos?.scrollLeft||0,top=pos?.scrollTop||0;render();const updated=this.host()?.querySelector('.sheetViewport');if(updated){updated.scrollLeft=left;updated.scrollTop=top}toast(this.error)}
-  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message+(e.conflicts?.length&&typeof sheetSaveDiagnosticSuffix==='function'?sheetSaveDiagnosticSuffix(owner):'');if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
+  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message+((e.conflicts?.length||e.code==='EXPLICIT_QUEUE_PROOF')&&typeof sheetSaveDiagnosticSuffix==='function'?sheetSaveDiagnosticSuffix(owner):'');if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(this.explicitSaveLease===saveLease)delete this.explicitSaveLease;if(saveLease.token)saveLease.owner.releaseExplicitRecovery(saveLease.token);if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
   return result();
  }
  async undo(){if(this.locked()||busy)return;if(!confirm('이 표에서 아직 저장하지 않은 변경을 취소할까요?'))return;this.saving=true;busy=true;this.update();try{await this.writeQueue.catch(()=>{});const cleared=await this.clearStoredDraft();this.draft=this.fresh();this.dirty=false;this.error='변경을 취소했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}catch(e){this.error=e.message}finally{this.saving=false;busy=false;this.refresh();this.spec.onChange?.(this)}}
@@ -10625,10 +10643,15 @@ async function sheetPreflightCatalogQueue(g,owner,options){
  // A stale Native catalog prepare can be accepted before its month write is
  // found to conflict. Prove/rebuild the entire still-unreceived transaction
  // first; never manufacture a partial transaction just by clicking Save.
- const pending=(owner.envelope?.groups||[]).some(group=>group.unitSync===true&&group.status==='pending'&&Array.isArray(group.acked)&&!group.acked.length&&owner.envelope.queue.some(q=>q.groupId===group.id&&q.unitPhase==='prepare'));
- if(!pending)return false;
+ // With only finish left, strict Native ACK retry is sufficient, including a
+ // finish already received by the server whose response was lost.
+ const needsUnitWork=id=>owner.envelope.queue.some(q=>q.groupId===id&&q.unitPhase!=='finish');
+ const pending=(owner.envelope?.groups||[]).some(group=>group.unitSync===true&&Array.isArray(group.acked)&&(group.status==='pending'&&!group.acked.length&&owner.envelope.queue.some(q=>q.groupId===group.id&&q.unitPhase==='prepare')||group.status==='partial'&&group.acked.length>1&&needsUnitWork(group.id)));
+ const proof=typeof explicitQueuedPrepareProof==='function'&&explicitQueuedPrepareProof(owner.envelope,owner.key)?.prepared,prepared=proof&&needsUnitWork(proof.groupId);
+ if(!pending&&!prepared)return false;
  if(await sheetReplayQueuedSave(g,owner,options))return true;
  const error=Error('저장 대기 자료를 최신 원장과 대조하지 못했습니다. 입력 원문과 전송 대기는 기기에 보관했습니다.');
+ error.code='EXPLICIT_QUEUE_PROOF';
  if(owner.lastError?.conflicts?.length)error.conflicts=owner.lastError.conflicts;
  throw error;
 }
@@ -10639,6 +10662,10 @@ async function sheetPrepareExplicitSave(g){
  if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');
  if(!owner||owner.offline||owner.pendingMigration)return;
  let acknowledged=null,requested=null;
+ // Keep a deferred view write behind the entire explicit save, including its
+ // final snapshot, commit and draft cleanup. Capture the original intent first
+ // so a pre-existing flush cannot erase its receipt while this lease waits.
+ const hold=async()=>{const lease=g.explicitSaveLease;if(lease?.owner===owner&&typeof owner.acquireExplicitRecovery==='function'&&!lease.token)lease.token=await owner.acquireExplicitRecovery();if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.')};
  try{
  if(owner.envelope?.queue?.length){
   const captured=typeof explicitQueuedDraftsCapture==='function'?explicitQueuedDraftsCapture(g,owner):null;
@@ -10653,6 +10680,7 @@ async function sheetPrepareExplicitSave(g){
   };
   // Keep the original request before ACK can remove it from the outbox. The
   // archived reader still requires matching server history before using it.
+  await hold();
   if(captured&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(captured,owner,valid);
   const archived=captured?await sheetArchiveQueuedDrafts(captured,g,owner,valid):null;
   try{if(!await sheetPreflightCatalogQueue(g,owner,{valid,acknowledgedDrafts:captured}))await sheetAwaitRemoteAck(owner)}catch(error){
@@ -10671,6 +10699,7 @@ async function sheetPrepareExplicitSave(g){
   }
   if(captured){captured.acknowledgedState=acknowledged;await explicitQueuedDraftsClear(captured,valid,owner);if(!valid())throw Error('저장 확인 뒤 연결 또는 입력이 바뀌었습니다. 초안은 보관했습니다.')}
  }
+ await hold();
  for(let attempt=0;attempt<2;attempt++){
   const snapshot=await owner.readSnapshot({canApply:valid});if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');if(!snapshot)continue;
   const next=await owner.adoptSnapshot(snapshot,{canApply:valid});if(!valid())throw Error('연결 또는 권한이 바뀌어 입력을 보관했습니다.');if(!next)continue;
@@ -11180,6 +11209,7 @@ function explicitPlanDraftCalendarSet(calendar,slot,value){
 function explicitPlanDraftAckIntent(g,envelope){
  try{
   if(g?.id!=='plan-jobs')return null;
+  const prepared=typeof explicitQueuedPrepareProof==='function'?explicitQueuedPrepareProof(envelope,g.scope):{envelope};if(!prepared)return null;envelope=prepared.envelope;
   const groups=explicitQueuedGroups(envelope);let current=explicitProductionRecoveryState(envelope);if(!groups||!current)return null;
   const raw=C.clone(envelope.baseline),slots=new Map(),events=[],same=explicitRecoverySame,copy=value=>value===undefined?undefined:C.clone(value);
   const add=(id,slot,before,after,event)=>{const previous=slots.get(id);slots.set(id,{...slot,before:previous?previous.before:copy(before),after:copy(after),bases:[...(previous?.bases||[]),copy(before),copy(after)],event:C.clone(event)})};
@@ -11315,6 +11345,7 @@ function explicitQueuedDraftsIntent(g,envelope){
  try{
   const kind={production:'production','plaster-month':'plaster','issue-ledger':'issues'}[g?.id],key=g?.month,ledger=kind==='production'?'rows':kind;
   if(!kind||!g.scope||!/^\d{4}-\d{2}$/.test(key)||typeof explicitQueuedGroups!=='function')return null;
+  const proof=typeof explicitQueuedPrepareProof==='function'?explicitQueuedPrepareProof(envelope,g.scope):{envelope};if(!proof)return null;envelope=proof.envelope;
   const groups=explicitQueuedGroups(envelope);let original=explicitProductionRecoveryState(envelope);if(!groups||!original)return null;
   const raw=C.clone(envelope.baseline),entries=new Map(),events=[];
   for(const group of groups){
@@ -11362,18 +11393,20 @@ function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
    const fields=kind==='production'?explicitProductionRecoveryChanges(original.before,original.after):kind==='plaster'?['actual']:['machine','replacement','issued','reason'].filter(field=>!same(field,original.before,original.after));
    if(!fields||fields.some(field=>!same(field,event.after,original.after)))return null;
   }
-  const draft=C.clone(g.draft),base=explicitRecoveryIndex(draft.baseRows),rows=explicitRecoveryIndex(draft.rows);if(!base||!rows)return null;let changed=false,adoptedTarget=false;
+  const draft=C.clone(g.draft),base=explicitRecoveryIndex(draft.baseRows),rows=explicitRecoveryIndex(draft.rows),lateTargets=[];if(!base||!rows)return null;let changed=false,adoptedTarget=false;
   for(const entry of intent.entries){
    const id=kind==='plaster'?'plaster-day:'+entry.date:entry.id,b=base.get(id),row=rows.get(id),ack=receipt[ledger]?.find(record=>kind==='plaster'?record.date===entry.date:record.id===entry.id),now=current[ledger]?.find(record=>record.id===ack?.id);
    if(!b||!row||!ack||!now||draft.deleted?.some(deletion=>deletion.id===id))return null;
    if(kind==='production'){
-    if(!explicitProductionRecoveryLocalIdentity(entry.first,b)||!explicitProductionRecoveryLocalIdentity(entry.first,row)||!explicitProductionRecoveryIdentity(ack,now))return null;
-    if(!explicitProductionRecoveryIdentity(entry.last,ack)){
+    if(!explicitProductionRecoveryLocalIdentity(entry.first,b)||!explicitProductionRecoveryLocalIdentity(entry.first,row))return null;
+    const receiptIdentity=explicitProductionRecoveryIdentity(entry.last,ack),latestIdentity=explicitProductionRecoveryIdentity(ack,now);
+    if(!receiptIdentity||!latestIdentity){
      // A confirmed source link can accompany a received metadata-only edit.
      // Prove both the submitted intent and today's remaining draft before
      // adopting it; later quantity/link edits must keep their original basis.
      const canAdopt=ScheduleBatch.canAdoptAddedScheduleTarget;
-     if(!canAdopt?.(entry.first,entry.last,ack)||!canAdopt(entry.first,b,now)||!canAdopt(entry.first,row,now))return null;
+     if(!canAdopt||!receiptIdentity&&!canAdopt(entry.first,entry.last,ack)||!latestIdentity&&!canAdopt(ack,ack,now)||!canAdopt(entry.first,entry.last,now)||!canAdopt(entry.first,b,now)||!canAdopt(entry.first,row,now))return null;
+     if(!latestIdentity)lateTargets.push({id:ack.id,target:C.clone(now.scheduleTarget)});
      b.scheduleTarget=C.clone(now.scheduleTarget);row.scheduleTarget=C.clone(now.scheduleTarget);adoptedTarget=true;
     }
    }else if(b.date!==entry.date||row.date!==entry.date||ack.date!==entry.date||now.date!==entry.date||kind==='issues'&&[b,row,ack,now].some(record=>record.product!==entry.last.product))return null;
@@ -11390,8 +11423,13 @@ function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
   }
   if(!changed)return null;
   if(adoptedTarget){
-   const receivedDraft=ScheduleBatch.create(acknowledgedState,key,g.scope);
-   if(!ScheduleBatch.inspect(acknowledgedState,receivedDraft,{scope:g.scope}).ok||!ScheduleBatch.inspect(latest,draft,{scope:g.scope,preferLocalEdits:true}).ok)return null;
+   // A field link can arrive after the PUT receipt. Verify it against the
+   // original ACK-time owner job as well as today's job, without rewriting the
+   // actual receipt or its history into something the server never received.
+   const receiptProof=lateTargets.length?C.clone(acknowledgedState):acknowledgedState;
+   for(const added of lateTargets)receiptProof.months[key].rows.find(row=>row.id===added.id).scheduleTarget=C.clone(added.target);
+   const receivedDraft=ScheduleBatch.create(receiptProof,key,g.scope);
+   if(!ScheduleBatch.inspect(receiptProof,receivedDraft,{scope:g.scope}).ok||!ScheduleBatch.inspect(latest,draft,{scope:g.scope,preferLocalEdits:true}).ok)return null;
   }
   draft.revision=(draft.revision||0)+1;return draft;
  }catch{return null}
@@ -11447,6 +11485,31 @@ function explicitQueuedDraftsFullRebase(g,full,latest){
   }finally{state=priorState;month=priorMonth}
  }catch{return null}
 }
+// A catalog editor can have returned before its queued unit transaction was
+// received. Renew only that exact submitted snapshot after the same requests
+// have durable ACKs; neither equal visible values nor a different group suffice.
+function explicitQueuedCatalogSubmissionReceipt(g,full,archive,owner){
+ try{
+  if(g?.id!=='product-catalog'||full?.schema!==1||full.completed||full.id!==g.id||full.scope!==g.scope||full.scope!==owner?.key||full.month!==g.month||full.storageKey!==g.storageKey||!explicitRecoverySame(full.draft,g.draft)||full.groups?.length!==1)return null;
+  const receipt=sheetFullSubmissionReceipt(full,owner);if(!receipt)return null;
+  const groups=explicitQueuedGroups(archive),group=groups?.[0],expected=full.groups[0];
+  if(groups?.length!==1||!group?.unitSync||group.id!==expected.id||!explicitRecoverySame(group.ids,expected.ids)||!explicitRecoverySame(group.paths,expected.paths))return null;
+  const base=explicitProductionRecoveryState(archive);if(!base)return null;let local=C.clone(base);const raw=C.clone(archive.baseline);
+  for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return null;local=explicitQueuedApply(local,q.path,q.local);raw[q.path]=C.clone(q.local)}
+  if(!explicitQueuedUnitReplay(base,local,base,group,{envelope:archive})||!explicitRecoverySame(ScheduleNative.packCatalog(local),ScheduleNative.packCatalog(archive.state))||Object.keys(local.months).some(k=>!explicitRecoverySame(ScheduleNative.packMonth(local.months[k]),ScheduleNative.packMonth(archive.state.months[k]))))return null;
+  const previousState=state,previousMonth=month;
+  try{
+   state=base;month=g.month;const submitted=secondaryMasterDraft(C.clone(full.draft));
+   // A filtered blank preparation row is not an acknowledged catalog input.
+   if(submitted.rows.length!==full.draft.rows.length||submitted.deleted?.length||!secondaryMasterInspect(submitted).ok)return null;
+   const ordered=rows=>C.clone(rows).sort((a,b)=>a.id.localeCompare(b.id)),before=secondaryMasterRows(base);
+   if(!explicitRecoverySame(ordered(submitted.baseRows),ordered(before)))return null;
+   const applied=sheetApply(submitted,before,{validateRow:secondaryValidateMaster});
+   if(!explicitRecoverySame(ordered(applied),ordered(secondaryMasterRows(local))))return null;
+  }finally{state=previousState;month=previousMonth}
+  return{...C.clone(full),completed:true,receipt};
+ }catch{return null}
+}
 async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true){
  if(!owner||workspace!==owner||owner.envelope?.queue?.length||g.scope!==owner.key||!explicitQueuedDraftsSelected(g).ok)return null;
  const key=g.storageKey,draft=g.draft,signature=JSON.stringify(draft),revision=g.revision,scope=sheetScope(),matches=entry=>entry?.id===g.id&&entry.month===g.month&&entry.storageKey===key&&(entry.revision??0)===(draft.revision??0);
@@ -11465,9 +11528,12 @@ async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true)
   if(records.length>1)throw Error('보관한 입력의 저장 관계를 확인하지 못했습니다. 현재 입력은 보관했습니다.');
   // A complete normal commit covers insertions, deletions and shared memos as
   // one exact snapshot. Old queue recovery never creates this permission.
-  if(fullMatch){const recovered=explicitQueuedDraftsFullRebase(g,full,latest);if(recovered)return recovered}
+  if(fullMatch){const confirmed=full.completed?full:explicitQueuedCatalogSubmissionReceipt(g,full,archive,owner),recovered=confirmed&&explicitQueuedDraftsFullRebase(g,confirmed,latest);if(recovered)return recovered}
   if(records.length){
-   const intent=explicitQueuedDraftsAnyIntent(g,evidence.originalEnvelope||archive);
+   const original=evidence.originalEnvelope||archive;
+   if(typeof explicitUnitPrefixResolve==='function')await explicitUnitPrefixResolve(owner,original,current);
+   if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
+   const intent=explicitQueuedDraftsAnyIntent(g,original);
    const rebased=intent&&explicitRecoverySame(intent,records[0].intent)&&explicitQueuedDraftsAnyRebase(g,intent,evidence.acknowledgedState,latest);
    if(rebased)return{draft:rebased,matched:true};
   }
@@ -11622,6 +11688,25 @@ function explicitQueuedApply(source,path,records){
  if(!match)throw Error('Unsupported queued path');
  const next=C.clone(source);next.months[match[1]]=ScheduleNative.unpackMonth(match[1],records);return next;
 }
+// A received prepare contains no business edit: the old catalog plus the owned
+// guard is still its exact before-image. Recover that proof only when every
+// dependent month and the finish remain unreceived. Never invent an ACK.
+function explicitQueuedPrepareProof(input,scope){
+ const queue=input?.queue,groups=input?.groups,cp='meta/catalog.json',same=explicitRecoverySame;
+ if(!Array.isArray(queue)||!Array.isArray(groups))return null;
+ const active=groups.filter(g=>queue.some(q=>q.groupId===g.id)),partial=active.filter(g=>g.status==='partial'||g.acked?.length);
+ if(!partial.length)return{envelope:input,prepared:null};
+ const archived=typeof explicitUnitPrefixCached==='function'?explicitUnitPrefixCached(input,scope):null;if(archived)return archived;
+ const group=partial[0],qs=queue.filter(q=>q.groupId===group.id),finish=qs.at(-1);
+ if(partial.length!==1||queue[0]?.groupId!==group.id||groups.filter(g=>g.id===group.id).length!==1||group.unitSync!==true||group.status!=='partial'||group.auditOperations?.length||!Array.isArray(group.ids)||!Array.isArray(group.paths)||group.ids.length<3||group.paths.length!==group.ids.length||!same(group.acked,[group.ids[0]])||group.paths[0]!==cp||group.paths.at(-1)!==cp||queue.some(q=>q.id===group.ids[0])||!same(qs.map(q=>q.id),group.ids.slice(1))||!same(qs.map(q=>q.path),group.paths.slice(1))||!same(queue.slice(0,qs.length),qs)||finish?.unitPhase!=='finish'||!Array.isArray(finish.base)||!same(finish.base,input.baseline?.[cp]))return null;
+ const middle=qs.slice(0,-1),prepared=C.clone(finish.base),meta=prepared.find(r=>r.id==='catalog'),marker=meta?.catalogUnitSync;
+ if(!middle.length||middle.some(q=>q.unitPhase||q.viewOnly||!/^months\/\d{4}-(?:0[1-9]|1[0-2])\.json$/.test(q.path)||!same(q.base,input.baseline?.[q.path]))||new Set(middle.map(q=>q.path)).size!==middle.length||finish.viewOnly||!marker||marker.id!==group.id||!Array.isArray(marker.months)||!marker.months.length||new Set(marker.months).size!==marker.months.length||marker.months.some(k=>!middle.some(q=>q.path==='months/'+k+'.json'))||Object.keys(marker).some(k=>!['id','months'].includes(k)))return null;
+ const original=C.clone(prepared);delete original.find(r=>r.id==='catalog').catalogUnitSync;
+ const envelope=C.clone(input),restored=envelope.groups.find(g=>g.id===group.id);
+ envelope.baseline[cp]=C.clone(original);envelope.queue.unshift({id:group.ids[0],groupId:group.id,path:cp,base:original,local:prepared,unitPhase:'prepare'});restored.acked=[];restored.status='pending';
+ if(!explicitQueuedGroups(envelope))return null;
+ return{envelope,prepared:{groupId:group.id,prepareId:group.ids[0],marker:C.clone(marker)}};
+}
 function explicitQueuedGroups(envelope){
  const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
  const queue=envelope?.queue,groups=envelope?.groups;
@@ -11658,7 +11743,11 @@ function explicitQueuedUnitShape(group){
 }
 function explicitQueuedCatalogSame(a,b){
  const left=explicitRecoveryIndex(a),right=explicitRecoveryIndex(b);
- return !!left&&!!right&&left.size===right.size&&[...left].every(([id,row])=>explicitRecoverySame(row,right.get(id)));
+ // An earlier Native ACK can carry newer record revisions into this pending
+ // prepare. packCatalog resets some of those counters. Compare business fields
+ // here; the builder still checks every exact raw predecessor before replay.
+ const body=row=>{const value={...row};delete value.rev;return value};
+ return !!left&&!!right&&left.size===right.size&&[...left].every(([id,row])=>explicitRecoverySame(body(row),body(right.get(id))));
 }
 function explicitQueuedCatalogKnown(records){
  const index=explicitRecoveryIndex(records);if(!index)return false;
@@ -11689,7 +11778,7 @@ function explicitQueuedUnitPrepared(base,group,envelope){
  // Old caches may have a proved source-baseline supplement which was not yet
  // published. Reuse its existing ownership check; never accept arbitrary data.
  if(!envelope)return false;
- const strip=rows=>explicitQueuedCatalogLive(rows).map(row=>{const next=C.clone(row);if(next.id==='catalog')delete next.catalogUnitSync;return next}).sort((a,b)=>a.id.localeCompare(b.id));
+ const strip=rows=>explicitQueuedCatalogLive(rows).map(row=>{const next=C.clone(row);delete next.rev;if(next.id==='catalog')delete next.catalogUnitSync;return next}).sort((a,b)=>a.id.localeCompare(b.id));
  return explicitProductionRecoveryCatalog(strip(expected),strip(first.local),strip(expected),envelope);
 }
 // Catalog updates are a Native three-phase transaction, not three unrelated
@@ -11746,7 +11835,7 @@ function explicitQueuedUnitReplay(base,local,current,group,options={}){
  const months=[...new Set([...keys,...changed])],baseCatalog=C.clone(rawCurrent),prepared=explicitQueuedCatalogRetainDeleted(ScheduleNative.packCatalog(current),rawCurrent);
  prepared.find(r=>r.id==='catalog').catalogUnitSync={id:group.id,months};
  const records=[{path:'meta/catalog.json',base:baseCatalog,local:prepared,unitPhase:'prepare'},...months.map(k=>({path:'months/'+k+'.json',base:ScheduleNative.packMonth(current.months[k]),local:ScheduleNative.packMonth(next.months[k])})),{path:'meta/catalog.json',base:C.clone(prepared),local:explicitQueuedCatalogRetainDeleted(ScheduleNative.packCatalog(next),rawCurrent),unitPhase:'finish'}];
- return{state:next,records};
+ return{state:next,records,changed};
 }
 function explicitQueuedProducer(base,local,latest,group,scope,key){
  // A schedule surface can edit a previous month's manual job and this month's
@@ -11813,9 +11902,14 @@ function explicitQueuedAcknowledged(base,local,latest,group,scope,key){
 }
 function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
  const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
+ const originalEnvelope=envelope,proof=explicitQueuedPrepareProof(envelope,scope);if(!proof){explicitQueuedGroups(envelope);return rejectSaveProof('QB21')}envelope=proof.envelope;
  const groups=explicitQueuedGroups(envelope);if(!groups)return rejectSaveProof('QB01');
  let original;try{original=explicitProductionRecoveryState(envelope)}catch{return rejectSaveProof('QB02')}if(!original)return rejectSaveProof('QB03');
  let current=C.clone(snapshot.state);const raw=C.clone(envelope.baseline),nextBase=C.clone(snapshot.baseline),queue=[],rebuiltGroups=[];
+ if(proof.prepared){
+  if(!explicitRecoverySame(current.catalogUnitSync,proof.prepared.marker)||!explicitRecoverySame(nextBase['meta/catalog.json']?.find(r=>r.id==='catalog')?.catalogUnitSync,proof.prepared.marker))return rejectSaveProof('QB22');
+  delete current.catalogUnitSync;
+ }
  // Only this in-memory proof view uses the original predecessor events. The
  // durable outbox always contains the newly generated, latest before/after
  // images, so it can be independently proved again after a crash or lost ACK.
@@ -11826,8 +11920,23 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
   const key=group.queue.find(q=>q.path.startsWith('months/'))?.path.slice(7,-5)||viewMonth;
   if(group.unitSync){
    const unit=explicitQueuedUnitReplay(before,local,current,group,{envelope,rawCatalog:nextBase['meta/catalog.json']});if(!unit)return rejectSaveProof('QB20');
-   const added=[];for(const record of unit.records){const id=C.id();queue.push({...record,id,groupId:group.id});added.push({id,path:record.path});nextBase[record.path]=C.clone(record.local)}
-   rebuiltGroups.push({id:group.id,ids:added.map(q=>q.id),paths:added.map(q=>q.path),acked:[],status:'pending',unitSync:true});
+   const received=proof.prepared?.groupId===group.id?proof.prepared:null,added=[];
+   if(received){
+    if(unit.changed.some(k=>!received.marker.months.includes(k))||!explicitRecoverySame(unit.records.slice(1,-1).map(q=>q.path),group.paths.slice(1,-1)))return rejectSaveProof('QB23');
+    for(const accepted of received.receivedMonths||[]){
+     const record=unit.records.find(q=>q.path===accepted.path);
+     if(!record||!explicitRecoverySame(record.base,record.local)||!explicitUnitPrefixReceived(accepted.request,nextBase[accepted.path]))return rejectSaveProof('QB24');
+    }
+    unit.records.shift();unit.records.at(-1).base=C.clone(nextBase['meta/catalog.json']);
+    const acked=received.acked||[received.prepareId];
+    for(const id of acked)added.push({id,path:group.paths[group.ids.indexOf(id)]});
+    unit.records=unit.records.filter(q=>!(received.receivedMonths||[]).some(r=>r.path===q.path));
+   }
+   for(const record of unit.records){
+    const original=group.queue.find(q=>q.path===record.path&&(q.unitPhase||'')===(record.unitPhase||''));
+    const id=original?.id||C.id();queue.push({...record,id,groupId:group.id});added.push({id,path:record.path});nextBase[record.path]=C.clone(record.local);
+   }
+   rebuiltGroups.push({id:group.id,ids:added.map(q=>q.id),paths:added.map(q=>q.path),acked:received?C.clone(received.acked||[received.prepareId]):[],status:received?'partial':'pending',unitSync:true});
    for(const k of Object.keys(unit.state.months)){
     const actual=C.clone(unit.state.months[k].history||[]),positions=new Map(actual.map((event,i)=>[event.id,i]));
     for(const event of proofHistory[k]||[])if(positions.has(event.id))actual[positions.get(event.id)]=C.clone(event);
@@ -11903,10 +12012,46 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
   }else if(!explicitRecoverySame(ScheduleNative.packMonth(original.months[path.slice(7,-5)]),ScheduleNative.packMonth(envelope.state.months[path.slice(7,-5)])))return rejectSaveProof('QB18');
  }
  if(ScheduleNative.catalogUnitIssues(current).length)return rejectSaveProof('QB19');
- return{state:current,baseline:C.clone(snapshot.baseline),queue,groups:rebuiltGroups,originalIds:envelope.queue.map(q=>q.id),originalGroups:groups.map(g=>g.id)};
+ return{state:current,baseline:C.clone(snapshot.baseline),queue,groups:rebuiltGroups,originalIds:originalEnvelope.queue.map(q=>q.id),originalGroups:groups.map(g=>g.id)};
 }
 function sheetQueuedRetryable(error){return !!error?.conflicts?.length||error?.status===409||error?.status>=500&&error?.status<=599||['NETWORK','REQUEST_INTERRUPTED'].includes(error?.code)}
 async function sheetReplayQueuedSave(g,owner,options={}){
+ if(!owner||owner.closed||owner.offline||owner.pendingMigration||owner.resolving||!owner.envelope?.queue?.length||!(g?.explicitSave||typeof bulkSaveState!=='undefined'&&bulkSaveState.running))return false;
+ // Capture the submitted draft before a pre-existing automatic flush receives
+ // its last ACK. The lease waits for that flush; it must not lose the receipt
+ // just because there is no queue left by the time the stable snapshot is read.
+ const original=C.clone(owner.envelope),acknowledgedDrafts=options.acknowledgedDrafts??(typeof explicitQueuedDraftsCapture==='function'?explicitQueuedDraftsCapture(g,owner):null),scope=sheetScope(),key=month,revision=g?.revision,draft=g?.draft,signature=JSON.stringify(draft),storageKey=g?.storageKey,persisted=JSON.stringify(g?.persistedDraft);
+ const selected=()=>{if(!g)return true;try{const pointer=sessionStorage.getItem(g.draftPointer());return !pointer||pointer===storageKey}catch{return false}};
+ const valid=()=>workspace===owner&&sheetScope()===scope&&month===key&&!owner.closed&&!owner.offline&&!owner.pendingMigration&&!owner.resolving&&bulkSaveAllowed()&&(!options.valid||options.valid())&&(!g||g.explicitSave&&g.revision===revision&&g.draft===draft&&JSON.stringify(draft)===signature&&g.storageKey===storageKey&&JSON.stringify(g.persistedDraft)===persisted&&selected());
+ let token=options.explicitRecoveryToken||(g?.explicitSaveLease?.owner===owner?g.explicitSaveLease.token:null),acquired=false;
+ try{
+  if(acknowledgedDrafts&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(acknowledgedDrafts,owner,valid);
+  if(!valid())return false;
+  if(typeof owner.acquireExplicitRecovery==='function'){
+   if(token){if(token!==owner.explicitRecoveryToken)return false}
+   else{token=await owner.acquireExplicitRecovery();acquired=true;if(!token)return false}
+  }
+  if(!valid())return false;
+  if(!owner.envelope.queue.length){
+   // Queue disappearance alone is not an ACK (for example a remote reset).
+   if(owner.persisted?.queue?.length||!original.queue.every(q=>[owner.envelope,owner.persisted].every(e=>e?.groups?.some(group=>group.id===q.groupId&&group.status==='complete'&&group.ids.includes(q.id)&&group.acked.includes(q.id)))))return false;
+   state=owner.envelope.state;
+   if(acknowledgedDrafts){
+    acknowledgedDrafts.acknowledgedState=C.clone(state);
+    const evidence=typeof explicitQueuedDraftsArchive==='function'?explicitQueuedDraftsArchive(acknowledgedDrafts,g,state):null;
+    if(evidence){
+     const recoveryKey=owner.key+':recovery:acknowledged-draft:'+C.id(),at=new Date().toISOString();
+     await S.localSet(recoveryKey,{...original,acknowledgedDrafts:evidence},{expected:undefined});if(!valid())return false;
+     await owner.mutate(e=>{e.explicitSaveRecoveries??=[];e.explicitSaveRecoveries.push({key:recoveryKey,at,kind:'acknowledged-draft',drafts:C.clone(evidence.index)})},{canCommit:valid});if(!valid())return false;
+    }
+    await explicitQueuedDraftsClear(acknowledgedDrafts,valid,owner);
+   }
+   return valid();
+  }
+  return await sheetReplayQueuedSaveLocked(g,owner,{...options,acknowledgedDrafts,explicitRecoveryToken:token,valid});
+ }finally{if(acquired&&token)owner.releaseExplicitRecovery(token)}
+}
+async function sheetReplayQueuedSaveLocked(g,owner,options={}){
  if(!owner||owner.closed||owner.offline||owner.pendingMigration||owner.resolving||!owner.envelope?.queue?.length||!(g?.explicitSave||typeof bulkSaveState!=='undefined'&&bulkSaveState.running))return false;
  const before=owner.envelope,signature=JSON.stringify(before),persisted=JSON.stringify(owner.persisted),scope=sheetScope(),key=month,revision=g?.revision,draft=g?.draft,draftSignature=JSON.stringify(draft),storageKey=g?.storageKey,draftVersion=JSON.stringify(g?.persistedDraft);
  const acknowledgedDrafts=options.acknowledgedDrafts??(typeof explicitQueuedDraftsCapture==='function'?explicitQueuedDraftsCapture(g,owner):null);
@@ -11916,17 +12061,27 @@ async function sheetReplayQueuedSave(g,owner,options={}){
  const valid=()=>callerValid()&&owner.envelope===before&&JSON.stringify(before)===signature&&(JSON.stringify(owner.persisted)===persisted||adopted!==null&&JSON.stringify(owner.persisted)===adopted);
  if(!valid())return false;
  const diagnostic=callback=>typeof sheetSaveDiagnosticRun==='function'?sheetSaveDiagnosticRun(owner,callback):callback();
- if(!diagnostic(()=>explicitQueuedGroups(before)))return false;
+ let prepareProof=diagnostic(()=>explicitQueuedPrepareProof(before,scope));
+ if(!prepareProof&&typeof explicitUnitPrefixResolve==='function')prepareProof=await explicitUnitPrefixResolve(owner,before,valid);
+ if(!valid()||!prepareProof){diagnostic(()=>explicitQueuedGroups(before));return false}
+ if(!diagnostic(()=>explicitQueuedGroups(prepareProof.envelope)))return false;
+ if(acknowledgedDrafts&&prepareProof.prepared?.receivedMonths?.length){
+  if(explicitUnitPrefixSignature(acknowledgedDrafts.originalEnvelope)===explicitUnitPrefixSignature(before))explicitUnitPrefixRemember(acknowledgedDrafts.originalEnvelope,prepareProof);
+  else await explicitUnitPrefixResolve(owner,acknowledgedDrafts.originalEnvelope,valid);
+  if(!valid())return false;
+  for(const ref of [...(acknowledgedDrafts.refs||[]),acknowledgedDrafts.caller].filter(Boolean))ref.intent=explicitQueuedDraftsAnyIntent(ref.g||g,acknowledgedDrafts.originalEnvelope);
+ }
  if(acknowledgedDrafts&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(acknowledgedDrafts,owner,valid);
  if(!valid())return false;
  const reader=new ScheduleNative.Workspace(owner.config);let snapshot;
- try{snapshot=await reader.readSnapshot({canApply:valid})}finally{reader.close()}
+ try{snapshot=await reader.readSnapshot({canApply:valid,...(prepareProof.prepared?{ownedUnitSync:prepareProof.prepared.marker}:{})})}finally{reader.close()}
  if(!snapshot||!valid())return false;
  const plan=diagnostic(()=>explicitQueuedBuild(before,snapshot,scope,key));if(!plan||!valid())return false;
  if(acknowledgedDrafts)acknowledgedDrafts.acknowledgedState=C.clone(plan.state);
  const recoveryKey=owner.key+':recovery:queued-save:'+C.id(),at=new Date().toISOString();
  const draftAcknowledgements=typeof explicitQueuedDraftsArchive==='function'?explicitQueuedDraftsArchive(acknowledgedDrafts,g,plan.state):null;
- await S.localSet(recoveryKey,{...C.clone(before),...(draftAcknowledgements?{acknowledgedDrafts:draftAcknowledgements}:{}),explicitSaveRecovery:{schema:2,kind:'ordered-queue',at,month:key,queueIds:plan.originalIds,...(g?{draft:C.clone(draft),draftStorageKey:storageKey,draftVersion:C.clone(g.persistedDraft??null)}:{})}},{expected:undefined});
+ const unitReplayWitness=typeof explicitUnitPrefixWitness==='function'?explicitUnitPrefixWitness(prepareProof,plan,scope):null;
+ await S.localSet(recoveryKey,{...C.clone(before),...(unitReplayWitness?{unitReplayWitness}:{}),...(draftAcknowledgements?{acknowledgedDrafts:draftAcknowledgements}:{}),explicitSaveRecovery:{schema:2,kind:'ordered-queue',at,month:key,queueIds:plan.originalIds,...(g?{draft:C.clone(draft),draftStorageKey:storageKey,draftVersion:C.clone(g.persistedDraft??null)}:{})}},{expected:undefined});
  if(!valid())return false;
  let applied=false;
  const next=await owner.mutate(e=>{
@@ -11949,6 +12104,105 @@ async function sheetReplayQueuedSave(g,owner,options={}){
  if(acknowledgedDrafts)await explicitQueuedDraftsClear(acknowledgedDrafts,callerValid,owner);
  if(!callerValid())throw Error('저장 뒤 연결 또는 입력이 바뀌었습니다. 새 입력은 유지했습니다.');
  return true;
+}
+
+// A partially received catalog transaction needs its original, durable request.
+// This is evidence reconstruction only; it never writes a server or an outbox.
+const explicitUnitPrefixProofs=new Map();
+function explicitUnitPrefixSignature(e){return JSON.stringify({state:e?.state,baseline:e?.baseline,queue:e?.queue,groups:e?.groups})}
+function explicitUnitPrefixCached(e,scope){if(typeof scope!=='string'||!scope)return null;const proof=explicitUnitPrefixProofs.get(scope+'\n'+explicitUnitPrefixSignature(e));return proof?C.clone(proof):null}
+function explicitUnitPrefixRemember(e,proof){
+ const key=proof.scope+'\n'+explicitUnitPrefixSignature(e);explicitUnitPrefixProofs.delete(key);explicitUnitPrefixProofs.set(key,C.clone(proof));
+ while(explicitUnitPrefixProofs.size>4)explicitUnitPrefixProofs.delete(explicitUnitPrefixProofs.keys().next().value);
+}
+function explicitUnitPrefixGroup(e){
+ const same=explicitRecoverySame,qs=e?.queue,groups=e?.groups;if(!Array.isArray(qs)||!qs.length||!Array.isArray(groups))return null;
+ const group=groups.find(g=>g.id===qs[0].groupId),cp='meta/catalog.json';
+ if(!group||groups.filter(g=>g.id===group.id).length!==1||group.unitSync!==true||group.status!=='partial'||group.auditOperations?.length||!Array.isArray(group.ids)||!Array.isArray(group.paths)||!Array.isArray(group.acked)||group.acked.length<2||group.acked.length>=group.ids.length||new Set(group.ids).size!==group.ids.length||group.paths.length!==group.ids.length||group.paths[0]!==cp||group.paths.at(-1)!==cp||!same(group.acked,group.ids.slice(0,group.acked.length)))return null;
+ const own=qs.filter(q=>q.groupId===group.id),n=group.acked.length;
+ if(!same(qs.slice(0,own.length),own)||!same(own.map(q=>q.id),group.ids.slice(n))||!same(own.map(q=>q.path),group.paths.slice(n))||qs.some(q=>group.acked.includes(q.id))||groups.some(g=>g.id!==group.id&&qs.some(q=>q.groupId===g.id)&&(g.acked?.length||g.status!=='pending')))return null;
+ return group;
+}
+function explicitUnitPrefixReceived(request,records){
+ const same=explicitRecoverySame,b=request?.base?.[0],l=request?.local?.[0],r=records?.[0];
+ if(!b||!l||!r||records.length!==1||b.id!==l.id||r.id!==l.id||r.deleted||r.closed||r.closeSnapshot||!Array.isArray(b.history)||!Array.isArray(l.history)||!Array.isArray(r.history)||l.history.length<=b.history.length||!b.history.every((event,i)=>same(event,l.history[i])))return false;
+ const index=explicitRecoveryIndex(r.history);if(!index)return false;
+ return l.history.slice(b.history.length).every(event=>event.type==='관리 기준값 연결 반영'&&same(index.get(event.id),event));
+}
+function explicitUnitPrefixFromArchive(input,record,scope){
+ const same=explicitRecoverySame,group=explicitUnitPrefixGroup(input),cp='meta/catalog.json';if(!group||!record)return null;
+ const witness=record.unitReplayWitness,request=witness?.schema===1&&witness.scope===scope?C.clone(witness.request):C.clone(record);
+ if(witness&&(!request||!(witness.groupIds||[witness.groupId]).includes(group.id)))return null;
+ if(!witness&&!(record.fullSubmission?.scope===scope||record.acknowledgedDrafts?.scope===scope||record.explicitSaveRecovery?.schema===2))return null;
+ const requested=explicitQueuedGroups(request),original=requested?.find(g=>g.id===group.id);
+ if(!original||!same(original.ids,group.ids)||!same(original.paths,group.paths)||!original.unitSync)return null;
+ // Earlier groups may already have completed before this unit group reached
+ // the front. Their exact queued results are its archived before-image.
+ const start=request.queue.findIndex(q=>q.groupId===group.id),prior=request.queue.slice(0,start);
+ for(const q of prior){if(!same(q.base,request.baseline[q.path]||[]))return null;request.baseline[q.path]=C.clone(q.local)}
+ request.queue=request.queue.slice(start);request.groups=request.groups.filter(g=>!prior.some(q=>q.groupId===g.id));
+ // The archived request must itself be a complete real producer result. A
+ // hand-written before-image or a receipt marker is not a substitute for it.
+ let old;try{old=explicitProductionRecoveryState(request)}catch{return null}
+ if(!old||!explicitQueuedBuild(request,{state:C.clone(old),baseline:C.clone(request.baseline)},scope,group.paths[1].slice(7,-5)))return null;
+ const marker=input.baseline?.[cp]?.find(r=>r.id==='catalog')?.catalogUnitSync;
+ if(!marker||marker.id!==group.id||!same(marker,original.queue[0].local.find(r=>r.id==='catalog')?.catalogUnitSync))return null;
+ const reduced=C.clone(original.queue),received=[];
+ for(const id of group.acked){
+  const q=reduced.shift(),actual=input.baseline?.[q?.path];if(!q||q.id!==id||!Array.isArray(actual))return null;
+  if(q.path===cp){if(!explicitQueuedCatalogSame(q.local,actual))return null}
+  else{
+   // Native does not field-merge a catalog unit month. Require the actual
+   // accepted payload, not merely a row count or an equal final unit value.
+   if(!same(q.local,actual))return null;
+   const prior=(witness?.receivedMonths||[]).find(entry=>entry.id===id&&entry.path===q.path),receipt=prior?.request||q;
+   if(!explicitUnitPrefixReceived(receipt,actual))return null;
+   received.push({id,path:q.path,request:C.clone(receipt)});
+  }
+  for(const later of reduced.filter(item=>item.path===q.path)){
+   let merge;try{merge=S.mergeRecords(later.base,later.local,actual)}catch{return null}
+   if(merge.conflicts.length)return null;later.base=C.clone(actual);later.local=C.clone(merge.records);
+  }
+ }
+ if(!same(reduced,input.queue.filter(q=>q.groupId===group.id)))return null;
+ const full=C.clone(original.queue),prepared=C.clone(input.baseline[cp]);full[0].local=prepared;full[full.length-1]=C.clone(reduced.at(-1));
+ const envelope=C.clone(input);envelope.queue=full.concat(envelope.queue.filter(q=>q.groupId!==group.id));
+ envelope.baseline[cp]=C.clone(full[0].base);for(const q of full.slice(1,-1))envelope.baseline[q.path]=C.clone(q.base);
+ const restored=envelope.groups.find(g=>g.id===group.id);restored.acked=[];restored.status='pending';
+ if(!explicitQueuedGroups(envelope))return null;
+ // Rebase may have changed the raw catalog order. Prove that reconstructed
+ // complete transaction too, before granting it any explicit replay rights.
+ let base;try{base=explicitProductionRecoveryState(envelope)}catch{return null}
+ if(!base||!explicitQueuedBuild(envelope,{state:C.clone(base),baseline:C.clone(envelope.baseline)},scope,group.paths[1].slice(7,-5)))return null;
+ return{scope,envelope,prepared:{groupId:group.id,prepareId:group.ids[0],marker:C.clone(marker),acked:C.clone(group.acked),receivedMonths:received}};
+}
+async function explicitUnitPrefixResolve(owner,input,valid){
+ if(!explicitUnitPrefixGroup(input))return null;
+ const cached=explicitUnitPrefixCached(input,owner.key);if(cached)return cached;
+ for(const ref of [...(input.explicitSaveRecoveries||[])].reverse()){
+  if(!valid())return null;
+  if(typeof ref.key!=='string'||!ref.key.startsWith(owner.key+':recovery:')||!['acknowledged-draft','ordered-queue'].includes(ref.kind))continue;
+  let archive;try{archive=await S.localGet(ref.key)}catch{return null}if(!valid())return null;
+  let proof;try{proof=explicitUnitPrefixFromArchive(input,archive,owner.key)}catch{proof=null}
+  if(proof){explicitUnitPrefixRemember(input,proof);return proof}
+ }
+ return null;
+}
+function explicitUnitPrefixWitness(proof,plan,scope){
+ const received=proof?.prepared,cp='meta/catalog.json',group=plan.groups.find(g=>g.unitSync&&(!received||g.id===received.groupId));if(!group)return null;
+ const groupIds=plan.groups.filter(g=>g.unitSync).map(g=>g.id);
+ if(!received)return{schema:1,scope,groupId:group.id,groupIds,request:C.clone(plan),receivedMonths:[]};
+ const prepared=C.clone(plan.baseline[cp]),before=C.clone(prepared);delete before.find(r=>r.id==='catalog').catalogUnitSync;
+ const complete=[],rest=plan.queue.filter(q=>q.groupId===group.id);
+ for(let i=0;i<group.ids.length;i++){
+  const id=group.ids[i],path=group.paths[i];
+  if(i===0)complete.push({id,groupId:group.id,path,base:C.clone(before),local:C.clone(prepared),unitPhase:'prepare'});
+  else if(group.acked.includes(id))complete.push({id,groupId:group.id,path,base:C.clone(plan.baseline[path]),local:C.clone(plan.baseline[path])});
+  else{const q=rest.find(q=>q.id===id);if(!q)return null;complete.push(C.clone(q))}
+ }
+ const request=C.clone(plan);delete request.originalIds;delete request.originalGroups;request.baseline[cp]=before;
+ request.queue=complete.concat(request.queue.filter(q=>q.groupId!==group.id));const full=request.groups.find(g=>g.id===group.id);full.acked=[];full.status='pending';
+ return{schema:1,scope,groupId:group.id,groupIds,request,receivedMonths:C.clone(received.receivedMonths||[])};
 }
 
 AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);
