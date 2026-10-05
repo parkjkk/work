@@ -4458,6 +4458,24 @@ function jobLookup(state,month){
  };
 }
 function jobsContaining(jobs,row){return jobs.filter(job=>job.records?.some(record=>record.id===row.id&&record.date===row.date))}
+// A server-confirmed link added to the same previously unlinked source row
+// does not change what an already entered LOT, remark or hours value means.
+// This is only an intent boundary: inspect still validates the received target
+// against the complete, current job ledger below. Existing links and explicit
+// null unlink requests never receive this exception.
+function canAdoptAddedScheduleTarget(before,local,remote){
+ if(!before||!local||!remote||own(before,'scheduleTarget')||own(local,'scheduleTarget'))return false;
+ try{if(!C.scheduleTargetValue(remote.scheduleTarget))return false}catch{return false}
+ const identity=['id','date','worker','product','jobId','sourceTarget','source','sourceRow','templateSource'];
+ if(identity.some(field=>!equal(before[field],local[field])||!equal(before[field],remote[field]))||['key','repo','path','id'].some(field=>!equal(before.sourceIntegration?.[field],local.sourceIntegration?.[field])||!equal(before.sourceIntegration?.[field],remote.sourceIntegration?.[field])))return false;
+ const original=clone(before),masked=clone(local),restore=(object,basis,key)=>{if(own(basis,key))object[key]=clone(basis[key]);else delete object[key]};
+ for(const field of ['hours','lot'])restore(masked,original,field);
+ for(const [container,fields]of [['fieldDetails',['remark']],['explicit',['hours','lot']]]){
+  if(masked[container]!=null&&(typeof masked[container]!=='object'||Array.isArray(masked[container])))return false;
+  if(masked[container]){for(const field of fields)restore(masked[container],original[container]||{},field);if(original[container]==null&&!Object.keys(masked[container]).length)restore(masked,original,container)}
+ }
+ delete original.rev;delete masked.rev;return equal(original,masked);
+}
 function number(value){
  if(empty(value))return{value:null};
  if(typeof value!=='number'&&typeof value!=='string')return{error:true};
@@ -4608,7 +4626,8 @@ function inspect(state,draft,options={}){
   if(!fields.length&&!sourceFields.length)continue;
   if(!remote){counts.changed++;conflict(row.id,'deleted','수정한 행이 다른 곳에서 삭제되었습니다.');continue}
   const r=values(remote),remoteFields=changedFields(b,r),merged=clone(remote);
-  const identityChanged=['date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow','templateSource'].some(f=>!equal(b[f],r[f]))||!equal(old.sourceIntegration?.key,remote.sourceIntegration?.key);
+  const adoptedTarget=options.preferLocalEdits===true&&canAdoptAddedScheduleTarget(old,row,remote);
+  const identityChanged=!adoptedTarget&&(['date','worker','product','jobId','scheduleTarget','sourceTarget','source','sourceRow','templateSource'].some(f=>!equal(b[f],r[f]))||!equal(old.sourceIntegration?.key,remote.sourceIntegration?.key));
   if(options.preferLocalEdits===true&&identityChanged)conflict(row.id,'scheduleTarget','입력하던 생산기록의 날짜·작업자·품목 또는 작업 연결이 변경되었습니다. 최신 작업을 확인해 주세요.');
   const completionFields=['productionCompletion','productionPlanQty'],basisFields=['date','worker','product','jobId','scheduleTarget','plan','pours'];
   if(fields.some(f=>completionFields.includes(f))&&remoteFields.some(f=>basisFields.includes(f)&&!equal(r[f],n[f]))||remoteFields.some(f=>completionFields.includes(f)&&!equal(r[f],n[f]))&&fields.some(f=>basisFields.includes(f)))conflict(row.id,'productionCompletion','완료 기록과 생산·계획 기준이 동시에 변경되었습니다. 최신 누적을 확인해 주세요.');
@@ -4846,7 +4865,7 @@ function stockMetaApply(state,draft,options={}){
  }
  return next;
 }
-root.ScheduleBatch={create,patch,add,addTemplate,templateActive,remove,restore,inspect,apply,dirty,blank,memoValue,memoPatch,memoInspect,memoApply,stockMetaValue,stockMetaPatch,stockMetaInspect,stockMetaApply};
+root.ScheduleBatch={create,patch,add,addTemplate,templateActive,remove,restore,inspect,apply,dirty,blank,canAdoptAddedScheduleTarget,memoValue,memoPatch,memoInspect,memoApply,stockMetaValue,stockMetaPatch,stockMetaInspect,stockMetaApply};
 if(typeof module!=='undefined')module.exports=root.ScheduleBatch;
 })(globalThis);
 </script><script>(function(root){'use strict';
@@ -10862,7 +10881,7 @@ function explicitProductionRecoveryRemote(plan,snapshot){
  const allow=new Set(['rows','fieldAttendance','jobs','jobUndo','reservationBindings','scheduleAsOf','plans','plaster','issues','history','rev']);
  for(const field of new Set([...Object.keys(base),...Object.keys(m)]))if(!allow.has(field)&&!explicitRecoverySame(base[field],m[field]))return false;
  const events=explicitRecoveryIndex(m.history||[]);if(!events)return false;let previous=-1;for(const event of base.history||[]){const index=(m.history||[]).findIndex(row=>row.id===event.id);if(index<=previous||!explicitRecoverySame(events.get(event.id),event))return false;previous=index}
- const records=explicitRecoveryIndex(m.rows);if(!records)return false;for(const id of plan.covered){const row=records.get(id),old=plan.baseState.months[plan.key].rows.find(row=>row.id===id);if(!row||!explicitProductionRecoveryIdentity(old,row))return false}
+ const records=explicitRecoveryIndex(m.rows);if(!records)return false;for(const id of plan.covered){const row=records.get(id),old=plan.baseState.months[plan.key].rows.find(row=>row.id===id),input=plan.draft.rows.find(row=>row.id===id);if(!row||!explicitProductionRecoveryIdentity(old,row)&&!ScheduleBatch.canAdoptAddedScheduleTarget?.(old,input,row))return false}
  try{return ScheduleBatch.inspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok&&ScheduleBatch.memoInspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok}catch{return false}
 }
 
@@ -11309,12 +11328,20 @@ function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
    const fields=kind==='production'?explicitProductionRecoveryChanges(original.before,original.after):kind==='plaster'?['actual']:['machine','replacement','issued','reason'].filter(field=>!same(field,original.before,original.after));
    if(!fields||fields.some(field=>!same(field,event.after,original.after)))return null;
   }
-  const draft=C.clone(g.draft),base=explicitRecoveryIndex(draft.baseRows),rows=explicitRecoveryIndex(draft.rows);if(!base||!rows)return null;let changed=false;
+  const draft=C.clone(g.draft),base=explicitRecoveryIndex(draft.baseRows),rows=explicitRecoveryIndex(draft.rows);if(!base||!rows)return null;let changed=false,adoptedTarget=false;
   for(const entry of intent.entries){
    const id=kind==='plaster'?'plaster-day:'+entry.date:entry.id,b=base.get(id),row=rows.get(id),ack=receipt[ledger]?.find(record=>kind==='plaster'?record.date===entry.date:record.id===entry.id),now=current[ledger]?.find(record=>record.id===ack?.id);
    if(!b||!row||!ack||!now||draft.deleted?.some(deletion=>deletion.id===id))return null;
    if(kind==='production'){
-    if(!explicitProductionRecoveryLocalIdentity(entry.first,b)||!explicitProductionRecoveryLocalIdentity(entry.first,row)||!explicitProductionRecoveryIdentity(entry.last,ack)||!explicitProductionRecoveryIdentity(ack,now))return null;
+    if(!explicitProductionRecoveryLocalIdentity(entry.first,b)||!explicitProductionRecoveryLocalIdentity(entry.first,row)||!explicitProductionRecoveryIdentity(ack,now))return null;
+    if(!explicitProductionRecoveryIdentity(entry.last,ack)){
+     // A confirmed source link can accompany a received metadata-only edit.
+     // Prove both the submitted intent and today's remaining draft before
+     // adopting it; later quantity/link edits must keep their original basis.
+     const canAdopt=ScheduleBatch.canAdoptAddedScheduleTarget;
+     if(!canAdopt?.(entry.first,entry.last,ack)||!canAdopt(entry.first,b,now)||!canAdopt(entry.first,row,now))return null;
+     b.scheduleTarget=C.clone(now.scheduleTarget);row.scheduleTarget=C.clone(now.scheduleTarget);adoptedTarget=true;
+    }
    }else if(b.date!==entry.date||row.date!==entry.date||ack.date!==entry.date||now.date!==entry.date||kind==='issues'&&[b,row,ack,now].some(record=>record.product!==entry.last.product))return null;
    if(kind==='plaster'&&(entry.first&&ack.id!==entry.first.id||draft.plasterRecordIds?.[entry.date]!=null&&draft.plasterRecordIds[entry.date]!==entry.first?.id&&draft.plasterRecordIds[entry.date]!==ack.id))return null;
    for(const field of entry.fields){
@@ -11327,7 +11354,12 @@ function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
    }
    if(kind==='plaster'){draft.plasterRecordIds??={};draft.plasterRecordIds[entry.date]=ack.id}
   }
-  if(!changed)return null;draft.revision=(draft.revision||0)+1;return draft;
+  if(!changed)return null;
+  if(adoptedTarget){
+   const receivedDraft=ScheduleBatch.create(acknowledgedState,key,g.scope);
+   if(!ScheduleBatch.inspect(acknowledgedState,receivedDraft,{scope:g.scope}).ok||!ScheduleBatch.inspect(latest,draft,{scope:g.scope,preferLocalEdits:true}).ok)return null;
+  }
+  draft.revision=(draft.revision||0)+1;return draft;
  }catch{return null}
 }
 function explicitQueuedDraftsAnyIntent(g,envelope){return g?.id==='plan-jobs'?(typeof explicitPlanDraftAckIntent==='function'?explicitPlanDraftAckIntent(g,envelope):null):explicitQueuedDraftsIntent(g,envelope)}
