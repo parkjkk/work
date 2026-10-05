@@ -11309,6 +11309,10 @@ function explicitQueuedDraftsIntent(g,envelope){
   for(const group of groups){
    const before=C.clone(original);let local=C.clone(before);
    for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return null;local=explicitQueuedApply(local,q.path,q.local);raw[q.path]=C.clone(q.local)}
+   // A proved catalog transaction can sit after this table's submission. It
+   // updates dependent units, but does not turn those values into production
+   // inputs or invalidate the earlier table's acknowledgement proof.
+   if(group.unitSync){if(!explicitQueuedUnitReplay(before,local,before,group))return null;original=local;continue}
    const b=before.months[key],l=local.months[key];
    if(b&&l&&!explicitRecoverySame(b[ledger],l[ledger])){
     if(!explicitLedgerQueueReplay(before,local,before,group,g.scope,key))return null;
@@ -11613,21 +11617,82 @@ function explicitQueuedGroups(envelope){
  if(!Array.isArray(queue)||!queue.length||!Array.isArray(groups))return rejectSaveProof('QG01');
  const ids=new Set(),seen=new Set(),ordered=[];
  for(const q of queue){
-  if(!q?.id||ids.has(q.id)||!q.groupId||q.unitPhase||!Array.isArray(q.base)||!Array.isArray(q.local)||!(/^(?:meta\/catalog|months\/\d{4}-(?:0[1-9]|1[0-2]))\.json$/).test(q.path))return rejectSaveProof('QG02');
+  if(!q?.id||ids.has(q.id)||!q.groupId||!Array.isArray(q.base)||!Array.isArray(q.local)||!(/^(?:meta\/catalog|months\/\d{4}-(?:0[1-9]|1[0-2]))\.json$/).test(q.path))return rejectSaveProof('QG02');
   ids.add(q.id);
   if(ordered.at(-1)?.id!==q.groupId){
    if(seen.has(q.groupId))return rejectSaveProof('QG03');seen.add(q.groupId);
    const matches=groups.filter(group=>group.id===q.groupId),group=matches[0];
-   if(matches.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||group.status!=='pending'||!Array.isArray(group.ids)||!Array.isArray(group.paths))return rejectSaveProof('QG04');
+   if(matches.length!==1||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||group.status!=='pending'||!Array.isArray(group.ids)||!Array.isArray(group.paths))return rejectSaveProof('QG04');
    ordered.push({...C.clone(group),queue:[]});
   }
   ordered.at(-1).queue.push(C.clone(q));
  }
  for(const group of ordered){
   const paths=group.queue.map(q=>q.path);
-  if(new Set(paths).size!==paths.length||!explicitRecoverySame(group.ids,group.queue.map(q=>q.id))||!explicitRecoverySame(group.paths,paths))return rejectSaveProof('QG05');
+  if(!explicitRecoverySame(group.ids,group.queue.map(q=>q.id))||!explicitRecoverySame(group.paths,paths))return rejectSaveProof('QG05');
+  if(group.unitSync){if(!explicitQueuedUnitShape(group))return rejectSaveProof('QG06')}
+  else if(new Set(paths).size!==paths.length||group.queue.some(q=>q.unitPhase))return rejectSaveProof('QG05');
  }
  return ordered;
+}
+function explicitQueuedUnitShape(group){
+ const same=explicitRecoverySame,qs=group.queue,first=qs[0],last=qs.at(-1),middle=qs.slice(1,-1);
+ if(group.unitSync!==true||qs.length<3||qs.some(q=>q.viewOnly)||first.path!=='meta/catalog.json'||last.path!==first.path||first.unitPhase!=='prepare'||last.unitPhase!=='finish'||middle.some(q=>q.unitPhase||!/^months\//.test(q.path))||new Set(middle.map(q=>q.path)).size!==middle.length)return false;
+ const prepared=C.clone(first.base),meta=prepared.find(r=>r.id==='catalog'),marker=first.local.find(r=>r.id==='catalog')?.catalogUnitSync;
+ if(!meta||meta.catalogUnitSync||last.local.find(r=>r.id==='catalog')?.catalogUnitSync||!marker||marker.id!==group.id||!Array.isArray(marker.months)||!marker.months.length||new Set(marker.months).size!==marker.months.length||marker.months.some(k=>!middle.some(q=>q.path==='months/'+k+'.json'))||Object.keys(marker).some(k=>!['id','months'].includes(k)))return false;
+ meta.catalogUnitSync=C.clone(marker);return same(prepared,first.local)&&same(first.local,last.base);
+}
+// Catalog updates are a Native three-phase transaction, not three unrelated
+// edits. Prove their month effects with the same producer before replaying them.
+// No quantity or stale whole-month overwrite is granted by this proof.
+function explicitQueuedUnitReplay(base,local,current,group){
+ const same=explicitRecoverySame,first=group.queue[0],last=group.queue.at(-1),paths=new Set(group.paths),keys=group.queue.slice(1,-1).map(q=>q.path.slice(7,-5));
+ if(!explicitQueuedUnitShape(group)||base.catalogUnitSync||current.catalogUnitSync)return null;
+ const derive=(source,catalog)=>{
+  const next=explicitQueuedApply(C.clone(source),'meta/catalog.json',catalog),renames=next.products.flatMap(p=>{const old=source.products.find(b=>b.id===p.id);return old&&old.name!==p.name?[{id:p.id,from:old.name,to:p.name}]:[]});
+  C.renameCatalogReferences(next,renames);C.refreshCatalogUnits(next);return next;
+ };
+ let proof;try{proof=derive(base,last.local)}catch{return null}
+ const originalEvents=new Map();
+ for(const key of Object.keys(proof.months)){
+  const before=base.months[key],wanted=local.months[key],calculated=proof.months[key];if(!before||!wanted)return null;
+  const n=(before.history||[]).length,events=(calculated.history||[]).slice(n),submitted=(wanted.history||[]).slice(n);
+  if(events.length!==submitted.length)return null;
+  for(let i=0;i<events.length;i++){
+   const event=submitted[i];if(!event?.id||!event.at||event.type!=='관리 기준값 연결 반영'||originalEvents.has(key+'/'+event.after?.id))return null;
+   events[i].id=event.id;events[i].at=event.at;if(!same(events[i],event))return null;
+   originalEvents.set(key+'/'+event.after.id,event);
+  }
+  if(!same(ScheduleNative.packMonth(calculated),ScheduleNative.packMonth(wanted)))return null;
+  if(!same(ScheduleNative.packMonth(before),ScheduleNative.packMonth(wanted))&&!paths.has('months/'+key+'.json'))return null;
+ }
+ if(!same(ScheduleNative.packCatalog(proof),ScheduleNative.packCatalog(local)))return null;
+ // Original month ownership and source rows must still exist. Latest quantities,
+ // attendance, work links and manual unit overrides remain the latest values.
+ for(const key of keys){
+  const b=base.months[key],r=current.months[key];if(!b||!r||b.closed||r.closed||b.closeSnapshot||r.closeSnapshot)return null;
+  for(const row of b.rows||[])if(!same(row,local.months[key].rows.find(v=>v.id===row.id))){
+   const found=(r.rows||[]).filter(v=>v.id===row.id);
+   if(found.length!==1||['id','date','worker','product','source','sourceRow','templateSource'].some(k=>!same(row[k],found[0][k]))||!same(row.sourceIntegration?.key,found[0].sourceIntegration?.key))return null;
+  }
+ }
+ let merged;try{merged=S.mergeRecords(first.base,last.local,ScheduleNative.packCatalog(current))}catch{return null}
+ if(merged.conflicts.length)return null;
+ let next;try{next=derive(current,merged.records)}catch{return null}
+ const changed=[];
+ for(const [key,m]of Object.entries(next.months)){
+  const old=current.months[key];if(!old)return null;
+  for(const event of (m.history||[]).slice((old.history||[]).length)){
+   const original=originalEvents.get(key+'/'+event.after?.id);if(original){event.id=original.id;event.at=original.at}
+   if((old.history||[]).some(e=>e.id===event.id))return null;
+  }
+  if(!same(ScheduleNative.packMonth(old),ScheduleNative.packMonth(m)))changed.push(key);
+ }
+ if(ScheduleNative.catalogUnitIssues(next).length)return null;
+ const months=[...new Set([...keys,...changed])],baseCatalog=ScheduleNative.packCatalog(current),prepared=C.clone(baseCatalog);
+ prepared.find(r=>r.id==='catalog').catalogUnitSync={id:group.id,months};
+ const records=[{path:'meta/catalog.json',base:baseCatalog,local:prepared,unitPhase:'prepare'},...months.map(k=>({path:'months/'+k+'.json',base:ScheduleNative.packMonth(current.months[k]),local:ScheduleNative.packMonth(next.months[k])})),{path:'meta/catalog.json',base:C.clone(prepared),local:ScheduleNative.packCatalog(next),unitPhase:'finish'}];
+ return{state:next,records};
 }
 function explicitQueuedProducer(base,local,latest,group,scope,key){
  // A schedule surface can edit a previous month's manual job and this month's
@@ -11705,6 +11770,18 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
   const before=C.clone(original);let local=C.clone(before);
   for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return rejectSaveProof('QB04');try{local=explicitQueuedApply(local,q.path,q.local)}catch{return rejectSaveProof('QB05')}raw[q.path]=C.clone(q.local)}
   const key=group.queue.find(q=>q.path.startsWith('months/'))?.path.slice(7,-5)||viewMonth;
+  if(group.unitSync){
+   const unit=explicitQueuedUnitReplay(before,local,current,group);if(!unit)return rejectSaveProof('QB20');
+   const added=[];for(const record of unit.records){const id=C.id();queue.push({...record,id,groupId:group.id});added.push({id,path:record.path});nextBase[record.path]=C.clone(record.local)}
+   rebuiltGroups.push({id:group.id,ids:added.map(q=>q.id),paths:added.map(q=>q.path),acked:[],status:'pending',unitSync:true});
+   for(const k of Object.keys(unit.state.months)){
+    const actual=C.clone(unit.state.months[k].history||[]),positions=new Map(actual.map((event,i)=>[event.id,i]));
+    for(const event of proofHistory[k]||[])if(positions.has(event.id))actual[positions.get(event.id)]=C.clone(event);
+    for(const event of (local.months[k]?.history||[]).slice((before.months[k]?.history||[]).length))if(positions.has(event.id))actual[positions.get(event.id)]=C.clone(event);
+    proofHistory[k]=actual;
+   }
+   current=C.clone(unit.state);original=local;continue;
+  }
   const proofCurrent=C.clone(current);for(const [k,history]of Object.entries(proofHistory))if(proofCurrent.months[k])proofCurrent.months[k].history=C.clone(history);
   let staged=C.clone(proofCurrent),records=[],accepted=false,replayed;
   if(!group.queue.some(q=>q.viewOnly))try{accepted=explicitQueuedAcknowledged(before,local,current,group,scope,key);if(!accepted)replayed=explicitQueuedProducer(before,local,proofCurrent,group,scope,key)}catch{return rejectSaveProof('QB06')}
