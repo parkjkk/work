@@ -9915,21 +9915,34 @@ const ScheduleBackup=(()=>{
  const copy=x=>JSON.parse(JSON.stringify(x)),object=x=>!!x&&typeof x==='object'&&!Array.isArray(x),monthKey=x=>/^\d{4}-(?:0[1-9]|1[0-2])$/.test(x),offlineKey=x=>/^offline:[0-9a-f-]{36}$/i.test(x);
  const secret=/^(?:token|accessToken|refreshToken|githubToken|apiToken|pat|authorization|password|passwordHash|passwordDigest|passwordVerifier|adminPassword|pin|pinHash|pinVerifier|adminPin|verifier|authVerifier|accessVerifier|loginVerifier|connectionGate|accessGate|appAccess|credentials|authState|adminKey|viewKey|viewerKey|bridgeKey|apiKey|sessionKey|sessionToken|accessSession)$/i;
  const pat=/\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/g;
+ // The complete package retains a byte limit. Repeated recovery snapshots
+ // each have their own node budget; one old snapshot cannot spend another's.
+ function bytes(text){let n=0;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);n+=c<128?1:c<2048?2:c>=0xd800&&c<=0xdbff&&text.charCodeAt(i+1)>=0xdc00&&text.charCodeAt(i+1)<=0xdfff?(i++,4):3;if(n>LIMIT)return n}return n}
  function safe(value,{reject=false}={}){
-  let count=0;
-  const visit=(x,depth)=>{
-   if(depth>90||++count>2500000)throw Error('백업 자료의 크기 또는 중첩 단계가 너무 큽니다.');
-   if(x==null||typeof x==='boolean')return x;
-   if(typeof x==='number'){if(!Number.isFinite(x))throw Error('백업에 유효하지 않은 숫자가 있습니다.');return x}
-   if(typeof x==='string'){pat.lastIndex=0;if(reject&&pat.test(x))throw Error('접근 토큰이 포함된 파일은 가져올 수 없습니다.');pat.lastIndex=0;return x.replace(pat,'[접근 정보 제외]')}
-   if(Array.isArray(x))return x.map(v=>visit(v,depth+1));
-   if(!object(x))throw Error('JSON으로 보관할 수 없는 자료입니다.');const out={};
+  const roots=new WeakSet(),add=x=>{if(x&&typeof x==='object')roots.add(x)};
+  if(object(value)&&value.format===FORMAT&&value.version===VERSION){
+   const envelope=e=>{if(!object(e)||!object(e.baseline)||!Array.isArray(e.queue)||!Array.isArray(e.groups))return;add(e);add(e.state);for(const rows of Object.values(e.baseline))add(rows);for(const q of e.queue){add(q);if(Array.isArray(q?.base))add(q.base);if(Array.isArray(q?.local))add(q.local)}};
+   const archive=a=>{add(a);envelope(a);if(a?.acknowledgedDrafts?.schema===1){envelope(a.acknowledgedDrafts.originalEnvelope);add(a.acknowledgedDrafts.acknowledgedState)}if(a?.unitReplayWitness?.schema===1)envelope(a.unitReplayWitness.request)};
+   add(value.state);const devices=[value.device],seen=new WeakSet(),files=r=>{if(object(r?.files))for(const file of Object.values(r.files))add(file)};
+   for(let i=0;i<devices.length;i++){const d=devices[i];if(!object(d)||seen.has(d))continue;seen.add(d);add(d.state);envelope(d.envelope);if(Array.isArray(d.entries))for(const e of d.entries)add(e?.value);if(Array.isArray(d.recoveryEntries))for(const e of d.recoveryEntries)archive(e?.value);
+    const source=d.recovery?.source;if(object(source)&&typeof source.scope==='string'&&Array.isArray(source.entries))devices.push(source);files(d.recovery?.repository);
+   }files(value.repository);
+  }
+  let total=0;const charge=n=>{total+=n;if(total>LIMIT)throw Error('120MB 이하의 JSON 백업 파일을 사용해 주세요.');};
+  const visit=(x,depth,budget)=>{
+   if(x&&typeof x==='object'&&roots.has(x))budget={count:0};
+   if(depth>90||++budget.count>2500000)throw Error('백업 자료의 크기 또는 중첩 단계가 너무 큽니다.');
+   if(x==null){charge(4);return x}if(typeof x==='boolean'){charge(x?4:5);return x}
+   if(typeof x==='number'){if(!Number.isFinite(x))throw Error('백업에 유효하지 않은 숫자가 있습니다.');charge(String(x).length);return x}
+   if(typeof x==='string'){pat.lastIndex=0;if(reject&&pat.test(x))throw Error('접근 토큰이 포함된 파일은 가져올 수 없습니다.');pat.lastIndex=0;const clean=x.replace(pat,'[접근 정보 제외]');charge(bytes(JSON.stringify(clean)));return clean}
+   if(Array.isArray(x)){charge(2+Math.max(0,x.length-1));return Array.from(x,v=>visit(v===undefined?null:v,depth+1,budget))}
+   if(!object(x))throw Error('JSON으로 보관할 수 없는 자료입니다.');const out={};let fields=0;charge(2);
    for(const [key,v]of Object.entries(x)){
     if(['__proto__','prototype','constructor'].includes(key))throw Error('허용하지 않는 JSON 속성이 있습니다.');
     if(secret.test(key)){if(reject)throw Error('접근 정보가 포함된 파일은 가져올 수 없습니다.');continue}
-    if(v!==undefined)out[key]=visit(v,depth+1);
+    if(v!==undefined){charge(bytes(JSON.stringify(key))+1+(fields++?1:0));out[key]=visit(v,depth+1,budget)}
    }return out;
-  };return visit(value,0);
+  };return visit(value,0,{count:0});
  }
  function ids(rows,label,required=false){if(!Array.isArray(rows))throw Error(label+' 목록이 없습니다.');const seen=new Set();for(const r of rows){if(!object(r))throw Error(label+' 행 형식을 확인해 주세요.');if(required&&(typeof r.id!=='string'||!r.id))throw Error(label+' 기록 ID가 없습니다.');if(r.id!=null){if(typeof r.id!=='string'||seen.has(r.id))throw Error(label+' 기록 ID가 중복되거나 잘못됐습니다.');seen.add(r.id)}}}
  function validateState(s){
@@ -9974,7 +9987,7 @@ const ScheduleBackup=(()=>{
   return b;
  }
  function parse(text){
-  if(typeof text!=='string'||text.length>LIMIT)throw Error('120MB 이하의 JSON 백업 파일을 선택해 주세요.');let x;try{x=JSON.parse(text)}catch{throw Error('JSON 파일을 끝까지 읽지 못했습니다. 기존 자료는 유지됩니다.')}
+  if(typeof text!=='string'||bytes(text)>LIMIT)throw Error('120MB 이하의 JSON 백업 파일을 선택해 주세요.');let x;try{x=JSON.parse(text)}catch{throw Error('JSON 파일을 끝까지 읽지 못했습니다. 기존 자료는 유지됩니다.')}
   if(object(x)&&!x.format&&x.app==='johyeong-schedule'&&x.schema===1){
    const old=safe(x,{reject:true}),queue=old._pendingOperations||[];delete old._pendingOperations;validateState(old);if(!Array.isArray(queue))throw Error('이전 백업의 전송대기 목록을 확인해 주세요.');const baseline={};for(const q of queue)if(pathOK(q?.path)&&Array.isArray(q.base))baseline[q.path]=copy(q.base);
    const migrated=create({state:old,scope:'legacy-backup',envelope:queue.length?{state:old,queue,baseline,groups:[]}:null});migrated.coverage.warnings.unshift('이전 형식 백업입니다. 당시 파일에 없던 표 초안·전송 그룹·추가 원격 JSON은 복원할 수 없습니다.');return migrated;
@@ -10056,7 +10069,7 @@ async function backupImportFile(file){
 async function backupAction(action){
  if(action==='restoreBackupDevice'){backupAllowed();const source=workspace?.offline&&workspace.record.recovery?.source;if(!source?.state)throw Error('별도로 보관된 기기 작업본이 없습니다.');const b=ScheduleBackup.create({state:source.state,scope:source.scope,envelope:source.envelope,entries:source.entries,recoveryEntries:source.recoveryEntries||[],preferences:source.preferences,repository:workspace.record.recovery.repository,recovery:source.recovery}),text=JSON.stringify(b);return backupImportFile({size:text.length,text:async()=>text})}
  if(action==='importBackup'){backupAllowed();const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=()=>backupImportFile(input.files?.[0]).catch(e=>toast(e.message));input.click();return true}
- if(action==='export'||action==='remoteBackup'){await backupBusy(async()=>{const b=await backupSnapshot(action==='remoteBackup');download(JSON.stringify(b,null,2),'조형_'+(action==='remoteBackup'?'전체':'기기')+'_JSON백업_'+today()+'.json','application/json');toast((action==='remoteBackup'?'원격 전체 JSON과 기기 변경':'기기 원장과 미저장 초안')+'을 백업했습니다. 접근 정보는 제외했습니다.')});return true}
+ if(action==='export'||action==='remoteBackup'){await backupBusy(async()=>{const b=await backupSnapshot(action==='remoteBackup');download(JSON.stringify(b),'조형_'+(action==='remoteBackup'?'전체':'기기')+'_JSON백업_'+today()+'.json','application/json');toast((action==='remoteBackup'?'원격 전체 JSON과 기기 변경':'기기 원장과 미저장 초안')+'을 백업했습니다. 접근 정보는 제외했습니다.')});return true}
  if(action==='leaveOffline'){if(!workspace?.offline&&!backupSession.restoreError)return true;await backupBusy(async()=>{const before=workspace?.offline?await backupSnapshot(false):null;await ScheduleBackup.atomic([...(before?before.device.entries.map(e=>[e.key,e.value]):[]),...(before?[['backup.v1:exit:'+crypto.randomUUID(),before]]:[]),[ScheduleBackup.SELECTED,null]]);workspace?.close();workspace=null;state=null;month='';localReadError='';backupSession.restoreError=false;booting=true;await backupRestoreBefore();render()});return true}
  return false;
 }
@@ -11316,6 +11329,12 @@ function explicitPlanDraftAckIntent(g,envelope){
   return slots.size?{scope:g.scope,month:g.month,slots:[...slots.values()],events}:null;
  }catch{return null}
 }
+function explicitPlanDraftGeneratedOverrides(before,after){
+ const same=explicitRecoverySame;
+ if(before!==undefined&&(!before||typeof before!=='object'||Array.isArray(before))||!after||typeof after!=='object'||Array.isArray(after))return false;
+ for(const field of new Set([...Object.keys(before||{}),...Object.keys(after)]))if(!same(before?.[field],after[field])&&(!['machines','daily','routing'].includes(field)&&!/^handoffDaily:.+/.test(field)||typeof after[field]!=='string'||!after[field]))return false;
+ return true;
+}
 function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
  try{
   if(!intent||g.id!=='plan-jobs'||g.scope!==intent.scope||g.month!==intent.month||!latest.months[g.month]||latest.months[g.month].closed||latest.months[g.month].closeSnapshot)return null;
@@ -11373,19 +11392,45 @@ function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
      // A source-derived job is already visible in the editor before its
      // first conditions save creates the persisted jobs row. Its original
      // projection proves that existing base; it is not a second creation.
-     if(!l||deleted||!row||b&&((b._ownerMonth||g.month)!==slot.owner||(l._ownerMonth||g.month)!==slot.owner||!slot.beforeProjected||!same(clean(b),clean(slot.beforeProjected))))return null;const expected=clean(slot.after),local=clean(l),next=C.clone(row),allowed=new Set([...pgCommitFields,'worker','product','barMemo']);
+     const projected=clean(slot.beforeProjected),base=clean(b);
+     if(!l||deleted||!row||b&&((b._ownerMonth||g.month)!==slot.owner||(l._ownerMonth||g.month)!==slot.owner||!projected))return null;const expected=clean(slot.after),local=clean(l),next=C.clone(row),allowed=new Set([...pgCommitFields,'worker','product','barMemo']);
+     const generatedOverrides=[projected?.fieldScheduleOverrides,expected.fieldScheduleOverrides];
+     if(!same(projected?.fieldScheduleOverrides,expected.fieldScheduleOverrides)&&!explicitPlanDraftGeneratedOverrides(projected?.fieldScheduleOverrides,expected.fieldScheduleOverrides))return null;
      const followers=intent.slots.filter(other=>other.kind==='job'&&other.owner===slot.owner&&other.id===slot.id);
      if(followers.length){
       const events=intent.events.filter(item=>item.owner===slot.owner&&['jobs','삭제:jobs'].includes(item.event.type)&&(item.event.after?.id||item.event.before?.id)===slot.id),created=events.findIndex(item=>item.event.id===slot.event.id);
       if(slot.before||created<0||events.some((item,index)=>index!==created&&(!item.event.before||!item.event.after)))return null;
+      // Different queued conditions can generate different provenance keys.
+      // Prove every metadata transition and its received event before using
+      // the final signature or an intermediate UI-reconciled signature.
+      let provenance=expected.fieldScheduleOverrides;
+      for(const {event}of events.slice(created+1)){
+       const receipt=received.get(event.id),before=event.before.fieldScheduleOverrides,after=event.after.fieldScheduleOverrides;
+       if(!same(before,provenance)||!receipt||!same(receipt.before?.fieldScheduleOverrides,before)||!same(receipt.after?.fieldScheduleOverrides,after)||!same(before,after)&&!explicitPlanDraftGeneratedOverrides(before,after))return null;
+       provenance=after;generatedOverrides.push(after);
+      }
+      set(expected,'fieldScheduleOverrides',provenance);
       for(const field of followers){
        const position=events.findIndex(item=>item.event.id===field.event.id);
        if(position<=created||!allowed.has(field.field)||!same(field.before,expected[field.field])||!Object.keys(field.identity).every(key=>same(expected[key],field.identity[key])))return null;
        set(expected,field.field,field.after);creationFields.add(field);
       }
      }
+     // Reconciliation may copy generated metadata into a still-old business
+     // baseline. Normalize only the comparison copy, and only to a signature
+     // proved in the original received producer chain above.
+     if(base&&projected&&generatedOverrides.some(value=>same(value,base.fieldScheduleOverrides)))set(base,'fieldScheduleOverrides',projected.fieldScheduleOverrides);
+     if(b&&!same(base,projected))return null;
      if(b){const stored=(owner.jobs||[]).filter(j=>j.id===slot.id);if(stored.length!==1||stored[0].deleted||['id','worker','product','manual','sourceRowId'].some(field=>!same(stored[0][field],expected[field]))||!same(stored[0].originId||stored[0].id,expected.originId||expected.id))return null}
      if(['id','worker','product','manual','sourceRowId'].some(field=>!same(row[field],expected[field]))||!same(row.originId||row.id,expected.originId||expected.id))return null;
+     // The first persisted job can add provenance for a manager's override of
+     // field-reported conditions. It was generated after this unchanged draft
+     // baseline; acknowledge only those known metadata additions, retaining
+     // today's provenance in next rather than copying an old signature back.
+     if(b&&!same(local.fieldScheduleOverrides,expected.fieldScheduleOverrides)){
+      if(!generatedOverrides.some(value=>same(value,local.fieldScheduleOverrides)))return null;
+      set(local,'fieldScheduleOverrides',expected.fieldScheduleOverrides);
+     }
      for(const field of ['originId'])if(local[field]==null&&!same(local[field],expected[field]))local[field]=expected[field];
      for(const field of new Set([...Object.keys(expected),...Object.keys(local)]))if(!same(expected[field],local[field])){
       if(!allowed.has(field))return null;
@@ -11540,6 +11585,19 @@ function explicitQueuedDraftsRebase(g,intent,acknowledgedState,latest){
  }catch{return null}
 }
 function explicitQueuedDraftsAnyIntent(g,envelope){return g?.id==='plan-jobs'?(typeof explicitPlanDraftAckIntent==='function'?explicitPlanDraftAckIntent(g,envelope):null):explicitQueuedDraftsIntent(g,envelope)}
+// The first archived plan-intent shape predates beforeProjected. Rebuild that
+// one historical shape from today's fully proved original queue, then compare
+// the entire object. Do not modify the archive or accept partial slot matches.
+function explicitQueuedDraftsIntentCompatible(g,intent,saved){
+ if(explicitRecoverySame(intent,saved))return true;
+ if(g?.id!=='plan-jobs'||!Array.isArray(intent?.slots)||!Array.isArray(saved?.slots)||intent.slots.length!==saved.slots.length)return false;
+ const legacy=C.clone(intent);let omitted=0;
+ for(let i=0;i<legacy.slots.length;i++)if(legacy.slots[i].kind==='row'){
+  if(!Object.hasOwn(legacy.slots[i],'beforeProjected')||Object.hasOwn(saved.slots[i]||{},'beforeProjected'))return false;
+  delete legacy.slots[i].beforeProjected;omitted++;
+ }
+ return omitted>0&&explicitRecoverySame(legacy,saved);
+}
 function explicitQueuedDraftsAnyRebase(g,intent,receipt,latest){return g?.id==='plan-jobs'?(typeof explicitPlanDraftAckRebase==='function'?explicitPlanDraftAckRebase(g,intent,receipt,latest):null):explicitQueuedDraftsRebase(g,intent,receipt,latest)}
 function explicitQueuedDraftsArchive(captured,caller,acknowledgedState){
  if(!captured||!acknowledgedState)return null;
@@ -11702,7 +11760,7 @@ async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true)
    if(typeof explicitUnitPrefixResolve==='function')await explicitUnitPrefixResolve(owner,original,current);
    if(!current())throw Error('저장 확인 중 입력 또는 연결이 바뀌었습니다. 새 입력은 보관했습니다.');
    const intent=explicitQueuedDraftsAnyIntent(g,original);
-   const rebased=intent&&explicitRecoverySame(intent,records[0].intent)&&explicitQueuedDraftsAnyRebase(g,intent,evidence.acknowledgedState,latest);
+   const rebased=intent&&explicitQueuedDraftsIntentCompatible(g,intent,records[0].intent)&&explicitQueuedDraftsAnyRebase(g,intent,evidence.acknowledgedState,latest);
    if(rebased)return{draft:rebased,matched:true};
   }
   if(fullMatch||records.length||!typed&&!full)throw Error('이전 입력의 서버 반영을 확인하지 못했습니다. 새 입력은 그대로 보관했습니다.');
