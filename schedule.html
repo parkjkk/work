@@ -3363,7 +3363,7 @@ class Workspace{
  if(archive)for(const a of next.archive)add('archive/'+encodeURIComponent(a.name)+'.json',[{...a,id:a.name,kind:'sheet'}]);
  if(syncMonths.length){const prepared=clone(e.state);prepared.catalogUnitSync={id:groupId,months:syncMonths};add('meta/catalog.json',packCatalog(prepared),'prepare')}
  for(const key of monthKeys)add('months/'+key+'.json',packMonth(next.months[key]));if(catalog)add('meta/catalog.json',packCatalog(next),syncMonths.length?'finish':null);
- e.groups??=[];e.groups.push({id:groupId,ids,paths,acked:[],status:'pending',...(syncMonths.length?{unitSync:true}:{}),...(auditOperations.length?{auditOperations}:{})});e.state=clone(next);if(e.state.archive.length)e.state.archiveNames=e.state.archive.map(a=>a.name);e.state.archive=[];if(beforePublish)await beforePublish(e,groupId)});this.status('전송 대기 '+e.queue.length+'건');this.flush();return next}
+ e.groups??=[];e.groups.push({id:groupId,ids,paths,acked:[],status:'pending',...(syncMonths.length?{unitSync:true}:{}),...(auditOperations.length?{auditOperations}:{})});e.state=clone(next);if(e.state.archive.length)e.state.archiveNames=e.state.archive.map(a=>a.name);e.state.archive=[];if(beforePublish){const prior=new Set((e.explicitSaveRecoveries||[]).map(ref=>ref.key));await beforePublish(e,groupId);for(const ref of e.explicitSaveRecoveries||[])if(!prior.has(ref.key))ref.groupIds=[groupId]}});this.status('전송 대기 '+e.queue.length+'건');this.flush();return next}
  async holdSchedule(q){
   if(!/^months\//.test(q.path))return false;
   const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!Array.isArray(remote.data.records))return false;
@@ -3391,7 +3391,7 @@ class Workspace{
     result=remote;
    }if(this.closed)return;await this.guardWrite(q);
    const extra={};if(q.path==='meta/catalog.json')for(const key of unpackCatalog(result.data.records).months)if(!this.envelope.state.months[key]){const path='months/'+key+'.json';extra[path]=(await this.client.get(path,false,{ref:result.revision})).data.records}
-   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current);if(rebased.conflicts.length){const err=Error('후속 입력과 원격 변경을 함께 검토해 주세요.');err.conflicts=rebased.conflicts;throw err}later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat((e.groups||[]).filter(g=>g.status==='complete').slice(-30))});
+   const e=await this.mutate(e=>{let current=clone(result.data.records);e.baseline[q.path]=clone(current);e.queue=e.queue.filter(v=>v.id!==q.id);for(const later of e.queue.filter(v=>v.path===q.path)){const rebased=S.mergeRecords(later.base,later.local,current);if(rebased.conflicts.length){const err=Error('후속 입력과 원격 변경을 함께 검토해 주세요.');err.conflicts=rebased.conflicts;throw err}later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
    this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':'GitHub 저장 완료');
   }catch(err){
    // Only a business conflict is separable. Authentication, unit migration,
@@ -9302,15 +9302,32 @@ function ilboRenderDraftLatest(entries){
  ilboRenderLatest();
 }
 function ilboMergeableGrid(g){return g.id==='production'||g.id==='plan-jobs'&&typeof pgRefreshDraft==='function'||!!ilboAuditDraftSource(g)}
-async function ilboReceiveLatest(){const dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty&&ilboMergeableGrid(g));return dirty?ilboMergeDrafts():ilboCheck(true)}
+function ilboProtectedReceiptDraft(g){return !!(g.dirty&&g.loaded&&!g.loading&&!g.saving&&g.storageError&&g.draftRecoveryNeeded&&g.validStoredDraft?.(g.persistedDraft)&&sheetEqual(g.persistedDraft.draft,g.draft))}
+const ilboDraftRecoveryAttempts=new WeakMap();
+// Receipt cleanup is not a new save. Retry it without submitting any unsent
+// table, so one recovered device draft cannot keep blocking fresh field data.
+async function ilboRecoverConfirmedDrafts({automatic=false,ledgerRevision='',valid=()=>true}={}){
+ const client=workspace,viewMonth=typeof month==='string'?month:'',viewPage=page;
+ const current=()=>valid()&&ilboAccessReady()&&workspace===client&&!client?.closed&&!client?.pendingMigration&&!client?.offline&&!client?.readonly&&!client?.resolving&&sheetScope()===client?.key&&page===viewPage&&(typeof month==='string'?month:'')===viewMonth&&!client?.envelope?.queue?.length&&!busy&&!booting&&!localReadError&&!ilboConnectionLoading()&&(!automatic||!document.hidden&&!ilboInteracting());
+ if(!client||!current())return 0;let recovered=0;
+ for(const g of sheetRegistry.values()){
+  if(!current())break;if(g.scope!==client.key||g.month!==viewMonth||!g.canRetryDraftRecovery?.())continue;
+  const signature=JSON.stringify([g.storageKey,g.revision,g.persistedDraft?.version,ledgerRevision]),prior=ilboDraftRecoveryAttempts.get(g),now=Date.now();
+  if(automatic&&prior?.client===client&&prior.envelope===client.envelope&&prior.signature===signature&&now-prior.at<60000)continue;
+  ilboDraftRecoveryAttempts.set(g,{client,envelope:client.envelope,signature,at:now});
+  const previousError=g.error;if(await g.retryDraftRecovery()){recovered++;ilboDraftRecoveryAttempts.delete(g);const notice=document.querySelector?.('.toast');if(current()&&previousError&&notice?.textContent===previousError)notice.remove()}
+ }
+ return recovered;
+}
+async function ilboReceiveLatest(){await ilboRecoverConfirmedDrafts();const dirty=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.dirty&&ilboMergeableGrid(g));return dirty?ilboMergeDrafts():ilboCheck(true)}
 function ilboDraftMergeBlock(client){
  if(!ilboAccessReady())return '앱 잠금을 해제한 뒤 다시 확인해 주세요.';
  if(!client||workspace!==client||client.closed||client.pendingMigration||typeof client.readSnapshot!=='function'||typeof client.adoptSnapshot!=='function')return '관리 저장소 연결을 확인해 주세요.';
  if(busy||booting||localReadError||ilboRefreshRun||ilboConnectionLoading()||($('#dialog')?.open||document.querySelector?.('dialog[open]')))return '진행 중인 작업을 마친 뒤 다시 확인해 주세요.';
  if(client.envelope?.queue?.length||client.resolving)return '전송 대기·복구를 마친 뒤 최신자료를 합쳐 주세요.';
  const grids=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope());
- if(grids.some(g=>g.loading||g.saving||g.storageError))return '초안 읽기·저장 상태를 먼저 확인해 주세요.';
- if(grids.some(g=>g.dirty&&!ilboMergeableGrid(g)))return '다른 표의 미저장 작업을 마친 뒤 최신자료를 합쳐 주세요.';
+ if(grids.some(g=>g.loading||g.saving||g.storageError&&!ilboProtectedReceiptDraft(g)))return '초안 읽기·저장 상태를 먼저 확인해 주세요.';
+ if(grids.some(g=>g.dirty&&!ilboMergeableGrid(g)&&!ilboProtectedReceiptDraft(g)))return '다른 표의 미저장 작업을 마친 뒤 최신자료를 합쳐 주세요.';
  if(!grids.some(g=>g.dirty&&ilboMergeableGrid(g)))return '최신자료 확인을 눌러 주세요.';
  return '';
 }
@@ -9326,11 +9343,11 @@ async function ilboProtectDraftWrite(entry){
  catch(error){if(error.code!=='DEVICE_CONFLICT')throw error;current=await S.localGet(key);if(!adopt(current))throw error;g.error=originalError;const retry=g.queueDraft({compare:true});entry.revision=g.revision;await retry;g.error=originalError}
 }
 async function ilboMergeDrafts({automatic=false,revision='',ledgerRevision=''}={}){
- ilboEnsureScope();const client=workspace,blocked=ilboDraftMergeBlock(client);if(blocked||automatic&&ilboInteracting()){if(!automatic)toast(blocked);return}
- const before=state,entries=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty).map(g=>({g,audit:ilboAuditDraftSource(g),signature:JSON.stringify(g.draft),revision:g.revision,draft:C.clone(g.draft)}));
+ ilboEnsureScope();const client=workspace,blocked=ilboDraftMergeBlock(client);if(blocked||automatic&&ilboInteracting()){if(!automatic){const recovery=[...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.storageError&&g.draftRecoveryNeeded);if(recovery){ilboRefreshPending=true;ilboStatusError='입력 보관 · 저장 확인 대기';ilboRenderStatus()}else toast(blocked)}return}
+ const before=state,protectedDrafts=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&ilboProtectedReceiptDraft(g)).map(g=>({g,draft:g.draft,signature:JSON.stringify(g.draft),persisted:JSON.stringify(g.persistedDraft),revision:g.revision,storageKey:g.storageKey})),entries=[...sheetRegistry.values()].filter(g=>g.scope===sheetScope()&&ilboMergeableGrid(g)&&g.dirty&&!ilboProtectedReceiptDraft(g)).map(g=>({g,audit:ilboAuditDraftSource(g),signature:JSON.stringify(g.draft),revision:g.revision,draft:C.clone(g.draft)}));
  const run={client,scope:client.key,page,month,merge:true,automatic,cancelled:false,adopted:false,accessVersion:ilboAccessVersion};ilboRefreshRun=run;if(!automatic){ilboManualChecked=null;busy=true}ilboStatusError='';
  const current=()=>ilboAccessReady()&&run.accessVersion===ilboAccessVersion&&workspace===client&&!client.closed&&ilboStatusClient===client&&ilboRefreshRun===run&&client.key===run.scope&&page===run.page&&month===run.month&&!run.cancelled;
- const stable=()=>current()&&state===before&&(!automatic||!busy&&!document.hidden&&!ilboInteracting())&&!client.envelope?.queue?.length&&!client.resolving&&!localReadError&&!($('#dialog')?.open||document.querySelector?.('dialog[open]'))&&entries.every(({g,signature,revision})=>g.dirty&&!g.saving&&!g.loading&&!g.storageError&&g.revision===revision&&JSON.stringify(g.draft)===signature)&&![...sheetRegistry.values()].some(g=>g.scope===run.scope&&(g.saving||g.loading||g.dirty&&!ilboMergeableGrid(g)));
+ const stable=()=>current()&&state===before&&(!automatic||!busy&&!document.hidden&&!ilboInteracting())&&!client.envelope?.queue?.length&&!client.resolving&&!localReadError&&!($('#dialog')?.open||document.querySelector?.('dialog[open]'))&&entries.every(({g,signature,revision})=>g.dirty&&!g.saving&&!g.loading&&!g.storageError&&g.revision===revision&&JSON.stringify(g.draft)===signature)&&protectedDrafts.every(ref=>ilboProtectedReceiptDraft(ref.g)&&ref.g.draft===ref.draft&&ref.g.revision===ref.revision&&ref.g.storageKey===ref.storageKey&&JSON.stringify(ref.g.draft)===ref.signature&&JSON.stringify(ref.g.persistedDraft)===ref.persisted)&&![...sheetRegistry.values()].some(g=>g.scope===run.scope&&(g.saving||g.loading||g.dirty&&!ilboMergeableGrid(g)&&!ilboProtectedReceiptDraft(g)));
  let applied=false;
  try{
   if(!automatic){ilboRenderStatus();for(const {g}of entries)g.update()}
@@ -9348,6 +9365,7 @@ async function ilboMergeDrafts({automatic=false,revision='',ledgerRevision=''}={
   if(automatic&&!applied&&(e.message==='context-changed'||run.cancelled)){if(workspace===client&&ilboRefreshRun===run)ilboRefreshPending=true;return}
   if(workspace===client&&ilboRefreshRun===run){if(e.code==='DEVICE_CONFLICT')ilboRefreshPending=true;ilboStatusError=applied&&e.code==='DEVICE_CONFLICT'?'다른 창에도 저장 전 입력이 있어 두 내용을 자동으로 합치지 않았습니다. 현재 입력은 그대로입니다. 다른 창에서 먼저 변경 저장한 뒤 다시 확인해 주세요.':applied?'최신 원장은 불러왔지만 보완한 초안을 기기에 보관하지 못했습니다. 원래 초안은 보존되어 있으며 다시 열면 최신 원장과 함께 복원됩니다.':run.cancelled?'최신자료 합치기를 취소했습니다. 원장과 기존 초안은 그대로입니다.':e.message==='context-changed'?'불러오는 중 입력·연결·로그인 상태가 바뀌어 합치기를 보류했습니다. 기존 초안은 그대로입니다.':e.code==='DEVICE_CONFLICT'?'다른 창에도 별도의 저장 전 입력이 있습니다. 현재 입력은 그대로 두었습니다. 다른 창에서 먼저 변경 저장한 뒤 다시 확인하면 이어서 반영됩니다.':'최신자료를 합치지 못했습니다. 기존 초안은 그대로 보존했습니다. '+(['CATALOG_UNIT_SYNC','AUDIT_LAYOUT'].includes(e.code)?e.message:'연결·기기 저장 상태와 마감 여부를 확인해 주세요.');if(!automatic&&ilboAccessReady()&&run.accessVersion===ilboAccessVersion)toast(ilboStatusError)}
  }finally{if(!automatic)busy=false;if(ilboRefreshRun===run){ilboRefreshRun=null;if(workspace===client&&ilboAccessReady()){if(applied&&entries.some(entry=>entry.audit))ilboRenderDraftLatest(entries);else if(!automatic){if(applied)ilboRenderDraftLatest(entries);else for(const {g}of entries)g.update()}if(!ilboInteracting())ilboRenderStatus()}}}
+ if(applied&&protectedDrafts.length&&workspace===client&&page===run.page&&month===run.month&&!ilboRefreshRun)await ilboRecoverConfirmedDrafts({automatic,ledgerRevision});
 }
 function ilboRenderAuditStatus(){
  const node=document.querySelector('[data-audit-book-status]');if(!node)return;
@@ -9385,6 +9403,7 @@ async function ilboCheck(manual=false){
  try{
   const seed=!manual&&client.initialSyncStatus?.state===state&&client.envelope.state===state&&!client.envelope.queue.length?client.initialSyncStatus:null;let canReadLedger=typeof client.client?.headRevision==='function',ledgerRevision='';
   if(canReadLedger)try{ledgerRevision=await client.client.headRevision()}catch{canReadLedger=false}if(!current())return;
+  if([...sheetRegistry.values()].some(g=>g.scope===sheetScope()&&g.canRetryDraftRecovery?.()))await ilboRecoverConfirmedDrafts({automatic:!manual,ledgerRevision,valid:current});if(!current())return;
   const ledgerChanged=!!(ledgerRevision&&ledgerRevision!==ilboAppliedLedgerRevision),readReport=!!seed||manual||!canReadLedger||ledgerChanged||!ilboStatus;
   const result=seed?seed.result:readReport?await client.client.get('meta/ilbo-sync.json',true):null;if(!current())return;if(seed)client.initialSyncStatus=null;
   let revision=ilboAppliedRevision;
@@ -11301,7 +11320,7 @@ function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
  try{
   if(!intent||g.id!=='plan-jobs'||g.scope!==intent.scope||g.month!==intent.month||!latest.months[g.month]||latest.months[g.month].closed||latest.months[g.month].closeSnapshot)return null;
   const same=explicitRecoverySame,d=C.clone(g.draft),rows=explicitPlanQueueContext(latest,g.month,()=>pgRows(state,month)),set=(obj,key,value)=>{if(value===undefined)delete obj[key];else obj[key]=C.clone(value)};
-  const received=new Map();
+  const received=new Map(),creationFields=new Set();
   for(const owner of new Set(intent.events.map(item=>item.owner))){const history=latest.months[owner]?.history||[],seen=new Set();let position=-1;for(const event of acknowledged.months[owner]?.history||[]){const index=history.findIndex(value=>value.id===event.id);if(seen.has(event.id)||index<=position||!same(history[index],event))return null;seen.add(event.id);position=index}}
   for(const {owner,event}of intent.events){const receipt=acknowledged.months[owner]?.history?.filter(e=>e.id===event.id)||[],current=latest.months[owner]?.history?.filter(e=>e.id===event.id)||[];if(receipt.length>1||current.length>1)return null;if(receipt.length){if(receipt[0].at!==event.at||receipt[0].type!==event.type||!same(receipt[0],current[0]))return null;received.set(event.id,receipt[0])}}
   for(const slot of intent.slots){
@@ -11330,6 +11349,11 @@ function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
     if(!merged||!same(merged.value,accepted))return null;
    }
    if(slot.kind==='job'){
+    // A first conditions save materializes a source-derived job, and later
+    // queued saves can change that same row again. Its creation branch below
+    // reconciles the final requested row once; still validate every receipt
+    // here, but do not acknowledge those fields a second time on a newer base.
+    if(creationFields.has(slot))continue;
     const b=d.baseRows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner),l=d.rows.find(r=>r.id===slot.id&&(r._ownerMonth||g.month)===slot.owner);
     if(!b||!l||d.deleted.some(r=>r.id===slot.id)||!row||!slot.bases.some(value=>same(value,b[slot.field]))||!Object.keys(slot.identity).every(field=>same(row[field],slot.identity[field])))return null;
     // Only the already requested slot is acknowledged. A later typed value
@@ -11350,10 +11374,24 @@ function explicitPlanDraftAckRebase(g,intent,acknowledged,latest){
      // first conditions save creates the persisted jobs row. Its original
      // projection proves that existing base; it is not a second creation.
      if(!l||deleted||!row||b&&((b._ownerMonth||g.month)!==slot.owner||(l._ownerMonth||g.month)!==slot.owner||!slot.beforeProjected||!same(clean(b),clean(slot.beforeProjected))))return null;const expected=clean(slot.after),local=clean(l),next=C.clone(row),allowed=new Set([...pgCommitFields,'worker','product','barMemo']);
+     const followers=intent.slots.filter(other=>other.kind==='job'&&other.owner===slot.owner&&other.id===slot.id);
+     if(followers.length){
+      const events=intent.events.filter(item=>item.owner===slot.owner&&['jobs','삭제:jobs'].includes(item.event.type)&&(item.event.after?.id||item.event.before?.id)===slot.id),created=events.findIndex(item=>item.event.id===slot.event.id);
+      if(slot.before||created<0||events.some((item,index)=>index!==created&&(!item.event.before||!item.event.after)))return null;
+      for(const field of followers){
+       const position=events.findIndex(item=>item.event.id===field.event.id);
+       if(position<=created||!allowed.has(field.field)||!same(field.before,expected[field.field])||!Object.keys(field.identity).every(key=>same(expected[key],field.identity[key])))return null;
+       set(expected,field.field,field.after);creationFields.add(field);
+      }
+     }
      if(b){const stored=(owner.jobs||[]).filter(j=>j.id===slot.id);if(stored.length!==1||stored[0].deleted||['id','worker','product','manual','sourceRowId'].some(field=>!same(stored[0][field],expected[field]))||!same(stored[0].originId||stored[0].id,expected.originId||expected.id))return null}
      if(['id','worker','product','manual','sourceRowId'].some(field=>!same(row[field],expected[field]))||!same(row.originId||row.id,expected.originId||expected.id))return null;
      for(const field of ['originId'])if(local[field]==null&&!same(local[field],expected[field]))local[field]=expected[field];
-     for(const field of new Set([...Object.keys(expected),...Object.keys(local)]))if(!same(expected[field],local[field])){if(!allowed.has(field))return null;set(next,field,local[field])}
+     for(const field of new Set([...Object.keys(expected),...Object.keys(local)]))if(!same(expected[field],local[field])){
+      if(!allowed.has(field))return null;
+      if(['machines','handoffs','routing'].includes(field)&&!same(expected[field],row[field])){const merged=pgMergeConcurrentStructure(field,expected[field],local[field],row[field]);if(!merged)return null;set(next,field,merged.value)}
+      else set(next,field,local[field]);
+     }
      if(b)d.baseRows[d.baseRows.indexOf(b)]=C.clone(row);else d.baseRows.push(C.clone(row));d.rows[d.rows.indexOf(l)]=next;
     }
    }
@@ -11556,10 +11594,9 @@ function explicitQueuedDraftsFullRebase(g,full,latest){
 // submission marked incomplete. Re-run the exact caller through its producer,
 // then require the original request IDs and paths to have durable Native ACKs.
 // Matching visible cells alone never promotes an incomplete receipt.
-function explicitQueuedPlanSubmissionReceipt(g,full,archive,owner){
+function explicitQueuedPlanSubmissionProof(g,full,archive,owner){
  try{
   if(g?.id!=='plan-jobs'||full?.schema!==1||full.completed||full.id!==g.id||full.scope!==g.scope||full.scope!==owner?.key||full.month!==g.month||full.storageKey!==g.storageKey||!explicitRecoverySame(full.draft,g.draft)||full.groups?.length!==1)return null;
-  const receipt=sheetFullSubmissionReceipt(full,owner);if(!receipt)return null;
   const groups=explicitQueuedGroups(archive),group=groups?.[0],expected=full.groups[0];
   if(groups?.length!==1||!group||group.unitSync||group.id!==expected.id||!explicitRecoverySame(group.ids,expected.ids)||!explicitRecoverySame(group.paths,expected.paths))return null;
   const base=explicitProductionRecoveryState(archive);if(!base)return null;let local=C.clone(base);const raw=C.clone(archive.baseline);
@@ -11577,7 +11614,43 @@ function explicitQueuedPlanSubmissionReceipt(g,full,archive,owner){
    if(!explicitRecoverySame(pack(proof.state),pack(local))||!explicitRecoverySame(pack(local),pack(archive.state)))return null;
   }
   if(!explicitRecoverySame(ScheduleNative.packCatalog(proof.state),ScheduleNative.packCatalog(local))||!explicitRecoverySame(ScheduleNative.packCatalog(local),ScheduleNative.packCatalog(archive.state)))return null;
-  return{...C.clone(full),completed:true,receipt};
+  return{base,local,group};
+ }catch{return null}
+}
+function explicitQueuedPlanSubmissionReceipt(g,full,archive,owner){
+ const proof=explicitQueuedPlanSubmissionProof(g,full,archive,owner),receipt=proof&&sheetFullSubmissionReceipt(full,owner);
+ return receipt?{...C.clone(full),completed:true,receipt}:null;
+}
+// Older Native versions retained only thirty complete groups, even when an
+// interrupted draft receipt still depended on one. Reconstruct typed proof
+// from the exact original submission; never fabricate a missing Native ACK.
+function explicitQueuedPlanHistoricalRebase(g,full,archive,owner,latest){
+ try{
+  if(owner?.closed||owner?.offline||owner?.pendingMigration||owner?.resolving||!owner?.envelope||!owner.persisted)return null;
+  const current=owner.envelope,durable=owner.persisted,same=explicitRecoverySame;
+  if(!Array.isArray(current.queue)||current.queue.length||!Array.isArray(durable.queue)||durable.queue.length||!same(current.state,durable.state)||!same(current.state,latest))return null;
+  const proof=explicitQueuedPlanSubmissionProof(g,full,archive,owner);if(!proof)return null;
+  const {local,group}=proof;
+  // An existing partial, contradictory or unpersisted receipt is not pruning.
+  if((current.groups||[]).some(row=>row.id===group.id)||(durable.groups||[]).some(row=>row.id===group.id))return null;
+  for(const q of group.queue){
+   if(!Array.isArray(current.baseline?.[q.path])||!same(current.baseline[q.path],durable.baseline?.[q.path]))return null;
+   if(q.path.startsWith('months/')&&!same(current.baseline[q.path],ScheduleNative.packMonth(current.state.months[q.path.slice(7,-5)])))return null;
+   if(q.path==='meta/catalog.json'){
+    // The producer above already proved all raw business fields. Compare the
+    // catalog receipt by stable IDs without concurrency revisions, including
+    // the existing separate proof that the calendar PUT really took effect.
+    const canonical=rows=>rows.map(row=>{const value=C.clone(row);delete value.rev;return value}).sort((a,b)=>a.id.localeCompare(b.id));
+    if(!explicitQueuedCatalogAcknowledged({...q,base:canonical(q.base),local:canonical(q.local)},latest,group))return null;
+   }
+  }
+  const intent=explicitPlanDraftAckIntent(g,archive);if(!intent?.events?.length)return null;
+  // Equality of visible cells is insufficient, including no-op saves. Every
+  // submitted event must exist unchanged before typed reconciliation runs.
+  for(const {owner:key,event}of intent.events){const received=(latest.months[key]?.history||[]).filter(row=>row.id===event.id);if(received.length!==1||!same(received[0],event))return null}
+  const draft=explicitQueuedDraftsAnyRebase(g,intent,local,latest);if(!draft)return null;
+  const remaining=explicitPlanQueueContext(latest,g.month,()=>pgApplyCommit(C.clone(draft),{preferLocalEdits:true}));
+  return{draft,matched:true,historical:true,settled:!remaining.monthKeys.length&&!remaining.catalog};
  }catch{return null}
 }
 // A catalog editor can have returned before its queued unit transaction was
@@ -11623,7 +11696,7 @@ async function explicitQueuedDraftsArchivedRebase(g,owner,latest,valid=()=>true)
   if(records.length>1)throw Error('보관한 입력의 저장 관계를 확인하지 못했습니다. 현재 입력은 보관했습니다.');
   // A complete normal commit covers insertions, deletions and shared memos as
   // one exact snapshot. Old queue recovery never creates this permission.
-  if(fullMatch){const confirmed=full.completed?full:(g.id==='plan-jobs'?explicitQueuedPlanSubmissionReceipt(g,full,archive,owner):explicitQueuedCatalogSubmissionReceipt(g,full,archive,owner)),recovered=confirmed&&explicitQueuedDraftsFullRebase(g,confirmed,latest);if(recovered)return recovered}
+  if(fullMatch){const confirmed=full.completed?full:(g.id==='plan-jobs'?explicitQueuedPlanSubmissionReceipt(g,full,archive,owner):explicitQueuedCatalogSubmissionReceipt(g,full,archive,owner)),recovered=confirmed&&explicitQueuedDraftsFullRebase(g,confirmed,latest);if(recovered)return recovered;const historical=!full.completed&&g.id==='plan-jobs'&&explicitQueuedPlanHistoricalRebase(g,full,archive,owner,latest);if(historical)return historical}
   if(records.length){
    const original=evidence.originalEnvelope||archive;
    if(typeof explicitUnitPrefixResolve==='function')await explicitUnitPrefixResolve(owner,original,current);
@@ -11694,7 +11767,7 @@ async function explicitQueuedDraftsRestoreOnLoadLocked(g,owner,valid=()=>true){
  if(!current())return false;
  const recovery=await explicitQueuedDraftsArchivedRebase(g,owner,latest,current);if(!recovery)return false;
  if(!current())throw Error('보관한 입력 확인 중 화면 또는 자료가 바뀌었습니다. 원래 초안은 유지했습니다.');
- const candidate={...g,draft:recovery.draft},fresh=recovery.full&&!recovery.pending?recovery.draft:g.id==='plan-jobs'?null:explicitQueuedDraftsFresh(candidate,latest),version=Math.max(revision,Number(persisted.version)||0)+1;
+ const candidate={...g,draft:recovery.draft},fresh=recovery.full&&!recovery.pending||recovery.historical&&recovery.settled?recovery.draft:g.id==='plan-jobs'?null:explicitQueuedDraftsFresh(candidate,latest),version=Math.max(revision,Number(persisted.version)||0)+1;
  const record=fresh?null:{...C.clone(persisted),version,updatedAt:new Date().toISOString(),draft:C.clone(recovery.draft)};
  await S.localSet(key,record,{expected:persisted});
  if(!current()){

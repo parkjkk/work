@@ -2329,10 +2329,11 @@ function ownFieldState(row,key){return Object.prototype.hasOwnProperty.call(row|
 const entryRowForms=new WeakMap();
 const ENTRY_ROW_FIELDS=['worker','product','productId','productCatalogRevision','sourceProduct','hours','plan','prod','scrapKg','defQty','defPart','gasa','cs','gap','inlet','face','bubble','remark','planIntent','productionCompletion','productionPlanQty','off','offKind'];
 const entryCopy=value=>JSON.parse(JSON.stringify(value));
+function entryHoursIdentity(row){return Object.fromEntries(['worker','product','productId','off','offKind','plannedWork','plannedWorkRef','scheduleTarget','productionTeam','plan','planIntent','productionCompletion','productionPlanQty'].map(key=>[key,ownFieldState(row,key)]));}
 function entryRowBefore(row,date=S.date){
   const pending=!driver.offline&&outboxAll().filter(item=>item.date===date&&item.rows?.some(r=>r.id===row?.id)).at(-1);
   if(pending)return entryCopy(pending.scheduleEdits?.[row.id]?.rowBefore||{present:true,value:row,unverified:true});
-  return {present:!!row,...(row?{value:entryCopy(row)}:{}),hoursBefore:entryCopy(S.rowsDate===date?S.rows.map(r=>({id:r.id,worker:r.worker,hours:r.hours})):[])};
+  return {present:!!row,...(row?{value:entryCopy(row)}:{}),hoursBefore:entryCopy(S.rowsDate===date?S.rows.map(r=>({id:r.id,worker:r.worker,hours:r.hours,identity:entryHoursIdentity(r)})):[])};
 }
 function entryInputValues(el){
   const value=selector=>el.querySelector(selector).value.trim(),number=selector=>{const text=value(selector);return text===''?'':Number(text);};
@@ -2348,7 +2349,17 @@ function ensureEntryEdits(date,rows,edits={}){
   for(const row of rows)if(!row.plannedWork&&!row.plannedWorkRef&&!isBulkRestRow(row)&&!next[row.id]?.rowBefore){const prior=!driver.offline&&outboxAll().filter(item=>item.date===date&&item.rows?.some(r=>r.id===row.id)).at(-1)?.scheduleEdits?.[row.id]?.rowBefore;next[row.id]={schema:1,fields:[],before:null,...next[row.id],rowBefore:entryCopy(prior||entryRowBefore(S.rowsDate===date?S.rows.find(r=>r.id===row.id):null,date))};}
   return next;
 }
-function mergeEntryRows(rows,incoming,edits={},strict=true){
+// Explicit saving may prefer only the cells the user actually changed. This
+// permission is call-local; stored queues and automatic retries stay strict.
+function entryPreferExplicit(guard,row,current,key,options){
+  if(options?.preferLocalEdits!==true||!guard?.present||guard.unverified||guard.restore||!current||row.id!==current.id)return false;
+  if(!['hours','prod','scrapKg','defQty','defPart','gasa','cs','gap','inlet','face','bubble','remark'].includes(key))return false;
+  const same=field=>progressStable(ownFieldState(current,field))===progressStable(ownFieldState(guard.value,field));
+  if(['worker','product','productId','off','offKind','plannedWork','plannedWorkRef','scheduleTarget','productionTeam'].some(field=>!same(field)))return false;
+  if(key==='prod'&&['plan','planIntent','productionCompletion','productionPlanQty','machineActuals','scheduleConditions'].some(field=>!same(field)))return false;
+  return true;
+}
+function mergeEntryRows(rows,incoming,edits={},strict=true,options={}){
   return incoming.map(row=>{
     if(strict&&row.off&&offLabel(row)==='케이스 교체'&&rows.some(r=>r.id!==row.id&&r.worker===row.worker&&r.off&&offLabel(r)==='케이스 교체'))throw entryRowConflict(row,'케이스 교체 기록');
     const guard=edits?.[row.id]?.rowBefore;if(!guard)return row;
@@ -2361,18 +2372,18 @@ function mergeEntryRows(rows,incoming,edits={},strict=true){
     if(!current)return row;
     for(const key of ENTRY_ROW_FIELDS){if(!Object.hasOwn(row,key)||key==='prod'&&(edits[row.id].guardActuals||edits[row.id].fields?.includes('machineActuals')))continue;const before=ownFieldState(guard.value,key),wanted=ownFieldState(row,key),latest=ownFieldState(current,key),input=guard.input&&Object.hasOwn(guard.input,key)?ownFieldState(guard.input,key):before;
       if(guard.present&&progressStable(input)===progressStable(wanted)){if(latest.present)next[key]=latest.value;else delete next[key];}
-      else if(strict&&progressStable(latest)!==progressStable(wanted)&&(!guard.present||progressStable(latest)!==progressStable(before)))throw entryRowConflict(row,key);
+      else if(strict&&progressStable(latest)!==progressStable(wanted)&&(!guard.present||progressStable(latest)!==progressStable(before))&&!entryPreferExplicit(guard,row,current,key,options))throw entryRowConflict(row,key);
     }
     return next;
   });
 }
-function entryAlignedHours(align,rows,incoming,edits={},strict=true){
+function entryAlignedHours(align,rows,incoming,edits={},strict=true,options={}){
   if(!align?.worker)return align;
   const ordinary=incoming.filter(row=>row.worker===align.worker&&edits[row.id]?.rowBefore&&!row.plannedWork&&(!row.plannedWorkRef||edits[row.id]?.plannedLinkBefore));
   if(!ordinary.length)return align;
   const changed=ordinary.filter(row=>{const g=edits[row.id].rowBefore;return !g.present||progressStable(ownFieldState(g.input||g.value,'hours'))!==progressStable(ownFieldState(row,'hours'));});
   if(!changed.length)return null;
-  if(strict)for(const row of rows.filter(r=>r.worker===align.worker&&!isPlannedPreparation(r))){const guard=edits[changed[0].id].rowBefore,base=guard.hoursBefore?.find(r=>r.id===row.id);if(base&&progressStable(ownFieldState(base,'hours'))===progressStable(ownFieldState(row,'hours'))||row.hours===align.hours)continue;throw entryRowConflict(row,'hours');}
+  if(strict)for(const row of rows.filter(r=>r.worker===align.worker&&!isPlannedPreparation(r))){const guard=edits[changed[0].id].rowBefore,base=guard.hoursBefore?.find(r=>r.id===row.id);if(base&&progressStable(ownFieldState(base,'hours'))===progressStable(ownFieldState(row,'hours'))||row.hours===align.hours||options.preferLocalEdits===true&&base?.worker===align.worker&&base.identity&&progressStable(base.identity)===progressStable(entryHoursIdentity(row)))continue;throw entryRowConflict(row,'hours');}
   return align;
 }
 function mergeEntryDeletes(rows,ids,edits={},strict=true){
@@ -2387,8 +2398,8 @@ function acknowledgeEntryRows(before,date,ids){
   }).filter(item=>item.rows?.length||item.removeIds?.length);
   if(progressStable(next)!==progressStable(all)&&!LS.set('ilbo.outbox',next))throw Error('일보는 서버에 저장했지만 기기 전송대기를 정리하지 못했습니다. 입력은 유지했습니다.');updateNetBanner();
 }
-function mergeScheduleChanges(rows,newRows,edits={},strict=true){
-  newRows=mergeEntryRows(rows,newRows,edits,strict);
+function mergeScheduleChanges(rows,newRows,edits={},strict=true,options={}){
+  newRows=mergeEntryRows(rows,newRows,edits,strict,options);
   newRows=mergePlannedWorkChanges(rows,newRows,edits,strict);
   newRows=mergePlannedActualChanges(rows,newRows,edits,strict);
   newRows=mergeProductionTeams(rows,newRows,edits,strict);
@@ -2403,7 +2414,7 @@ function mergeScheduleChanges(rows,newRows,edits={},strict=true){
     }
     if(row.scheduleConditions)next.scheduleConditions=result;
     if((edit.fields||[]).includes('machineActuals')){const latest=ownFieldState(currentRow,'machineActuals'),wanted=ownFieldState(row,'machineActuals');if(strict&&progressStable(latest)!==progressStable(edit.beforeActuals||{present:false})&&progressStable(latest)!==progressStable(wanted))conflict('machineActuals');}
-    else if(edit.guardActuals&&progressStable(ownFieldState(currentRow,'machineActuals'))!==progressStable(edit.beforeActuals)){next.prod=currentRow?.prod??'';delete next.machineActuals;}
+    else if(edit.guardActuals&&progressStable(ownFieldState(currentRow,'machineActuals'))!==progressStable(edit.beforeActuals)){if(options.preferLocalEdits&&edit.rowBefore&&progressStable(ownFieldState(edit.rowBefore.input||edit.rowBefore.value,'prod'))!==progressStable(ownFieldState(row,'prod')))conflict('machineActuals');next.prod=currentRow?.prod??'';delete next.machineActuals;}
     return next;
   });
 }
@@ -2459,6 +2470,14 @@ function outboxPush(date, rows, align, removeIds, scheduleEdits={},queueBefore=n
   return ok;   /* 호출부는 실패 시 폼·임시저장을 지우지 말 것 */
 }
 let flushing = false;
+// A held ordinary entry need not block another worker's independent entry.
+// Relationship changes, deletions and unproved legacy queues retain ordering.
+function outboxEntryScope(item){
+  if(!item.rows?.length||item.removeIds?.length)return null;
+  const ids=new Set(),workers=new Set(),targets=new Set();
+  for(const row of item.rows){const guard=item.scheduleEdits?.[row.id]?.rowBefore;if(!row.id||!row.worker||row.off||row.plannedWork||row.plannedWorkRef||row.productionTeam||!guard||guard.unverified||guard.restore||guard.value?.off||guard.value?.plannedWork||guard.value?.plannedWorkRef||guard.value?.productionTeam)return null;ids.add(row.id);workers.add(row.worker);if(guard.value?.worker)workers.add(guard.value.worker);for(const r of[row,guard.value])if(r?.scheduleTarget)targets.add(progressStable(r.scheduleTarget));}
+  if(item.align?.worker)workers.add(item.align.worker);return{ids,workers,targets};
+}
 async function outboxFlush(){
   if(globalThis.AppAccess&&!AppAccess.unlocked)return;
   if(flushing || driver.mode !== 'gh') return;
@@ -2467,19 +2486,24 @@ async function outboxFlush(){
   flushing = true;
   const epoch = storeEpoch, drv = driver;
   const queueKey = i => i.qid || JSON.stringify([i.t,i.date,i.rows,i.removeIds]);
-  let sentAny = false,activeItem=null;
+  let sentAny = false,activeItem=null;const held=[];
+  const related=(a,b)=>['ids','workers','targets'].some(kind=>[...a[kind]].some(value=>b[kind].has(value)));
+  const barriers=()=>{const current=outboxAll();return held.flatMap(prior=>{const latest=current.find(item=>queueKey(item)===prior.key);return latest?[prior,outboxEntryScope(latest)]:[prior];});};
   try{
     for(const item of ob){
       activeItem=item;
       assertContext(epoch);
       const key = queueKey(item);
       if(!outboxAll().some(x => queueKey(x) === key)) continue;
+      const independent=outboxEntryScope(outboxAll().find(value=>queueKey(value)===key)||item);if(held.length){if(!independent)break;const prior=barriers();if(prior.some(scope=>!scope))break;if(prior.some(scope=>related(independent,scope))){held.push({...independent,key});continue;}}
       let sent = [],sentItem=null;
+      try{
       await verifyManagedScheduleChanges(item.rows||[],item.scheduleEdits,drv,epoch,item.date);
       const savedRows = await drv.mutateDay(item.date, rows => {
         assertContext(epoch);
         /* 재시도마다 보관분을 다시 읽음 — 전송 중 사용자가 고치거나 지운 내용이 되돌아가지 않게 */
         const cur = outboxAll().find(x => queueKey(x) === key) || {rows:[], removeIds:[]};
+        if(held.length){const scope=outboxEntryScope(cur);if(!scope||barriers().some(prior=>!prior||related(scope,prior)))throw entryRowConflict(cur.rows?.[0]||{},'대기 순서');}
         sentItem=entryCopy(cur);
         sent = cur.rows || [];
         if(sent.some(row=>!row.plannedWork&&!row.plannedWorkRef&&!isBulkRestRow(row)&&!cur.scheduleEdits?.[row.id]?.rowBefore))throw entryRowConflict(sent.find(row=>!cur.scheduleEdits?.[row.id]?.rowBefore),'기준본');
@@ -2492,10 +2516,16 @@ async function outboxFlush(){
       if(sent.some(isBulkRestRow)) reportBulkRest(item.date,sent.filter(isBulkRestRow),savedRows);
       if(sent.length){ updatePresetsFrom(sent); sentAny = true; }   /* 항목별로 즉시 반영 — 뒤에서 실패해도 유실되지 않게 */
       else sentAny = true;
+      }catch(error){
+        if(epoch!==storeEpoch||!error.entryConflict||!independent)throw error;
+        const current=outboxAll().find(value=>queueKey(value)===key),scope=current&&outboxEntryScope(current);if(!scope)throw error;
+        if(!LS.set('ilbo.outbox',outboxAll().map(value=>queueKey(value)===key?{...value,entryConflict:error.entryConflict}:value)))throw error;
+        held.push({...scope,key});
+      }
     }
     if(sentAny) toast(outboxAll().length ? '기록을 전송했습니다 — 남은 기록도 이어서 전송합니다' : '보관해 둔 기록을 모두 전송했습니다');
     refreshDay(true, true);
-  }catch(e){if(epoch===storeEpoch&&e.entryConflict){LS.set('ilbo.outbox',outboxAll().map(i=>i.qid===activeItem?.qid?{...i,entryConflict:e.entryConflict}:i));toast(e.message);}else if(epoch===storeEpoch&&e.scheduleConflict){const conflict=e.scheduleConflict;LS.set('ilbo.outbox',outboxAll().map(i=>i.rows?.some(r=>r.id===conflict.rowId)?{...i,scheduleConflict:conflict}:i));toast(e.message);}else if(epoch===storeEpoch&&!e.isNetwork&&activeItem?.rows?.some(row=>row.plannedWork||row.plannedWorkRef)){const rowId=e.plannedConflict?.rowId||activeItem.rows.find(row=>row.plannedWork||row.plannedWorkRef).id;LS.set('ilbo.outbox',outboxAll().map(i=>i.qid===activeItem.qid?{...i,plannedConflict:{rowId,message:e.message}}:i));toast(e.message);} /* 보관분은 그대로 유지 */ }
+  }catch(e){if(epoch===storeEpoch&&e.entryConflict){const all=outboxAll(),same=all.find(i=>i.qid===activeItem?.qid)?.entryConflict;LS.set('ilbo.outbox',all.map(i=>i.qid===activeItem?.qid?{...i,entryConflict:e.entryConflict}:i));if(progressStable(same)!==progressStable(e.entryConflict))toast(e.message);}else if(epoch===storeEpoch&&e.scheduleConflict){const conflict=e.scheduleConflict,all=outboxAll(),same=all.find(i=>i.qid===activeItem?.qid)?.scheduleConflict;LS.set('ilbo.outbox',all.map(i=>i.rows?.some(r=>r.id===conflict.rowId)?{...i,scheduleConflict:conflict}:i));if(progressStable(same)!==progressStable(conflict))toast(e.message);}else if(epoch===storeEpoch&&!e.isNetwork&&activeItem?.rows?.some(row=>row.plannedWork||row.plannedWorkRef)){const rowId=e.plannedConflict?.rowId||activeItem.rows.find(row=>row.plannedWork||row.plannedWorkRef).id,conflict={rowId,message:e.message},all=outboxAll(),same=all.find(i=>i.qid===activeItem.qid)?.plannedConflict;LS.set('ilbo.outbox',all.map(i=>i.qid===activeItem.qid?{...i,plannedConflict:conflict}:i));if(progressStable(same)!==progressStable(conflict))toast(e.message);} /* 보관분은 그대로 유지 */ }
   finally{ flushing = false; updateNetBanner(); }
 }
 
@@ -2612,12 +2642,17 @@ function openProductMemo(id){
     if(!navigator.onLine||driver.offline||typeof driver.saveProductMemo!=='function'){s.status.textContent='작성 내용을 이 기기에 보관했습니다. 현장 공유 연결 후 메모 저장을 다시 눌러 주세요.';return;}
     const drv=driver,sent=s.input.value;s.busy=true;buttons();s.status.textContent='메모 저장 중…';fieldWrites++;
     try{
-      const result=await drv.saveProductMemo({productId:s.id,baseMemo:s.baseMemo,memo:sent});if(!productMemoCurrent(s)||drv!==driver)return;
+      let result,baseMemo=s.baseMemo;
+      for(let attempt=0;attempt<3;attempt++){
+        try{result=await drv.saveProductMemo({productId:s.id,baseMemo,memo:sent});break}
+        catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code!=='memo-conflict'||typeof error.currentMemo!=='string'||attempt===2)throw error;baseMemo=error.currentMemo;}
+      }
+      if(!productMemoCurrent(s)||drv!==driver)return;
       const accepted=result.memo,pendingSaved=productMemoPut('ilbo.cache.productMemoPending',s.id,{baseRevision:S.productCatalog.revision,catalogRevision:result.catalogRevision||null,memo:accepted},s.scope),product=S.productCatalog.products.find(p=>p.id===s.id);
       if(product){product.memo=accepted;delete product.memoUnavailable}LS.set('ilbo.cache.productCatalog',S.productCatalog,s.scope);
       s.input.value=accepted;s.baseMemo=accepted;s.baseRevision=S.productCatalog.revision;const draftCleared=productMemoPut('ilbo.productMemoDrafts',s.id,null,s.scope);
       renderInput();$$('#prodBlocks .pb').forEach(updateProductMemo);s.status.textContent='생산관리에 저장했습니다. 창을 닫아도 됩니다.'+(result.syncPending?' 두 앱의 메모 표시는 자동 갱신 중입니다.':'')+(!pendingSaved||!draftCleared?' 이 기기의 보관 상태를 다시 확인해 주세요.':'');
-    }catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code==='memo-conflict'&&typeof error.currentMemo==='string'){s.conflict=error.currentMemo;dialog.querySelector('.memo-current').textContent=error.currentMemo||'(빈 메모)';dialog.querySelector('.memo-conflict').hidden=false;s.status.textContent='다른 곳에서 메모가 바뀌었습니다. 입력 내용은 그대로 유지했습니다.';}else s.status.textContent=(error.isNetwork?'연결이 끊겨 작성 내용을 보관했습니다. 연결 후 메모 저장을 다시 눌러 주세요.':error.message);}
+    }catch(error){if(!productMemoCurrent(s)||drv!==driver)return;if(error.code==='memo-conflict'&&typeof error.currentMemo==='string'){s.baseMemo=error.currentMemo;s.conflict=null;dialog.querySelector('.memo-conflict').hidden=true;stashProductMemo(s);s.status.textContent='다른 곳의 변경을 계속 확인하고 있습니다. 입력은 보관했으며 메모 저장을 다시 누르면 이어서 저장합니다.';}else s.status.textContent=(error.isNetwork?'연결이 끊겨 작성 내용을 보관했습니다. 연결 후 메모 저장을 다시 눌러 주세요.':error.message);}
     finally{fieldWrites--;s.busy=false;if(productMemoCurrent(s))buttons()}
   };
   document.body.append(dialog);dialog.showModal();buttons();s.input.focus();s.input.setSelectionRange(s.input.value.length,s.input.value.length);void refreshProductMemoStock();
@@ -3133,7 +3168,7 @@ async function upsertRows(newRows, align, label, scheduleEdits={}){
   const queueBefore=outboxAll();scheduleEdits=ensureEntryEdits(date,newRows,scheduleEdits);
   const combined=drv.offline?{rows:newRows,edits:scheduleEdits}:queuedScheduleChanges(date,newRows,scheduleEdits);
   let rows;try{await verifyManagedScheduleChanges(combined.rows,combined.edits,drv,epoch,date);
-    rows = await drv.mutateDay(date, rows => {const merged=mergeScheduleChanges(rows,combined.rows,combined.edits);return mergeRows(rows,merged,entryAlignedHours(plannedAlignedHours(align,merged),rows,combined.rows,combined.edits));}, label);
+    rows = await drv.mutateDay(date, rows => {const options={preferLocalEdits:true},merged=mergeScheduleChanges(rows,combined.rows,combined.edits,true,options);return mergeRows(rows,merged,entryAlignedHours(plannedAlignedHours(align,merged),rows,combined.rows,combined.edits,true,options));}, label);
   }catch(error){error.entryQueueBefore=queueBefore;throw error;}
   assertContext(epoch);
   if(drv.mode==='gh'||drv.offline)acknowledgeEntryRows(queueBefore,date,new Set(newRows.map(row=>row.id)));
