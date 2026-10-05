@@ -6019,7 +6019,7 @@ class SheetEditor{
   const result=()=>({ok:!error,committed,remote,remaining:!!this.dirty,error,message:this.error||''});
   if(!contextOK()){error='context';this.error='작업 월이나 저장소가 바뀌었습니다. 원래 화면에서 저장해 주세요.';this.update();return result()}
   if(this.locked()||busy){error='locked';return{...result(),message:this.storageError||localReadError||(this.spec.readonly?'조회 전용 표는 저장할 수 없습니다.':'다른 작업이 끝난 뒤 다시 저장해 주세요.')}}
-  const explicitOptions={preferLocalEdits:true};this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
+  const explicitOptions={preferLocalEdits:true};if(owner)owner.explicitSaveDiagnostic=null;this.explicitHadDraft=this.dirty||!!this.persistedDraft;this.heldOnSave=(owner?.envelope?.heldSchedules||[]).map(h=>h.id);this.saving=true;this.explicitSave=true;busy=true;this.update();let phase='draft-save';
   try{
    const storedDraft=C.clone(this.draft);await this.queueDraft();if(!contextOK()){phase='context';throw Error('저장 대기 중 작업 월이나 연결 권한이 바뀌었습니다. 입력 초안은 보관했습니다.')}phase='refresh';
    if(typeof sheetPrepareExplicitSave==='function')await sheetPrepareExplicitSave(this);
@@ -6048,7 +6048,7 @@ class SheetEditor{
    if(!contextOK()){phase='context';throw Error('저장 완료 뒤 연결이 바뀌었습니다. 새 연결의 입력 상태는 변경하지 않았습니다.')}
    this.saving=false;busy=false;
    if(!bulk){const pos=this.host()?.querySelector('.sheetViewport'),left=pos?.scrollLeft||0,top=pos?.scrollTop||0;render();const updated=this.host()?.querySelector('.sheetViewport');if(updated){updated.scrollLeft=left;updated.scrollTop=top}toast(this.error)}
-  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message;if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
+  }catch(e){error=phase;this.error=(committed?'원장 저장은 완료됐습니다. ':'')+e.message+(e.conflicts?.length&&typeof sheetSaveDiagnosticSuffix==='function'?sheetSaveDiagnosticSuffix(owner):'');if(typeof sheetProtectExplicitCommit==='function')sheetProtectExplicitCommit(this,owner,commitArchives,contextOK);if(!bulk)toast(this.error)}finally{this.saving=false;this.explicitSave=false;delete this.explicitHadDraft;if(workspace===owner||typeof connectionOpening==='undefined'||!connectionOpening)busy=false;else if(typeof connectionBusyBefore!=='undefined')connectionBusyBefore=false;this.update()}
   return result();
  }
  async undo(){if(this.locked()||busy)return;if(!confirm('이 표에서 아직 저장하지 않은 변경을 취소할까요?'))return;this.saving=true;busy=true;this.update();try{await this.writeQueue.catch(()=>{});const cleared=await this.clearStoredDraft();this.draft=this.fresh();this.dirty=false;this.error='변경을 취소했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.')}catch(e){this.error=e.message}finally{this.saving=false;busy=false;this.refresh();this.spec.onChange?.(this)}}
@@ -10820,27 +10820,28 @@ function explicitProductionRecoveryCatalog(previous,desired,calculated,envelope)
  return explicitRecoverySame(strip(previous),strip(desired))&&explicitRecoverySame(strip(calculated),strip(desired));
 }
 function explicitProductionRecoveryPlan(g,owner){
+ const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
  const e=owner?.envelope,d=g?.draft,key=g?.month,path='months/'+key+'.json',catalog='meta/catalog.json';
- if(g?.id!=='production'||!g.explicitSave||!g.dirty||g.spec?.readonly||g.closedDraft||d?.month!==key||d?.scope!==g.scope||!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key)||!Array.isArray(d.deleted)||d.deleted.length||!Array.isArray(e?.queue)||!e.queue.length||!Array.isArray(e.groups))return null;
- if(e.queue.some(q=>![path,catalog].includes(q.path)||q.viewOnly||q.unitPhase))return null;
- const queue=e.queue,ids=new Set(queue.map(q=>q.id));if(ids.size!==queue.length||queue.some(q=>typeof q.id!=='string'||!q.id||typeof q.groupId!=='string'||!q.groupId))return null;
+ if(g?.id!=='production'||!g.explicitSave||!g.dirty||g.spec?.readonly||g.closedDraft||d?.month!==key||d?.scope!==g.scope||!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key)||!Array.isArray(d.deleted)||d.deleted.length||!Array.isArray(e?.queue)||!e.queue.length||!Array.isArray(e.groups))return rejectSaveProof('PR01');
+ if(e.queue.some(q=>![path,catalog].includes(q.path)||q.viewOnly||q.unitPhase))return rejectSaveProof('PR02');
+ const queue=e.queue,ids=new Set(queue.map(q=>q.id));if(ids.size!==queue.length||queue.some(q=>typeof q.id!=='string'||!q.id||typeof q.groupId!=='string'||!q.groupId))return rejectSaveProof('PR03');
  const byPath=new Map(),groupIds=[...new Set(queue.map(q=>q.groupId))];
- for(const groupId of groupIds){const matching=e.groups.filter(group=>group.id===groupId),group=matching[0];if(matching.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||['partial','complete'].includes(group.status)||!Array.isArray(group.ids)||new Set(group.ids).size!==group.ids.length||!Array.isArray(group.paths)||new Set(group.paths).size!==group.paths.length||!group.paths.includes(path)||group.paths.some(p=>![path,catalog].includes(p))||group.ids.some(id=>!ids.has(id)||queue.find(q=>q.id===id)?.groupId!==groupId)||queue.filter(q=>q.groupId===groupId).some(q=>!group.ids.includes(q.id))||!explicitRecoverySame([...new Set(queue.filter(q=>q.groupId===groupId).map(q=>q.path))].sort(),[...group.paths].sort()))return null}
- let proofState;try{proofState=explicitProductionRecoveryState(e)}catch{return null}if(!proofState||proofState.months[key]?.closed||proofState.months[key]?.closeSnapshot)return null;
- const original=C.clone(proofState),originalRows=explicitRecoveryIndex(original.months[key].rows),draftBase=explicitRecoveryIndex(d.baseRows),draftRows=explicitRecoveryIndex(d.rows),finalRows=explicitRecoveryIndex(queue.filter(q=>q.path===path).at(-1)?.local?.[0]?.rows),renewed=C.clone(d);if(!originalRows||!draftBase||!draftRows||!finalRows)return null;
- const direct=new Map();for(const[id,b]of draftBase){const l=draftRows.get(id);if(!l||!explicitProductionRecoveryLocalIdentity(b,l))return null;const fields=explicitProductionRecoveryChanges(b,l);if(!fields)return null;const meaningful=fields.filter(field=>!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(b,field),explicitProductionRecoveryCell(l,field)));if(meaningful.length)direct.set(id,new Set(meaningful))}
+ for(const groupId of groupIds){const matching=e.groups.filter(group=>group.id===groupId),group=matching[0];if(matching.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||['partial','complete'].includes(group.status)||!Array.isArray(group.ids)||new Set(group.ids).size!==group.ids.length||!Array.isArray(group.paths)||new Set(group.paths).size!==group.paths.length||!group.paths.includes(path)||group.paths.some(p=>![path,catalog].includes(p))||group.ids.some(id=>!ids.has(id)||queue.find(q=>q.id===id)?.groupId!==groupId)||queue.filter(q=>q.groupId===groupId).some(q=>!group.ids.includes(q.id))||!explicitRecoverySame([...new Set(queue.filter(q=>q.groupId===groupId).map(q=>q.path))].sort(),[...group.paths].sort()))return rejectSaveProof('PR04')}
+ let proofState;try{proofState=explicitProductionRecoveryState(e)}catch{return rejectSaveProof('PR05')}if(!proofState||proofState.months[key]?.closed||proofState.months[key]?.closeSnapshot)return rejectSaveProof('PR06');
+ const original=C.clone(proofState),originalRows=explicitRecoveryIndex(original.months[key].rows),draftBase=explicitRecoveryIndex(d.baseRows),draftRows=explicitRecoveryIndex(d.rows),finalRows=explicitRecoveryIndex(queue.filter(q=>q.path===path).at(-1)?.local?.[0]?.rows),renewed=C.clone(d);if(!originalRows||!draftBase||!draftRows||!finalRows)return rejectSaveProof('PR07');
+ const direct=new Map();for(const[id,b]of draftBase){const l=draftRows.get(id);if(!l||!explicitProductionRecoveryLocalIdentity(b,l))return rejectSaveProof('PR08');const fields=explicitProductionRecoveryChanges(b,l);if(!fields)return rejectSaveProof('PR09');const meaningful=fields.filter(field=>!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(b,field),explicitProductionRecoveryCell(l,field)));if(meaningful.length)direct.set(id,new Set(meaningful))}
  let normalizedDraft;try{const check=ScheduleBatch.inspect(original,d,{scope:g.scope});if(check.ok)normalizedDraft=explicitRecoveryIndex(check.rows)}catch{}
  const covered=new Set();
  for(const q of queue){
-  const previous=byPath.get(q.path)||e.baseline[q.path];if(!explicitRecoverySame(q.base,previous)||!Array.isArray(q.local))return null;
-  if(q.path===catalog){try{if(!explicitProductionRecoveryCatalog(q.base,q.local,ScheduleNative.packCatalog(proofState),e))return null;const loaded=ScheduleNative.unpackCatalog(q.local);proofState={...loaded.state,months:proofState.months}}catch{return null}}
+  const previous=byPath.get(q.path)||e.baseline[q.path];if(!explicitRecoverySame(q.base,previous)||!Array.isArray(q.local))return rejectSaveProof('PR10');
+  if(q.path===catalog){try{if(!explicitProductionRecoveryCatalog(q.base,q.local,ScheduleNative.packCatalog(proofState),e))return rejectSaveProof('PR11');const loaded=ScheduleNative.unpackCatalog(q.local);proofState={...loaded.state,months:proofState.months}}catch{return rejectSaveProof('PR12')}}
   else{
-   const b=q.base?.[0],l=q.local?.[0];if(q.base.length!==1||q.local.length!==1||b?.id!==key||l?.id!==key||b.closed||l.closed||b.closeSnapshot||l.closeSnapshot)return null;
-   for(const field of new Set([...Object.keys(b),...Object.keys(l)]))if(!['rows','history','rev','reservationBindings'].includes(field)&&!explicitRecoverySame(b[field],l[field]))return null;
-   const before=explicitRecoveryIndex(b.rows),after=explicitRecoveryIndex(l.rows);if(!before||!after||before.size!==after.size||!explicitRecoverySame([...before.keys()],[...after.keys()]))return null;
+   const b=q.base?.[0],l=q.local?.[0];if(q.base.length!==1||q.local.length!==1||b?.id!==key||l?.id!==key||b.closed||l.closed||b.closeSnapshot||l.closeSnapshot)return rejectSaveProof('PR13');
+   for(const field of new Set([...Object.keys(b),...Object.keys(l)]))if(!['rows','history','rev','reservationBindings'].includes(field)&&!explicitRecoverySame(b[field],l[field]))return rejectSaveProof('PR14');
+   const before=explicitRecoveryIndex(b.rows),after=explicitRecoveryIndex(l.rows);if(!before||!after||before.size!==after.size||!explicitRecoverySame([...before.keys()],[...after.keys()]))return rejectSaveProof('PR15');
    const candidate=ScheduleBatch.create(proofState,key,g.scope);candidate.rows=C.clone(l.rows);
    let expected;try{
-    const check=ScheduleBatch.inspect(proofState,candidate,{scope:g.scope});if(!check.ok||!check.changes.length||check.changes.some(change=>change.kind!=='changed'))return null;
+    const check=ScheduleBatch.inspect(proofState,candidate,{scope:g.scope});if(!check.ok||!check.changes.length||check.changes.some(change=>change.kind!=='changed'))return rejectSaveProof('PR16');
     // Share the outbox's complete event-chain proof. Re-generating a single
     // Batch event rejects legitimate dialog metadata and consecutive edits.
     const proof=S.mergeProductionMonth?.(b,l,b);
@@ -10848,13 +10849,13 @@ function explicitProductionRecoveryPlan(g,owner){
      // Explicit work-link edits require the full state which the raw month
      // merger does not have. Reproduce every row, binding and event exactly.
      const generated=ScheduleBatch.apply(proofState,candidate,{scope:g.scope}),baseHistory=b.history||[],events=l.history||[],expected=generated.months[key].history||[],seen=new Set(baseHistory.map(event=>event.id));
-     if(events.length!==expected.length||!baseHistory.every((event,i)=>explicitRecoverySame(event,events[i])))return null;
-     for(let i=baseHistory.length;i<events.length;i++){const event=events[i];if(!event?.id||seen.has(event.id)||!Number.isFinite(Date.parse(event.at)))return null;seen.add(event.id);expected[i]={...expected[i],id:event.id,at:event.at}}
-     if(!explicitRecoverySame(ScheduleNative.packMonth(generated.months[key]),q.local))return null;
+     if(events.length!==expected.length||!baseHistory.every((event,i)=>explicitRecoverySame(event,events[i])))return rejectSaveProof('PR17');
+     for(let i=baseHistory.length;i<events.length;i++){const event=events[i];if(!event?.id||seen.has(event.id)||!Number.isFinite(Date.parse(event.at)))return rejectSaveProof('PR18');seen.add(event.id);expected[i]={...expected[i],id:event.id,at:event.at}}
+     if(!explicitRecoverySame(ScheduleNative.packMonth(generated.months[key]),q.local))return rejectSaveProof('PR19');
     }
     expected=C.clone(proofState);expected.months[key]=ScheduleNative.unpackMonth(key,q.local);
-   }catch{return null}
-   for(const[id,beforeRow]of before){const afterRow=after.get(id);if(explicitRecoverySame(beforeRow,afterRow))continue;if(!explicitProductionRecoveryLocalIdentity(beforeRow,afterRow))return null;const fields=explicitProductionRecoveryChanges(beforeRow,afterRow),input=direct.get(id);if(!fields)return null;
+   }catch{return rejectSaveProof('PR20')}
+   for(const[id,beforeRow]of before){const afterRow=after.get(id);if(explicitRecoverySame(beforeRow,afterRow))continue;if(!explicitProductionRecoveryLocalIdentity(beforeRow,afterRow))return rejectSaveProof('PR21');const fields=explicitProductionRecoveryChanges(beforeRow,afterRow),input=direct.get(id);if(!fields)return rejectSaveProof('PR22');
     for(const field of fields)if(!input?.has(field)){
      // A product correction deliberately reloads its catalog unit snapshot.
      // The raw draft has blanks until normalization fills those derived cells.
@@ -10862,7 +10863,7 @@ function explicitProductionRecoveryPlan(g,owner){
      const first=originalRows.get(id),basis=draftBase.get(id),local=draftRows.get(id),last=finalRows.get(id),target=renewed.baseRows.find(row=>row.id===id);
      // An old renderer advanced the draft baseline to its own unacknowledged
      // local value. Restore only the proved queue slot, never an unrelated cell.
-     if(!first||!basis||!local||!last||!target||!explicitProductionRecoveryLocalIdentity(first,basis)||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(basis,field),explicitProductionRecoveryCell(last,field))||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(local,field),explicitProductionRecoveryCell(last,field)))return null;
+     if(!first||!basis||!local||!last||!target||!explicitProductionRecoveryLocalIdentity(first,basis)||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(basis,field),explicitProductionRecoveryCell(last,field))||!explicitProductionRecoveryCellSame(field,explicitProductionRecoveryCell(local,field),explicitProductionRecoveryCell(last,field)))return rejectSaveProof('PR23');
      explicitProductionRecoverySetCell(target,field,first);
     }
     covered.add(id)
@@ -10871,20 +10872,37 @@ function explicitProductionRecoveryPlan(g,owner){
   }
   byPath.set(q.path,q.local);
  }
- if(!covered.size||!explicitRecoverySame(ScheduleNative.packMonth(e.state.months[key]),byPath.get(path)))return null;
- if(byPath.has(catalog)&&!explicitRecoverySame(ScheduleNative.packCatalog(e.state),byPath.get(catalog)))return null;
+ if(!covered.size||!explicitRecoverySame(ScheduleNative.packMonth(e.state.months[key]),byPath.get(path)))return rejectSaveProof('PR24');
+ if(byPath.has(catalog)&&!explicitRecoverySame(ScheduleNative.packCatalog(e.state),byPath.get(catalog)))return rejectSaveProof('PR25');
  const renewDraft=!explicitRecoverySame(renewed,d);if(renewDraft)renewed.revision=(renewed.revision||0)+1;
  return{kind:'production',key,path,paths:[...byPath.keys()],queue,ids:[...ids],groups:groupIds,baseline:e.baseline[path],baseState:original,draft:renewed,renewDraft,scope:g.scope,covered:[...covered]};
 }
 function explicitProductionRecoveryRemote(plan,snapshot){
- const latest=snapshot?.state,m=latest?.months?.[plan.key],base=plan.baseState.months[plan.key];if(!m||m.closed||m.closeSnapshot)return false;
+ const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return false};
+ const latest=snapshot?.state,m=latest?.months?.[plan.key],base=plan.baseState.months[plan.key];if(!m||m.closed||m.closeSnapshot)return rejectSaveProof('RR01');
  const allow=new Set(['rows','fieldAttendance','jobs','jobUndo','reservationBindings','scheduleAsOf','plans','plaster','issues','history','rev']);
- for(const field of new Set([...Object.keys(base),...Object.keys(m)]))if(!allow.has(field)&&!explicitRecoverySame(base[field],m[field]))return false;
- const events=explicitRecoveryIndex(m.history||[]);if(!events)return false;let previous=-1;for(const event of base.history||[]){const index=(m.history||[]).findIndex(row=>row.id===event.id);if(index<=previous||!explicitRecoverySame(events.get(event.id),event))return false;previous=index}
- const records=explicitRecoveryIndex(m.rows);if(!records)return false;for(const id of plan.covered){const row=records.get(id),old=plan.baseState.months[plan.key].rows.find(row=>row.id===id),input=plan.draft.rows.find(row=>row.id===id);if(!row||!explicitProductionRecoveryIdentity(old,row)&&!ScheduleBatch.canAdoptAddedScheduleTarget?.(old,input,row))return false}
- try{return ScheduleBatch.inspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok&&ScheduleBatch.memoInspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok}catch{return false}
+ for(const field of new Set([...Object.keys(base),...Object.keys(m)]))if(!allow.has(field)&&!explicitRecoverySame(base[field],m[field]))return rejectSaveProof('RR02');
+ const events=explicitRecoveryIndex(m.history||[]);if(!events)return rejectSaveProof('RR03');let previous=-1;for(const event of base.history||[]){const index=(m.history||[]).findIndex(row=>row.id===event.id);if(index<=previous||!explicitRecoverySame(events.get(event.id),event))return rejectSaveProof('RR04');previous=index}
+ const records=explicitRecoveryIndex(m.rows);if(!records)return rejectSaveProof('RR05');for(const id of plan.covered){const row=records.get(id),old=plan.baseState.months[plan.key].rows.find(row=>row.id===id),input=plan.draft.rows.find(row=>row.id===id);if(!row||!explicitProductionRecoveryIdentity(old,row)&&!ScheduleBatch.canAdoptAddedScheduleTarget?.(old,input,row))return rejectSaveProof('RR06')}
+ try{const ok=ScheduleBatch.inspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok&&ScheduleBatch.memoInspect(latest,plan.draft,{scope:plan.scope,preferLocalEdits:true}).ok;return ok||rejectSaveProof('RR99')}catch{return rejectSaveProof('RR07')}
 }
 
+// Fixed proof-location codes only: no row values, names, IDs, paths or credentials.
+// The observer exists only during synchronous validation and never enters storage.
+let sheetSaveDiagnosticActive=null;
+function sheetSaveDiagnosticReject(code){
+ if(sheetSaveDiagnosticActive&&/^(?:QG|QB|PR|RR|LR)\d{2}$/.test(code))sheetSaveDiagnosticActive.codes[code.slice(0,2)]=code;
+}
+function sheetSaveDiagnosticRun(owner,callback){
+ const previous=sheetSaveDiagnosticActive;
+ if(owner)owner.explicitSaveDiagnostic??={version:'S1',codes:{}};
+ sheetSaveDiagnosticActive=owner?.explicitSaveDiagnostic||null;
+ try{return callback()}finally{sheetSaveDiagnosticActive=previous}
+}
+function sheetSaveDiagnosticSuffix(owner){
+ const codes=owner?.explicitSaveDiagnostic?.codes||{},safe=['QG','PR','RR','LR','QB'].map(key=>codes[key]).filter(code=>/^(?:QG|QB|PR|RR|LR)\d{2}$/.test(code));
+ return ' [점검 S1'+(safe.length?': '+safe.join('/'):'')+']';
+}
 // A new save click can replace a proved input-ledger queue with the current
 // editor intent. Automatic queue replay never invokes this recovery path.
 function explicitRecoverySame(a,b){const sort=v=>Array.isArray(v)?v.map(sort):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sort(v[k])])):v;return JSON.stringify(sort(a))===JSON.stringify(sort(b))}
@@ -10976,12 +10994,13 @@ async function sheetRecoverExplicitQueue(g,owner,options={}){
 // Rebuild only an already submitted, independently proved ledger group. This
 // helper never reads or changes a live editor draft or the workspace envelope.
 function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,key){
+ const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
  try{
   const queue=group?.queue,path='months/'+key+'.json',catalogPath='meta/catalog.json';
-  if(!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key)||!Array.isArray(queue)||!queue.length||new Set(queue.map(q=>q.path)).size!==queue.length||queue.some(q=>![path,catalogPath].includes(q.path)))return null;
+  if(!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(key)||!Array.isArray(queue)||!queue.length||new Set(queue.map(q=>q.path)).size!==queue.length||queue.some(q=>![path,catalogPath].includes(q.path)))return rejectSaveProof('LR01');
   const b=baseState?.months?.[key],l=localState?.months?.[key],latest=latestState?.months?.[key];
-  if(!b||!l||!latest||b.closed||l.closed||latest.closed||b.closeSnapshot||l.closeSnapshot||latest.closeSnapshot)return null;
-  const monthQueue=queue.find(q=>q.path===path);if(!monthQueue)return null;
+  if(!b||!l||!latest||b.closed||l.closed||latest.closed||b.closeSnapshot||l.closeSnapshot||latest.closeSnapshot)return rejectSaveProof('LR02');
+  const monthQueue=queue.find(q=>q.path===path);if(!monthQueue)return rejectSaveProof('LR03');
   for(const q of queue){
    const before=q.path===catalogPath?ScheduleNative.packCatalog(baseState):ScheduleNative.packMonth(b),after=q.path===catalogPath?ScheduleNative.packCatalog(localState):ScheduleNative.packMonth(l);
    let rawBase=q.base;
@@ -10989,14 +11008,14 @@ function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,
     // Native.packCatalog can supplement legacy source provenance from an older
     // cache. Reuse its existing narrow ownership proof for that absent field;
     // unknown catalog fields remain exact comparisons.
-    const meta=rawBase.find(record=>record.id==='catalog');if(!meta||Object.hasOwn(meta,'scheduleSourceBaseline'))return null;
-    if(!explicitProductionRecoveryCatalog(rawBase,before,before,{state:baseState}))return null;rawBase=before;
+    const meta=rawBase.find(record=>record.id==='catalog');if(!meta||Object.hasOwn(meta,'scheduleSourceBaseline'))return rejectSaveProof('LR04');
+    if(!explicitProductionRecoveryCatalog(rawBase,before,before,{state:baseState}))return rejectSaveProof('LR05');rawBase=before;
    }
-   if(!explicitRecoverySame(before,rawBase)||!explicitRecoverySame(after,q.local))return null;
+   if(!explicitRecoverySame(before,rawBase)||!explicitRecoverySame(after,q.local))return rejectSaveProof('LR06');
   }
   const packedBase=monthQueue.base[0],packedLocal=monthQueue.local[0],changed=[...new Set([...Object.keys(packedBase),...Object.keys(packedLocal)])].filter(field=>!['rev','history'].includes(field)&&!explicitRecoverySame(packedBase[field],packedLocal[field]));
   const kind=changed.includes('rows')&&changed.every(field=>['rows','reservationBindings'].includes(field))?'production':changed.length===1&&['plaster','issues'].includes(changed[0])?changed[0]:null;
-  if(!kind||kind!=='production'&&queue.some(q=>q.path!==path))return null;
+  if(!kind||kind!=='production'&&queue.some(q=>q.path!==path))return rejectSaveProof('LR07');
   const baseline={'meta/catalog.json':C.clone(queue.find(q=>q.path===catalogPath)?.base||ScheduleNative.packCatalog(baseState))};
   for(const [monthKey,value]of Object.entries(baseState.months||{}))baseline['months/'+monthKey+'.json']=ScheduleNative.packMonth(value);
   const isolatedGroup=C.clone(group);delete isolatedGroup.queue;
@@ -11022,7 +11041,7 @@ function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,
   }
   const g={id:kind==='production'?'production':kind==='plaster'?'plaster-month':'issue-ledger',month:key,scope,draft,explicitSave:true,dirty:true,spec:{readonly:false,...(validate?{inspect:d=>secondaryInspect(d,validate,kind==='plaster')}:{})}};
   const plan=explicitRecoveryPlan(g,owner);
-  if(!plan||plan.renewDraft||!explicitRecoveryRemote(plan,{state:latestState,baseline:{[path]:ScheduleNative.packMonth(latest)}}))return null;
+  if(!plan||plan.renewDraft||!explicitRecoveryRemote(plan,{state:latestState,baseline:{[path]:ScheduleNative.packMonth(latest)}}))return rejectSaveProof('LR08');
   let next;
   if(kind==='production')next=ScheduleBatch.apply(latestState,plan.draft,{scope,preferLocalEdits:true});
   else{
@@ -11033,10 +11052,10 @@ function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,
     if(secondarySame(row,byId.get(row.id)))continue;validate(row);
     if(kind==='plaster'){
      const old=next.months[key].plaster.find(record=>record.date===row.date),original=l.plaster.find(record=>record.date===row.date),actual=secondaryNumber(row.actual,'actual','실사용 kg');
-     if(!old&&actual==null)continue;if(!old&&!original)return null;
+     if(!old&&actual==null)continue;if(!old&&!original)return rejectSaveProof('LR09');
      O.upsert(next,key,'plaster',{...(old||{}),id:old?.id||original.id,date:row.date,actual},'월별 실사용량 표 입력');
     }else{
-     const old=next.months[key].issues.find(record=>record.id===row.id);if(!old)return null;
+     const old=next.months[key].issues.find(record=>record.id===row.id);if(!old)return rejectSaveProof('LR10');
      O.upsert(next,key,'issues',{...old,id:row.id,date:row.date,product:secondaryText(row.product),machine:secondaryText(row.machine),replacement:secondaryNumber(row.replacement,'replacement','교체 조수'),issued:secondaryNumber(row.issued,'issued','불출 조수'),reason:secondaryText(row.reason),source:old.source||'웹 표 입력'},secondaryText(row.reason));
     }
    }
@@ -11045,18 +11064,18 @@ function explicitLedgerQueueReplay(baseState,localState,latestState,group,scope,
   // Keep the regenerated latest before/after values, retaining only the
   // submitted event's identity and time. A no-op produces no artificial event.
   const baseHistory=b.history||[],submitted=l.history||[],events=explicitRecoveryIndex(latest.history||[]);
-  if(!events||submitted.length<=baseHistory.length||!baseHistory.every((event,index)=>explicitRecoverySame(event,submitted[index])))return null;
+  if(!events||submitted.length<=baseHistory.length||!baseHistory.every((event,index)=>explicitRecoverySame(event,submitted[index])))return rejectSaveProof('LR11');
   const additions=submitted.slice(baseHistory.length),generated=(next.months[key].history||[]).slice((latest.history||[]).length),replacements=new Map();
   const identity=event=>JSON.stringify([event.type,kind==='plaster'?(event.after||event.before)?.date:(event.after||event.before)?.id]);
   for(const event of generated){
    const matches=additions.filter(original=>identity(original)===identity(event));
-   if(matches.length!==1||events.has(matches[0].id))return null;
+   if(matches.length!==1||events.has(matches[0].id))return rejectSaveProof('LR12');
    replacements.set(event.id,{...event,id:matches[0].id,at:matches[0].at});
   }
   next.months[key].history=(next.months[key].history||[]).map(event=>replacements.get(event.id)||event);
   if(Array.isArray(next.changes))next.changes=next.changes.map(event=>replacements.get(event.id)||event);
   return{state:next,monthKeys:[key],catalog:false};
- }catch{return null}
+ }catch{return rejectSaveProof('LR13')}
 }
 
 // Prove a schedule save with the same synchronous producer used by the editor.
@@ -11589,23 +11608,24 @@ function explicitQueuedApply(source,path,records){
  const next=C.clone(source);next.months[match[1]]=ScheduleNative.unpackMonth(match[1],records);return next;
 }
 function explicitQueuedGroups(envelope){
+ const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
  const queue=envelope?.queue,groups=envelope?.groups;
- if(!Array.isArray(queue)||!queue.length||!Array.isArray(groups))return null;
+ if(!Array.isArray(queue)||!queue.length||!Array.isArray(groups))return rejectSaveProof('QG01');
  const ids=new Set(),seen=new Set(),ordered=[];
  for(const q of queue){
-  if(!q?.id||ids.has(q.id)||!q.groupId||q.unitPhase||!Array.isArray(q.base)||!Array.isArray(q.local)||!(/^(?:meta\/catalog|months\/\d{4}-(?:0[1-9]|1[0-2]))\.json$/).test(q.path))return null;
+  if(!q?.id||ids.has(q.id)||!q.groupId||q.unitPhase||!Array.isArray(q.base)||!Array.isArray(q.local)||!(/^(?:meta\/catalog|months\/\d{4}-(?:0[1-9]|1[0-2]))\.json$/).test(q.path))return rejectSaveProof('QG02');
   ids.add(q.id);
   if(ordered.at(-1)?.id!==q.groupId){
-   if(seen.has(q.groupId))return null;seen.add(q.groupId);
+   if(seen.has(q.groupId))return rejectSaveProof('QG03');seen.add(q.groupId);
    const matches=groups.filter(group=>group.id===q.groupId),group=matches[0];
-   if(matches.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||group.status!=='pending'||!Array.isArray(group.ids)||!Array.isArray(group.paths))return null;
+   if(matches.length!==1||group.unitSync||group.auditOperations?.length||!Array.isArray(group.acked)||group.acked.length||group.status!=='pending'||!Array.isArray(group.ids)||!Array.isArray(group.paths))return rejectSaveProof('QG04');
    ordered.push({...C.clone(group),queue:[]});
   }
   ordered.at(-1).queue.push(C.clone(q));
  }
  for(const group of ordered){
   const paths=group.queue.map(q=>q.path);
-  if(new Set(paths).size!==paths.length||!explicitRecoverySame(group.ids,group.queue.map(q=>q.id))||!explicitRecoverySame(group.paths,paths))return null;
+  if(new Set(paths).size!==paths.length||!explicitRecoverySame(group.ids,group.queue.map(q=>q.id))||!explicitRecoverySame(group.paths,paths))return rejectSaveProof('QG05');
  }
  return ordered;
 }
@@ -11673,8 +11693,9 @@ function explicitQueuedAcknowledged(base,local,latest,group,scope,key){
  return count>0&&!!explicitQueuedProducer(base,local,base,group,scope,key);
 }
 function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
- const groups=explicitQueuedGroups(envelope);if(!groups)return null;
- let original;try{original=explicitProductionRecoveryState(envelope)}catch{return null}if(!original)return null;
+ const rejectSaveProof=code=>{if(typeof sheetSaveDiagnosticReject==='function')sheetSaveDiagnosticReject(code);return null};
+ const groups=explicitQueuedGroups(envelope);if(!groups)return rejectSaveProof('QB01');
+ let original;try{original=explicitProductionRecoveryState(envelope)}catch{return rejectSaveProof('QB02')}if(!original)return rejectSaveProof('QB03');
  let current=C.clone(snapshot.state);const raw=C.clone(envelope.baseline),nextBase=C.clone(snapshot.baseline),queue=[],rebuiltGroups=[];
  // Only this in-memory proof view uses the original predecessor events. The
  // durable outbox always contains the newly generated, latest before/after
@@ -11682,24 +11703,24 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
  const proofHistory=Object.fromEntries(Object.entries(current.months).map(([key,m])=>[key,C.clone(m.history||[])]));
  for(const group of groups){
   const before=C.clone(original);let local=C.clone(before);
-  for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return null;try{local=explicitQueuedApply(local,q.path,q.local)}catch{return null}raw[q.path]=C.clone(q.local)}
+  for(const q of group.queue){if(!explicitRecoverySame(q.base,raw[q.path]||[]))return rejectSaveProof('QB04');try{local=explicitQueuedApply(local,q.path,q.local)}catch{return rejectSaveProof('QB05')}raw[q.path]=C.clone(q.local)}
   const key=group.queue.find(q=>q.path.startsWith('months/'))?.path.slice(7,-5)||viewMonth;
   const proofCurrent=C.clone(current);for(const [k,history]of Object.entries(proofHistory))if(proofCurrent.months[k])proofCurrent.months[k].history=C.clone(history);
   let staged=C.clone(proofCurrent),records=[],accepted=false,replayed;
-  if(!group.queue.some(q=>q.viewOnly))try{accepted=explicitQueuedAcknowledged(before,local,current,group,scope,key);if(!accepted)replayed=explicitQueuedProducer(before,local,proofCurrent,group,scope,key)}catch{return null}
+  if(!group.queue.some(q=>q.viewOnly))try{accepted=explicitQueuedAcknowledged(before,local,current,group,scope,key);if(!accepted)replayed=explicitQueuedProducer(before,local,proofCurrent,group,scope,key)}catch{return rejectSaveProof('QB06')}
   if(!accepted&&replayed){
-   if(!replayed.state||!Array.isArray(replayed.monthKeys))return null;
+   if(!replayed.state||!Array.isArray(replayed.monthKeys))return rejectSaveProof('QB07');
    staged=replayed.state;records=[];
    const originalPaths=new Set(group.paths);
    for(const monthKey of [...new Set(replayed.monthKeys)]){
-    const path='months/'+monthKey+'.json';if(!originalPaths.has(path)||!staged.months[monthKey])return null;
+    const path='months/'+monthKey+'.json';if(!originalPaths.has(path)||!staged.months[monthKey])return rejectSaveProof('QB08');
     records.push({path,base:C.clone(nextBase[path]||[]),local:ScheduleNative.packMonth(staged.months[monthKey])});
    }
    const catalog=ScheduleNative.packCatalog(staged),previous=ScheduleNative.packCatalog(current);
    if(replayed.catalog||!explicitRecoverySame(catalog,previous)){
     if(!originalPaths.has('meta/catalog.json')){
      const strip=rows=>rows.map(row=>{const r=C.clone(row);if(r.id==='catalog')delete r.scheduleSourceBaseline;return r});
-     if(!explicitRecoverySame(strip(catalog),strip(previous)))return null;
+     if(!explicitRecoverySame(strip(catalog),strip(previous)))return rejectSaveProof('QB09');
     }
     records.push({path:'meta/catalog.json',base:C.clone(nextBase['meta/catalog.json']),local:catalog});
    }
@@ -11707,9 +11728,9 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
    for(const q of group.queue){
     const actual=nextBase[q.path]||[],remote=C.clone(actual),monthKey=q.path.startsWith('months/')?q.path.slice(7,-5):null;
     if(monthKey&&remote[0]&&proofHistory[monthKey])remote[0].history=C.clone(proofHistory[monthKey]);
-    let merge;try{merge=S.mergeRecords(q.base,q.local,remote)}catch{return null}if(merge.conflicts.length)return null;
+    let merge;try{merge=S.mergeRecords(q.base,q.local,remote)}catch{return rejectSaveProof('QB10')}if(merge.conflicts.length)return rejectSaveProof('QB11');
     records.push({path:q.path,base:C.clone(actual),local:C.clone(merge.records),...(q.viewOnly?{viewOnly:true,viewKeys:C.clone(q.viewKeys)}:{})});
-    try{staged=explicitQueuedApply(staged,q.path,merge.records)}catch{return null}
+    try{staged=explicitQueuedApply(staged,q.path,merge.records)}catch{return rejectSaveProof('QB12')}
    }
   }
   // Restore actual predecessor history before persisting anything. Only the
@@ -11717,17 +11738,17 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
   // retained in the recovery archive and the temporary next-group proof view.
   if(!accepted)for(const k of Object.keys(staged.months)){
    const prior=proofHistory[k]||[],history=staged.months[k]?.history;
-   if(!Array.isArray(history)||history.length<prior.length||!prior.every((event,i)=>explicitRecoverySame(event,history[i])))return null;
+   if(!Array.isArray(history)||history.length<prior.length||!prior.every((event,i)=>explicitRecoverySame(event,history[i])))return rejectSaveProof('QB13');
    const additions=history.slice(prior.length),actual=current.months[k]?.history||[],seen=new Set(actual.map(event=>event.id));
-   if(additions.some(event=>!event.id||seen.has(event.id)))return null;
+   if(additions.some(event=>!event.id||seen.has(event.id)))return rejectSaveProof('QB14');
    staged.months[k].history=C.clone(actual).concat(C.clone(additions));
    staged.months[k].rev=(current.months[k]?.rev??ScheduleNative.newMonth(k).rev)+additions.length;
    const record=records.find(q=>q.path==='months/'+k+'.json');
-   if(record)record.local=ScheduleNative.packMonth(staged.months[k]);else if(additions.length)return null;
+   if(record)record.local=ScheduleNative.packMonth(staged.months[k]);else if(additions.length)return rejectSaveProof('QB15');
   }
   for(const q of group.queue.filter(q=>q.path.startsWith('months/'))){
    const k=q.path.slice(7,-5),originalHistory=q.base[0]?.history||[],submitted=q.local[0]?.history||[];
-   if(submitted.length<originalHistory.length||!originalHistory.every((event,i)=>explicitRecoverySame(event,submitted[i])))return null;
+   if(submitted.length<originalHistory.length||!originalHistory.every((event,i)=>explicitRecoverySame(event,submitted[i])))return rejectSaveProof('QB16');
    const history=C.clone(proofHistory[k]||[]),positions=new Map(history.map((event,i)=>[event.id,i]));
    for(const event of submitted.slice(originalHistory.length)){if(positions.has(event.id))history[positions.get(event.id)]=C.clone(event);else{positions.set(event.id,history.length);history.push(C.clone(event))}}
    proofHistory[k]=history;
@@ -11747,10 +11768,10 @@ function explicitQueuedBuild(envelope,snapshot,scope,viewMonth){
  // The saved local projection must still be exactly the tail we proved.
  for(const path of new Set(envelope.queue.map(q=>q.path))){
   if(path==='meta/catalog.json'){
-   if(!explicitRecoverySame(ScheduleNative.packCatalog(original),ScheduleNative.packCatalog(envelope.state)))return null;
-  }else if(!explicitRecoverySame(ScheduleNative.packMonth(original.months[path.slice(7,-5)]),ScheduleNative.packMonth(envelope.state.months[path.slice(7,-5)])))return null;
+   if(!explicitRecoverySame(ScheduleNative.packCatalog(original),ScheduleNative.packCatalog(envelope.state)))return rejectSaveProof('QB17');
+  }else if(!explicitRecoverySame(ScheduleNative.packMonth(original.months[path.slice(7,-5)]),ScheduleNative.packMonth(envelope.state.months[path.slice(7,-5)])))return rejectSaveProof('QB18');
  }
- if(ScheduleNative.catalogUnitIssues(current).length)return null;
+ if(ScheduleNative.catalogUnitIssues(current).length)return rejectSaveProof('QB19');
  return{state:current,baseline:C.clone(snapshot.baseline),queue,groups:rebuiltGroups,originalIds:envelope.queue.map(q=>q.id),originalGroups:groups.map(g=>g.id)};
 }
 function sheetQueuedRetryable(error){return !!error?.conflicts?.length||error?.status===409||error?.status>=500&&error?.status<=599||['NETWORK','REQUEST_INTERRUPTED'].includes(error?.code)}
@@ -11762,13 +11783,15 @@ async function sheetReplayQueuedSave(g,owner,options={}){
  const selected=()=>{if(!g)return true;try{const pointer=sessionStorage.getItem(g.draftPointer());return !pointer||pointer===storageKey}catch{return false}};
  const callerValid=()=>workspace===owner&&sheetScope()===scope&&month===key&&!owner.closed&&!owner.offline&&!owner.pendingMigration&&!owner.resolving&&bulkSaveAllowed()&&(!g||g.explicitSave&&g.revision===revision&&g.draft===draft&&JSON.stringify(draft)===draftSignature&&g.storageKey===storageKey&&JSON.stringify(g.persistedDraft)===draftVersion&&selected())&&(!options.valid||options.valid());
  const valid=()=>callerValid()&&owner.envelope===before&&JSON.stringify(before)===signature&&(JSON.stringify(owner.persisted)===persisted||adopted!==null&&JSON.stringify(owner.persisted)===adopted);
- if(!valid()||!explicitQueuedGroups(before))return false;
+ if(!valid())return false;
+ const diagnostic=callback=>typeof sheetSaveDiagnosticRun==='function'?sheetSaveDiagnosticRun(owner,callback):callback();
+ if(!diagnostic(()=>explicitQueuedGroups(before)))return false;
  if(acknowledgedDrafts&&typeof explicitQueuedDraftsCaptureStored==='function')await explicitQueuedDraftsCaptureStored(acknowledgedDrafts,owner,valid);
  if(!valid())return false;
  const reader=new ScheduleNative.Workspace(owner.config);let snapshot;
  try{snapshot=await reader.readSnapshot({canApply:valid})}finally{reader.close()}
  if(!snapshot||!valid())return false;
- const plan=explicitQueuedBuild(before,snapshot,scope,key);if(!plan||!valid())return false;
+ const plan=diagnostic(()=>explicitQueuedBuild(before,snapshot,scope,key));if(!plan||!valid())return false;
  if(acknowledgedDrafts)acknowledgedDrafts.acknowledgedState=C.clone(plan.state);
  const recoveryKey=owner.key+':recovery:queued-save:'+C.id(),at=new Date().toISOString();
  const draftAcknowledgements=typeof explicitQueuedDraftsArchive==='function'?explicitQueuedDraftsArchive(acknowledgedDrafts,g,plan.state):null;
