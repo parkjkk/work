@@ -5649,7 +5649,7 @@ function ensureLocalState(){if(state)return;state=ScheduleNative.emptyState();st
 function hasBusinessData(s){return !!s&&(['products','workers','memos','counts','scheduleRows','archive'].some(k=>s[k]?.length)||s.calendar?.factory?.length||s.calendar?.workers?.length||Object.values(s.months||{}).some(x=>x.closed||['rows','issues','stocks','plans','jobs','auditSessions','plaster','history'].some(k=>x[k]?.length)))}
 // A browser that is not connected and holds no data says so in one line with a
 // button to the connection settings. Preparing data before connecting still works.
-function localNotice(){if(localReadError)return `<div class="notice" role="alert">기기 보관자료를 읽지 못했습니다. 기존 자료 보호를 위해 입력 저장을 보류합니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요. ${esc(localReadError)}</div>`;if(connectionPreview===workspace&&connectionPreview)return '<div class="notice blue" role="status">기기 보관자료를 먼저 표시했습니다. 최신자료를 확인하는 동안 조회만 가능합니다.</div>';if(heldCopyOnly())return '<div class="notice blue heldCopyNotice" role="status"><span>접근 토큰이 없어 이 기기에 보관된 자료만 보여 줍니다(조회 전용).'+(heldCopy.pending?' 보내지 못한 입력 '+Number(heldCopy.pending)+'건도 그대로 있습니다.':'')+'</span> <button type="button" data-action="settings" data-token-entry>토큰 입력</button></div>';if(!workspace&&!booting&&page!=='settings'&&!hasBusinessData(state)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active))return '<div class="notice blue heldCopyNotice" role="status"><span>이 브라우저는 아직 데이터 저장소에 연결되지 않았습니다. 다른 기기에서 저장한 자료는 연결하면 보입니다.</span> <button type="button" data-action="settings">저장소 연결</button></div>'+heldScheduleNotice();return (page==='settings'&&(!workspace||workspace.pendingMigration)?'<div class="notice localNotice">입력 자료는 현재 브라우저에 보관됩니다. 다른 기기에서도 사용하려면 저장소에 연결해 기기자료를 저장하세요.</div>':'')+heldScheduleNotice()}
+function localNotice(){if(localReadError)return `<div class="notice" role="alert">기기 보관자료를 읽지 못했습니다. 기존 자료 보호를 위해 입력 저장을 보류합니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요. ${esc(localReadError)}</div>`;if(connectionPreview===workspace&&connectionPreview)return '<div class="notice blue" role="status">기기 보관자료를 먼저 표시했습니다. 최신자료를 확인하는 동안 조회만 가능합니다.</div>';if(heldCopyOnly())return '<div class="notice blue heldCopyNotice" role="status"><span>접근 토큰이 없어 이 기기에 보관된 자료만 보여 줍니다(조회 전용).'+(heldCopy.pending?' 보내지 못한 입력 '+Number(heldCopy.pending)+'건도 그대로 있습니다.':'')+'</span> <button type="button" data-action="settings" data-token-entry>토큰 입력</button></div>';if(page!=='settings'&&typeof storeFirstRun==='function'&&storeFirstRun())return storeFirstRunNotice();if(!workspace&&!booting&&page!=='settings'&&!hasBusinessData(state)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active))return '<div class="notice blue heldCopyNotice" role="status"><span>이 브라우저는 아직 데이터 저장소에 연결되지 않았습니다. 다른 기기에서 저장한 자료는 연결하면 보입니다.</span> <button type="button" data-action="settings">저장소 연결</button></div>'+heldScheduleNotice();return (page==='settings'&&(!workspace||workspace.pendingMigration)?'<div class="notice localNotice">입력 자료는 현재 브라우저에 보관됩니다. 다른 기기에서도 사용하려면 저장소에 연결해 기기자료를 저장하세요.</div>':'')+heldScheduleNotice()+(typeof addressMoveNotice==='function'?addressMoveNotice():'')}
 
 function toast(s){document.querySelector('.toast')?.remove();const e=document.createElement('div');e.className='toast';e.setAttribute('role','status');e.textContent=s;document.body.append(e);setTimeout(()=>e.remove(),5000)}
 function table(headers,rows){return`<div class="tableWrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td colspan="${headers.length}" class="empty">해당 자료가 없습니다.</td></tr>`}</tbody></table></div>`}
@@ -5688,7 +5688,7 @@ function readProducts(){document.querySelectorAll('.productEntry').forEach((e,i)
 function updateEntryOutput(){readProducts();draftProducts.forEach((r,i)=>{const p=state.products.find(p=>p.name===r.product),d=C.daily({...r,plaster:p?.kg,cases:p?.cases});document.querySelector(`[data-calc="${i}"]`).textContent=`생산 석고 ${fmt(d.plaster)} kg  ·  탈형 ${fmt(d.demould)}개  ·  물 ${fmt(d.water)} kg  ·  불량률 ${d.rate==null?'—':fmt(d.rate*100,2)+'%'}`})}
 function dryDialog(){const d=$('#dialog');d.oninput=null;d.innerHTML=`<h2>건조일 계산 확인</h2><p>생산 종료 다음날부터 10일을 셉니다. 주말과 작업자 ‘휴’는 포함하고 공장 전체 제외일만 뺍니다.</p><div class="formGrid"><label class="wide">생산 종료일<input id="dryEnd" type="date" value="${today()}"></label><label class="full">공장 제외일 · 한 줄에 하나<textarea id="dryExclude" placeholder="2026-09-15"></textarea></label></div><p id="dryResult" class="output"></p><div class="actions"><button id="runDry" class="primary">계산</button><button id="closeDry">닫기</button></div>`;$('#runDry').onclick=()=>{try{const excluded=$('#dryExclude').value.split(/\s+/).filter(Boolean);if(excluded.some(x=>!C.iso(x)))throw Error('제외일을 YYYY-MM-DD로 입력해 주세요.');$('#dryResult').textContent='건조 완료일 '+C.dryDate($('#dryEnd').value,excluded)}catch(e){toast(e.message)}};$('#closeDry').onclick=()=>d.close();d.showModal();$('#runDry').click()}
 $('#file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(localReadError)throw Error('기존 기기자료를 읽지 못해 이전을 보류했습니다. 저장 허용 설정을 확인한 뒤 새로고침해 주세요.');$('#saveState').textContent='엑셀 자료 읽는 중…';const next=await ScheduleWorkbook.read(file);if(hasBusinessData(state)){const ok=confirm('현재 기기자료를 먼저 전체 내려받은 뒤 새 파일로 바꾸시겠습니까?');if(!ok)return;download(JSON.stringify(state),'조형_교체전_백업_'+today()+'.json','application/json')}await S.localSet('migration-preview',next);state=next;month='';page='settings';setStatus('최초 이전자료 · GitHub 반영 전');render();toast('최초 이전자료를 준비했습니다. GitHub에 저장하려면 이전자료 저장을 누르세요.')}catch(err){toast(err.message);$('#saveState').textContent='불러오기 실패 · 기존자료 유지'}finally{e.target.value=''}};
-function setStatus(message){connectionStatus=message;$('#saveState').textContent=message}
+function setStatus(message){connectionStatus=message;$('#saveState').textContent=message;addressMoveRefresh()}
 async function persist(next,keys=[],catalog=false){if(connectionOpening)throw Error('최신자료를 확인하는 동안 조회만 가능합니다. 불러오기가 끝난 뒤 저장해 주세요.');if(localReadError)throw Error('기존 기기자료를 읽지 못해 저장을 보류했습니다. 저장 허용 설정을 확인하고 새로고침해 주세요.');if(typeof heldCopyOnly==='function'&&heldCopyOnly())throw Error(heldCopyMessage);const owner=workspace;let message='';if(owner?.pendingMigration){await S.localSet('migration-preview',next);message='연결 전 기기자료 · 최초 이전 저장 필요'}else if(owner){next=await owner.save(next,keys,catalog)}else{await S.localSet('migration-preview',next);message='기기에 보관 · GitHub 반영 전'}if(workspace!==owner)throw Error('저장 중 연결이 바뀌었습니다. 원래 연결의 입력은 보관했습니다.');state=next;if(message)setStatus(message)}
 // Device housekeeping runs only while nothing is loading or saving, so it can
 // never compete with a save. It retries later instead of interrupting work.
@@ -5754,6 +5754,63 @@ async function storeGate(owner,choice){
  const who=await storeWhoami(storeDevice()),mode=who?.mode||storeRead(storeKeys.mode)?.mode||'github';if(mode==='github')return true;
  if(workspace===owner&&!owner.closed){storeWatchAt=0;storeWatch().catch(()=>{})}return false;
 }
+// Address move, simple carry (plan §4.3 as approved): a github.io manager page offers the new
+// address only while the server store is live and this device holds nothing unsent, unsaved or
+// waiting for review. Nothing is carried; the new page registers this device once.
+const storeOldOrigin='https://parkjkk.github.io',storeNewPage='https://jo.pjk3742.workers.dev/schedule.html',addressMove={owner:null,html:'',timer:0,running:false,again:false,leaving:false,bound:false};
+function addressMoveOwner(){const owner=workspace;return location.origin===storeOldOrigin&&owner&&!owner.closed&&!owner.offline&&!owner.pendingMigration&&owner.loaded&&owner.config?.driver==='cloud'&&storeManaged(owner.config)&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active)?owner:null}
+// '' = nothing waits on this device; a line = what still waits here; null = the store is not live.
+async function addressMoveBlocker(owner,fresh=false){
+ if(owner.config.storeMode!=='live')return null;
+ if(busy||connectionOpening||owner.flushing||owner.resolving||$('#dialog')?.open)return '저장·불러오기가 끝난 뒤 새 주소로 옮깁니다.';
+ // The button reads the device copy again, which other windows of this browser also write.
+ const envelope=fresh&&await S.localGet(owner.key)||owner.envelope,queued=Math.max(owner.envelope.queue.length,envelope.queue?.length||0);
+ if(queued)return '보내지 않은 저장 '+queued+'건이 있어 보낸 뒤 새 주소로 옮깁니다.';
+ const sheet='sheet.v1:'+owner.key+':',open=[...sheetRegistry.values()].filter(g=>g.scope===owner.key&&(g.dirty||g.saving||g.closedDraft)),keys=await S.localKeys(''),stored=async prefix=>{const out=[];for(const key of keys)if(key.startsWith(prefix)){const value=await S.localGet(key);if(value!=null)out.push({key,value})}return out},kept=open.length?[]:await stored(sheet);
+ if(open.length||kept.length){const months=[...new Set([...open.map(g=>g.month),...kept.map(e=>e.key.slice(sheet.length,sheet.length+7))])].filter(v=>/^\d{4}-\d{2}$/.test(v||'')).sort();return '저장하지 않은 표 입력'+(months.length?'('+months.join(' · ')+')':'')+'이 있어 저장한 뒤 새 주소로 옮깁니다.'}
+ // "+ 생산기록 입력" keeps what was typed per month until it is saved ([취소] keeps it). Only the remembered worker/LOT (':last'), a date or a worker alone is not input.
+ const entry='draft:'+owner.key+':',typed=[];for(const e of await stored(entry)){const m=e.key.slice(entry.length),v=e.value;if(!/^\d{4}-\d{2}$/.test(m)||typeof v!=='object')continue;const lot=String(v.lot??'').trim(),last=lot?await S.localGet(e.key+':last'):null;if((Array.isArray(v.products)?v.products:[]).some(p=>p&&(p.product||p.jobId||[p.plan,p.pours,p.waterRatio,p.defectCount,p.defectUnit].some(x=>x!=null&&x!=='')||String(p.defectPart??'').trim()))||v.hours!=null&&v.hours!==''||lot&&lot!==String(last?.lot??'').trim())typed.push(m)}
+ if(typed.length)return '저장하지 않은 생산기록 입력('+typed.sort().join(' · ')+')이 있어 저장하거나 지운 뒤 새 주소로 옮깁니다.';
+ const held=(envelope.heldSchedules||[]).filter(h=>h.status==='pending').length;if(held)return '확인이 필요한 보관 일정 '+held+'건이 있어 확인한 뒤 새 주소로 옮깁니다.';
+ // A table save that was set aside keeps its input in the table draft (checked above); an automatic one has no other copy.
+ // No screen shows them; a device backup ([이 기기 자료 백업], data-export.js recoveryEntries) carries them, and once it was downloaded they stay here without holding the move.
+ const backed=addressMoveBackedKeys(owner.key),aside=(await stored(owner.key+':recovery:set-aside:')).filter(e=>e.value?.reason!=='explicit-save'&&!backed.has(e.key)).length;if(aside)return '자동으로 합치지 못한 저장 '+aside+'건이 이 기기에만 있습니다. 설정·백업에서 [이 기기 자료 백업]을 받으면 새 주소로 옮길 수 있습니다.';
+ if(envelope.explicitSaveRecoveries?.length)return '조금 전 저장의 확인이 끝나면(최대 1시간) 새 주소로 옮깁니다.';
+ return '';
+}
+const addressMoveBackupKey='schedule.v1.moveBackup';
+function addressMoveBackedKeys(scope){try{const v=JSON.parse(localStorage.getItem(addressMoveBackupKey)||'null');return new Set(v?.scope===scope&&Array.isArray(v.keys)?v.keys:[])}catch{return new Set()}}
+// Called after a device backup was downloaded: remember which set-aside saves it carries (keys only, no data).
+function addressMoveBackedUp(b){const scope=b?.device?.scope;if(typeof scope!=='string')return;const prefix=scope+':recovery:set-aside:',keys=(b.device.recoveryEntries||[]).map(e=>e?.key).filter(k=>typeof k==='string'&&k.startsWith(prefix));if(!keys.length)return;try{localStorage.setItem(addressMoveBackupKey,JSON.stringify({scope,keys:[...new Set([...addressMoveBackedKeys(scope),...keys])],at:new Date().toISOString()}))}catch{}addressMoveRefresh()}
+function addressMoveMarkup(line){return line===''?'<span><b>새 주소로 옮깁니다.</b> 보내지 않은 자료가 없습니다. 새 주소에서 관리자 비밀번호로 한 번 등록합니다.</span> <button type="button" class="primary" data-address-move-go>새 주소로 옮기기</button>':line?'<span>'+esc(line)+'</span>':''}
+function addressMovePaint(){for(const el of document.querySelectorAll('[data-address-move]')){el.className=addressMove.html?'notice blue heldCopyNotice':'';el.innerHTML=addressMove.html}}
+function addressMoveNotice(){
+ const owner=addressMoveOwner();if(!owner)return '';
+ if(!addressMove.bound){addressMove.bound=true;document.addEventListener('click',e=>{const b=e.target.closest?.('[data-address-move-go]');if(b)addressMoveGo(b)})}
+ addressMoveRefresh();const html=addressMove.owner===owner?addressMove.html:'';return '<div'+(html?' class="notice blue heldCopyNotice"':'')+' role="status" data-address-move>'+html+'</div>';
+}
+function addressMoveRefresh(){if(!addressMoveOwner())return;clearTimeout(addressMove.timer);addressMove.timer=setTimeout(addressMoveRun,300)}
+async function addressMoveRun(){
+ const owner=addressMoveOwner();if(!owner||addressMove.leaving)return;if(addressMove.running){addressMove.again=true;return}addressMove.running=true;let line;
+ try{line=await addressMoveBlocker(owner)}catch{line='기기 보관자료를 확인하지 못해 새 주소로 옮기지 않았습니다.'}finally{addressMove.running=false}
+ if(addressMoveOwner()===owner){addressMove.owner=owner;addressMove.html=addressMoveMarkup(line);addressMovePaint()}
+ if(addressMove.again){addressMove.again=false;addressMoveRefresh()}
+}
+async function addressMoveGo(button){
+ const owner=addressMoveOwner();if(!owner||addressMove.leaving||button.disabled)return;button.disabled=true;
+ try{
+  // The normal flush first; then the gateway, this window and the device copy are asked again.
+  if(owner.envelope.queue.length&&!busy)await owner.flush();
+  const who=await storeWhoami(storeDevice());if(addressMoveOwner()!==owner)return;
+  const line=who?.mode==='live'?await addressMoveBlocker(owner,true):null;if(addressMoveOwner()!==owner)return;
+  if(line===''){addressMove.leaving=true;location.assign(storeNewPage);setTimeout(()=>{addressMove.leaving=false;button.disabled=false},10000);return}
+  const text=line??'서버 저장 상태를 확인하지 못했습니다. 잠시 후 다시 눌러 주세요.';addressMove.owner=owner;addressMove.html=addressMoveMarkup(text);addressMovePaint();toast(text);
+ }catch(e){toast(e.message||'새 주소로 옮기지 못했습니다.')}finally{if(!addressMove.leaving)button.disabled=false}
+}
+// The store's own address with nothing on this device yet: while the server store is used, the
+// administrator password registers this device once and the ledger opens (no GitHub token).
+function storeFirstRun(){if(location.origin!==storeServer||workspace||booting||localReadError||typeof shareViewSession!=='undefined'&&shareViewSession.active)return false;let config=null,token='';try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null');token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')||''}catch{}return !config&&!token&&['frozen','live'].includes(storeRead(storeKeys.mode)?.mode)}
+function storeFirstRunNotice(){return '<div class="notice blue heldCopyNotice" role="status" data-store-first-run><span><b>이 주소에서 처음 여는 기기입니다.</b> 관리자 비밀번호로 한 번 등록하면 바로 자료를 엽니다.</span> <button type="button" class="primary" data-action="registerDevice">관리자 비밀번호로 이 기기 등록</button></div>'}
 async function connect(config,initialMonth,{keepPage=false}={}){
  if(localReadError)throw Error('기기 보관자료를 먼저 복원한 뒤 연결해 주세요. 저장 허용 설정을 확인하고 새로고침해 주세요.');
  const previous=workspace,beforeState=state,prepared=previous&&!previous.pendingMigration||heldCopyOnly()?null:state,beforeMonth=month;
@@ -5792,6 +5849,8 @@ async function restoreConnection(){
   let deviceOnly=false;if(config&&!token)try{deviceOnly=/^[A-Za-z0-9_-]{43}$/.test(JSON.parse(localStorage.getItem('schedule.v1.deviceKey')||'null')?.key||'')&&['frozen','live'].includes(JSON.parse(localStorage.getItem('schedule.v1.storeMode')||'null')?.mode)}catch{}
   if(config&&(token||deviceOnly)){try{await connect({...config,token:token||''},undefined,{keepPage:true})}catch(e){toast(e.message)}}
   else if(config)await showHeldCopy(config);
+  // A new address holds nothing yet: ask once whether the server store is used (the first screen then offers the registration).
+  else if(!token&&location.origin===storeServer)await storeWhoami(storeDevice());
  }finally{ensureLocalState();booting=false;render()}
 }
 async function showHeldCopy(config){
@@ -5804,7 +5863,12 @@ async function showHeldCopy(config){
 async function nativeAction(action){
  if(action==='connect'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim()||'main',token:$('#token').value.trim()};if(!config.token)throw Error('데이터 저장소 접근 토큰을 입력해 주세요.');const first=$('#firstMonth').value,remember=$('#rememberConnection').checked;await connect(config,first);localStorage.setItem('schedule.v1.connection',JSON.stringify({owner:config.owner,repo:config.repo,branch:config.branch}));sessionStorage.setItem('schedule.v1.token',config.token);if(remember){localStorage.setItem('schedule.v1.token',config.token);localStorage.removeItem('schedule.v1.keep')}else{localStorage.removeItem('schedule.v1.token');localStorage.setItem('schedule.v1.keep','off')}return}
  // Fallback registration after the switch: the administrator password already entered for this settings tab.
- if(action==='registerDevice'){if(typeof managementConnectionGate==='undefined')throw Error('관리자 설정을 다시 열어 주세요.');await managementConnectionGate.withCredential(adminPassword=>storeRegister({action:'register-by-pin',adminPassword}));toast('이 기기를 서버에 등록했습니다.');const config=storeRead('schedule.v1.connection');if(storeManaged(config)){let token='';try{token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')||''}catch{}await connect({...config,token},undefined,{keepPage:true})}return}
+ if(action==='registerDevice'){if(typeof managementConnectionGate==='undefined')throw Error('관리자 설정을 다시 열어 주세요.');
+  // From the first screen of a new address the same administrator prompt opens here once and closes again.
+  const asked=managementConnectionGate.unlocked===false;if(asked&&!await managementConnectionGate.request())return;
+  try{await managementConnectionGate.withCredential(adminPassword=>storeRegister({action:'register-by-pin',adminPassword}))}finally{if(asked)managementConnectionGate.lock()}
+  let config=storeRead('schedule.v1.connection');const first=!config&&['frozen','live'].includes(storeRead(storeKeys.mode)?.mode);if(first){config={owner:'parkjkk',repo:'schedule-data',branch:'main'};localStorage.setItem('schedule.v1.connection',JSON.stringify(config))}
+  toast(first?'이 기기를 서버에 등록했습니다. 이 주소를 즐겨찾기에 추가해 주세요.':'이 기기를 서버에 등록했습니다.');if(storeManaged(config)){let token='';try{token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')||''}catch{}await connect({...config,token},undefined,{keepPage:true})}return}
  if(action==='retry'){if(!workspace)throw Error('저장소를 연결해 주세요.');await workspace.flush();if(workspace.lastError?.conflicts){toast('같은 월 또는 기준정보가 다른 기기에서 바뀌었습니다. 대기 기록은 보존되어 있습니다.');showConflicts()}return}
  if(action==='refresh'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료를 먼저 확인해 주세요.');state=await workspace.open();render();return}
  if(action==='remoteBackup'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료가 있습니다. 먼저 전송하거나 기기자료를 별도로 내려받아 주세요.');const backup=await workspace.open();for(const name of backup.archiveNames||[]){const a=await workspace.client.get('archive/'+encodeURIComponent(name)+'.json');backup.archive.push(a.data.records[0])}download(JSON.stringify(backup),'조형_GitHub_전체백업_'+today()+'.json','application/json');toast('전체 파일 조회가 완료되어 백업을 만들었습니다.');return}
@@ -10779,7 +10843,7 @@ async function backupImportFile(file){
 async function backupAction(action){
  if(action==='restoreBackupDevice'){backupAllowed();const source=workspace?.offline&&workspace.record.recovery?.source;if(!source?.state)throw Error('별도로 보관된 기기 작업본이 없습니다.');const b=ScheduleBackup.create({state:source.state,scope:source.scope,envelope:source.envelope,entries:source.entries,recoveryEntries:source.recoveryEntries||[],preferences:source.preferences,repository:workspace.record.recovery.repository,recovery:source.recovery}),text=JSON.stringify(b);return backupImportFile({size:text.length,text:async()=>text})}
  if(action==='importBackup'){backupAllowed();const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=()=>backupImportFile(input.files?.[0]).catch(e=>toast(e.message));input.click();return true}
- if(action==='export'||action==='remoteBackup'){await backupBusy(async()=>{const b=await backupSnapshot(action==='remoteBackup');download(JSON.stringify(b),'조형_'+(action==='remoteBackup'?'전체':'기기')+'_JSON백업_'+today()+'.json','application/json');toast((action==='remoteBackup'?'원격 전체 JSON과 기기 변경':'기기 원장과 미저장 초안')+'을 백업했습니다. 접근 정보는 제외했습니다.')});return true}
+ if(action==='export'||action==='remoteBackup'){await backupBusy(async()=>{const b=await backupSnapshot(action==='remoteBackup');download(JSON.stringify(b),'조형_'+(action==='remoteBackup'?'전체':'기기')+'_JSON백업_'+today()+'.json','application/json');if(typeof addressMoveBackedUp==='function')addressMoveBackedUp(b);toast((action==='remoteBackup'?'원격 전체 JSON과 기기 변경':'기기 원장과 미저장 초안')+'을 백업했습니다. 접근 정보는 제외했습니다.')});return true}
  if(action==='leaveOffline'){if(!workspace?.offline&&!backupSession.restoreError)return true;await backupBusy(async()=>{const before=workspace?.offline?await backupSnapshot(false):null;await ScheduleBackup.atomic([...(before?before.device.entries.map(e=>[e.key,e.value]):[]),...(before?[['backup.v1:exit:'+crypto.randomUUID(),before]]:[]),[ScheduleBackup.SELECTED,null]]);workspace?.close();workspace=null;state=null;month='';localReadError='';backupSession.restoreError=false;booting=true;await backupRestoreBefore();render()});return true}
  return false;
 }
@@ -13177,6 +13241,6 @@ function explicitUnitPrefixWitness(proof,plan,scope){
  return{schema:1,scope,groupId:group.id,groupIds,request,receivedMonths:C.clone(received.receivedMonths||[])};
 }
 
-AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);setInterval(()=>{if(AppAccess.unlocked)storeWatch().catch(()=>{})},30000);
+AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);setInterval(()=>{if(AppAccess.unlocked){storeWatch().catch(()=>{});addressMoveRefresh()}},30000);
 })();
 </script></body></html>

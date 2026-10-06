@@ -94,6 +94,12 @@ body.loading .spin{display:inline-block}
 .warnbar.info{background:var(--surface2); color:var(--ink-dim); border:1px solid var(--line)}
 .warnbar.info button{border-color:var(--line); color:var(--ink)}
 #netBanner{width:calc(100% - 24px); max-width:656px; margin:10px auto 0}
+/* 새 주소 이동 카드·안내 (field-move-v1) */
+#fieldMoveNote,#fieldHomeCard{width:calc(100% - 24px);max-width:656px;margin:10px auto 0}
+#fieldMoveCard{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:24px 16px;border:0;background:var(--bg);color:var(--ink);place-items:center;overflow:auto}#fieldMoveCard[open]{display:grid}#fieldMoveCard::backdrop{background:var(--bg)}
+#fieldMoveCard .field-move-box{width:100%;max-width:420px;padding:24px 20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:var(--shadow);text-align:center;word-break:keep-all;overflow-wrap:anywhere}#fieldMoveCard h2{margin:0 0 10px;font-size:21px}#fieldMoveCard p{margin:0 0 18px;color:var(--ink-dim);line-height:1.55}
+#fieldMoveCard button{width:100%;min-height:52px;border-radius:12px;background:var(--accent);color:var(--on-accent);font-size:17px;font-weight:700}#fieldMoveCard button:disabled{opacity:.6}#fieldMoveCard .field-move-status{margin:12px 0 0;min-height:1.5em;color:var(--warn)}
+@media print{#fieldMoveNote,#fieldHomeCard,#fieldMoveCard{display:none!important}}
 .field-sync-strip{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:12px;color:var(--ink-dim)}
 .field-sync-strip[hidden]{display:none}.field-sync-strip .field-sync-copy{flex:1;min-width:160px}.field-sync-strip small{display:block;margin-top:3px;color:var(--ink-faint)}
 .field-sync-strip button{min-height:44px;padding:8px 11px;border:1px solid var(--line-in);border-radius:8px;font-size:12px;white-space:nowrap}.field-sync-strip button:disabled{opacity:.55;cursor:wait}
@@ -1743,6 +1749,78 @@ async function makeShareLink(){
     catch{ if(current()){ out.select(); done(document.execCommand('copy')); } }
   } else { out.select(); done(document.execCommand('copy')); }
 }
+/* 새 주소 이동 (field-move-v1): github.io에서 연 기기는 보내지 않은 기록과 작성 중 입력이 없을 때만 같은 공유 연결로 새 주소에 옮긴다.
+   새 주소에서는 함께 넘어온 작업자 이름을 받아 두고 주소창에서 지운 뒤, 연결되면 홈 화면 추가 안내를 한 번 보인다. 토큰이 든 연결은 서버 연결로 바뀐 뒤에만 옮긴다. */
+const FIELD_MOVE_FROM='https://parkjkk.github.io',FIELD_MOVE_TO='https://jo.pjk3742.workers.dev';
+const fieldMoveText=v=>{const t=String(v??'').trim();return t==='null'||t==='undefined'?'':t;},fieldMoveMachines=n=>plannedNodeMachines(n).map(m=>[fieldMoveText(m.name),fieldMoveText(m.qty),fieldMoveText(m.daily)]).filter(m=>m[0]||m[1]||m[2]);
+/* 예정 작업 창은 닫을 때마다 입력을 보관하므로, 처음 연 값과 달라진 보관분만 미저장 입력으로 본다.
+   비교: 품목·계획·하루 조수·호기(이름·조수·호기별 하루 조수), 작업자(보관분에 있을 때), 호기 사용 순서(비워 두면 기존 유지), 시작 순서(앞 품목 — 창이 여는 값과 같은 방식). */
+function fieldMovePlannedChanged(d){
+  const nodes=Array.isArray(d?.nodes)?d.nodes:[d],route=n=>n?.base?.scheduleConditions?.routing,worker=d?.worker==null?null:fieldMoveText(d.worker).replace(/\s+/g,'');
+  return nodes.some(n=>{if(!n||typeof n!=='object'||n.started)return false;if(n.cancelled)return true;const b=n.base;
+    if(!b)return !!(fieldMoveText(n.product)||fieldMoveText(n.plan)||fieldMoveText(n.daily)||fieldMoveMachines(n).length);
+    const r=route(n),after=r?.order>1?nodes.find(o=>route(o)?.group===r.group&&route(o)?.lane===r.lane&&route(o)?.order===r.order-1)?.id||'':'';
+    if(worker!==null&&worker!==fieldMoveText(b.worker)||fieldMoveText(n.machineMode)&&fieldMoveText(n.machineMode)!==fieldMoveText(r?.mode)||fieldMoveText(n.after)!==after)return true;
+    return fieldMoveText(n.product)!==fieldMoveText(b.product)||fieldMoveText(n.plan)!==fieldMoveText(b.plan)||fieldMoveText(n.daily)!==fieldMoveText(b.scheduleConditions?.daily)||JSON.stringify(fieldMoveMachines(n))!==JSON.stringify(fieldMoveMachines({base:b,plan:b.plan,machine:(b.scheduleConditions?.machines||[]).map(m=>m.name).join(', ')}));});
+}
+const FIELD_MOVE_SEND='보내지 않은 일보가 있어 보낸 뒤 옮깁니다',FIELD_MOVE_DRAFT='작성하다 둔 입력이 있어 저장하거나 지운 뒤 옮깁니다';
+/* 'send' = 보낼 것이 남음(전송대기·명단 재시도·저장/전송 중, 보내지면 저절로 풀림), 'draft' = 작성창이 열렸거나 기기에 둔 입력(작업자가 저장하거나 지워야 풀림), '' = 없음 */
+function fieldMoveWaiting(){
+  const ob=outboxAll(),retry=LS.get('ilbo.presetsRetry',null),now=Date.now(),list=k=>{const v=LS.get(k,{});return v&&typeof v==='object'?Object.values(v):[v];};
+  if(fieldWrites||flushing||retryBusy||presetOperations.size||!Array.isArray(ob)||ob.length)return 'send';
+  if(retry!=null&&!(typeof retry==='object'&&['workers','products','parts'].every(k=>retry[k]==null||Array.isArray(retry[k])&&!retry[k].length)))return 'send';
+  if($('#entryOv').classList.contains('open')||list('ilbo.drafts').some(d=>d&&now-(Number(d.t)||0)<=12*3600*1000&&draftHas(d.snap)))return 'draft';   /* 작성창 임시저장: 앱이 다시 여는 12시간 안의 것 */
+  return list('ilbo.plannedDrafts').some(fieldMovePlannedChanged)||list('ilbo.productMemoDrafts').some(v=>v!=null)||list('ilbo.scheduleFlowDrafts').some(v=>v!=null)?'draft':'';
+}
+function fieldMovePending(){return !!fieldMoveWaiting();}
+function fieldMoveBusy(){return !!(fieldSetup||fieldMigration||fieldSettingsOpening||$('#setOv').classList.contains('open')||document.querySelector('dialog[open]:not(#fieldMoveCard)')||plannedWorkDialogSession||productMemoSession||scheduleFlowSession||fieldLotSession||$('#toast')?.classList.contains('act'));}
+function fieldMoveState(){
+  if(location.origin!==FIELD_MOVE_FROM||!globalThis.AppAccess?.unlocked||fieldOffline||driver.mode!=='gh'||!bridgeConfig(ghCfg()))return '';
+  const wait=fieldMoveWaiting();if(wait)return wait==='send'?'pending':'draft';
+  return S.lastSync&&!S.offline&&!S.authError&&navigator.onLine&&!fieldMoveBusy()?'ready':'wait';
+}
+function fieldMoveCheck(){
+  try{
+    if(location.origin===FIELD_MOVE_TO){fieldHomeCheck();return;}
+    const state=fieldMoveState(),note=$('#fieldMoveNote'),text=state==='pending'?FIELD_MOVE_SEND:state==='draft'?FIELD_MOVE_DRAFT:'';
+    if(text){if(!note)$('#netBanner').insertAdjacentHTML('afterend','<div id="fieldMoveNote" class="warnbar info" role="status">'+text+'</div>');else if(note.textContent!==text)note.textContent=text;}
+    else note?.remove();
+    if(state==='ready')fieldMoveShow();
+    else if(state!=='wait')$('#fieldMoveCard')?.remove();
+  }catch(e){}
+}
+function fieldMoveShow(){
+  let card=$('#fieldMoveCard');
+  if(!card){card=document.createElement('dialog');card.id='fieldMoveCard';card.setAttribute('aria-labelledby','fieldMoveTitle');card.innerHTML='<div class="field-move-box"><h2 id="fieldMoveTitle">새 주소로 옮깁니다</h2><p>보낸 일보는 그대로 있습니다. 누르면 새 주소가 열리니 로그인만 한 번 더 해 주세요.</p><button type="button">옮기기</button><p class="field-move-status" role="status"></p></div>';card.addEventListener('cancel',e=>e.preventDefault());card.querySelector('button').onclick=fieldMoveGo;document.body.append(card);}
+  if(!card.open){card.showModal();card.querySelector('button').focus();}
+}
+function fieldMoveGo(){
+  const card=$('#fieldMoveCard'),state=fieldMoveState();
+  if(state!=='ready'){if(state==='wait'&&card)card.querySelector('.field-move-status').textContent='잠시 뒤 다시 눌러 주세요.';else fieldMoveCheck();return false;}
+  const c=ghCfg(),payload=fieldSharePayload(c),name=fieldMoveText(S.me?.worker);
+  if(!bridgeConfig(c)||Object.hasOwn(payload,'t'))return false;   /* 공유 내용에 토큰을 넣지 않는다 */
+  card?.querySelector('button')?.setAttribute('disabled','');
+  location.assign(FIELD_MOVE_TO+'/work.html#s='+b64u(JSON.stringify(payload))+'&me='+b64u(name));   /* me=는 이름이 없어도 붙여 새 주소가 '옮겨 온 화면'임을 안다 */
+  return true;
+}
+/* 뒤로 가기로 돌아온 화면(뒤로·앞으로 캐시)은 누른 상태 그대로 멈춰 있으므로 버튼을 되살리고 다시 확인한다. */
+function fieldMovePageShow(e){if(!e.persisted)return;const b=$('#fieldMoveCard button');if(b){b.removeAttribute('disabled');$('#fieldMoveCard .field-move-status').textContent='';}fieldMoveCheck();}
+let fieldMoveArrived=false;   /* 이번에 github.io에서 옮겨 온 화면(me=) */
+function fieldHomeCheck(){
+  if(!globalThis.AppAccess?.unlocked||fieldOffline||driver.mode!=='gh'||!bridgeConfig(ghCfg())||!S.lastSync||$('#fieldHomeCard')||LS.get('ilbo.homeCardDone',false))return;
+  if(!globalThis.matchMedia?.('(pointer: coarse)').matches)return;   /* 홈 화면이 있는 휴대폰에서만 */
+  if(!fieldMoveArrived&&(globalThis.matchMedia?.('(display-mode: standalone)').matches||navigator.standalone))return;   /* 이미 홈 화면 아이콘으로 연 경우(옛 아이콘 창 안에서 옮겨 온 화면은 안내) */
+  LS.set('ilbo.homeCardDone',true);   /* 실제로 보였을 때만 한 번 */
+  $('#netBanner').insertAdjacentHTML('afterend','<div id="fieldHomeCard" class="warnbar info" role="status"><b>이 주소를 홈 화면에 추가해 두세요.</b> ⋮ 또는 공유 → ‘홈 화면에 추가’(‘앱 설치’) <button type="button">확인</button></div>');
+  $('#fieldHomeCard button').onclick=()=>$('#fieldHomeCard')?.remove();
+}
+/* 이동 주소의 me=(작업자 이름)는 새 주소에서, 이 기기에 이름이 없을 때만 받아 두고, 어느 주소에서든 공유 연결(#s=)은 남긴 채 주소창에서 지운다. */
+function takeFieldMoveName(){
+  const m=location.hash.match(/[#&]me=([A-Za-z0-9_-]*)/);if(!m)return;
+  if(location.origin===FIELD_MOVE_TO)try{fieldMoveArrived=true;const name=b64uD(m[1]).replace(/\s+/g,'');if(name&&name.length<=40&&!/[\u0000-\u001f\ufffd]/.test(name)&&!fieldMoveText(S.me?.worker)){S.me={...(S.me||{hours:10}),worker:name};LS.set('ilbo.me',S.me);}}catch(e){}
+  const rest=location.hash.slice(1).split('&').filter(p=>p&&!/^me=/.test(p)).join('&');
+  try{history.replaceState(history.state,'',location.pathname+location.search+(rest?'#'+rest:''));}catch(e){}
+}
 
 /* 명단 변경은 '전체 덮어쓰기'가 아니라 항상 서버 최신본에 이 연산만 적용 —
    낡은 기기가 다른 기기의 변경(새 이름·제외 토글)을 지우는 문제 원천 차단 */
@@ -2289,6 +2367,7 @@ function setBusy(on){
   document.body.classList.toggle('loading', busyCount > 0);
 }
 function updateNetBanner(){
+  fieldMoveCheck();
   const b = $('#netBanner');
   const pending = outboxAll().length;
   const badge = $('#modeBadge');
@@ -5516,6 +5595,7 @@ function pickDraft(presetName){
 }
 function persistDraft(){
   if(!$('#entryOv').classList.contains('open') || S.editId || S.entryMode === 'case') return false;
+  if($('#entryOv').getAttribute('aria-busy')==='true'){ saveDraft(); return false; }   /* 저장 처리 중(입력 잠금)에는 보관하지 않고 끝난 뒤 다시 확인 — 방금 저장된 기록이 임시저장으로 남아 이동을 막지 않게. '함께 작업 확인 중'에는 입력이 열려 있으므로 그대로 보관 */
   const scope=S.entryScope || activeScope, date=S.entryDate || S.date;
   const snap = formSnapshot(), key = draftKeyOf(), m = LS.get('ilbo.drafts',{},scope) || {};
   if(S.draftKey !== undefined && S.draftKey !== key && S.draftOwn)for(const[k,d]of Object.entries(m))if(d?.date===date&&(d.w??k)===S.draftKey&&sameEntryDraft(d,S.entryDraftBase?.[k]))delete m[k];
@@ -5604,6 +5684,7 @@ function closeEntry(fromPop){
   $('#entryOv').classList.remove('open'); document.body.style.overflow=''; syncInert();
   if(!fromPop && history.state && history.state.ov === 'entry'){ try{ history.back(); }catch(e){} }
   if(S.tab === 'input'){ try{ $('#addBtn').focus({preventScroll:true}); }catch(e){} }
+  fieldMoveCheck();
 }
 function requestCloseEntry(fromPop){
   if($('#entrySave').disabled){ toast('저장 처리 중입니다. 잠시만 기다려 주세요.'); if(fromPop) history.pushState({ov:'entry'},''); return; }
@@ -6579,6 +6660,7 @@ function installManifest(){
 function init(){
   const qd = new URLSearchParams(location.search).get('d');
   if(qd && /^\d{4}-\d{2}-\d{2}$/.test(qd) && fmtDate(parseDate(qd)) === qd) S.date = qd;   /* 09-31 같은 없는 날짜 차단 */
+  takeFieldMoveName();   /* 새 주소 이동으로 넘어온 작업자 이름 */
   setupFromHash();
   S.progress = LS.get('ilbo.progress', null);   /* 마지막 계산값으로 즉시 표시, 곧 다시 계산 */
   try{ localStorage.removeItem('ilbo.draft'); }catch(e){}   /* 구 단일 임시저장 키 정리 */
@@ -6733,6 +6815,7 @@ function init(){
   /* 서버 연결에서 변경 확인 번호가 그대로면 내려받지 않는다. 번호가 없는 직접 연결·오프라인은 기존처럼 매번 읽는다. */
   setInterval(() => { if(AppAccess.unlocked&&!document.hidden&&navigator.onLine&&!fieldRefreshBlocked()&&!productionProgressUnchanged()){ const rev=fieldRevision,before=S.productionProgress; void loadProductionProgress(true).then(()=>noteProductionProgressSeen(rev,before)); } },30000);
   setInterval(pollFieldRevision,5000);
+  if([FIELD_MOVE_FROM,FIELD_MOVE_TO].includes(location.origin)){setInterval(fieldMoveCheck,15000);addEventListener('pageshow',fieldMovePageShow);}   /* 되돌리기 안내가 사라진 뒤 등 · 뒤로 가기로 돌아온 화면 */
   pruneCaches(120);   /* 120일 지난 날짜 캐시 정리 */
   installManifest();
   bindFieldConnection();
