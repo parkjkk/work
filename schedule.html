@@ -5766,16 +5766,8 @@ async function addressMoveBlocker(owner,fresh=false){
  // The button reads the device copy again, which other windows of this browser also write.
  const envelope=fresh&&await S.localGet(owner.key)||owner.envelope,queued=Math.max(owner.envelope.queue.length,envelope.queue?.length||0);
  if(queued)return '보내지 않은 저장 '+queued+'건이 있어 보낸 뒤 새 주소로 옮깁니다.';
- const sheet='sheet.v1:'+owner.key+':',open=[...sheetRegistry.values()].filter(g=>g.scope===owner.key&&(g.dirty||g.saving||g.closedDraft)),keys=await S.localKeys(''),stored=async prefix=>{const out=[];for(const key of keys)if(key.startsWith(prefix)){const value=await S.localGet(key);if(value!=null)out.push({key,value})}return out},kept=open.length?[]:await stored(sheet);
- if(open.length||kept.length){const months=[...new Set([...open.map(g=>g.month),...kept.map(e=>e.key.slice(sheet.length,sheet.length+7))])].filter(v=>/^\d{4}-\d{2}$/.test(v||'')).sort();return '저장하지 않은 표 입력'+(months.length?'('+months.join(' · ')+')':'')+'이 있어 저장한 뒤 새 주소로 옮깁니다.'}
- // "+ 생산기록 입력" keeps what was typed per month until it is saved ([취소] keeps it). Only the remembered worker/LOT (':last'), a date or a worker alone is not input.
- const entry='draft:'+owner.key+':',typed=[];for(const e of await stored(entry)){const m=e.key.slice(entry.length),v=e.value;if(!/^\d{4}-\d{2}$/.test(m)||typeof v!=='object')continue;const lot=String(v.lot??'').trim(),last=lot?await S.localGet(e.key+':last'):null;if((Array.isArray(v.products)?v.products:[]).some(p=>p&&(p.product||p.jobId||[p.plan,p.pours,p.waterRatio,p.defectCount,p.defectUnit].some(x=>x!=null&&x!=='')||String(p.defectPart??'').trim()))||v.hours!=null&&v.hours!==''||lot&&lot!==String(last?.lot??'').trim())typed.push(m)}
- if(typed.length)return '저장하지 않은 생산기록 입력('+typed.sort().join(' · ')+')이 있어 저장하거나 지운 뒤 새 주소로 옮깁니다.';
- const held=(envelope.heldSchedules||[]).filter(h=>h.status==='pending').length;if(held)return '확인이 필요한 보관 일정 '+held+'건이 있어 확인한 뒤 새 주소로 옮깁니다.';
- // A table save that was set aside keeps its input in the table draft (checked above); an automatic one has no other copy.
- // No screen shows them; a device backup ([이 기기 자료 백업], data-export.js recoveryEntries) carries them, and once it was downloaded they stay here without holding the move.
- const backed=addressMoveBackedKeys(owner.key),aside=(await stored(owner.key+':recovery:set-aside:')).filter(e=>e.value?.reason!=='explicit-save'&&!backed.has(e.key)).length;if(aside)return '자동으로 합치지 못한 저장 '+aside+'건이 이 기기에만 있습니다. 설정·백업에서 [이 기기 자료 백업]을 받으면 새 주소로 옮길 수 있습니다.';
- if(envelope.explicitSaveRecoveries?.length)return '조금 전 저장의 확인이 끝나면(최대 1시간) 새 주소로 옮깁니다.';
+ // 2026-10-06 owner: unsaved table input, entry drafts, held schedules and set-aside saves no longer hold the move; they stay in
+ // this address's device storage untouched (a device backup still carries them). Only unsent saves are sent first.
  return '';
 }
 const addressMoveBackupKey='schedule.v1.moveBackup';
@@ -5794,6 +5786,7 @@ async function addressMoveRun(){
  const owner=addressMoveOwner();if(!owner||addressMove.leaving)return;if(addressMove.running){addressMove.again=true;return}addressMove.running=true;let line;
  try{line=await addressMoveBlocker(owner)}catch{line='기기 보관자료를 확인하지 못해 새 주소로 옮기지 않았습니다.'}finally{addressMove.running=false}
  if(addressMoveOwner()===owner){addressMove.owner=owner;addressMove.html=addressMoveMarkup(line);addressMovePaint()}
+ if(line===''&&addressMoveOwner()===owner&&!addressMove.leaving){addressMove.leaving=true;location.replace(storeNewPage)}   // the old address is only a way to the new one
  if(addressMove.again){addressMove.again=false;addressMoveRefresh()}
 }
 async function addressMoveGo(button){
