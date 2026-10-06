@@ -2384,7 +2384,7 @@ async function fieldSettings(cfg){
  document.body.append(d);d.showModal();d.querySelector('[data-field-close]').focus();run(async()=>{await list();if(current()){d.querySelector('[data-field-tools]').hidden=false;d.querySelector('[data-field-token] input').focus()}});
 }
 function mount(){for(const host of document.querySelectorAll('[data-access-settings]')){if(!adminReady()){delete host.dataset.accessBound;if(host.childNodes.length)host.replaceChildren();continue}if(host.dataset.accessBound)return;host.dataset.accessBound='1';host.classList.add('accessSettings');host.innerHTML='<h3>로그인 · 오프라인 준비</h3><p>두 앱 공통 로그인 비밀번호를 사용합니다. 비밀번호 변경은 인터넷 연결이 필요합니다. 오프라인에서는 마지막 확인한 비밀번호를 사용합니다.</p><div class="accessActions"><button data-access-change>로그인 비밀번호 변경</button><button data-access-lock>화면 잠금</button><button data-access-html>이 앱 HTML 내려받기</button></div><p>인터넷 없이 사용하려면 HTML과 데이터 백업 JSON을 함께 보관하세요. HTML에는 업무자료와 저장소 토큰이 들어가지 않습니다. 데이터 백업은 별도로 내려받아야 합니다.</p>';host.querySelector('[data-access-change]').onclick=change;host.querySelector('[data-access-lock]').onclick=()=>lock('화면을 잠갔습니다. 비밀번호를 입력해 주세요.');host.querySelector('[data-access-html]').onclick=e=>downloadHtml(e.currentTarget)}}
-root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&['/api/field','/api/view','/api/field-settings','/api/management-sync','/api/field-memo','/api/field-lots','/api/management-lots'].includes(url.pathname);if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
+root.fetch=async function(input,init){const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,location.href);if(url.origin===SERVER&&url.pathname==='/api/access')return originalFetch(input,init);if(!unlocked)throw Error('로그인 후 다시 시도해 주세요.');const sentSession=session,sentVersion=lockVersion;const gateway=url.origin===SERVER&&(['/api/field','/api/view','/api/field-settings','/api/management-sync','/api/field-memo','/api/field-lots','/api/management-lots'].includes(url.pathname)||url.pathname.startsWith('/api/v2/'));if(gateway){if(!session)throw Error('오프라인 로그인 상태입니다. 서버를 사용하려면 다시 로그인해 주세요.');const h=new Headers(init?.headers||((input instanceof Request)?input.headers:undefined));h.set('X-Production-Session',session);init={...init,headers:h}}const r=await originalFetch(input,init);if(gateway&&r.status===401&&sentSession===session&&sentVersion===lockVersion){const j=await r.clone().json().catch(()=>null);if(j?.code==='LOGIN_REQUIRED'&&unlocked&&sentSession===session&&sentVersion===lockVersion)lock(j.error)}return r};
 const ready=new Promise(resolve=>pendingResolve=resolve);
 function draw(){const el=document.createElement('section');el.id='appAccess';el.setAttribute('aria-label','앱 로그인');el.innerHTML='<div class="accessCard"><div class="accessEyebrow">PRODUCTION WORKSPACE</div><h1></h1><p>로그인 후 저장된 자료를 이어서 사용하세요.</p><form><label for="accessPassword">로그인 비밀번호</label><input id="accessPassword" type="password" autocomplete="current-password" maxlength="128" required><button type="submit">로그인</button></form><p id="accessError" role="alert"></p><button class="accessAdmin" type="button">관리자 · 비밀번호 변경</button><p>인터넷이 없으면 이 기기에 보관한 로그인 정보로 확인합니다.</p></div>';el.querySelector('h1').textContent=document.title;document.body.append(el);el.querySelector('.accessAdmin').onclick=change;
  el.querySelector('form').onsubmit=async e=>{e.preventDefault();if(checking)return;checking=true;const input=el.querySelector('input'),password=input.value,version=lockVersion;input.value='';el.querySelector('[type=submit]').disabled=true;message('로그인 확인 중…');try{let j;try{j=await api({action:'login',password})}catch(err){if(!err.network)throw err;if(cacheError)throw Error(cacheError);if(!await verify(password,verifier))throw Error(err.server?'로그인 서버가 응답하지 않아 이 기기에 보관한 로그인 정보로 확인했지만 맞지 않습니다. 이 기기에서 마지막으로 사용한 비밀번호를 입력하거나 잠시 후 다시 시도해 주세요.':'오프라인 비밀번호가 맞지 않습니다. 마지막으로 사용한 비밀번호를 입력해 주세요.');if(version!==lockVersion)return;success(null,true,err.server);return}if(version===lockVersion)success(j)}catch(err){if(version===lockVersion)message(err.message)}finally{checking=false;el.querySelector('[type=submit]').disabled=false;if(!unlocked)input.focus()}};
@@ -3313,7 +3313,68 @@ class GithubStore{
     // Another writer moved the branch. Wait briefly, then re-read and re-merge.
     await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)+Math.floor(Math.random()*200)))}}};const p=this.running.then(task,task);this.running=p.catch(()=>{});return p}
 }
-root.ScheduleStorage={localGet,localSet,localEntries,localKeys,mergeRecords,mergeMonthFields,mergeCatalogMeta,mergeIssueMonth,mergePlasterMonth,mergeProductionMonth,GithubStore,PREFIX};if(typeof module!=='undefined')module.exports=root.ScheduleStorage;
+// cloudflare-store-v1: the same members as GithubStore, served by the gateway's
+// /api/v2 store. The merge runs on the server; GitHub is never called here.
+const cloudSha=/^[a-f0-9]{40,64}$/i,cloudCommit=/^[a-f0-9]{40}$/i;
+function cloudFailure(status,body){
+ const code=typeof body?.code==='string'?body.code:'',text=typeof body?.error==='string'&&body.error?body.error:'서버 저장 요청 실패 ('+status+')',e=Error(code==='store-frozen'?'점검 중 · 기기에 보관':text);
+ e.status=status;if(code)e.serverCode=code;if(code==='store-frozen')e.code='STORE_FROZEN';else if(code==='store-mode')e.code='STORE_MODE';if(Array.isArray(body?.conflicts))e.conflicts=body.conflicts;return e;
+}
+class CloudStore{
+ constructor(config,request=(url,options)=>globalThis.fetch(url,options)){this.config={...config};this.request=request;this.epoch=1;this.running=Promise.resolve();this.reads=new Map();this.disposed=false;if(!/^[A-Za-z0-9_.-]+$/.test(config.owner)||!/^[A-Za-z0-9_.-]+$/.test(config.repo))throw Error('GitHub 소유자와 저장소 이름을 확인해 주세요.');this.scope=PREFIX+encodeURIComponent([config.owner,config.repo,config.branch||'main'].join('/'))}
+ invalidate(){this.epoch++;this.disposed=true;this.reads.clear()}
+ // A connection made for one commit (a full backup) reads only that commit.
+ pinned(){return cloudCommit.test(this.config.branch||'')?String(this.config.branch).toLowerCase():''}
+ async call(path,{method='GET',body,timeout=20000}={}){
+  if(this.disposed)throw Error('종료된 저장소 연결입니다.');const writing=method!=='GET';if(writing)this.reads.clear();const epoch=this.epoch,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+   const headers={Accept:'application/json',...(this.config.deviceKey?{Authorization:'Bearer '+this.config.deviceKey}:{}),...(body===undefined?{}:{'Content-Type':'application/json'})};
+   const response=await this.request(String(this.config.server||'')+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),credentials:'omit',redirect:'error',cache:'no-store',signal:controller.signal});
+   if(epoch!==this.epoch||this.disposed)throw Error('연결 정보가 변경되었습니다.');let data=null;try{data=await response.json()}catch(e){if(e?.name==='AbortError')throw e}
+   if(epoch!==this.epoch||this.disposed)throw Error('연결 정보가 변경되었습니다.');if(!response.ok)throw cloudFailure(response.status,data);
+   if(!data||typeof data!=='object'||Array.isArray(data))throw Error('서버 응답 형식을 확인해 주세요.');return data;
+  }finally{clearTimeout(timer);if(writing)this.reads.clear()}
+ }
+ async check(){const r=await this.call('/api/v2/whoami');if(!['frozen','live'].includes(r.mode)){const e=Error('저장 방식이 바뀌었습니다. 화면을 새로 열어 주세요.');e.code='STORE_MODE';e.status=409;throw e}if(r.principal?.kind!=='manager'){const e=Error('이 기기의 서버 저장 권한을 확인해 주세요.');e.status=403;throw e}return{private:true,defaultBranch:'main',name:this.config.owner+'/'+this.config.repo}}
+ async headRevision(){const r=await this.call('/api/v2/revision'),id=r.ledger?.commitId;return typeof id==='string'&&cloudCommit.test(id)?id:''}
+ async blobShas(folder,ref){if(!/^[a-f0-9]{40,64}$/i.test(ref||''))throw Error('저장소의 조회 기준 버전을 확인하지 못했습니다. 다시 불러와 주세요.');const prefix=String(folder)+'/',r=await this.call('/api/v2/list?ns=ledger&prefix='+encodeURIComponent(prefix)+'&ref='+encodeURIComponent(ref));if(!Array.isArray(r.entries))throw Error('폴더 목록 형식을 확인해 주세요.');const out={};for(const item of r.entries)if(typeof item?.path==='string'&&item.path.startsWith(prefix)&&!item.path.slice(prefix.length).includes('/')&&cloudSha.test(item.sha||''))out[item.path]=item.sha.toLowerCase();return out}
+ // Same sharing and pinning rules as GithubStore.get: only an unfinished read is shared.
+ async get(path,allowMissing=false,options={}){if(this.disposed)throw Error('종료된 저장소 연결입니다.');const epoch=this.epoch,ref=options.snapshot?await this.headRevision():options.ref;if((options.snapshot||ref!=null)&&!/^[a-f0-9]{40,64}$/i.test(ref||''))throw Error('저장소의 조회 기준 버전을 확인하지 못했습니다. 다시 불러와 주세요.');if(this.disposed||epoch!==this.epoch)throw Error('연결 정보가 변경되었습니다.');const key=path+'\0'+Boolean(allowMissing)+'\0'+(ref||'');let task=this.reads.get(key);if(!task){task=this.read(path,allowMissing,ref);this.reads.set(key,task);task.finally(()=>{if(this.reads.get(key)===task)this.reads.delete(key)}).catch(()=>{})}const result=await task;if(this.disposed||epoch!==this.epoch)throw Error('연결 정보가 변경되었습니다.');return {...clone(result),...(ref?{revision:ref}:{})}}
+ async read(path,allowMissing=false,ref){const at=ref||this.pinned();try{const r=await this.call('/api/v2/doc?ns=ledger&path='+encodeURIComponent(path)+(at?'&ref='+encodeURIComponent(at):''));if(!cloudSha.test(r.sha||''))throw Error('파일 크기 또는 데이터 형식을 확인해 주세요.');return{sha:r.sha,data:r.data}}catch(e){if(allowMissing&&e.status===404&&e.serverCode==='not-found')return{sha:null,data:null};throw e}}
+ // Only the two read calls of the full backup (data-export remote) are served.
+ async api(path){
+  if(path==='/commits/'+encodeURIComponent(this.config.branch||'main')){const commit=this.pinned()||await this.headRevision();if(!cloudCommit.test(commit))throw Error('저장소의 조회 기준 버전을 확인하지 못했습니다. 다시 불러와 주세요.');return{sha:commit,commit:{tree:{sha:commit}}}}
+  const tree=/^\/git\/trees\/([a-f0-9]{40})\?recursive=1$/i.exec(path);if(!tree)throw Error('지원하지 않는 서버 요청입니다.');
+  const r=await this.call('/api/v2/list?ns=ledger&prefix=&ref='+encodeURIComponent(tree[1]));if(!Array.isArray(r.entries))throw Error('폴더 목록 형식을 확인해 주세요.');
+  return{sha:tree[1],truncated:false,tree:r.entries.map(e=>({path:e?.path,mode:'100644',type:'blob',sha:e?.sha,size:e?.bytes}))};
+ }
+ // One request for the catalog, LOTs, the sync receipt and every month at one
+ // revision. Paths whose blob the caller already holds (have) are not sent again.
+ async snapshot(have={},options={}){
+  let revision=options.ref||this.pinned(),seq=null,entries={};const files={},held={...have};
+  for(let round=0;round<100;round++){
+   const r=await this.call('/api/v2/snapshot',{method:'POST',body:{ns:'ledger',have:held,...(revision?{ref:revision}:{})},timeout:30000});
+   if(!cloudCommit.test(r.revision||'')||revision&&r.revision!==revision||!r.entries||typeof r.entries!=='object'||!r.files||typeof r.files!=='object')throw Error('서버 응답 형식을 확인해 주세요.');
+   revision=r.revision;seq=r.seq;entries=r.entries;for(const [path,file]of Object.entries(r.files)){if(!cloudSha.test(file?.sha||''))throw Error('서버 응답 형식을 확인해 주세요.');files[path]={sha:file.sha,data:file.data};held[path]=file.sha}
+   if(!r.more)return{revision,seq,entries:{...entries},files};
+  }
+  throw Error('최신자료를 끝까지 받지 못했습니다. 다시 불러와 주세요.');
+ }
+ async saveRecords(path,base,local,options={}){base=clone(base);local=clone(local);const epoch=this.epoch;const task=async()=>{if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');
+  if(this.config.clientMerge===true)return this.mergeHere(path,base,local,options);
+  let r;try{r=await this.call('/api/v2/merge',{method:'POST',body:{path,base,local,strict:!!options.strict,...(options.requestId!=null?{requestId:String(options.requestId)}:{})},timeout:30000})}catch(e){if(e.status===409&&e.serverCode==='conflict'){const c=Error('같은 기록이 다른 기기에서도 수정되었습니다.');c.conflicts=e.conflicts||[];c.status=409;throw c}throw e}
+  if(r.data?.schema!==1||!Array.isArray(r.data.records)||!cloudSha.test(r.sha||''))throw Error('지원하지 않는 저장자료입니다.');
+  return{data:r.data,sha:r.sha,...(cloudSha.test(r.revision||'')?{revision:r.revision}:{})}};const p=this.running.then(task,task);this.running=p.catch(()=>{});return p}
+ // Fallback for a failed server-merge parity gate (config.clientMerge): the
+ // browser merge of GithubStore.saveRecords with a conditional PUT on the read sha.
+ async mergeHere(path,base,local,options){const epoch=this.epoch;for(let attempt=0;attempt<4;attempt++){const remote=await this.get(path,true),current=remote.data||{schema:1,records:[]};if(current.schema!==1||!Array.isArray(current.records))throw Error('지원하지 않는 저장자료입니다.');const merged=mergeRecords(base,local,current.records,options);if(merged.conflicts.length){const e=Error('같은 기록이 다른 기기에서도 수정되었습니다.');e.conflicts=merged.conflicts;e.status=409;throw e}
+  if(remote.sha&&equal(merged.records,current.records))return{data:current,sha:remote.sha,...(remote.revision?{revision:remote.revision}:{})};
+  const data={schema:1,records:merged.records};if(epoch!==this.epoch||this.disposed)throw Error('종료된 저장소 연결입니다.');
+  try{const r=await this.call('/api/v2/doc',{method:'PUT',body:{ns:'ledger',path,baseSha:remote.sha||null,text:JSON.stringify(data),...(options.requestId!=null?{requestId:String(options.requestId)}:{})},timeout:30000});return{data,sha:r.sha,...(cloudCommit.test(r.commitId||'')?{revision:r.commitId}:{})}}catch(e){if(e.status!==409||e.code==='STORE_MODE'||attempt===3)throw e;
+   await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)+Math.floor(Math.random()*200)))}}}
+}
+function createStore(config){return config?.driver==='cloud'?new CloudStore(config):new GithubStore(config)}
+root.ScheduleStorage={localGet,localSet,localEntries,localKeys,mergeRecords,mergeMonthFields,mergeCatalogMeta,mergeIssueMonth,mergePlasterMonth,mergeProductionMonth,GithubStore,CloudStore,createStore,PREFIX};if(typeof module!=='undefined')module.exports=root.ScheduleStorage;
 })(globalThis);
 </script><script>(function(root){'use strict';const C=ScheduleCore,S=ScheduleStorage;
 const clone=C.clone,scope=c=>[c.owner,c.repo,c.branch||'main'].map(encodeURIComponent).join('/'),snapshotOwners=new WeakMap();
@@ -3473,15 +3534,23 @@ function rememberBlob(e,path,blob){if(blob)(e.blobs??={})[path]=blob;else if(e.b
 // Read every listed month before publishing any state; cap active requests and preserve catalog order.
 // With held copies, one listing of the pinned commit decides which months are
 // unchanged; without a remembered blob the reads are exactly as before.
-async function readMonths(client,keys,allowMissing=false,ref,held=null){
+async function readMonths(client,keys,allowMissing=false,ref,held=null,snap=null){
  for(const key of keys)if(!/^\d{4}-\d{2}$/.test(key))throw Error('월 목록이 올바르지 않습니다.');
  const out=new Array(keys.length),kept=path=>{const blob=held?.blobs?.[path];return blob&&typeof blob.sha==='string'&&blobSha.test(blob.sha)&&Array.isArray(held.baseline?.[path])?blob:null};let cursor=0,failure=null,listed=null;
- if(held&&blobSha.test(ref||'')&&typeof client.blobShas==='function'&&keys.some(key=>kept('months/'+key+'.json')))try{listed=await client.blobShas('months',ref)}catch{listed=null}
+ // A live-store snapshot already lists every month of its revision and carries the changed ones.
+ if(snap)listed=snap.entries;else if(held&&blobSha.test(ref||'')&&typeof client.blobShas==='function'&&keys.some(key=>kept('months/'+key+'.json')))try{listed=await client.blobShas('months',ref)}catch{listed=null}
  const reuse=(key,path)=>{const blob=listed&&kept(path);if(!blob||listed[path]!==blob.sha.toLowerCase())return null;const text=JSON.stringify(held.baseline[path]);if(blobMark(listed[path],text)!==blob.mark)return null;try{const records=JSON.parse(text);return{key,path,records,month:unpackMonth(key,records),blob:{sha:blob.sha,mark:blob.mark}}}catch{return null}};
- const run=async()=>{while(!failure&&cursor<keys.length){const index=cursor++,key=keys[index],path='months/'+key+'.json';try{const same=reuse(key,path);if(same){out[index]=same;continue}const result=await client.get(path,allowMissing,{ref});if(!result.data)throw Error('기준자료에 연결된 월자료가 없습니다: '+key);if(result.data.schema!==1||!Array.isArray(result.data.records))throw Error('월자료 형식을 확인해 주세요.');out[index]={key,path,records:result.data.records,month:unpackMonth(key,result.data.records),blob:heldBlob(result.sha,result.data.records)}}catch(e){failure??=e}}};
+ const run=async()=>{while(!failure&&cursor<keys.length){const index=cursor++,key=keys[index],path='months/'+key+'.json';try{const same=reuse(key,path);if(same){out[index]=same;continue}const sent=snap?.files?.[path];if(snap&&!sent&&!snap.entries?.[path])throw Error('기준자료에 연결된 월자료가 없습니다: '+key);const result=sent?{sha:sent.sha,data:sent.data}:await client.get(path,allowMissing,{ref});if(!result.data)throw Error('기준자료에 연결된 월자료가 없습니다: '+key);if(result.data.schema!==1||!Array.isArray(result.data.records))throw Error('월자료 형식을 확인해 주세요.');out[index]={key,path,records:result.data.records,month:unpackMonth(key,result.data.records),blob:heldBlob(result.sha,result.data.records)}}catch(e){failure??=e}}};
  await Promise.all(Array.from({length:Math.min(4,keys.length)},run));if(failure)throw failure;return out;
 }
 async function optionalStatus(read){let timer;try{return await Promise.race([read,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),400)})])}finally{clearTimeout(timer)}}
+// Live store (CloudStore): catalog, LOTs, sync receipt and every month of one
+// revision arrive in one request; a month whose blob this device holds is not
+// sent again. Any failure except permission, store mode, a changed connection
+// or the network falls back to the per-file reads (null).
+function storeHave(held){const have={};for(const [path,blob]of Object.entries(held?.blobs||{}))if(/^months\/\d{4}-\d{2}\.json$/.test(path)&&typeof blob?.sha==='string'&&blobSha.test(blob.sha)&&Array.isArray(held.baseline?.[path]))have[path]=blob.sha.toLowerCase();return have}
+async function storeSnapshot(client,held){try{return await client.snapshot(storeHave(held))}catch(e){if(['TypeError','AbortError'].includes(e?.name)||['STORE_MODE','STORE_FROZEN'].includes(e?.code)||[401,403].includes(e?.status)||/연결 정보가 변경|종료된 저장소/.test(e?.message||''))throw e;return null}}
+async function storeDoc(client,snap,path){const file=snap.files[path];if(file)return{sha:file.sha,data:file.data,revision:snap.revision};if(!snap.entries[path])return{sha:null,data:null,revision:snap.revision};return client.get(path,true,{ref:snap.revision})}
 // Separate only a proven schedule/issue chain. Never replay stale jobs over
 // actual production. The original chain remains recoverable in the envelope.
 function separateScheduleQueue(envelope,path,remote){
@@ -3511,7 +3580,7 @@ function separateScheduleQueue(envelope,path,remote){
  return {queue:clone(queue),base:clone(base),local:clone(queue.at(-1).local),current,replacements};
 }
 class Workspace{
- constructor(config,onStatus=()=>{},onState=()=>{}){this.config={...config};this.key='connected:'+scope(config);this.client=new S.GithubStore(config);this.status=onStatus;this.onState=onState;this.envelope={state:null,baseline:{},queue:[],groups:[]};this.persisted=undefined;this.flushing=null;this.lock=Promise.resolve();this.loaded=false;this.closed=false;this.explicitRecoveryToken=null;this.explicitRecoveryLease=null;this.explicitRecoveryRevision=0}
+ constructor(config,onStatus=()=>{},onState=()=>{}){this.config={...config};this.key='connected:'+scope(config);this.client=typeof S.createStore==='function'?S.createStore(config):new S.GithubStore(config);this.status=onStatus;this.onState=onState;this.envelope={state:null,baseline:{},queue:[],groups:[]};this.persisted=undefined;this.flushing=null;this.lock=Promise.resolve();this.loaded=false;this.closed=false;this.explicitRecoveryToken=null;this.explicitRecoveryLease=null;this.explicitRecoveryRevision=0}
  async acquireExplicitRecovery(){
   while(this.explicitRecoveryLease)await this.explicitRecoveryLease.done;
   if(this.closed||this.resolving)throw Error('저장소 연결 또는 복구 상태가 바뀌었습니다.');
@@ -3520,6 +3589,11 @@ class Workspace{
   // new automatic runs are suppressed; never interrupt a unit transaction.
   try{if(this.flushing)await this.flushing;await this.lock;if(this.closed||this.resolving||this.explicitRecoveryLease!==lease)throw Error('저장소 연결 또는 복구 상태가 바뀌었습니다.');return token}catch(error){this.releaseExplicitRecovery(token);throw error}
  }
+ // Status wording follows the store this connection uses (GitHub until the switch).
+ sourceName(){return S.CloudStore&&this.client instanceof S.CloudStore?'서버':'GitHub'}
+ // The gateway's answer arrived after this connection was built: move it to the
+ // chosen driver before anything is read. Same device scope; nothing in flight.
+ useStore(config){if(this.closed||scope(config)!==scope(this.config)||typeof S.createStore!=='function')return false;this.client.invalidate();this.config={...config};this.client=S.createStore(this.config);return true}
  releaseExplicitRecovery(token){const lease=this.explicitRecoveryLease;if(!lease||lease.token!==token)return false;this.explicitRecoveryLease=null;this.explicitRecoveryToken=null;lease.release();return true}
  async mutate(fn,{canCommit}={}){
   const task=async()=>{
@@ -3607,11 +3681,12 @@ class Workspace{
  async readSnapshot({canApply,ownedUnitSync,held}={}){
   if(this.closed||this.pendingMigration||this.resolving||this.envelope.queue.length)throw Error('전송·복구를 마친 뒤 최신자료를 확인해 주세요.');
   const before=this.envelope,signature=JSON.stringify(before),current=()=>!this.closed&&this.envelope===before&&JSON.stringify(this.envelope)===signature&&(!canApply||canApply());
-  if(!current())return null;await this.client.check();if(!current())return null;
-  const cat=await this.client.get('meta/catalog.json',false,{snapshot:true});if(!current())return null;
+  if(!current())return null;const snap=typeof this.client.snapshot==='function'?await storeSnapshot(this.client,held||before):null;if(!current())return null;
+  if(!snap){await this.client.check();if(!current())return null}
+  const cat=snap?await storeDoc(this.client,snap,'meta/catalog.json'):await this.client.get('meta/catalog.json',false,{snapshot:true});if(!current())return null;
   if(cat.data?.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');
   const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':clone(cat.data.records)},blobs={};
-  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,held||before)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
+  const [lotRead,monthReads]=await Promise.all([snap?storeDoc(this.client,snap,'meta/gypsum-lots.json'):this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,held||before,snap)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
   for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=clone(result.records);if(result.blob)blobs[result.path]=result.blob}
   // The explicit recovery reader may inspect its exact received prepare,
   // including a dependent month whose response was lost. Whole-producer proof
@@ -3625,25 +3700,27 @@ class Workspace{
   const current=()=>!this.closed&&!this.pendingMigration&&!this.resolving&&!this.envelope.queue.length&&this.envelope===proof.before&&JSON.stringify(this.envelope)===proof.signature&&(!canApply||canApply());
   if(!current())return null;const state=clone(snapshot.state),baseline=clone(snapshot.baseline),problem=unitSyncError(state);if(problem)throw problem;
   let applied=false;const e=await this.mutate(e=>{e.state=state;e.baseline=baseline;if(snapshot.blobs)e.blobs=clone(snapshot.blobs);else delete e.blobs;applied=true},{canCommit:current});
-  if(!applied||e.state!==state)return null;snapshotOwners.delete(snapshot);this.loaded=true;this.empty=false;this.catalogBlocked=null;this.lastError=null;this.initialSyncStatus=null;this.status('GitHub 최신자료 · 입력 초안 유지');return e.state;
+  if(!applied||e.state!==state)return null;snapshotOwners.delete(snapshot);this.loaded=true;this.empty=false;this.catalogBlocked=null;this.lastError=null;this.initialSyncStatus=null;this.status(this.sourceName()+' 최신자료 · 입력 초안 유지');return e.state;
  }
  async open({canApply,includeSyncStatus=false}={}){
   if(this.explicitRecoveryLease)return this.envelope.state;
   const recoveryRevision=this.explicitRecoveryRevision;
   this.initialSyncStatus=null;
+  const snap=typeof this.client.snapshot==='function'?await storeSnapshot(this.client,this.envelope):null;let cat,syncStatus=null;
+  if(snap){cat=await storeDoc(this.client,snap,'meta/catalog.json');if(includeSyncStatus)syncStatus=await storeDoc(this.client,snap,'meta/ilbo-sync.json').catch(()=>null)}else{
   // Pin catalog, months, LOTs and the optional receipt to the same immutable commit.
   const check=this.client.check(),catalogRead=check.then(()=>this.client.get('meta/catalog.json',true,{snapshot:true}));
   const statusRead=includeSyncStatus?optionalStatus(catalogRead.then(cat=>this.client.get('meta/ilbo-sync.json',true,{ref:cat.revision})).catch(()=>null)):null;
-  const [,cat]=await Promise.all([check,catalogRead]),syncStatus=statusRead?await statusRead:null;
+  [,cat]=await Promise.all([check,catalogRead]);syncStatus=statusRead?await statusRead:null}
   if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;
   if(!cat.data){if(this.envelope.queue.length&&this.envelope.state){this.loaded=true;return this.envelope.state}if(this.envelope.state)throw Error('기존 저장소의 기준자료가 없어졌습니다. 신규자료로 덮어쓰지 않습니다.');this.loaded=true;this.empty=true;return null}
   if(cat.data.schema!==1||!Array.isArray(cat.data.records))throw Error('기준자료 형식을 확인해 주세요.');const {state,months}=unpackCatalog(cat.data.records),baseline={'meta/catalog.json':cat.data.records},blobs={};
-  const [lotRead,monthReads]=await Promise.all([this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,this.envelope)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
+  const [lotRead,monthReads]=await Promise.all([snap?storeDoc(this.client,snap,'meta/gypsum-lots.json'):this.client.get('meta/gypsum-lots.json',true,{ref:cat.revision}),readMonths(this.client,months,false,cat.revision,this.envelope,snap)]);if(lotRead.data&&(lotRead.data.schema!==1||!Array.isArray(lotRead.data.records)))throw Error('석고 로트 저장 형식을 확인해 주세요.');state.gypsumLots=clone(lotRead.data?.records||[]);
   for(const result of monthReads){state.months[result.key]=result.month;baseline[result.path]=result.records;if(result.blob)blobs[result.path]=result.blob}
   if(this.closed)throw Error('저장소 연결이 변경되었습니다.');if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;const problem=this.ownsUnitSync(state.catalogUnitSync?.id)?null:unitSyncError(state);if(canApply&&!canApply())return null;let applied=false;
   const e=await this.mutate(e=>{if(e.queue.length)return;e.state=state;e.baseline=baseline;if(Object.keys(blobs).length)e.blobs=blobs;else delete e.blobs;applied=true},{canCommit:()=>!this.explicitRecoveryLease&&this.explicitRecoveryRevision===recoveryRevision&&(!canApply||canApply())});if(this.explicitRecoveryLease||this.explicitRecoveryRevision!==recoveryRevision)return this.envelope.state;if(canApply&&(!applied||e.state!==state))return null;
   this.loaded=true;this.catalogBlocked=problem;this.lastError=problem;if(applied&&e.state===state&&syncStatus?.data&&syncStatus.sha&&!problem)this.initialSyncStatus={state,result:syncStatus};
-  const transfers=auditTransferIssues(e.state);this.status(problem?problem.message:transfers.length?auditError(transfers).message:e.queue.length?'기기 변경자료 · 전송 대기':'GitHub 최신자료');return e.state;
+  const transfers=auditTransferIssues(e.state);this.status(problem?problem.message:transfers.length?auditError(transfers).message:e.queue.length?'기기 변경자료 · 전송 대기':this.sourceName()+' 최신자료');return e.state;
  }
  async save(next,monthKeys=[],catalog=false,archive=false){if(this.resolving)throw Error('충돌자료를 복구하는 동안 잠시 기다려 주세요.');if(!this.loaded||this.closed)throw Error('저장소 자료를 먼저 불러와 주세요.');if(this.catalogBlocked)throw this.catalogBlocked;next=clone(next);next.scheduleHistory=scheduleHistory(next);next.scheduleDryHistory=scheduleDryHistory(next);const baseline=sourceBaseline(next);if(baseline){next.scheduleSourceBaseline=baseline;const queued=[...this.envelope.queue].reverse().find(q=>q.path==='meta/catalog.json'),published=(queued?.local||this.envelope.baseline['meta/catalog.json']||[]).find(r=>r.id==='catalog')?.scheduleSourceBaseline;if(JSON.stringify(baseline)!==JSON.stringify(published))catalog=true}const invocation=clone(this.envelope.state);const groupId=C.id(),beforePublish=this.beforeExplicitSavePublish;const e=await this.mutate(async e=>{
  const problem=unitSyncError(e.state);if(problem)throw problem;
@@ -3677,8 +3754,10 @@ class Workspace{
  async flush({explicitRecoveryToken}={}){
   if(this.closed||this.resolving)return;if(this.flushing)return this.flushing;
   if(this.explicitRecoveryLease&&explicitRecoveryToken!==this.explicitRecoveryToken)return;
-  const run=async()=>{while(this.envelope.queue.length&&!this.closed&&!this.resolving){const q=clone(this.envelope.queue[0]);try{
-   await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local,{strict:this.strictWrite(q)})}catch(error){
+  // A store paused for maintenance (frozen) keeps every request on this device,
+  // and so does a connection whose flushGate (app.js) has not confirmed where to write.
+  const run=async()=>{if(this.flushGate&&this.envelope.queue.length&&!await this.flushGate()){if(!this.closed&&this.envelope.queue.length)this.status('저장 방식 확인 중 · 기기에 보관');return}if(this.config.storeMode==='frozen'&&this.envelope.queue.length){const e=Error('점검 중 · 기기에 보관');e.code='STORE_FROZEN';e.status=503;this.lastError=e;this.status(e.message);return}while(this.envelope.queue.length&&!this.closed&&!this.resolving){const q=clone(this.envelope.queue[0]);try{
+   await this.guardWrite(q);let result;try{result=q.viewOnly?await this.saveViewRecords(q):await this.client.saveRecords(q.path,q.base,q.local,{strict:this.strictWrite(q),requestId:q.id})}catch(error){
     if(!error.conflicts?.length||!/^months\//.test(q.path)||!auditSensitive(q.base[0],q.local[0]))throw error;
     const remote=await this.client.get(q.path);if(remote.data?.schema!==1||!acknowledgedAuditOnly(q,remote.data.records))throw error;
     result=remote;
@@ -3689,7 +3768,7 @@ class Workspace{
      // when a later one cannot be rebased. That one keeps its own basis and
      // meets the ordinary conflict handling when it becomes the head.
      if(rebased.conflicts.length)break;later.base=clone(current);later.local=clone(rebased.records);current=rebased.records}applyRecords(e.state,q.path,current);for(const[path,records]of Object.entries(extra)){e.baseline[path]=records;rememberBlob(e,path,extraBlobs[path]);applyRecords(e.state,path,records)}const group=e.groups?.find(g=>g.id===q.groupId);if(group){group.acked.push(q.id);group.status=group.ids.every(id=>group.acked.includes(id))?'complete':'partial'}const complete=(e.groups||[]).filter(g=>g.status==='complete'),retained=new Set(complete.slice(-30).map(g=>g.id));for(const ref of e.explicitSaveRecoveries||[])for(const id of Array.isArray(ref.groupIds)?ref.groupIds:[])retained.add(id);e.groups=(e.groups||[]).filter(g=>g.status!=='complete').concat(complete.filter(g=>retained.has(g.id)))});
-   this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':'GitHub 저장 완료');
+   this.catalogBlocked=null;this.lastError=null;this.onState(clone(e.state));this.status(e.queue.length?'일부 저장 완료 · 전송 대기 '+e.queue.length+'건':this.sourceName()+' 저장 완료');
   }catch(err){
    // Only a business conflict is separable. Authentication, unit migration,
    // stocktake, device-CAS and network failures keep their original boundary.
@@ -3702,7 +3781,7 @@ class Workspace{
     if(streak>=2&&await this.setAsideQueue({reason:'automatic'}))continue;
    }catch(holdError){err=holdError}
    this.lastError=err;if(err.code==='CATALOG_UNIT_SYNC')this.catalogBlocked=err;
-   this.status(['CATALOG_UNIT_SYNC','AUDIT_TRANSFER_SYNC'].includes(err.code)?err.message:err.conflicts?'동시 수정 확인 필요':this.envelope.groups?.some(g=>g.status==='partial')?'일부 저장 완료 · 재전송 대기':'기기에 보관 · 재전송 대기');return;
+   this.status(['CATALOG_UNIT_SYNC','AUDIT_TRANSFER_SYNC','STORE_FROZEN'].includes(err.code)?err.message:err.conflicts?'동시 수정 확인 필요':this.envelope.groups?.some(g=>g.status==='partial')?'일부 저장 완료 · 재전송 대기':'기기에 보관 · 재전송 대기');return;
   }}};this.flushing=run().finally(()=>{this.flushing=null});return this.flushing;
  }
  // A request that cannot be merged automatically must not block every later
@@ -3760,7 +3839,7 @@ class Workspace{
   for(const key of await S.localKeys(this.key+':recovery:'))if(/^:recovery:(?:acknowledged-draft|queued-save|explicit-save):/.test(key.slice(this.key.length))&&!referenced.has(key)){if(this.closed)return false;await S.localSet(key,null)}
   return true;
  }
- async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error('GitHub 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;if(temp.envelope.blobs)e.blobs=temp.envelope.blobs;else delete e.blobs;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status('GitHub 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
+ async useRemote(){if(this.resolving)throw Error('이미 복구 중입니다.');this.resolving=true;try{if(this.flushing)await this.flushing;await this.lock;if(this.closed)throw Error('연결이 종료되었습니다.');await S.localSet(this.key+':recovery:'+Date.now(),clone(this.envelope));const temp=new Workspace(this.config);temp.mutate=async fn=>{const e=clone(temp.envelope);await fn(e);temp.envelope=e;return e};const remote=await temp.open();temp.close();if(!remote)throw Error(this.sourceName()+' 원장이 없어 기기자료를 유지합니다.');if(temp.catalogBlocked)throw temp.catalogBlocked;await this.mutate(e=>{e.state=remote;e.baseline=temp.envelope.baseline;if(temp.envelope.blobs)e.blobs=temp.envelope.blobs;else delete e.blobs;e.queue=[];e.groups=[]});this.catalogBlocked=null;this.lastError=null;this.onState(clone(remote));this.status(this.sourceName()+' 최신자료 · 이전 기기변경 별도 보관')}finally{this.resolving=false}}
  async initialize(key){if(!this.empty)throw Error('자료가 이미 있는 저장소입니다.');const s=emptyState();s.months[key]=newMonth(key);await this.save(s,[key],true);return s}
  close(){this.closed=true;this.initialSyncStatus=null;this.releaseExplicitRecovery(this.explicitRecoveryToken);this.client.invalidate()}
 }
@@ -5594,9 +5673,11 @@ function sourceView(){
  ['자료 저장','기기 보관·전송 대기·충돌 확인','화면 상단의 현재 저장 결과를 확인']
  ].map(r=>tr(r.map(x=>td(esc(x))))))}</section>${state.migrationWarnings?.length?`<section class="card"><h2>원본 일정 확인사항</h2>${table(['출처','내용'],state.migrationWarnings.map(w=>tr([td(esc(w.source)),td(esc(w.message))])))}</section>`:''}<section class="card"><h2>원본 시트 조회</h2>${available?`<div class="toolbar"><select id="sheetSelect" aria-label="원본 시트 선택">${archive.filter(s=>s.name!=='사용설명서').map(s=>`<option ${s.name===m().name?'selected':''}>${esc(s.name)}</option>`).join('')}</select><span class="subtle">저장 당시 값 · 수식 재계산 없음</span></div>`:''}<div id="archiveView"></div></section><section class="card"><h2>원본 오류 위치</h2>${!available&&names.length?'<p>현재 기기에 원본 셀을 불러오지 않아 오류 위치는 조회하지 않았습니다. 설정·백업의 GitHub 전체 자료 백업에 보관된 원본이 포함됩니다.</p>':table(['시트','셀','저장된 오류'],cached.slice(0,100).map(r=>tr([td(esc(r.sheet)),td(esc(r.cell)),td(esc(r.value))])))}<p class="footerNote">원본 오류는 실제 생산·재고 숫자로 사용하지 않습니다.</p></section>`;
 }
-function connectionView(first=false){let config={},keep=true;try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'{}')}catch(e){}try{keep=localStorage.getItem('schedule.v1.keep')!=='off'||!!localStorage.getItem('schedule.v1.token')}catch(e){}return `<div class="top"><div><h1>${first?'조형 생산관리 시작하기':'연결·백업'}</h1><p class="subtle">웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.</p></div></div><section class="card"><h2>데이터 저장소 연결</h2><div class="formGrid"><label>GitHub 계정<input id="owner" value="${esc(config.owner||'parkjkk')}" placeholder="계정 이름" autocomplete="off"></label><label>데이터 저장소<input id="repo" value="${esc(config.repo||'schedule-data')}" autocomplete="off"></label><label>브랜치<input id="branch" value="${esc(config.branch||'main')}"></label><label>시작할 월<input id="firstMonth" type="month" value="${today().slice(0,7)}"></label><label class="full">접근 토큰<input id="token" type="password" autocomplete="off" placeholder="이 데이터 저장소의 Contents 읽기·쓰기 권한"></label><label class="full" style="display:block;font-weight:400"><input id="rememberConnection" type="checkbox" ${keep?'checked':''}> 내 기기에서 연결 유지</label></div><p class="footerNote">업무 데이터용 비공개 저장소를 연결합니다. 새 저장소는 README를 포함해 생성해야 합니다. 연결 유지 선택 시 토큰은 이 브라우저에 저장되며 HTML·GitHub 자료·공유주소에는 포함되지 않습니다.</p><div class="actions"><button class="primary" data-action="connect">연결하고 자료 열기</button><span id="connectionResult" class="subtle"></span></div></section>${first?'<section class="card"><h2>HTML 먼저 준비하기</h2><p>저장소 연결 전 기준정보와 입력 화면을 준비할 수 있습니다. 자료는 이 기기에 보관하며 연결 후 최초 이전으로 저장합니다.</p><button data-action="startDraft">연결 전 입력 시작</button></section>':`<section class="card"><h2>저장 상태</h2><p>${esc(connectionStatus)}</p><div class="actions"><button data-action="retry">대기 자료 다시 전송</button><button data-action="refresh">GitHub 최신자료 읽기</button><button data-action="remoteBackup">GitHub 전체자료 백업</button></div><div id="conflictList"></div></section><section class="card"><h2>최초 이전 · 복구</h2><p class="subtle">엑셀은 기존자료를 처음 옮길 때만 사용합니다. 평소 입력과 수정은 웹 화면에서 진행합니다.</p><div class="actions"><button data-action="import">최초 엑셀자료 이전</button><button data-action="migrate">이 기기 이전자료를 GitHub에 저장</button><button data-action="export">기기 보관자료 내려받기</button></div><p class="source">${esc(state?.source||'')}</p></section>`}`}
+function connectionView(first=false){let config={},keep=true;try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'{}')}catch(e){}try{keep=localStorage.getItem('schedule.v1.keep')!=='off'||!!localStorage.getItem('schedule.v1.token')}catch(e){}return `<div class="top"><div><h1>${first?'조형 생산관리 시작하기':'연결·백업'}</h1><p class="subtle">웹에서 입력하고 GitHub에 저장합니다. 다시 열면 저장된 자료를 이어서 사용합니다.</p></div></div><section class="card"><h2>데이터 저장소 연결</h2><div class="formGrid"><label>GitHub 계정<input id="owner" value="${esc(config.owner||'parkjkk')}" placeholder="계정 이름" autocomplete="off"></label><label>데이터 저장소<input id="repo" value="${esc(config.repo||'schedule-data')}" autocomplete="off"></label><label>브랜치<input id="branch" value="${esc(config.branch||'main')}"></label><label>시작할 월<input id="firstMonth" type="month" value="${today().slice(0,7)}"></label><label class="full">접근 토큰<input id="token" type="password" autocomplete="off" placeholder="이 데이터 저장소의 Contents 읽기·쓰기 권한"></label><label class="full" style="display:block;font-weight:400"><input id="rememberConnection" type="checkbox" ${keep?'checked':''}> 내 기기에서 연결 유지</label></div><p class="footerNote">업무 데이터용 비공개 저장소를 연결합니다. 새 저장소는 README를 포함해 생성해야 합니다. 연결 유지 선택 시 토큰은 이 브라우저에 저장되며 HTML·GitHub 자료·공유주소에는 포함되지 않습니다.</p><div class="actions"><button class="primary" data-action="connect">연결하고 자료 열기</button><span id="connectionResult" class="subtle"></span></div></section>${first?'<section class="card"><h2>HTML 먼저 준비하기</h2><p>저장소 연결 전 기준정보와 입력 화면을 준비할 수 있습니다. 자료는 이 기기에 보관하며 연결 후 최초 이전으로 저장합니다.</p><button data-action="startDraft">연결 전 입력 시작</button></section>':`<section class="card"><h2>저장 상태</h2><p>${esc(connectionStatus)}</p><div class="actions"><button data-action="retry">대기 자료 다시 전송</button><button data-action="refresh">GitHub 최신자료 읽기</button><button data-action="remoteBackup">GitHub 전체자료 백업</button></div><div id="conflictList"></div></section>${storeDeviceNotice()}<section class="card"><h2>최초 이전 · 복구</h2><p class="subtle">엑셀은 기존자료를 처음 옮길 때만 사용합니다. 평소 입력과 수정은 웹 화면에서 진행합니다.</p><div class="actions"><button data-action="import">최초 엑셀자료 이전</button><button data-action="migrate">이 기기 이전자료를 GitHub에 저장</button><button data-action="export">기기 보관자료 내려받기</button></div><p class="source">${esc(state?.source||'')}</p></section>`}`}
+// One button while the server store is used and this device has no usable key.
+function storeDeviceNotice(){let mode=null,device=null;try{mode=JSON.parse(localStorage.getItem('schedule.v1.storeMode')||'null');device=JSON.parse(localStorage.getItem('schedule.v1.deviceKey')||'null')}catch{}const cloud=typeof workspace!=='undefined'&&workspace?.config?.driver==='cloud';if(!cloud&&!['frozen','live'].includes(mode?.mode)||/^[A-Za-z0-9_-]{43}$/.test(device?.key||'')&&!mode?.principalError)return '';return '<section class="card" data-store-device><h2>서버 저장 권한</h2><p>이 기기의 서버 저장 권한을 확인해 주세요.</p><div class="actions"><button type="button" data-action="registerDevice">관리자 비밀번호로 이 기기 등록</button></div></section>'}
 function settingsView(){return connectionView(false)+'<details class="card"><summary>기존 엑셀과 전환 내용 확인</summary><p class="footerNote">최초 이전한 원본 시트와 계산 대조 범위를 확인합니다.</p><button data-action="source">원본·전환 점검 열기</button></details>'}
-function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){if(a==='report'&&b.dataset.workspacePanel==='plaster'&&typeof workspaceScreen!=='undefined')workspaceScreen.panels.set('report','plaster');page=a;render();return}if(typeof heldCopyOnly==='function'&&heldCopyOnly()&&heldCopyWrites.includes(a)){toast(heldCopyMessage);return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
+function bindActions(){document.querySelectorAll('[data-action]').forEach(b=>b.onclick=async()=>{const a=b.dataset.action;if(busy){toast('저장이 끝난 뒤 다시 눌러 주세요.');return}if(tabs.some(([k])=>k===a)){if(a==='report'&&b.dataset.workspacePanel==='plaster'&&typeof workspaceScreen!=='undefined')workspaceScreen.panels.set('report','plaster');page=a;render();return}if(typeof heldCopyOnly==='function'&&heldCopyOnly()&&heldCopyWrites.includes(a)){toast(heldCopyMessage);return}try{if(await enhancedAction(a,b))return;if(['connect','retry','refresh','remoteBackup','migrate','newProduct','newWorker','newIssue','newMonth','setOpening','registerDevice'].includes(a)){await nativeAction(a);return}if(a==='import')$('#file').click();if(a==='newEntry')await entry();if(a==='export')download(JSON.stringify(workspace?{...state,_pendingOperations:workspace.envelope.queue}:state,null,2),'조형_웹검증자료_'+today()+'.json','application/json');if(a==='print')window.print();if(a==='csvDaily')csv(['날짜','작업자','품명','주입횟수','생산kg','LOT','품목 메모'],m().rows.map(r=>[r.date,r.worker,r.product,r.pours,C.daily(r).plaster,r.lot,ScheduleBatch.memoValue(state,null,r.product)]),'생산일보');if(a==='csvStock')csv(['품명','이월','생산','교체차감','재계산현재고','원본현재고'],C.inventory(state,month).map(r=>[r.product,r.opening,r.production,r.deduction,r.current,r.original]),'재고대조');if(a==='dryCalc')dryDialog();if(a==='checkConnection'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim(),token:$('#token').value.trim()};if(!config.token)throw Error('접근 토큰을 입력해 주세요.');b.disabled=true;try{const client=new S.GithubStore(config),r=await client.check();$('#connectionResult').textContent=r.name+' · 비공개 확인';$('#token').value='';client.invalidate()}finally{b.disabled=false}}}catch(e){toast(e.message)}})}
 function bindPage(){if(page==='scheduleSummary')bindScheduleSummary();const search=$('#search');if(search)search.oninput=e=>{const pos=e.target.selectionStart;filter=e.target.value;render();$('#search').focus();$('#search').setSelectionRange(pos,pos)};document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{try{await entry(m().rows.find(r=>r.id===b.dataset.edit))}catch(e){toast(e.message)}});if(page==='settings')showConflicts();const keep=$('#rememberConnection');if(keep)keep.onchange=()=>{try{if(keep.checked){localStorage.removeItem('schedule.v1.keep');const token=sessionStorage.getItem('schedule.v1.token');if(token&&workspace)localStorage.setItem('schedule.v1.token',token)}else{localStorage.setItem('schedule.v1.keep','off');localStorage.removeItem('schedule.v1.token')}}catch(e){}};if(page==='source'){$('#sheetSelect')?.addEventListener('change',showArchive);showArchive()}}
 function showArchive(){if(!state.archive.length){$('#archiveView').innerHTML='<p class="empty">최초 이전한 원본은 GitHub 전체자료 백업에 포함됩니다. 현재 화면은 웹 원장을 사용합니다.</p>';return}const s=state.archive.find(s=>s.name===$('#sheetSelect').value),maxR=Math.min(300,Math.max(...Object.keys(s.cells).map(a=>+a.match(/\d+/)[0]))),maxC=Math.min(44,Math.max(...Object.keys(s.cells).map(a=>C.ci(a.match(/[A-Z]+/)[0]))));const rows=[];for(let r=1;r<=maxR;r++){if(!Object.keys(s.cells).some(a=>+a.match(/\d+/)[0]===r))continue;rows.push(tr([td(r,'source'),...Array.from({length:maxC},(_,i)=>{const cell=s.cells[C.col(i+1)+r],v=cell?.v;return td(`<span title="${esc(C.col(i+1)+r)}">${esc(v==null?'':typeof v==='number'?fmt(v,4):String(v).replace(/(?:암호|비밀번호|password)\s*[:=]?\s*\d+/gi,'보호정보 생략'))}</span>`)})]))}$('#archiveView').innerHTML=`<div class="archivePane">${table(['행',...Array.from({length:maxC},(_,i)=>C.col(i+1))],rows)}</div><p class="footerNote">앞 44열·300행 조회. 내려받는 전체 기기자료에는 모든 시트의 읽은 셀 값이 포함됩니다.</p>`}
 function csv(headers,rows,name){const safe=x=>{let s=String(x??'');if(/^[=+@-]/.test(s)&&isNaN(Number(s)))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'};download('\ufeff'+[headers,...rows].map(r=>r.map(safe).join(',')).join('\r\n'),name+'_'+month+'.csv','text/csv;charset=utf-8')}
@@ -5619,20 +5700,80 @@ function scheduleHousekeeping(owner,attempt=0){
   owner.housekeep().catch(()=>{});
  },4000);
 }
+// cloudflare-store-v1: the gateway says where the management ledger is kept.
+// Only the fixed management repository can move. Any other connection, a
+// gateway without the store and the github mode connect exactly as before.
+const storeServer='https://production-view.pjk3742.workers.dev',storeKeys={mode:'schedule.v1.storeMode',device:'schedule.v1.deviceKey'};let storeWatchAt=0,storeRegisterAt=0;
+function storeManaged(config){return config?.owner==='parkjkk'&&config.repo==='schedule-data'&&(config.branch||'main')==='main'}
+function storeRead(key){try{return JSON.parse(localStorage.getItem(key)||'null')}catch{return null}}
+function storeDevice(){const v=storeRead(storeKeys.device);return v?.schema===1&&typeof v.id==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v.key||'')?v:null}
+async function storeWhoami(device){
+ if(navigator.onLine===false)return null;let r,j;
+ try{r=await fetch(storeServer+'/api/v2/whoami',{headers:device?{Authorization:'Bearer '+device.key}:{},credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(8000)});j=await r.json().catch(()=>null)}catch{return null}
+ if(r.status===404)return{mode:'github',absent:true};
+ if(!r.ok||!j||!['github','frozen','live'].includes(j.mode))return null;
+ try{localStorage.setItem(storeKeys.mode,JSON.stringify({mode:j.mode,generation:j.generation,at:new Date().toISOString(),...(j.principalError?{principalError:j.principalError}:{})}))}catch{}
+ return j;
+}
+// The device key is kept only in this browser's localStorage, never in IndexedDB, backups or addresses.
+async function storeRegister(body){
+ const r=await fetch(storeServer+'/api/v2/devices',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)}),j=await r.json().catch(()=>null);
+ if(!r.ok||typeof j?.id!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(j.key||''))throw Error(j?.error||'이 기기를 서버에 등록하지 못했습니다.');
+ const device={schema:1,id:j.id,key:j.key,label:String(j.label||''),at:new Date().toISOString()};localStorage.setItem(storeKeys.device,JSON.stringify(device));return device;
+}
+async function storeConfig(config){
+ let device=storeDevice();const who=await storeWhoami(device),mode=who?.mode||storeRead(storeKeys.mode)?.mode||'github';
+ // A key the server no longer knows is dropped. A revoked key stays, so settings offer the administrator registration.
+ if(device&&who?.principalError==='unknown'){try{localStorage.removeItem(storeKeys.device)}catch{}device=null}
+ // Zero typing: the token this device already holds proves it once. Silent while GitHub is still used.
+ if(!device&&who&&!who.absent&&config.token&&Date.now()-storeRegisterAt>600000){storeRegisterAt=Date.now();const register=storeRegister({action:'register-by-token',token:config.token});if(mode==='github')register.catch(()=>{});else device=await register.catch(()=>null)}
+ if(!['frozen','live'].includes(mode))return config;
+ let token=config.token;if(who?.forgetToken&&device&&mode==='live'){try{localStorage.removeItem('schedule.v1.token');sessionStorage.removeItem('schedule.v1.token')}catch{}token=''}
+ return{...config,token,driver:'cloud',storeMode:mode,deviceKey:device?.key||'',server:storeServer};
+}
+// While the store is used: a pause or its end changes only the mode of this
+// connection; a return to GitHub reconnects once, when nothing is being edited.
+// A GitHub connection of the managed repository is watched too: when the store
+// takes over it reconnects to the server once idle (its queue is held meanwhile).
+async function storeWatch(){
+ const owner=workspace,cloud=owner?.config?.driver==='cloud';if(!owner||owner.closed||!cloud&&!storeManaged(owner.config)||connectionOpening||Date.now()-storeWatchAt<60000)return;storeWatchAt=Date.now();
+ const who=await storeWhoami(storeDevice());if(!who||workspace!==owner||owner.closed||who.mode===(cloud?owner.config.storeMode:'github'))return;
+ if(cloud&&who.mode!=='github'){owner.config.storeMode=who.mode;owner.client.config.storeMode=who.mode;if(who.mode==='live'&&owner.envelope.queue.length)owner.flush();return}
+ if(busy||connectionOpening||$('#dialog')?.open||[...sheetRegistry.values()].some(g=>g.saving||g.loading))return;
+ const config=storeRead('schedule.v1.connection');if(!storeManaged(config))return;let token='';try{token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')||''}catch{}
+ try{await connect({...config,token},undefined,{keepPage:true})}catch(e){toast(e.message)}
+}
+// The managed repository's GitHub connection writes to GitHub only after the
+// gateway said "github" in the last 10 seconds (it asks again otherwise; the
+// gateway goes live no sooner than 30 s after a freeze). When the store has
+// taken over, the queue stays on this device and the page moves to the server;
+// an unreachable gateway leaves the last answer in force, as before.
+async function storeGate(owner,choice){
+ const chosen=await choice;if(owner.config?.driver==='cloud')return true;if(chosen?.driver==='cloud')return false;
+ const last=storeRead(storeKeys.mode);if(last?.mode==='github'&&Date.now()-Date.parse(last.at||'')<10000)return true;
+ const who=await storeWhoami(storeDevice()),mode=who?.mode||storeRead(storeKeys.mode)?.mode||'github';if(mode==='github')return true;
+ if(workspace===owner&&!owner.closed){storeWatchAt=0;storeWatch().catch(()=>{})}return false;
+}
 async function connect(config,initialMonth,{keepPage=false}={}){
  if(localReadError)throw Error('기기 보관자료를 먼저 복원한 뒤 연결해 주세요. 저장 허용 설정을 확인하고 새로고침해 주세요.');
  const previous=workspace,beforeState=state,prepared=previous&&!previous.pendingMigration||heldCopyOnly()?null:state,beforeMonth=month;
+ // Asked in parallel with the device copy read, so opening is not slower. A
+ // device whose last answer was "github" opens GitHub at once and moves later.
+ const storeChoice=storeManaged(config)?storeConfig(config).catch(()=>config):null,storeWait=!!storeChoice&&storeRead(storeKeys.mode)?.mode!=='github';
  const next=new ScheduleNative.Workspace(config,message=>{if(workspace===next)setStatus(next.pendingMigration?'기기자료 준비됨 · 최초 이전 저장 필요':message)},updated=>{if(workspace===next&&!next.pendingMigration){state=updated;if(!$('#dialog').open)render()}});
+ if(storeChoice)next.flushGate=()=>storeGate(next,storeChoice);
  if(!connectionOpening)connectionBusyBefore=busy;next.previewEditors=connectionOpening?.previewEditors||new Set();connectionOpening=next;connectionPreview=null;busy=true;
  workspace=next;state=null;setStatus('GitHub 자료 읽는 중…');render();let cached=null;
  try{
   cached=await next.cache();if(workspace!==next)return;
   if(cached&&Object.keys(cached.months||{}).length&&![...sheetRegistry.values()].some(g=>g.scope===next.key)){const known=new Set(sheetRegistry.values());state=cached;connectionPreview=next;setStatus('기기 보관자료 · 최신자료 확인 중 · 조회 전용');render();for(const g of sheetRegistry.values())if(!known.has(g))next.previewEditors.add(g)}
+  if(storeWait){const chosen=await storeChoice;if(workspace!==next)return;if(chosen.driver==='cloud'&&next.useStore(chosen)&&!connectionPreview)setStatus('서버 자료 읽는 중…')}
   const loaded=await next.open({includeSyncStatus:true});if(workspace!==next)return;
   if(loaded){state=loaded;await next.flush()}else state=await next.initialize(initialMonth||today().slice(0,7));
   if(hasBusinessData(prepared)&&!hasBusinessData(state)){state=prepared;next.pendingMigration=true;setStatus('기기자료 준비됨 · 연결·백업에서 최초 이전 저장')}
   previous?.close();heldCopy=null;if(!state.months[month])month='';if(!keepPage)page=next.pendingMigration?'settings':'daily';
   scheduleHousekeeping(next);
+  if(storeChoice&&!storeWait)storeChoice.then(chosen=>{if(chosen?.driver==='cloud'&&workspace===next&&!next.closed){storeWatchAt=0;storeWatch().catch(()=>{})}});
  }catch(e){
   if(workspace!==next)return;
   if(cached){previous?.close();state=cached;setStatus('기기 보관자료 · 연결 재시도 필요')}
@@ -5647,7 +5788,9 @@ async function restoreConnection(){
   let config,token;
   try{config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null');token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')}
   catch(e){toast('저장된 연결 설정을 읽지 못했습니다. 연결·백업에서 다시 입력할 수 있습니다.')}
-  if(config&&token){try{await connect({...config,token},undefined,{keepPage:true})}catch(e){toast(e.message)}}
+  // After the switch a registered device may connect with its device key alone.
+  let deviceOnly=false;if(config&&!token)try{deviceOnly=/^[A-Za-z0-9_-]{43}$/.test(JSON.parse(localStorage.getItem('schedule.v1.deviceKey')||'null')?.key||'')&&['frozen','live'].includes(JSON.parse(localStorage.getItem('schedule.v1.storeMode')||'null')?.mode)}catch{}
+  if(config&&(token||deviceOnly)){try{await connect({...config,token:token||''},undefined,{keepPage:true})}catch(e){toast(e.message)}}
   else if(config)await showHeldCopy(config);
  }finally{ensureLocalState();booting=false;render()}
 }
@@ -5660,6 +5803,8 @@ async function showHeldCopy(config){
 }
 async function nativeAction(action){
  if(action==='connect'){const config={owner:$('#owner').value.trim(),repo:$('#repo').value.trim(),branch:$('#branch').value.trim()||'main',token:$('#token').value.trim()};if(!config.token)throw Error('데이터 저장소 접근 토큰을 입력해 주세요.');const first=$('#firstMonth').value,remember=$('#rememberConnection').checked;await connect(config,first);localStorage.setItem('schedule.v1.connection',JSON.stringify({owner:config.owner,repo:config.repo,branch:config.branch}));sessionStorage.setItem('schedule.v1.token',config.token);if(remember){localStorage.setItem('schedule.v1.token',config.token);localStorage.removeItem('schedule.v1.keep')}else{localStorage.removeItem('schedule.v1.token');localStorage.setItem('schedule.v1.keep','off')}return}
+ // Fallback registration after the switch: the administrator password already entered for this settings tab.
+ if(action==='registerDevice'){if(typeof managementConnectionGate==='undefined')throw Error('관리자 설정을 다시 열어 주세요.');await managementConnectionGate.withCredential(adminPassword=>storeRegister({action:'register-by-pin',adminPassword}));toast('이 기기를 서버에 등록했습니다.');const config=storeRead('schedule.v1.connection');if(storeManaged(config)){let token='';try{token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token')||''}catch{}await connect({...config,token},undefined,{keepPage:true})}return}
  if(action==='retry'){if(!workspace)throw Error('저장소를 연결해 주세요.');await workspace.flush();if(workspace.lastError?.conflicts){toast('같은 월 또는 기준정보가 다른 기기에서 바뀌었습니다. 대기 기록은 보존되어 있습니다.');showConflicts()}return}
  if(action==='refresh'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료를 먼저 확인해 주세요.');state=await workspace.open();render();return}
  if(action==='remoteBackup'){if(!workspace)throw Error('저장소를 연결해 주세요.');if(workspace.envelope.queue.length)throw Error('전송 대기 자료가 있습니다. 먼저 전송하거나 기기자료를 별도로 내려받아 주세요.');const backup=await workspace.open();for(const name of backup.archiveNames||[]){const a=await workspace.client.get('archive/'+encodeURIComponent(name)+'.json');backup.archive.push(a.data.records[0])}download(JSON.stringify(backup),'조형_GitHub_전체백업_'+today()+'.json','application/json');toast('전체 파일 조회가 완료되어 백업을 만들었습니다.');return}
@@ -5768,7 +5913,7 @@ function gypsumLotsDialog(initial=today().startsWith(month)?today():month+'-01')
  ui.Save.onclick=async()=>{if(busy||!current())return;try{
   if(!AppAccess.unlocked)throw Error('로그인한 뒤 다시 저장해 주세요.');const date=ui.Date.value,value={date,lot:ui.Value.value,overlap:ui.Overlap.checked};if(!state.months[date.slice(0,7)]||state.months[date.slice(0,7)].closed)throw Error('입력 가능한 월을 선택해 주세요.');const edit=GypsumLots.edit(state.gypsumLots||[],{date,base,value});
   busy=true;pendingControls=[...root.querySelectorAll('button,input')].map(el=>({el,disabled:el.disabled}));for(const {el}of pendingControls)el.disabled=true;root.setAttribute('aria-busy','true');ui.Error.hidden=true;ui.Status.textContent='로트를 저장 중입니다…';ui.Status.hidden=false;
-  const owner=workspace;if(owner){if(twoWayClient()!==owner)throw Error('공용 석고 로트는 생산관리 연결에서 저장해 주세요.');const response=await fetch('https://production-view.pjk3742.workers.dev/api/management-lots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',token:owner.config.token,date,base,value}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});const result=await response.json();if(!response.ok)throw Error(result.error||'로트를 저장하지 못했습니다.');if(workspace!==owner||owner.closed||!AppAccess.unlocked)throw Error('연결이 바뀌었습니다. 다시 불러와 주세요.');const rows=result.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'}));await owner.mutate(e=>{e.state.gypsumLots=rows});state.gypsumLots=rows}else{const n=C.clone(state);n.gypsumLots=edit.records;await persist(n,[],false)}
+  const owner=workspace;if(owner){const cloud=typeof ScheduleStorage!=='undefined'&&ScheduleStorage.CloudStore&&owner.client instanceof ScheduleStorage.CloudStore;if(!cloud&&twoWayClient()!==owner)throw Error('공용 석고 로트는 생산관리 연결에서 저장해 주세요.');const response=await fetch('https://production-view.pjk3742.workers.dev/api/management-lots',{method:'POST',headers:cloud?{'Content-Type':'application/json',Authorization:'Bearer '+owner.config.deviceKey}:{'Content-Type':'application/json'},body:JSON.stringify(cloud?{action:'save',date,base,value}:{action:'save',token:owner.config.token,date,base,value}),credentials:'omit',redirect:'error',signal:AbortSignal.timeout(20000)});const result=await response.json();if(!response.ok)throw Error(result.error||'로트를 저장하지 못했습니다.');if(workspace!==owner||owner.closed||!AppAccess.unlocked)throw Error('연결이 바뀌었습니다. 다시 불러와 주세요.');const rows=result.events.map(e=>({...e,id:'gypsum-lot:'+e.date,kind:'gypsumLots'}));await owner.mutate(e=>{e.state.gypsumLots=rows});state.gypsumLots=rows}else{const n=C.clone(state);n.gypsumLots=edit.records;await persist(n,[],false)}
   if(current()&&AppAccess.unlocked){refresh();ui.Status.textContent='저장 완료 · '+date+' · '+value.lot.trim();ui.Status.hidden=false;toast('석고 로트를 저장했습니다.');render()}
  }catch(e){error(e.message)}finally{busy=false;for(const {el,disabled}of pendingControls)el.disabled=disabled;pendingControls=[];root.removeAttribute('aria-busy');if(!current())cleanup()}};
  refresh();d.showModal();
@@ -6288,7 +6433,7 @@ class SheetEditor{
   this.ackCleanup=true;this.writeQueue=this.writeQueue.catch(()=>{}).then(async()=>{
    if(!safe())return;const cleared=await this.clearStoredDraft();if(!safe())return;
    this.dirty=false;this.error='입력 내용의 서버 반영을 확인했습니다.'+(cleared?'':' 다른 창의 초안은 그대로 보관했습니다.');this.update();
-   if(typeof connectionStatus!=='undefined'&&connectionStatus==='GitHub 최신자료 · 입력 초안 유지'&&![...sheetRegistry.values()].some(g=>g.scope===this.scope&&g.dirty)&&typeof setStatus==='function')setStatus('GitHub 최신자료');
+   if(typeof connectionStatus!=='undefined'&&['GitHub 최신자료 · 입력 초안 유지','서버 최신자료 · 입력 초안 유지'].includes(connectionStatus)&&![...sheetRegistry.values()].some(g=>g.scope===this.scope&&g.dirty)&&typeof setStatus==='function')setStatus(connectionStatus.split(' · ')[0]);
    if(typeof ilboRenderStatus==='function')ilboRenderStatus();
   }).catch(e=>{this.error='저장된 입력의 초안을 정리하지 못했습니다. '+e.message;this.update()}).finally(()=>{this.ackCleanup=false});
  }
@@ -9985,7 +10130,8 @@ window.addEventListener('storage',event=>{if(event.key===ilboQualityAckPrefix+il
 // All source data and conflict decisions remain in the shared server engine.
 const twoWayState={client:null,generation:0,timer:null,poll:null,running:false,message:'',last:0,intent:null,status:'',storageWarning:''};
 const twoWayMessages={pending:'관리 저장 완료 · 현장일보에 반영 중',running:'관리 저장 완료 · 현장일보에 반영 중',applied:'두 앱 반영 완료',review:'두 앱 반영 완료 · 서로 다른 입력은 확인이 필요합니다.',permission:'관리 저장 완료 · 연결 권한 확인이 필요합니다. 관리자에게 알려 주세요.',configuration:'관리 저장 완료 · 연동 서버의 연결 설정을 확인해 주세요.',source:'관리 저장 완료 · 원자료 확인이 필요합니다. 미반영 기록을 확인해 주세요.',retry:'관리 저장 완료 · 연결 후 다시 확인합니다. 입력을 다시 저장할 필요는 없습니다.',conflict:'관리 저장 완료 · 다른 변경과 합쳐 다시 반영 중'};
-function twoWayClient(){const c=workspace;if(!c||c.closed||c.pendingMigration||c.config?.owner!=='parkjkk'||c.config.repo!=='schedule-data'||(c.config.branch||'main')!=='main'||typeof c.config.token!=='string'||!c.config.token||typeof shareViewSession!=='undefined'&&shareViewSession.active)return null;return c}
+// The live store runs the field return itself; this request is for GitHub only.
+function twoWayClient(){const c=workspace;if(!c||c.closed||c.pendingMigration||typeof ScheduleStorage!=='undefined'&&ScheduleStorage.CloudStore&&c.client instanceof ScheduleStorage.CloudStore||c.config?.owner!=='parkjkk'||c.config.repo!=='schedule-data'||(c.config.branch||'main')!=='main'||typeof c.config.token!=='string'||!c.config.token||typeof shareViewSession!=='undefined'&&shareViewSession.active)return null;return c}
 // The retry marker contains no credential or business record; requests remain scope-bound.
 function twoWayKey(client){return 'production.two-way.v1:'+encodeURIComponent([client.config.owner,client.config.repo,client.config.branch||'main'].join('/'))+':'}
 function twoWayRead(client){try{const prefix=twoWayKey(client),items=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;try{const item=JSON.parse(localStorage.getItem(key));if(item?.schema===1&&typeof item.id==='string'&&key===prefix+item.id&&['request','status'].includes(item.stage))items.push(item)}catch{}}return items.sort((a,b)=>(a.stage==='request'?0:1)-(b.stage==='request'?0:1)||b.id.localeCompare(a.id))[0]||null}catch{return null}}
@@ -10586,7 +10732,7 @@ const ScheduleBackup=(()=>{
   const config=client.config,commit=await client.api('/commits/'+encodeURIComponent(config.branch||'main'));if(!/^[0-9a-f]{40,64}$/i.test(commit.sha||'')||!commit.commit?.tree?.sha)throw Error('GitHub 백업 기준 버전을 확인하지 못했습니다.');
   const tree=await client.api('/git/trees/'+commit.commit.tree.sha+'?recursive=1');if(tree.truncated||!Array.isArray(tree.tree))throw Error('전체 파일 목록을 읽지 못해 백업을 중단했습니다.');
   const list=tree.tree.filter(x=>x.path?.endsWith('.json'));if(list.length>10000||list.some(x=>x.type!=='blob'||x.mode!=='100644'||!pathOK(x.path))||list.reduce((n,x)=>n+(x.size||0),0)>LIMIT)throw Error('원격 JSON 파일의 형식 또는 크기를 확인해 주세요.');
-  const fixed=new ScheduleStorage.GithubStore({...config,branch:commit.sha},client.request),files={};let cursor=0,failure=null;
+  const fixed=new client.constructor({...config,branch:commit.sha},client.request),files={};let cursor=0,failure=null;
   try{await Promise.all(Array.from({length:Math.min(4,list.length)},async()=>{while(!failure&&cursor<list.length){const item=list[cursor++];try{const f=await fixed.get(item.path);if(f.sha!==item.sha)throw Error('원격 파일 버전이 서로 다릅니다.');files[item.path]={sha:f.sha,data:f.data}}catch(e){failure??=e}}}));if(failure)throw failure;nativeFromFiles(files);return{owner:config.owner,repo:config.repo,branch:config.branch||'main',commit:commit.sha,files}}finally{fixed.invalidate()}
  }
  class OfflineWorkspace{
@@ -10924,13 +11070,16 @@ function shareAdminLaunch(){
  const allowed=()=>page==='settings'&&managementConnectionGate.unlocked&&!(typeof shareViewSession!=='undefined'&&shareViewSession.active);
  if(!allowed()){toast('연결 설정의 비밀번호를 먼저 확인해 주세요.');return false}
  if(shareAdminLaunchState.pending){try{shareAdminLaunchState.pending.window?.focus()}catch{}return false}
+ // With the live store this manager proves itself with its device key; GitHub mode sends the token as before.
+ const cloud=typeof ScheduleStorage!=='undefined'&&ScheduleStorage.CloudStore&&workspace?.client instanceof ScheduleStorage.CloudStore;
  const readSaved=()=>{
   const config=JSON.parse(localStorage.getItem('schedule.v1.connection')||'null'),valid=c=>c?.owner==='parkjkk'&&c.repo==='schedule-data'&&(c.branch||'main')==='main';
   if(!valid(config)||workspace?.config&&!valid(workspace.config))throw Error('repository');
+  if(cloud){const key=workspace.config?.deviceKey;if(typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key))throw Error('missing');return key}
   const token=sessionStorage.getItem('schedule.v1.token')||localStorage.getItem('schedule.v1.token');
   if(typeof token!=='string'||!token.trim())throw Error('missing');return token;
  };
- let token;try{token=readSaved()}catch{toast('이 기기의 관리 저장소 연결이 필요합니다. GitHub 연결 설정을 먼저 저장한 뒤 다시 눌러 주세요.');return false}
+ let token;try{token=readSaved()}catch{toast(cloud?'이 기기의 서버 저장 권한을 확인해 주세요.':'이 기기의 관리 저장소 연결이 필요합니다. GitHub 연결 설정을 먼저 저장한 뒤 다시 눌러 주세요.');return false}
  let nonce;try{nonce=crypto.randomUUID()}catch{token=null;toast('새 창 연결을 준비하지 못했습니다. 최신 브라우저에서 다시 열어 주세요.');return false}
  let opened=null,timeout=null,watch=null,done=false;
  const pending={window:null,cancel:()=>finish()};
@@ -10949,7 +11098,7 @@ function shareAdminLaunch(){
   try{
    if(readSaved()!==token){finish('관리 연결이 바뀌었습니다. 조회 링크 관리를 다시 열어 주세요.');return}
    // Only this exact opened window receives the one-time approved credential.
-   opened.postMessage({type:'production-admin-launch',nonce,token},shareSetupOrigin);
+   opened.postMessage(cloud?{type:'production-admin-launch',nonce,deviceKey:token}:{type:'production-admin-launch',nonce,token},shareSetupOrigin);
    finish('공유 관리 화면에 연결을 전달했습니다. 새 창에서 결과를 확인해 주세요.');
   }catch{finish('공유 관리 화면에 연결을 전달하지 못했습니다. 연결 설정을 확인하고 다시 시도해 주세요.')}
  };
@@ -13028,6 +13177,6 @@ function explicitUnitPrefixWitness(proof,plan,scope){
  return{schema:1,scope,groupId:group.id,groupIds,request,receivedMonths:C.clone(received.receivedMonths||[])};
 }
 
-AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);
+AppAccess.start(()=>{render();return restoreConnection()});window.addEventListener('production:lock',()=>{managementConnectionGate.lock();const details=document.querySelector('.workspaceConnection');if(details)details.open=false;const token=document.querySelector('#token');if(token)token.value=''});window.addEventListener('online',()=>{if(AppAccess.unlocked)workspace?.flush()});setInterval(()=>{if(AppAccess.unlocked&&workspace?.envelope.queue.length)workspace.flush()},30000);setInterval(()=>{if(AppAccess.unlocked)storeWatch().catch(()=>{})},30000);
 })();
 </script></body></html>
